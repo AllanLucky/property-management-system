@@ -2,30 +2,27 @@
 
 namespace App\Models;
 
-use App\Models\User;
-use App\Models\Property;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PropertyVisit extends Model
 {
     use HasFactory;
 
-    /*
-    |--------------------------------------------------------------------------
-    | TABLE
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * --------------------------------------------------------------------------
+     * TABLE
+     * --------------------------------------------------------------------------
+     */
     protected $table = 'property_visits';
 
-    /*
-    |--------------------------------------------------------------------------
-    | MASS ASSIGNMENT
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * --------------------------------------------------------------------------
+     * MASS ASSIGNMENT
+     * --------------------------------------------------------------------------
+     */
     protected $fillable = [
         'property_id',
         'user_id',
@@ -42,12 +39,11 @@ class PropertyVisit extends Model
         'visited_at',
     ];
 
-    /*
-    |--------------------------------------------------------------------------
-    | ATTRIBUTE CASTS
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * --------------------------------------------------------------------------
+     * CASTS
+     * --------------------------------------------------------------------------
+     */
     protected $casts = [
         'is_unique' => 'boolean',
         'visited_at' => 'datetime',
@@ -55,89 +51,65 @@ class PropertyVisit extends Model
         'updated_at' => 'datetime',
     ];
 
-    /*
-    |--------------------------------------------------------------------------
-    | DEFAULT EAGER LOADING
-    |--------------------------------------------------------------------------
-    */
-
-    protected $with = [];
-
-    /*
-    |--------------------------------------------------------------------------
-    | APPENDED ATTRIBUTES
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * --------------------------------------------------------------------------
+     * APPENDS
+     * --------------------------------------------------------------------------
+     */
     protected $appends = [
         'visitor_type',
         'device_name',
         'location',
+        'visited_at_human',
     ];
 
-    /*
-    |--------------------------------------------------------------------------
-    | RELATIONSHIPS
-    |--------------------------------------------------------------------------
-    */
-
     /**
-     * Property.
+     * --------------------------------------------------------------------------
+     * RELATIONSHIPS
+     * --------------------------------------------------------------------------
      */
-    public function property()
+
+    public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
-    /**
-     * Visitor (authenticated user).
-     */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | QUERY SCOPES
-    |--------------------------------------------------------------------------
-    */
-
     /**
-     * Unique visits.
+     * --------------------------------------------------------------------------
+     * QUERY SCOPES
+     * --------------------------------------------------------------------------
      */
+
     public function scopeUnique(Builder $query): Builder
     {
         return $query->where('is_unique', true);
     }
 
-    /**
-     * Guest visits.
-     */
     public function scopeGuests(Builder $query): Builder
     {
         return $query->whereNull('user_id');
     }
 
-    /**
-     * Authenticated user visits.
-     */
     public function scopeAuthenticated(Builder $query): Builder
     {
         return $query->whereNotNull('user_id');
     }
 
-    /**
-     * Today's visits.
-     */
     public function scopeToday(Builder $query): Builder
     {
         return $query->whereDate('visited_at', today());
     }
 
-    /**
-     * This week's visits.
-     */
+    public function scopeYesterday(Builder $query): Builder
+    {
+        return $query->whereDate('visited_at', today()->subDay());
+    }
+
     public function scopeThisWeek(Builder $query): Builder
     {
         return $query->whereBetween('visited_at', [
@@ -146,87 +118,150 @@ class PropertyVisit extends Model
         ]);
     }
 
-    /**
-     * This month's visits.
-     */
     public function scopeThisMonth(Builder $query): Builder
     {
-        return $query->whereYear('visited_at', now()->year)
-                     ->whereMonth('visited_at', now()->month);
+        return $query->whereMonth('visited_at', now()->month)
+            ->whereYear('visited_at', now()->year);
     }
 
-    /**
-     * Latest visits.
-     */
+    public function scopeThisYear(Builder $query): Builder
+    {
+        return $query->whereYear('visited_at', now()->year);
+    }
+
+    public function scopeBrowser(Builder $query, string $browser): Builder
+    {
+        return $query->where('browser', $browser);
+    }
+
+    public function scopePlatform(Builder $query, string $platform): Builder
+    {
+        return $query->where('platform', $platform);
+    }
+
+    public function scopeDevice(Builder $query, string $device): Builder
+    {
+        return $query->where('device', $device);
+    }
+
+    public function scopeCountry(Builder $query, string $country): Builder
+    {
+        return $query->where('country', $country);
+    }
+
+    public function scopeSession(Builder $query, string $sessionId): Builder
+    {
+        return $query->where('session_id', $sessionId);
+    }
+
+    public function scopeIp(Builder $query, string $ip): Builder
+    {
+        return $query->where('ip_address', $ip);
+    }
+
     public function scopeLatest(Builder $query): Builder
     {
-        return $query->orderByDesc('visited_at');
+        return $query->latest('visited_at');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | ACCESSORS
-    |--------------------------------------------------------------------------
-    */
-
     /**
-     * Visitor type.
+     * --------------------------------------------------------------------------
+     * ACCESSORS
+     * --------------------------------------------------------------------------
      */
+
     public function getVisitorTypeAttribute(): string
     {
-        return $this->user_id ? 'authenticated' : 'guest';
+        return $this->user_id ? 'Authenticated User' : 'Guest Visitor';
     }
 
-    /**
-     * Device name.
-     */
     public function getDeviceNameAttribute(): string
     {
         return $this->device ?: 'Unknown Device';
     }
 
-    /**
-     * Visitor location.
-     */
     public function getLocationAttribute(): ?string
     {
-        if (!$this->country && !$this->city) {
-            return null;
-        }
-
         return collect([
             $this->city,
             $this->country,
-        ])->filter()->implode(', ');
+        ])->filter()->implode(', ') ?: null;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | HELPERS
-    |--------------------------------------------------------------------------
-    */
+    public function getVisitedAtHumanAttribute(): ?string
+    {
+        return $this->visited_at?->diffForHumans();
+    }
 
     /**
-     * Determine if the visit is from a guest.
+     * --------------------------------------------------------------------------
+     * HELPERS
+     * --------------------------------------------------------------------------
      */
+
     public function isGuest(): bool
     {
         return is_null($this->user_id);
     }
 
-    /**
-     * Determine if the visit is from an authenticated user.
-     */
     public function isAuthenticated(): bool
     {
         return !is_null($this->user_id);
     }
 
-    /**
-     * Determine if the visit is unique.
-     */
     public function isUniqueVisit(): bool
     {
-        return $this->is_unique;
+        return (bool) $this->is_unique;
+    }
+
+    public function isToday(): bool
+    {
+        return $this->visited_at?->isToday() ?? false;
+    }
+
+    /**
+     * --------------------------------------------------------------------------
+     * STATISTICS
+     * --------------------------------------------------------------------------
+     */
+
+    public static function totalVisits(): int
+    {
+        return static::count();
+    }
+
+    public static function uniqueVisits(): int
+    {
+        return static::unique()->count();
+    }
+
+    public static function guestVisits(): int
+    {
+        return static::guests()->count();
+    }
+
+    public static function authenticatedVisits(): int
+    {
+        return static::authenticated()->count();
+    }
+
+    public static function todayVisits(): int
+    {
+        return static::today()->count();
+    }
+
+    public static function thisWeekVisits(): int
+    {
+        return static::thisWeek()->count();
+    }
+
+    public static function thisMonthVisits(): int
+    {
+        return static::thisMonth()->count();
+    }
+
+    public static function thisYearVisits(): int
+    {
+        return static::thisYear()->count();
     }
 }
