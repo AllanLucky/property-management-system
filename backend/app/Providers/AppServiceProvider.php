@@ -63,6 +63,9 @@ use App\Repositories\Interfaces\PropertyAmenityRepositoryInterface;
 use App\Repositories\Eloquent\EloquentPropertyReviewRepository;
 use App\Repositories\Interfaces\PropertyReviewRepositoryInterface;
 
+use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
+use App\Repositories\Eloquent\PropertyFavoriteRepository;
+
 /*
 |--------------------------------------------------------------------------
 | APARTMENT REPOSITORIES
@@ -195,6 +198,13 @@ class AppServiceProvider extends ServiceProvider
             PropertyReviewRepositoryInterface::class,
             EloquentPropertyReviewRepository::class
         );
+
+    
+        $this->app->bind(
+           PropertyFavoriteRepositoryInterface::class,
+           PropertyFavoriteRepository::class
+       );
+    
 
         /*
         |--------------------------------------------------------------------------
