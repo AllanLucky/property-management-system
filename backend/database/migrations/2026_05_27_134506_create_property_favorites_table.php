@@ -17,6 +17,7 @@ return new class extends Migration
             | RELATIONSHIPS
             |--------------------------------------------------------------------------
             */
+
             $table->foreignId('property_id')
                 ->constrained('properties')
                 ->cascadeOnDelete();
@@ -25,13 +26,13 @@ return new class extends Migration
                 ->constrained('users')
                 ->cascadeOnDelete();
 
+
             /*
             |--------------------------------------------------------------------------
-            | OPTIONAL CONTEXT (KEEP BUT NOT USED IN MODEL YET)
-            |--------------------------------------------------------------------------
-            | Safe to keep for future expansion
+            | OPTIONAL RELATIONS
             |--------------------------------------------------------------------------
             */
+
             $table->foreignId('apartment_id')
                 ->nullable()
                 ->constrained('apartments')
@@ -42,30 +43,43 @@ return new class extends Migration
                 ->constrained('units')
                 ->nullOnDelete();
 
+
             /*
             |--------------------------------------------------------------------------
             | STATUS
             |--------------------------------------------------------------------------
             */
-            $table->boolean('is_active')->default(true);
+
+            $table->boolean('is_active')
+                ->default(true);
+
 
             /*
             |--------------------------------------------------------------------------
             | TIMESTAMPS
             |--------------------------------------------------------------------------
             */
+
             $table->timestamps();
+
 
             /*
             |--------------------------------------------------------------------------
             | INDEXES
             |--------------------------------------------------------------------------
             */
-            $table->unique(['user_id', 'property_id']); // prevents duplicate favorites
-            $table->index(['user_id']);
-            $table->index(['property_id']);
+
+            $table->unique([
+                'user_id',
+                'property_id'
+            ]);
+
+            $table->index('user_id');
+            $table->index('property_id');
+
         });
     }
+
 
     public function down(): void
     {
