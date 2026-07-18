@@ -123,6 +123,7 @@ import PropertyVistList from "../modules/super-admin/property-visits/PropertyVis
 import PropertyVisitCreate from "../modules/super-admin/property-visits/CreatePropertyVisit";
 import PropertyVisitShow from "../modules/super-admin/property-visits/ShowPropertyVisit";
 
+
 /*
 |--------------------------------------------------------------------------
 | ROUTES
