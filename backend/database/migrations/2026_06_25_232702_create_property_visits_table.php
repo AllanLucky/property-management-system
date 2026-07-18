@@ -25,7 +25,6 @@ return new class extends Migration
                 ->constrained()
                 ->cascadeOnDelete();
 
-            // Nullable for guest visitors
             $table->foreignId('user_id')
                 ->nullable()
                 ->constrained()
@@ -37,8 +36,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('session_id')->nullable();
-            $table->ipAddress('ip_address')->nullable();
+            $table->uuid('visit_uuid')->unique();
+
+            $table->string('session_id')->nullable()->index();
+
+            $table->ipAddress('ip_address')->nullable()->index();
+
             $table->text('user_agent')->nullable();
 
             /*
@@ -47,9 +50,47 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('device')->nullable();     // Mobile, Desktop, Tablet
-            $table->string('browser')->nullable();    // Chrome, Firefox, Safari
-            $table->string('platform')->nullable();   // Windows, Android, iOS
+            $table->string('device')->nullable();          // Desktop, Mobile, Tablet
+
+            $table->string('device_type')->nullable();     // Desktop, Phone, Tablet
+
+            $table->string('browser')->nullable();         // Chrome
+
+            $table->string('browser_version')->nullable();
+
+            $table->string('platform')->nullable();        // Windows
+
+            $table->string('platform_version')->nullable();
+
+            $table->string('operating_system')->nullable();
+
+            $table->boolean('is_mobile')->default(false);
+
+            $table->boolean('is_tablet')->default(false);
+
+            $table->boolean('is_desktop')->default(false);
+
+            $table->boolean('is_robot')->default(false);
+
+            /*
+            |--------------------------------------------------------------------------
+            | LOCATION
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('country')->nullable()->index();
+
+            $table->string('region')->nullable();
+
+            $table->string('county')->nullable();
+
+            $table->string('city')->nullable()->index();
+
+            $table->decimal('latitude', 10, 7)->nullable();
+
+            $table->decimal('longitude', 10, 7)->nullable();
+
+            $table->string('timezone')->nullable();
 
             /*
             |--------------------------------------------------------------------------
@@ -59,14 +100,11 @@ return new class extends Migration
 
             $table->string('referer')->nullable();
 
-            /*
-            |--------------------------------------------------------------------------
-            | GEO LOCATION (OPTIONAL)
-            |--------------------------------------------------------------------------
-            */
+            $table->string('source')->nullable();      // Google
 
-            $table->string('country')->nullable();
-            $table->string('city')->nullable();
+            $table->string('medium')->nullable();      // Organic
+
+            $table->string('campaign')->nullable();    // Facebook Ads
 
             /*
             |--------------------------------------------------------------------------
@@ -74,10 +112,29 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            // Indicates whether this is the visitor's first visit
             $table->boolean('is_unique')->default(false);
 
-            // When the visit occurred
+            $table->unsignedInteger('duration')->default(0)
+                ->comment('Seconds spent on property');
+
+            $table->unsignedInteger('page_views')->default(1);
+
+            $table->unsignedInteger('scroll_percentage')->default(0);
+
+            $table->boolean('contact_clicked')->default(false);
+
+            $table->boolean('call_clicked')->default(false);
+
+            $table->boolean('whatsapp_clicked')->default(false);
+
+            $table->boolean('email_clicked')->default(false);
+
+            $table->boolean('bookmarked')->default(false);
+
+            $table->boolean('shared')->default(false);
+
+            $table->boolean('scheduled_visit')->default(false);
+
             $table->timestamp('visited_at')->useCurrent();
 
             /*
@@ -95,13 +152,22 @@ return new class extends Migration
             */
 
             $table->index('property_id');
+
             $table->index('user_id');
-            $table->index('session_id');
-            $table->index('ip_address');
+
             $table->index('visited_at');
+
             $table->index('is_unique');
-            $table->index('country');
-            $table->index('city');
+
+            $table->index('browser');
+
+            $table->index('platform');
+
+            $table->index('device');
+
+            $table->index('source');
+
+            $table->index('campaign');
 
             $table->index([
                 'property_id',
@@ -121,6 +187,26 @@ return new class extends Migration
             $table->index([
                 'property_id',
                 'is_unique',
+            ]);
+
+            $table->index([
+                'property_id',
+                'browser',
+            ]);
+
+            $table->index([
+                'property_id',
+                'platform',
+            ]);
+
+            $table->index([
+                'property_id',
+                'country',
+            ]);
+
+            $table->index([
+                'property_id',
+                'city',
             ]);
 
             $table->index([
