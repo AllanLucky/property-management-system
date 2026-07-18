@@ -119,6 +119,7 @@ import EditPropertyReview from "../modules/super-admin/PropertyReview/EditProper
 import PropertyReviewDetails from "../modules/super-admin/PropertyReview/PropertyReviewDetails";
 import PropertyReviewAnalytic from "../modules/super-admin/PropertyReview/PropertyReviewAnalytics";
 import PropertyReviewReports from "../modules/super-admin/PropertyReview/PropertyReviewReports";
+import PropertyFavoriteList from "../modules/super-admin/property-favorites/PropertyFavoriteList";
 
 /*
 |--------------------------------------------------------------------------
@@ -538,6 +539,44 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
+
+      {/* PROPERTY FAVORITE */}
+
+      <Route
+        path="property-favorites"
+        element={
+          <PermissionGuard permission="property-favorites.view">
+            <PropertyFavoriteList />
+          </PermissionGuard>
+        }
+      />
+
+      {/* <Route
+        path="property-favorites/create"
+        element={
+          <PermissionGuard permission="property-favorites.create">
+            <CreatePropertyFavorite />
+          </PermissionGuard>
+        }
+      /> */}
+
+      {/* <Route
+        path="property-favorites/:id"
+        element={
+          <PermissionGuard permission="property-favorites.view">
+            <ShowPropertyFavorite />
+          </PermissionGuard>
+        }
+      /> */}
+
+      {/* <Route
+        path="property-favorites/edit/:id"
+        element={
+          <PermissionGuard permission="property-favorites.update">
+            <EditPropertyFavorite />
+          </PermissionGuard>
+        }
+      /> */}
     </>
   );
 };
