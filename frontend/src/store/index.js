@@ -49,7 +49,7 @@ import unitReducer from "./unitSlice";
 import propertyFeatureReducer from "./propertyFeatureSlice";
 import propertyAmenityReducer from "./propertyAmenitySlice";
 import propertyReviewsReducer from "./propertyReviewSlice";
-
+import  propertyVisitsReducer from "./propertyVisitSlice"
 /*
 |--------------------------------------------------------------------------
 | STORE CONFIGURATION
@@ -82,6 +82,7 @@ export const store = configureStore({
     propertyFeatures: propertyFeatureReducer,
     propertyAmenities: propertyAmenityReducer,
     propertyReviews: propertyReviewsReducer,
+    propertyVisits : propertyVisitsReducer,
 
   },
 
