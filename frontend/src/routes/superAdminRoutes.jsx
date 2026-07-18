@@ -119,6 +119,9 @@ import EditPropertyReview from "../modules/super-admin/PropertyReview/EditProper
 import PropertyReviewDetails from "../modules/super-admin/PropertyReview/PropertyReviewDetails";
 import PropertyReviewAnalytic from "../modules/super-admin/PropertyReview/PropertyReviewAnalytics";
 import PropertyReviewReports from "../modules/super-admin/PropertyReview/PropertyReviewReports";
+import PropertyVistList from "../modules/super-admin/property-visits/PropertyVisitList";
+import PropertyVisitCreate from "../modules/super-admin/property-visits/CreatePropertyVisit";
+import PropertyVisitShow from "../modules/super-admin/property-visits/ShowPropertyVisit";
 
 /*
 |--------------------------------------------------------------------------
@@ -538,6 +541,35 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
+
+      {/* PROPERTY-VISITY */}
+      <Route
+        path="property-visits"
+        element={
+          <PermissionGuard permission="property-visits.view">
+            <PropertyVistList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="property-visits/create"
+        element={
+          <PermissionGuard permission="property-visits.create">
+            <PropertyVisitCreate />
+          </PermissionGuard>
+        }
+      />
+      <Route
+        path="property-visits/:id"
+        element={
+          <PermissionGuard permission="property-visits.view">
+            <PropertyVisitShow />
+          </PermissionGuard>
+        }
+      />
+
+
     </>
   );
 };
