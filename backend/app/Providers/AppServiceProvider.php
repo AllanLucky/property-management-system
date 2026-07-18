@@ -67,8 +67,6 @@ use App\Repositories\Interfaces\PropertyReviewRepositoryInterface;
 use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
 use App\Repositories\Eloquent\PropertyFavoriteRepository;
 
-use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
-use App\Repositories\Eloquent\PropertyFavoriteRepository;
 
 use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
 use App\Repositories\Eloquent\PropertyVisitRepository;

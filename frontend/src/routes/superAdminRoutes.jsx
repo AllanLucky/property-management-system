@@ -546,7 +546,7 @@ const SuperAdminRoutes = () => {
       {/* PROPERTY VISITS */}
 
       <Route
-        path="property-favorites"
+        path="property-visits"
         element={
           <PermissionGuard permission="property-visits.view">
             <PropertyVisitList />
