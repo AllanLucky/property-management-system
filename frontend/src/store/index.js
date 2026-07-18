@@ -49,6 +49,7 @@ import unitReducer from "./unitSlice";
 import propertyFeatureReducer from "./propertyFeatureSlice";
 import propertyAmenityReducer from "./propertyAmenitySlice";
 import propertyReviewsReducer from "./propertyReviewSlice";
+import propertyFavoriteReducer from "./propertyFavoriteSlice";
 
 /*
 |--------------------------------------------------------------------------
@@ -82,6 +83,8 @@ export const store = configureStore({
     propertyFeatures: propertyFeatureReducer,
     propertyAmenities: propertyAmenityReducer,
     propertyReviews: propertyReviewsReducer,
+    propertyFavorites: propertyFavoriteReducer,
+
 
   },
 
