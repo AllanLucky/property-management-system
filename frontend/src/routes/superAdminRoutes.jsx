@@ -119,9 +119,9 @@ import EditPropertyReview from "../modules/super-admin/PropertyReview/EditProper
 import PropertyReviewDetails from "../modules/super-admin/PropertyReview/PropertyReviewDetails";
 import PropertyReviewAnalytic from "../modules/super-admin/PropertyReview/PropertyReviewAnalytics";
 import PropertyReviewReports from "../modules/super-admin/PropertyReview/PropertyReviewReports";
-import PropertyVistList from "../modules/super-admin/property-visits/PropertyVisitList";
-import PropertyVisitCreate from "../modules/super-admin/property-visits/CreatePropertyVisit";
-import PropertyVisitShow from "../modules/super-admin/property-visits/ShowPropertyVisit";
+import PropertyVisitList from "../modules/super-admin/propertyVisits/PropertyVistList";
+import PropertyVisitCreate from "../modules/super-admin/propertyVisits/PropertyVisitCreate";
+import PropertyVisitShow from "../modules/super-admin/propertyVisits/PropertyVisitShow";
 
 
 /*
@@ -543,12 +543,13 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* PROPERTY-VISITY */}
+      {/* PROPERTY VISITS */}
+
       <Route
         path="property-visits"
         element={
           <PermissionGuard permission="property-visits.view">
-            <PropertyVistList />
+            <PropertyVisitList />
           </PermissionGuard>
         }
       />
@@ -561,6 +562,7 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
+
       <Route
         path="property-visits/:id"
         element={
@@ -569,7 +571,6 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
-
 
     </>
   );
