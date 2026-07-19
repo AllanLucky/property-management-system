@@ -44,8 +44,6 @@ use App\Http\Controllers\Api\PropertyAmenity\PropertyAmenityController;
 use App\Http\Controllers\Api\Amenity\AmenityController;
 use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
-use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
-
 
 /*
 |--------------------------------------------------------------------------
