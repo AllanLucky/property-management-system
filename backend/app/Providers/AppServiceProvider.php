@@ -66,6 +66,8 @@ use App\Repositories\Interfaces\PropertyReviewRepositoryInterface;
 
 use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
 use App\Repositories\Eloquent\PropertyFavoriteRepository;
+use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
+use App\Repositories\Eloquent\PropertyVisitRepository;
 
 
 use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
@@ -215,7 +217,6 @@ class AppServiceProvider extends ServiceProvider
             PropertyVisitRepositoryInterface::class,
             PropertyVisitRepository::class
         );
-
 
         /*
         |--------------------------------------------------------------------------
