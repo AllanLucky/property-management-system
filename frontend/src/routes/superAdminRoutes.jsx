@@ -121,6 +121,7 @@ import PropertyReviewAnalytic from "../modules/super-admin/PropertyReview/Proper
 import PropertyReviewReports from "../modules/super-admin/PropertyReview/PropertyReviewReports";
 import PropertyFavoriteList from "../modules/super-admin/property-favorites/PropertyFavoriteList";
 
+
 /*
 |--------------------------------------------------------------------------
 | ROUTES
