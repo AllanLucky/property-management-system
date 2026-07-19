@@ -119,7 +119,9 @@ import EditPropertyReview from "../modules/super-admin/PropertyReview/EditProper
 import PropertyReviewDetails from "../modules/super-admin/PropertyReview/PropertyReviewDetails";
 import PropertyReviewAnalytic from "../modules/super-admin/PropertyReview/PropertyReviewAnalytics";
 import PropertyReviewReports from "../modules/super-admin/PropertyReview/PropertyReviewReports";
-import PropertyFavoriteList from "../modules/super-admin/property-favorites/PropertyFavoriteList";
+import PropertyVisitList from "../modules/super-admin/propertyVisits/PropertyVistList";
+import PropertyVisitCreate from "../modules/super-admin/propertyVisits/PropertyVisitCreate";
+import PropertyVisitShow from "../modules/super-admin/propertyVisits/PropertyVisitShow";
 
 
 /*
@@ -541,43 +543,35 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* PROPERTY FAVORITE */}
+      {/* PROPERTY VISITS */}
 
       <Route
         path="property-favorites"
         element={
-          <PermissionGuard permission="property-favorites.view">
-            <PropertyFavoriteList />
+          <PermissionGuard permission="property-visits.view">
+            <PropertyVisitList />
           </PermissionGuard>
         }
       />
 
       {/* <Route
-        path="property-favorites/create"
+        path="property-visits/create"
         element={
-          <PermissionGuard permission="property-favorites.create">
-            <CreatePropertyFavorite />
+          <PermissionGuard permission="property-visits.create">
+            <PropertyVisitCreate />
           </PermissionGuard>
         }
-      /> */}
+      />
 
-      {/* <Route
-        path="property-favorites/:id"
+      <Route
+        path="property-visits/:id"
         element={
-          <PermissionGuard permission="property-favorites.view">
-            <ShowPropertyFavorite />
+          <PermissionGuard permission="property-visits.view">
+            <PropertyVisitShow />
           </PermissionGuard>
         }
-      /> */}
+      />
 
-      {/* <Route
-        path="property-favorites/edit/:id"
-        element={
-          <PermissionGuard permission="property-favorites.update">
-            <EditPropertyFavorite />
-          </PermissionGuard>
-        }
-      /> */}
     </>
   );
 };
