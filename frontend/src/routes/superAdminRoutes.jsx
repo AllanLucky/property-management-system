@@ -550,33 +550,6 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
-
-      {/* <Route
-        path="property-favorites/create"
-        element={
-          <PermissionGuard permission="property-favorites.create">
-            <CreatePropertyFavorite />
-          </PermissionGuard>
-        }
-      /> */}
-
-      {/* <Route
-        path="property-favorites/:id"
-        element={
-          <PermissionGuard permission="property-favorites.view">
-            <ShowPropertyFavorite />
-          </PermissionGuard>
-        }
-      /> */}
-
-      {/* <Route
-        path="property-favorites/edit/:id"
-        element={
-          <PermissionGuard permission="property-favorites.update">
-            <EditPropertyFavorite />
-          </PermissionGuard>
-        }
-      /> */}
     </>
   );
 };
