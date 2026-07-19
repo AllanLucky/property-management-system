@@ -86,7 +86,7 @@ class DatabaseSeeder extends Seeder
             | 9. PROPERTY FAVORITES
             |--------------------------------------------------------------------------
             */
-            // PropertyFavoritesSeeder::class,
+             PropertyFavoritesSeeder::class,
 
             /*
             |--------------------------------------------------------------------------

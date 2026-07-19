@@ -44,6 +44,8 @@ use App\Http\Controllers\Api\PropertyAmenity\PropertyAmenityController;
 use App\Http\Controllers\Api\Amenity\AmenityController;
 use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
+use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -185,6 +187,39 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('reviews/my-review', [PropertyReviewController::class, 'myReview'])->name('properties.reviews.my-review');
     Route::get('reviews/summary', [PropertyReviewController::class, 'summary'])->name('properties.reviews.summary');
     Route::post('reviews', [PropertyReviewController::class, 'store'])->name('properties.reviews.store');
+
+    /*
+|--------------------------------------------------------------------------
+| PROPERTY FAVORITES
+|--------------------------------------------------------------------------
+*/
+Route::prefix('property-favorites')->name('property-favorites.')->group(function () {
+        Route::get('my',[ PropertyFavoriteController::class,'myFavorites'])->name('my');
+        Route::get('status/{propertyId}',[ PropertyFavoriteController::class,'status' ])->whereNumber('propertyId')->name('status');
+        Route::post( 'toggle/{propertyId}', [ PropertyFavoriteController::class,'toggle'])->whereNumber('propertyId')->name('toggle');
+        Route::get( '/',[  PropertyFavoriteController::class, 'index'])->name('index');
+        Route::post('/',[PropertyFavoriteController::class,'store'])->name('store');
+        Route::get('{favorite}',[ PropertyFavoriteController::class,'show'])->whereNumber('favorite')->name('show');
+        Route::put('{favorite}',[PropertyFavoriteController::class,'update'])->whereNumber('favorite')->name('update');
+        Route::patch('{favorite}',[ PropertyFavoriteController::class,'update'])->whereNumber('favorite')->name('patch');
+        Route::delete('{favorite}',[  PropertyFavoriteController::class,'destroy'])->whereNumber('favorite')->name('destroy');
+           
+          
+       
+       
+           
+        
+
+        
+
+
+       
+
+
+
+    });
+
+
 
     /*
     |--------------------------------------------------------------------------

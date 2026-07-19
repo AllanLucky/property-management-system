@@ -107,7 +107,7 @@ const superAdminSidebar = [
       /* MEDIA & ANALYTICS */
       { title: "Property Reviews", path: "/super-admin/property-reviews", icon: Star },
       { title: "Property Visits", path: "/super-admin/property-visits", icon: Eye },
-      { title: "Favorites", path: "/super-admin/favorites", icon: Heart },
+      { title: "property-favorites", path: "/super-admin/property-favorites", icon: Heart },
       { title: "Property Analytics", path: "/super-admin/property-analytics", icon: BarChart3 },
     ],
   },
