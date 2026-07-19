@@ -1000,6 +1000,4 @@ const StatCard = ({
 
   </div>
 );
-
-
-export default PropertyVisitList;
+export default PropertyVisitList
