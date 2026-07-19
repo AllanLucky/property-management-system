@@ -70,9 +70,6 @@ use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
 use App\Repositories\Eloquent\PropertyVisitRepository;
 
 
-use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
-use App\Repositories\Eloquent\PropertyVisitRepository;
-
 /*
 |--------------------------------------------------------------------------
 | APARTMENT REPOSITORIES
