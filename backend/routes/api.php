@@ -203,20 +203,6 @@ Route::prefix('property-favorites')->name('property-favorites.')->group(function
         Route::put('{favorite}',[PropertyFavoriteController::class,'update'])->whereNumber('favorite')->name('update');
         Route::patch('{favorite}',[ PropertyFavoriteController::class,'update'])->whereNumber('favorite')->name('patch');
         Route::delete('{favorite}',[  PropertyFavoriteController::class,'destroy'])->whereNumber('favorite')->name('destroy');
-           
-          
-       
-       
-           
-        
-
-        
-
-
-       
-
-
-
     });
 
 
