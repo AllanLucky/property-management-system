@@ -249,7 +249,7 @@ const PropertyFavoriteList = () => {
       </div>
     );
   }
-    return (
+  return (
     <div className="bg-white rounded-xl shadow border">
 
       {/* ==========================================================
@@ -277,9 +277,8 @@ const PropertyFavoriteList = () => {
             className="inline-flex items-center gap-2 px-4 py-2 border rounded-xl hover:bg-gray-50 transition"
           >
             <RefreshCw
-              className={`w-4 h-4 ${
-                refreshing ? "animate-spin" : ""
-              }`}
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""
+                }`}
             />
             Refresh
           </button>
@@ -420,7 +419,7 @@ const PropertyFavoriteList = () => {
       ========================================================== */}
 
       <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
 
           {/* ======================================================
               TABLE HEAD
@@ -544,8 +543,8 @@ const PropertyFavoriteList = () => {
                         <p className="text-xs text-gray-400">
                           {favorite.property?.price
                             ? Number(
-                                favorite.property.price
-                              ).toLocaleString()
+                              favorite.property.price
+                            ).toLocaleString()
                             : "-"}
                         </p>
 
@@ -643,7 +642,7 @@ const PropertyFavoriteList = () => {
                         title="Delete"
                       >
                         {deleting &&
-                        deletingId === favorite.id ? (
+                          deletingId === favorite.id ? (
                           <Loader2
                             size={17}
                             className="animate-spin"
@@ -694,7 +693,7 @@ const PropertyFavoriteList = () => {
       </div>
 
       {/* Mobile cards & Pagination will be added in Part 4 */}
-            {/* ==========================================================
+      {/* ==========================================================
           PAGINATION
       ========================================================== */}
 

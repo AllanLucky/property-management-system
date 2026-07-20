@@ -236,11 +236,11 @@ const EditPropertyFavorite = () => {
     }
 
   };
-    /*
-  |--------------------------------------------------------------------------
-  | INPUT CHANGE
-  |--------------------------------------------------------------------------
-  */
+  /*
+|--------------------------------------------------------------------------
+| INPUT CHANGE
+|--------------------------------------------------------------------------
+*/
 
   const handleChange = (e) => {
 
@@ -253,7 +253,7 @@ const EditPropertyFavorite = () => {
     } = e.target;
 
 
-    setForm((prev)=>({
+    setForm((prev) => ({
 
       ...prev,
 
@@ -265,7 +265,7 @@ const EditPropertyFavorite = () => {
     }));
 
 
-    setErrors((prev)=>({
+    setErrors((prev) => ({
 
       ...prev,
 
@@ -290,7 +290,7 @@ const EditPropertyFavorite = () => {
 
 
 
-    if(!form.user_id){
+    if (!form.user_id) {
 
       validation.user_id =
         "User is required.";
@@ -299,7 +299,7 @@ const EditPropertyFavorite = () => {
 
 
 
-    if(!form.property_id){
+    if (!form.property_id) {
 
       validation.property_id =
         "Property is required.";
@@ -324,17 +324,17 @@ const EditPropertyFavorite = () => {
   */
 
 
-  const handleSubmit = async(e)=>{
+  const handleSubmit = async (e) => {
 
     e.preventDefault();
 
 
-    if(!validate()){
+    if (!validate()) {
 
       dispatch(
         addNotification({
 
-          type:"error",
+          type: "error",
 
           message:
             "Please correct the highlighted fields.",
@@ -349,7 +349,7 @@ const EditPropertyFavorite = () => {
 
 
 
-    try{
+    try {
 
 
       await dispatch(
@@ -358,7 +358,7 @@ const EditPropertyFavorite = () => {
 
           id,
 
-          data:{
+          data: {
 
             ...form,
 
@@ -380,7 +380,7 @@ const EditPropertyFavorite = () => {
 
         addNotification({
 
-          type:"success",
+          type: "success",
 
           message:
             "Property favorite updated successfully.",
@@ -397,14 +397,14 @@ const EditPropertyFavorite = () => {
 
 
 
-    }catch(err){
+    } catch (err) {
 
 
       dispatch(
 
         addNotification({
 
-          type:"error",
+          type: "error",
 
           message:
             err?.message ||
@@ -426,7 +426,7 @@ const EditPropertyFavorite = () => {
   |--------------------------------------------------------------------------
   */
 
-  if(loading){
+  if (loading) {
 
     return (
 
@@ -449,14 +449,14 @@ const EditPropertyFavorite = () => {
     <div className="max-w-5xl mx-auto">
 
       <div className="bg-white rounded-xl shadow border mb-6">
-                <div className="p-6 border-b">
+        <div className="p-6 border-b">
 
           <Link
             to="/super-admin/property-favorites"
             className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 mb-3"
           >
 
-            <ArrowLeft size={16}/>
+            <ArrowLeft size={16} />
 
             Back to Property Favorites
 
@@ -465,7 +465,7 @@ const EditPropertyFavorite = () => {
 
           <h1 className="flex items-center gap-2 text-2xl font-bold">
 
-            <Heart className="text-red-600 fill-red-500"/>
+            <Heart className="text-red-600 fill-red-500" />
 
             Edit Property Favorite
 
@@ -487,14 +487,14 @@ const EditPropertyFavorite = () => {
 
           <div className="m-6 bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
 
-            <AlertTriangle className="text-red-600"/>
+            <AlertTriangle className="text-red-600" />
 
 
             <span className="text-red-700">
 
               {error?.message ||
-               error ||
-               "Something went wrong."}
+                error ||
+                "Something went wrong."}
 
             </span>
 
@@ -505,389 +505,389 @@ const EditPropertyFavorite = () => {
 
 
 
-<form
- onSubmit={handleSubmit}
- className="p-6"
->
+        <form
+          onSubmit={handleSubmit}
+          className="p-6"
+        >
 
 
-<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
 
-{/* USER */}
+            {/* USER */}
 
-<div>
+            <div>
 
-<label className="block mb-2 font-medium">
+              <label className="block mb-2 font-medium">
 
-User
+                User
 
-</label>
+              </label>
 
 
-<select
+              <select
 
-name="user_id"
+                name="user_id"
 
-value={form.user_id}
+                value={form.user_id}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-full border rounded-xl px-4 py-3"
+                className="w-full border rounded-xl px-4 py-3"
 
->
+              >
 
 
-<option value="">
+                <option value="">
 
-Select User
+                  Select User
 
-</option>
+                </option>
 
 
-{users.map(user=>(
+                {users.map(user => (
 
-<option
-key={user.id}
-value={user.id}
->
+                  <option
+                    key={user.id}
+                    value={user.id}
+                  >
 
-{user.first_name} {user.last_name}
+                    {user.first_name} {user.last_name}
 
-</option>
+                  </option>
 
-))}
+                ))}
 
 
-</select>
+              </select>
 
 
-</div>
+            </div>
 
 
 
 
-{/* PROPERTY */}
+            {/* PROPERTY */}
 
-<div>
+            <div>
 
-<label className="block mb-2 font-medium">
+              <label className="block mb-2 font-medium">
 
-Property
+                Property
 
-</label>
+              </label>
 
 
-<select
+              <select
 
-name="property_id"
+                name="property_id"
 
-value={form.property_id}
+                value={form.property_id}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-full border rounded-xl px-4 py-3"
+                className="w-full border rounded-xl px-4 py-3"
 
->
+              >
 
 
-<option value="">
+                <option value="">
 
-Select Property
+                  Select Property
 
-</option>
+                </option>
 
 
-{properties.map(property=>(
+                {properties.map(property => (
 
-<option
-key={property.id}
-value={property.id}
->
+                  <option
+                    key={property.id}
+                    value={property.id}
+                  >
 
-{property.title}
+                    {property.title}
 
-</option>
+                  </option>
 
-))}
+                ))}
 
 
-</select>
+              </select>
 
 
-</div>
+            </div>
 
 
 
 
-{/* APARTMENT */}
+            {/* APARTMENT */}
 
-<div>
+            <div>
 
-<label className="block mb-2 font-medium">
+              <label className="block mb-2 font-medium">
 
-Apartment
+                Apartment
 
-</label>
+              </label>
 
 
-<select
+              <select
 
-name="apartment_id"
+                name="apartment_id"
 
-value={form.apartment_id}
+                value={form.apartment_id}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-full border rounded-xl px-4 py-3"
+                className="w-full border rounded-xl px-4 py-3"
 
->
+              >
 
 
-<option value="">
+                <option value="">
 
-Select Apartment
+                  Select Apartment
 
-</option>
+                </option>
 
 
-{apartments.map(item=>(
+                {apartments.map(item => (
 
-<option
-key={item.id}
-value={item.id}
->
+                  <option
+                    key={item.id}
+                    value={item.id}
+                  >
 
-{item.name}
+                    {item.name}
 
-</option>
+                  </option>
 
-))}
+                ))}
 
 
-</select>
+              </select>
 
-</div>
+            </div>
 
 
 
 
-{/* UNIT */}
+            {/* UNIT */}
 
-<div>
+            <div>
 
-<label className="block mb-2 font-medium">
+              <label className="block mb-2 font-medium">
 
-Unit
+                Unit
 
-</label>
+              </label>
 
 
-<select
+              <select
 
-name="unit_id"
+                name="unit_id"
 
-value={form.unit_id}
+                value={form.unit_id}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-full border rounded-xl px-4 py-3"
+                className="w-full border rounded-xl px-4 py-3"
 
->
+              >
 
 
-<option value="">
+                <option value="">
 
-Select Unit
+                  Select Unit
 
-</option>
+                </option>
 
 
-{units.map(unit=>(
+                {units.map(unit => (
 
-<option
-key={unit.id}
-value={unit.id}
->
+                  <option
+                    key={unit.id}
+                    value={unit.id}
+                  >
 
-{unit.name || unit.unit_number}
+                    {unit.name || unit.unit_number}
 
-</option>
+                  </option>
 
-))}
+                ))}
 
 
-</select>
+              </select>
 
-</div>
-{/* NOTES */}
+            </div>
+            {/* NOTES */}
 
-<div className="md:col-span-2">
+            <div className="md:col-span-2">
 
-<label className="block mb-2 font-medium">
+              <label className="block mb-2 font-medium">
 
-Notes
+                Notes
 
-</label>
+              </label>
 
 
-<textarea
+              <textarea
 
-name="notes"
+                name="notes"
 
-rows="4"
+                rows="4"
 
-value={form.notes}
+                value={form.notes}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-full border rounded-xl px-4 py-3"
+                className="w-full border rounded-xl px-4 py-3"
 
-placeholder="Optional notes..."
+                placeholder="Optional notes..."
 
-></textarea>
+              ></textarea>
 
 
-</div>
+            </div>
 
 
 
-{/* SOURCE */}
+            {/* SOURCE */}
 
-<div>
+            <div>
 
-<label className="block mb-2 font-medium">
+              <label className="block mb-2 font-medium">
 
-Source
+                Source
 
-</label>
+              </label>
 
 
-<input
+              <input
 
-type="text"
+                type="text"
 
-name="source"
+                name="source"
 
-value={form.source}
+                value={form.source}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-full border rounded-xl px-4 py-3"
+                className="w-full border rounded-xl px-4 py-3"
 
-/>
+              />
 
 
-</div>
+            </div>
 
 
 
-{/* ACTIVE */}
+            {/* ACTIVE */}
 
-<div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
 
 
-<input
+              <input
 
-type="checkbox"
+                type="checkbox"
 
-name="is_active"
+                name="is_active"
 
-checked={form.is_active}
+                checked={form.is_active}
 
-onChange={handleChange}
+                onChange={handleChange}
 
-className="w-5 h-5"
+                className="w-5 h-5"
 
-/>
+              />
 
 
-<label>
+              <label>
 
-Favorite Active
+                Favorite Active
 
-</label>
+              </label>
 
 
-</div>
+            </div>
 
 
-</div>
+          </div>
 
 
 
 
-<div className="flex justify-end gap-3 mt-8 border-t pt-6">
+          <div className="flex justify-end gap-3 mt-8 border-t pt-6">
 
 
-<button
+            <button
 
-type="button"
+              type="button"
 
-onClick={()=>navigate(-1)}
+              onClick={() => navigate(-1)}
 
-className="px-6 py-3 border rounded-xl"
+              className="px-6 py-3 border rounded-xl"
 
->
+            >
 
-Cancel
+              Cancel
 
-</button>
+            </button>
 
 
 
-<button
+            <button
 
-type="submit"
+              type="submit"
 
-disabled={submitting}
+              disabled={submitting}
 
-className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl"
+              className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl"
 
->
+            >
 
 
-{submitting ? (
+              {submitting ? (
 
-<>
+                <>
 
-<Loader2 className="w-4 h-4 animate-spin"/>
+                  <Loader2 className="w-4 h-4 animate-spin" />
 
-Updating...
+                  Updating...
 
-</>
+                </>
 
-):(
+              ) : (
 
 
-<>
+                <>
 
-<Save className="w-4 h-4"/>
+                  <Save className="w-4 h-4" />
 
-Update Favorite
+                  Update Favorite
 
-</>
+                </>
 
 
-)}
+              )}
 
 
-</button>
+            </button>
 
 
-</div>
+          </div>
 
 
-</form>
+        </form>
 
 
-</div>
+      </div>
 
 
-</div>
+    </div>
 
 
-);
+  );
 
 };
 
