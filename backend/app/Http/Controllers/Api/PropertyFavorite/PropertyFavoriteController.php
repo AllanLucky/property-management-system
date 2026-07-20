@@ -1,274 +1,309 @@
 <?php
 
+namespace App\Http\Controllers\Api\PropertyFavorite;
+
+use App\Helpers\ApiResponse;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\PropertyFavorite\StorePropertyFavoriteRequest;
+use App\Http\Requests\PropertyFavorite\UpdatePropertyFavoriteRequest;
+use App\Http\Resources\PropertyFavoriteResource;
+use App\Models\PropertyFavorite;
+use App\Services\PropertyFavoriteService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
+use Exception;
 
-/*
-|--------------------------------------------------------------------------
-| AUTH
-|--------------------------------------------------------------------------
-*/
-use App\Http\Controllers\Api\Auth\AuthController;
-use App\Http\Controllers\Api\Auth\PasswordController;
-use App\Http\Controllers\Api\Auth\VerificationController;
+class PropertyFavoriteController extends Controller
+{
+    public function __construct(
+        protected PropertyFavoriteService $favoriteService
+    ) {}
 
-/*
-|--------------------------------------------------------------------------
-| PROFILE / USERS
-|--------------------------------------------------------------------------
-*/
-use App\Http\Controllers\Api\Profile\ProfileController;
-use App\Http\Controllers\Api\User\UserController;
+    /**
+     * --------------------------------------------------------------------------
+     * Display a listing of property favorites.
+     * --------------------------------------------------------------------------
+     */
+    public function index(Request $request): JsonResponse
+    {
+        try {
 
-/*
-|--------------------------------------------------------------------------
-| RBAC
-|--------------------------------------------------------------------------
-*/
-use App\Http\Controllers\Api\RBAC\RoleController;
-use App\Http\Controllers\Api\RBAC\PermissionController;
-use App\Http\Controllers\Api\RoleRequest\RoleRequestController;
+            $favorites = $this->favoriteService->paginate(
+                perPage: (int) $request->input('per_page', 15),
+                filters: [
+                    'search'      => $request->input('search'),
+                    'user_id'     => $request->input('user_id'),
+                    'property_id' => $request->input('property_id'),
+                    'is_active'   => $request->input('is_active'),
+                    'sort_by'     => $request->input('sort_by', 'created_at'),
+                    'sort_order'  => $request->input('sort_order', 'desc'),
+                ]
+            );
 
-/*
-|--------------------------------------------------------------------------
-| PROPERTY MODULE
-|--------------------------------------------------------------------------
-*/
-use App\Http\Controllers\Api\Property\PropertyController;
-use App\Http\Controllers\Api\Unit\UnitController;
-use App\Http\Controllers\Api\PropertyCategory\PropertyCategoryController;
-use App\Http\Controllers\Api\PropertyType\PropertyTypeController;
-use App\Http\Controllers\Api\PropertyFeature\PropertyFeatureController;
-use App\Http\Controllers\Api\PropertyFeature\PropertyFeatureAssignmentController;
-use App\Http\Controllers\Api\PropertyAmenity\PropertyAmenityController;
-use App\Http\Controllers\Api\Amenity\AmenityController;
-use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
-use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
-use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
+            $favorites->setCollection(
+                PropertyFavoriteResource::collection(
+                    $favorites->getCollection()
+                )->collection
+            );
 
+            return ApiResponse::paginated(
+                $favorites,
+                'Property favorites retrieved successfully.'
+            );
 
-/*
-|--------------------------------------------------------------------------
-| ACTIVITY LOGS
-|--------------------------------------------------------------------------
-*/
-use App\Http\Controllers\Api\UserActivity\UserActivityController;
+        } catch (Exception $e) {
 
-/*
-|--------------------------------------------------------------------------
-| PUBLIC AUTH ROUTES
-|--------------------------------------------------------------------------
-*/
-Route::prefix('auth')->name('auth.')->group(function () {
-    Route::post('register', [AuthController::class, 'register'])->name('register');
-    Route::post('login', [AuthController::class, 'login'])->name('login');
-    Route::post('forgot-password', [PasswordController::class, 'forgotPassword'])->name('forgot-password');
-    Route::post('reset-password', [PasswordController::class, 'resetPassword'])->name('reset-password');
-    Route::post('verify-otp', [VerificationController::class, 'verifyOtp'])->name('verify-otp');
-    Route::post('resend-otp', [VerificationController::class, 'resendOtp'])->name('resend-otp');
-});
+            return ApiResponse::serverError(
+                'Failed to retrieve property favorites.',
+                $e->getMessage()
+            );
 
-/*
-|--------------------------------------------------------------------------
-| PROTECTED ROUTES
-|--------------------------------------------------------------------------
-*/
-Route::middleware('auth:sanctum')->group(function () {
+        }
+    }
+        /**
+     * --------------------------------------------------------------------------
+     * Store a newly created property favorite.
+     * --------------------------------------------------------------------------
+     */
+    public function store(
+        StorePropertyFavoriteRequest $request
+    ): JsonResponse {
 
-    /*
-    |--------------------------------------------------------------------------
-    | AUTHENTICATED USER
-    |--------------------------------------------------------------------------
-    */
-    Route::get('/user', function (Request $request) {
-        return $request->user()->load(['roles','permissions']);
-    });
+        try {
 
-    Route::post('logout', [AuthController::class, 'logout'])->name('auth.logout');
-    Route::post('refresh-token', [AuthController::class, 'refreshToken'])->name('auth.refresh-token');
+            $favorite = $this->favoriteService->create(
+                $request->validated()
+            );
 
-    /*
-    |--------------------------------------------------------------------------
-    | PROFILE
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('profile')->name('profile.')->group(function () {
-        Route::get('/', [ProfileController::class, 'show'])->name('show');
-        Route::put('/', [ProfileController::class, 'update'])->name('update');
-        Route::post('change-password', [ProfileController::class, 'changePassword'])->name('change-password');
-        Route::post('upload-avatar', [ProfileController::class, 'uploadAvatar'])->name('upload-avatar');
-    });
+            return ApiResponse::created(
+                new PropertyFavoriteResource($favorite),
+                'Property added to favorites successfully.'
+            );
 
-    /*
-    |--------------------------------------------------------------------------
-    | ROLE REQUESTS
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('role-requests')->name('role-requests.')->group(function () {
-        Route::post('/', [RoleRequestController::class, 'store'])->name('store');
-        Route::get('me', [RoleRequestController::class, 'myRequests'])->name('my');
+        } catch (Exception $e) {
 
-        Route::middleware('role:super-admin|admin')->group(function () {
-            Route::get('/', [RoleRequestController::class, 'index'])->name('index');
-            Route::get('pending', [RoleRequestController::class, 'pending'])->name('pending');
-            Route::get('{role_request}', [RoleRequestController::class, 'show'])->name('show');
-            Route::post('{role_request}/approve', [RoleRequestController::class, 'approve'])->name('approve');
-            Route::post('{role_request}/reject', [RoleRequestController::class, 'reject'])->name('reject');
-            Route::delete('{role_request}', [RoleRequestController::class, 'destroy'])->name('destroy');
-        });
-    });
+            return ApiResponse::conflict(
+                $e->getMessage()
+            );
 
-    /*
-    |--------------------------------------------------------------------------
-    | USER ACTIVITY LOGS
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('activity-logs')->name('activity-logs.')->group(function () {
-        Route::get('my-activities', [UserActivityController::class, 'myActivities'])->name('my');
+        }
 
-        Route::middleware('role:super-admin|admin')->group(function () {
-            Route::get('/', [UserActivityController::class, 'index'])->name('index');
-            Route::get('{activity_log}', [UserActivityController::class, 'show'])->name('show');
-            Route::post('/', [UserActivityController::class, 'store'])->name('store');
-            Route::delete('{activity_log}', [UserActivityController::class, 'destroy'])->name('destroy');
-        });
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | PROPERTIES
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('properties')->name('properties.')->group(function () {
-        Route::get('/', [PropertyController::class, 'index'])->name('index');
-        Route::post('/', [PropertyController::class, 'store'])->name('store');
-        Route::get('{property}', [PropertyController::class, 'show'])->name('show');
-        Route::put('{id}', [PropertyController::class, 'update'])->whereNumber('id')->name('update');
-        Route::patch('{id}', [PropertyController::class, 'update'])->whereNumber('id')->name('patch');
-        Route::delete('{id}', [PropertyController::class, 'destroy'])->whereNumber('id')->name('destroy');
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | PROPERTY VISITS
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('property-visits')->name('property-visits.')->group(function () {
-        Route::get('/', [PropertyVisitController::class, 'index'])->name('index');
-        Route::post('/', [PropertyVisitController::class, 'store'])->name('store');
-        Route::get('{propertyVisit}', [PropertyVisitController::class, 'show'])->name('show');
-        Route::put('{propertyVisit}', [PropertyVisitController::class, 'update'])->name('update');
-        Route::patch('{propertyVisit}', [PropertyVisitController::class, 'update'])->name('patch');
-        Route::delete('{propertyVisit}', [PropertyVisitController::class, 'destroy'])->name('destroy');
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | PROPERTY REVIEWS
-    |--------------------------------------------------------------------------
-    */
-    Route::prefix('property-reviews')->name('property-reviews.')->group(function () {
-        Route::get('/', [PropertyReviewController::class, 'index'])->name('index');
-        Route::get('{propertyReview}', [PropertyReviewController::class, 'show'])->name('show');
-        Route::put('{propertyReview}', [PropertyReviewController::class, 'update'])->name('update');
-        Route::patch('{propertyReview}', [PropertyReviewController::class, 'update'])->name('patch');
-        Route::delete('{propertyReview}', [PropertyReviewController::class, 'destroy'])->name('destroy');
-        Route::patch('{propertyReview}/publish', [PropertyReviewController::class, 'publish'])->name('publish');
-        Route::patch('{propertyReview}/unpublish', [PropertyReviewController::class, 'unpublish'])->name('unpublish');
-        Route::patch('{propertyReview}/verify', [PropertyReviewController::class, 'verify'])->name('verify');
-        Route::patch('{propertyReview}/unverify', [PropertyReviewController::class, 'unverify'])->name('unverify');
-        Route::patch('{propertyReview}/toggle-publish', [PropertyReviewController::class, 'togglePublish'])->name('toggle-publish');
-        Route::patch('{propertyReview}/toggle-verification', [PropertyReviewController::class, 'toggleVerification'])->name('toggle-verification');
-        Route::post('{propertyReview}/like', [PropertyReviewController::class, 'like'])->name('like');
-        Route::delete('{propertyReview}/like', [PropertyReviewController::class, 'unlike'])->name('unlike');
-    });
-
-    Route::get('reviews', [PropertyReviewController::class, 'propertyReviews'])->name('properties.reviews.index');
-    Route::get('reviews/my-review', [PropertyReviewController::class, 'myReview'])->name('properties.reviews.my-review');
-    Route::get('reviews/summary', [PropertyReviewController::class, 'summary'])->name('properties.reviews.summary');
-    Route::post('reviews', [PropertyReviewController::class, 'store'])->name('properties.reviews.store');
-
-    /*
-|--------------------------------------------------------------------------
-| PROPERTY FAVORITES
-|--------------------------------------------------------------------------
-*/
-Route::prefix('property-favorites')->name('property-favorites.')->group(function () {
-        Route::get('my',[ PropertyFavoriteController::class,'myFavorites'])->name('my');
-        Route::get('status/{propertyId}',[ PropertyFavoriteController::class,'status' ])->whereNumber('propertyId')->name('status');
-        Route::post( 'toggle/{propertyId}', [ PropertyFavoriteController::class,'toggle'])->whereNumber('propertyId')->name('toggle');
-        Route::get( '/',[  PropertyFavoriteController::class, 'index'])->name('index');
-        Route::post('/',[PropertyFavoriteController::class,'store'])->name('store');
-        Route::get('{favorite}',[ PropertyFavoriteController::class,'show'])->whereNumber('favorite')->name('show');
-        Route::put('{favorite}',[PropertyFavoriteController::class,'update'])->whereNumber('favorite')->name('update');
-        Route::patch('{favorite}',[ PropertyFavoriteController::class,'update'])->whereNumber('favorite')->name('patch');
-        Route::delete('{favorite}',[  PropertyFavoriteController::class,'destroy'])->whereNumber('favorite')->name('destroy');
-    });
+    }
 
 
 
-    /*
-    |--------------------------------------------------------------------------
-    | MASTER DATA
-    |--------------------------------------------------------------------------
-    */
-    Route::apiResource('amenities', AmenityController::class);
-    Route::apiResource('property-categories', PropertyCategoryController::class);
-    Route::apiResource('property-types', PropertyTypeController::class);
-    Route::apiResource('property-features', PropertyFeatureController::class);
-    Route::apiResource('units', UnitController::class);
 
-        /*
-    |--------------------------------------------------------------------------
-    | ADMIN ROUTES
-    |--------------------------------------------------------------------------
-    */
-    Route::middleware('role:super-admin|admin')->group(function () {
 
-        /*
-        |--------------------------------------------------------------------------
-        | USERS
-        |--------------------------------------------------------------------------
-        */
-        Route::apiResource('users', UserController::class);
+    /**
+     * --------------------------------------------------------------------------
+     * Display the specified property favorite.
+     * --------------------------------------------------------------------------
+     */
+    public function show(
+        PropertyFavorite $favorite
+    ): JsonResponse {
 
-        /*
-        |--------------------------------------------------------------------------
-        | RBAC
-        |--------------------------------------------------------------------------
-        */
-        Route::prefix('rbac')->name('rbac.')->group(function () {
+        try {
 
-            /*
-            |--------------------------------------------------------------------------
-            | ROLES
-            |--------------------------------------------------------------------------
-            */
-            Route::apiResource('roles', RoleController::class);
+            return ApiResponse::success(
+                new PropertyFavoriteResource($favorite),
+                'Property favorite retrieved successfully.'
+            );
 
-            /*
-            |--------------------------------------------------------------------------
-            | ROLE PERMISSIONS
-            |--------------------------------------------------------------------------
-            */
-            Route::get(
-                'roles/{role}/permissions',
-                [RoleController::class, 'getPermissions']
-            )->name('roles.permissions');
+        } catch (Exception $e) {
 
-            Route::post(
-                'roles/{role}/permissions',
-                [RoleController::class, 'assignPermissions']
-            )->name('roles.assign-permissions');
+            return ApiResponse::serverError(
+                'Failed to retrieve property favorite.',
+                $e->getMessage()
+            );
 
-            /*
-            |--------------------------------------------------------------------------
-            | PERMISSIONS
-            |--------------------------------------------------------------------------
-            */
-            Route::apiResource('permissions', PermissionController::class);
-        });
-    });
-});
+        }
 
-    
+    }
+
+
+
+
+
+    /**
+     * --------------------------------------------------------------------------
+     * Update the specified property favorite.
+     * --------------------------------------------------------------------------
+     */
+    public function update(
+        UpdatePropertyFavoriteRequest $request,
+        PropertyFavorite $favorite
+    ): JsonResponse {
+
+        try {
+
+            $this->favoriteService->update(
+                $favorite,
+                $request->validated()
+            );
+
+            $favorite->refresh();
+
+            return ApiResponse::updated(
+                new PropertyFavoriteResource($favorite),
+                'Property favorite updated successfully.'
+            );
+
+        } catch (Exception $e) {
+
+            return ApiResponse::serverError(
+                'Failed to update property favorite.',
+                $e->getMessage()
+            );
+
+        }
+
+    }
+        /**
+     * --------------------------------------------------------------------------
+     * Remove the specified property favorite.
+     * --------------------------------------------------------------------------
+     */
+    public function destroy(
+        PropertyFavorite $favorite
+    ): JsonResponse {
+
+        try {
+
+            $this->favoriteService->delete($favorite);
+
+            return ApiResponse::deleted(
+                null,
+                'Property favorite deleted successfully.'
+            );
+
+        } catch (Exception $e) {
+
+            return ApiResponse::serverError(
+                'Failed to delete property favorite.',
+                $e->getMessage()
+            );
+
+        }
+
+    }
+    /**
+     * --------------------------------------------------------------------------
+     * Toggle property favorite.
+     * --------------------------------------------------------------------------
+     */
+    public function toggle(
+        Request $request,
+        int $propertyId
+    ): JsonResponse {
+
+        try {
+
+            $result = $this->favoriteService->toggle(
+                userId: auth()->id(),
+                propertyId: $propertyId,
+                extra: [
+                    'notes' => $request->input('notes'),
+                ]
+            );
+
+            return ApiResponse::success(
+                [
+                    'action' => $result['action'],
+                    'favorite' => $result['favorite']
+                        ? new PropertyFavoriteResource($result['favorite'])
+                        : null,
+                ],
+                $result['action'] === 'added'
+                    ? 'Property added to favorites successfully.'
+                    : 'Property removed from favorites successfully.'
+            );
+
+        } catch (Exception $e) {
+
+            return ApiResponse::serverError(
+                'Failed to toggle property favorite.',
+                $e->getMessage()
+            );
+
+        }
+
+    }
+        /**
+     * --------------------------------------------------------------------------
+     * Check favorite status.
+     * --------------------------------------------------------------------------
+     */
+    public function status(
+        int $propertyId
+    ): JsonResponse {
+
+        try {
+
+            $isFavorite = $this->favoriteService->checkStatus(
+                auth()->id(),
+                $propertyId
+            );
+
+            return ApiResponse::success(
+                [
+                    'property_id' => $propertyId,
+                    'is_favorite' => $isFavorite,
+                ],
+                'Favorite status retrieved successfully.'
+            );
+
+        } catch (Exception $e) {
+
+            return ApiResponse::serverError(
+                'Failed to retrieve favorite status.',
+                $e->getMessage()
+            );
+
+        }
+
+    }
+
+
+
+
+
+    /**
+     * --------------------------------------------------------------------------
+     * Get authenticated user's favorites.
+     * --------------------------------------------------------------------------
+     */
+    public function myFavorites(
+        Request $request
+    ): JsonResponse {
+
+        try {
+
+            $favorites = $this->favoriteService->userFavorites(
+                auth()->id(),
+                (int) $request->input('per_page', 15)
+            );
+
+            $favorites->setCollection(
+                PropertyFavoriteResource::collection(
+                    $favorites->getCollection()
+                )->collection
+            );
+
+            return ApiResponse::paginated(
+                $favorites,
+                'My favorite properties retrieved successfully.'
+            );
+
+        } catch (Exception $e) {
+
+            return ApiResponse::serverError(
+                'Failed to retrieve favorite properties.',
+                $e->getMessage()
+            );
+
+        }
+
+    }
+
+}
