@@ -114,11 +114,11 @@ const CreatePropertyFavorite = () => {
       setLoading(false);
     }
   };
-    /*
-  |--------------------------------------------------------------------------
-  | HANDLE INPUT CHANGE
-  |--------------------------------------------------------------------------
-  */
+  /*
+|--------------------------------------------------------------------------
+| HANDLE INPUT CHANGE
+|--------------------------------------------------------------------------
+*/
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -279,7 +279,7 @@ const CreatePropertyFavorite = () => {
         >
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
-                        {/* ================= USER ================= */}
+            {/* ================= USER ================= */}
 
             <div>
               <label className="block text-sm font-medium mb-2">
@@ -290,11 +290,10 @@ const CreatePropertyFavorite = () => {
                 name="user_id"
                 value={form.user_id}
                 onChange={handleChange}
-                className={`w-full rounded-xl border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500 ${
-                  errors.user_id
+                className={`w-full rounded-xl border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500 ${errors.user_id
                     ? "border-red-500"
                     : "border-gray-300"
-                }`}
+                  }`}
               >
                 <option value="">Select User</option>
 
@@ -327,11 +326,10 @@ const CreatePropertyFavorite = () => {
                 name="property_id"
                 value={form.property_id}
                 onChange={handleChange}
-                className={`w-full rounded-xl border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500 ${
-                  errors.property_id
+                className={`w-full rounded-xl border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500 ${errors.property_id
                     ? "border-red-500"
                     : "border-gray-300"
-                }`}
+                  }`}
               >
                 <option value="">Select Property</option>
 
@@ -403,7 +401,7 @@ const CreatePropertyFavorite = () => {
                 ))}
               </select>
             </div>
-                        {/* ================= NOTES ================= */}
+            {/* ================= NOTES ================= */}
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-2">
