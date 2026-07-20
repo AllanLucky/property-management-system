@@ -122,6 +122,9 @@ import PropertyReviewReports from "../modules/super-admin/PropertyReview/Propert
 import PropertyVisitList from "../modules/super-admin/propertyVisits/PropertyVistList";
 import PropertyVisitCreate from "../modules/super-admin/propertyVisits/PropertyVisitCreate";
 import PropertyVisitShow from "../modules/super-admin/propertyVisits/PropertyVisitShow";
+import PropertyFavoriteList from "../modules/super-admin/propertyFavorite/PropertyFavoriteList";
+import CreatePropertyFavorite from "../modules/super-admin/propertyFavorite/CreatePropertyFavorite";
+import EditPropertyFavorite from "../modules/super-admin/propertyFavorite/EditPropertyFavorite";
 
 
 /*
@@ -554,7 +557,7 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      * <Route
+       <Route
         path="property-visits/create"
         element={
           <PermissionGuard permission="property-visits.create">
@@ -568,6 +571,35 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="property-visits.view">
             <PropertyVisitShow />
+          </PermissionGuard>
+        }
+      />
+
+      {/* PROPERTY FAVORITES */}
+
+      <Route
+        path="property-favorites"
+        element={
+          <PermissionGuard permission="property-favorites.view">
+            <PropertyFavoriteList />
+          </PermissionGuard>
+        }
+      />
+
+       <Route
+        path="property-favorites/create"
+        element={
+          <PermissionGuard permission="property-favorites.create">
+            <CreatePropertyFavorite />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="property-favorites/edit/:id"
+        element={
+          <PermissionGuard permission="property-favorites.update">
+            <EditPropertyFavorite />
           </PermissionGuard>
         }
       />
