@@ -60,6 +60,7 @@ import PropertyTypeCreate from "../modules/super-admin/propertyTypes/PropertyTyp
 import PropertyTypeEdit from "../modules/super-admin/propertyTypes/PropertyTypeEdit";
 import PropertyTypeShow from "../modules/super-admin/propertyTypes/PropertyTypeShow";
 
+
 /*
 |--------------------------------------------------------------------------
 | PROPERTY FEATURES
@@ -125,7 +126,7 @@ import PropertyVisitShow from "../modules/super-admin/propertyVisits/PropertyVis
 import PropertyFavoriteList from "../modules/super-admin/propertyFavorite/PropertyFavoriteList";
 import CreatePropertyFavorite from "../modules/super-admin/propertyFavorite/CreatePropertyFavorite";
 import EditPropertyFavorite from "../modules/super-admin/propertyFavorite/EditPropertyFavorite";
-
+import { PropertyAnalyticsList } from "../modules/super-admin/property-analytics";
 
 /*
 |--------------------------------------------------------------------------
@@ -557,7 +558,7 @@ const SuperAdminRoutes = () => {
         }
       />
 
-       <Route
+      <Route
         path="property-visits/create"
         element={
           <PermissionGuard permission="property-visits.create">
@@ -586,7 +587,7 @@ const SuperAdminRoutes = () => {
         }
       />
 
-       <Route
+      <Route
         path="property-favorites/create"
         element={
           <PermissionGuard permission="property-favorites.create">
@@ -600,6 +601,16 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="property-favorites.update">
             <EditPropertyFavorite />
+          </PermissionGuard>
+        }
+      />
+
+      {/* PROPERTY ANALITICS */}
+      <Route
+        path="property-analytics"
+        element={
+          <PermissionGuard permission="property-analytics.view">
+            <PropertyAnalyticsList />
           </PermissionGuard>
         }
       />
