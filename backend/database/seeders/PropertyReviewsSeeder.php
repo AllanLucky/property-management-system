@@ -61,24 +61,14 @@ class PropertyReviewsSeeder extends Seeder
                 'I would definitely choose this property again.',
             ];
 
-            $usedReviews = [];
-
             foreach ($properties as $propertyId) {
-
                 // Random number of reviews per property
                 $reviewsCount = rand(5, 25);
 
                 shuffle($users);
-
                 $reviewUsers = array_slice($users, 0, min($reviewsCount, count($users)));
 
                 foreach ($reviewUsers as $userId) {
-
-                    // Extra safety against duplicates
-                    if (isset($usedReviews[$propertyId][$userId])) {
-                        continue;
-                    }
-
                     $rating = fake()->numberBetween(3, 5);
 
                     // Occasionally generate lower ratings
@@ -86,65 +76,27 @@ class PropertyReviewsSeeder extends Seeder
                         $rating = fake()->numberBetween(1, 2);
                     }
 
-                    PropertyReview::create([
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | RELATIONSHIPS
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'property_id' => $propertyId,
-                        'user_id' => $userId,
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | REVIEW
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'rating' => $rating,
-                        'title' => fake()->randomElement($titles),
-                        'comment' => fake()->randomElement($comments),
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | FLAGS
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'would_recommend' => $rating >= 4,
-
-                        'is_verified' => fake()->boolean(80),
-
-                        'is_published' => true,
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | ENGAGEMENT
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'likes_count' => fake()->numberBetween(0, 150),
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | DATES
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'published_at' => now()->subDays(rand(1, 365)),
-
-                        'edited_at' => fake()->boolean(25)
-                            ? now()->subDays(rand(1, 180))
-                            : null,
-
-                        'created_at' => now()->subDays(rand(1, 365)),
-
-                        'updated_at' => now(),
-                    ]);
-
-                    $usedReviews[$propertyId][$userId] = true;
+                    PropertyReview::updateOrCreate(
+                        [
+                            'property_id' => $propertyId,
+                            'user_id'     => $userId,
+                        ],
+                        [
+                            'rating'          => $rating,
+                            'title'           => fake()->randomElement($titles),
+                            'comment'         => fake()->randomElement($comments),
+                            'would_recommend' => $rating >= 4,
+                            'is_verified'     => fake()->boolean(80),
+                            'is_published'    => true,
+                            'likes_count'     => fake()->numberBetween(0, 150),
+                            'published_at'    => now()->subDays(rand(1, 365)),
+                            'edited_at'       => fake()->boolean(25)
+                                ? now()->subDays(rand(1, 180))
+                                : null,
+                            'created_at'      => now()->subDays(rand(1, 365)),
+                            'updated_at'      => now(),
+                        ]
+                    );
                 }
             }
 
