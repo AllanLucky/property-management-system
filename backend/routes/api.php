@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\Amenity\AmenityController;
 use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
 use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
+use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -255,6 +256,24 @@ Route::prefix('property-favorites')->name('property-favorites.')->group(function
     });
 
 
+   /*
+   |--------------------------------------------------------------------------
+   | PROPERTY FAVORITES
+   |--------------------------------------------------------------------------
+   */
+
+   Route::prefix('property-analytics')->group(function () {
+     Route::get('/', [PropertyAnalyticsController::class, 'index'])->name('property-analytics.index');
+     Route::get('/{id}', [PropertyAnalyticsController::class, 'show'])->name('property-analytics.show');
+     Route::post('/', [PropertyAnalyticsController::class, 'store'])->name('property-analytics.store');
+     Route::put('/{id}', [PropertyAnalyticsController::class, 'update'])->name('property-analytics.update');
+     Route::patch('/{id}', [PropertyAnalyticsController::class, 'update'])->name('property-analytics.patch');
+     Route::delete('/{id}', [PropertyAnalyticsController::class, 'destroy'])->name('property-analytics.destroy');
+
+  });
+
+
+
 
     /*
     |--------------------------------------------------------------------------
@@ -265,6 +284,7 @@ Route::prefix('property-favorites')->name('property-favorites.')->group(function
     Route::apiResource('property-categories', PropertyCategoryController::class);
     Route::apiResource('property-types', PropertyTypeController::class);
     Route::apiResource('property-features', PropertyFeatureController::class);
+    Route::apiResource('property-analytics', PropertyAnalyticsController::class);
     Route::apiResource('units', UnitController::class);
 
         /*

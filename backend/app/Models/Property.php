@@ -12,6 +12,7 @@ use App\Models\PropertyFeature;
 use App\Models\PropertyCategory;
 use App\Models\PropertyFavorite;
 use App\Models\PropertyVisit;
+use App\Models\PropertyAnalytics;
 
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
@@ -460,6 +461,25 @@ class Property extends Model
     {
         return $this->hasMany(PropertyFavorite::class);
     }
+
+
+    /**
+    * Property analytics snapshots.
+    */
+
+    public function analytics()
+    {
+        return $this->hasMany(PropertyAnalytics::class);
+    }
+
+    /**
+    * Latest analytics snapshot.
+    */
+    public function latestAnalytics()
+    {
+         return $this->hasOne(PropertyAnalytics::class)->latestOfMany('snapshot_date');
+    }
+
 
     /**
      * Users who favorited this property.
