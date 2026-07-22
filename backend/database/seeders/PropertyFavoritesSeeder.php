@@ -7,7 +7,7 @@ use App\Models\PropertyFavorite;
 use App\Models\User;
 use App\Models\Property;
 
-class PropertyFavoriteSeeder extends Seeder
+class PropertyFavoritesSeeder extends Seeder
 {
     /**
      * Run the database seeds.

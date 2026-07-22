@@ -23,13 +23,8 @@ class Apartment extends Model
     | EAGER LOADING
     |--------------------------------------------------------------------------
     */
-    protected $with = [
-        'property',
-    ];
-
-    protected $withCount = [
-        'units',
-    ];
+    protected $with = ['property'];
+    protected $withCount = ['units'];
 
     /*
     |--------------------------------------------------------------------------
@@ -63,18 +58,16 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     */
     protected $casts = [
-        'property_id' => 'integer',
-        'floor' => 'integer',
-        'total_floors' => 'integer',
-        'total_units' => 'integer',
-
-        'has_elevator' => 'boolean',
+        'property_id'          => 'integer',
+        'floor'                => 'integer',
+        'total_floors'         => 'integer',
+        'total_units'          => 'integer',
+        'has_elevator'         => 'boolean',
         'has_backup_generator' => 'boolean',
-        'has_security' => 'boolean',
-        'has_parking' => 'boolean',
-
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
+        'has_security'         => 'boolean',
+        'has_parking'          => 'boolean',
+        'created_at'           => 'datetime',
+        'updated_at'           => 'datetime',
     ];
 
     /*
@@ -98,8 +91,8 @@ class Apartment extends Model
     | STATUS CONSTANTS
     |--------------------------------------------------------------------------
     */
-    public const STATUS_ACTIVE = 'active';
-    public const STATUS_INACTIVE = 'inactive';
+    public const STATUS_ACTIVE     = 'active';
+    public const STATUS_INACTIVE   = 'inactive';
     public const STATUS_MAINTENANCE = 'maintenance';
 
     /*
@@ -112,23 +105,17 @@ class Apartment extends Model
         parent::boot();
 
         static::creating(function ($apartment) {
-
             if (empty($apartment->slug)) {
                 $apartment->slug = static::generateUniqueSlug($apartment->name);
             }
-
             if (empty($apartment->status)) {
                 $apartment->status = self::STATUS_ACTIVE;
             }
         });
 
         static::updating(function ($apartment) {
-
             if ($apartment->isDirty('name')) {
-                $apartment->slug = static::generateUniqueSlug(
-                    $apartment->name,
-                    $apartment->id
-                );
+                $apartment->slug = static::generateUniqueSlug($apartment->name, $apartment->id);
             }
         });
     }
@@ -160,7 +147,7 @@ class Apartment extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | ACCESSORS (FIXED IMAGE BUG)
+    | ACCESSORS
     |--------------------------------------------------------------------------
     */
     public function getThumbnailUrlAttribute(): string
@@ -169,10 +156,7 @@ class Apartment extends Model
             return asset('images/default-apartment.jpg');
         }
 
-        if (
-            str_starts_with($this->thumbnail, 'http://') ||
-            str_starts_with($this->thumbnail, 'https://')
-        ) {
+        if (str_starts_with($this->thumbnail, 'http://') || str_starts_with($this->thumbnail, 'https://')) {
             return $this->thumbnail;
         }
 
@@ -182,10 +166,10 @@ class Apartment extends Model
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
-            self::STATUS_ACTIVE => 'Active',
-            self::STATUS_INACTIVE => 'Inactive',
+            self::STATUS_ACTIVE     => 'Active',
+            self::STATUS_INACTIVE   => 'Inactive',
             self::STATUS_MAINTENANCE => 'Maintenance',
-            default => 'Unknown',
+            default                 => 'Unknown',
         };
     }
 
@@ -196,9 +180,7 @@ class Apartment extends Model
 
     public function getFullNameAttribute(): string
     {
-        return collect([$this->block, $this->name])
-            ->filter()
-            ->implode(' - ');
+        return collect([$this->block, $this->name])->filter()->implode(' - ');
     }
 
     public function getOccupiedUnitsCountAttribute(): int
@@ -219,12 +201,7 @@ class Apartment extends Model
     public function getOccupancyRateAttribute(): float
     {
         $total = $this->units()->count();
-
-        if ($total === 0) {
-            return 0;
-        }
-
-        return round(($this->occupied_units_count / $total) * 100, 2);
+        return $total === 0 ? 0 : round(($this->occupied_units_count / $total) * 100, 2);
     }
 
     /*
@@ -255,14 +232,12 @@ class Apartment extends Model
     protected static function generateUniqueSlug(string $name, ?int $ignoreId = null): string
     {
         $baseSlug = Str::slug($name);
-        $slug = $baseSlug;
-        $count = 1;
+        $slug     = $baseSlug;
+        $count    = 1;
 
         while (
             static::where('slug', $slug)
-                ->when($ignoreId, fn ($query) =>
-                    $query->where('id', '!=', $ignoreId)
-                )
+                ->when($ignoreId, fn($query) => $query->where('id', '!=', $ignoreId))
                 ->exists()
         ) {
             $slug = $baseSlug . '-' . $count++;

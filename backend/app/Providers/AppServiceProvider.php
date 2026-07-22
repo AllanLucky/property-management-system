@@ -68,6 +68,8 @@ use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
 use App\Repositories\Eloquent\PropertyFavoriteRepository;
 use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
 use App\Repositories\Eloquent\PropertyVisitRepository;
+use App\Repositories\Interfaces\PropertyAnalyticsRepositoryInterface;
+use App\Repositories\Eloquent\PropertyAnalyticsRepository;
 
 
 /*
@@ -213,6 +215,11 @@ class AppServiceProvider extends ServiceProvider
          $this->app->bind(
             PropertyVisitRepositoryInterface::class,
             PropertyVisitRepository::class
+        );
+
+        $this->app->bind(
+            PropertyAnalyticsRepositoryInterface::class,
+            PropertyAnalyticsRepository::class
         );
 
         /*
