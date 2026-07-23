@@ -46,6 +46,7 @@ use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
 use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
 use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
+use App\Http\Controllers\Api\Apartment\ApartmentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -169,35 +170,25 @@ Route::middleware('auth:sanctum')->group(function () {
                 
                
         });
-
-               
-                
-                
-                
-                
-                
-               
-
-        
-        
-
-               
-              
-                
-                
-               
-                
-                
-        
-       
-        
-       
-        
-       
-        
-        
     });
 
+
+    /*
+    |--------------------------------------------------------------------------
+    |  APARTMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('apartments')->name('apartments.')->group(function () {
+         Route::get('/', [ApartmentController::class, 'index'])->name('index');
+         Route::post('/', [ApartmentController::class, 'store'])->name('store');
+         Route::get('{apartment}', [ApartmentController::class, 'show'])->whereNumber('apartment')->name('show');
+         Route::put('{apartment}', [ApartmentController::class, 'update'])->whereNumber('apartment')->name('update');
+         Route::patch('{apartment}', [ApartmentController::class, 'update'])->whereNumber('apartment')->name('patch');
+         Route::delete('{apartment}', [ApartmentController::class, 'destroy'])->whereNumber('apartment')->name('destroy');
+
+     });
+        
     /*
     |--------------------------------------------------------------------------
     | PROPERTY VISITS
