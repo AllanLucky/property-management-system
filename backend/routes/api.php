@@ -44,6 +44,8 @@ use App\Http\Controllers\Api\PropertyAmenity\PropertyAmenityController;
 use App\Http\Controllers\Api\Amenity\AmenityController;
 use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
+use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
+use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -137,13 +139,63 @@ Route::middleware('auth:sanctum')->group(function () {
     | PROPERTIES
     |--------------------------------------------------------------------------
     */
-    Route::prefix('properties')->name('properties.')->group(function () {
-        Route::get('/', [PropertyController::class, 'index'])->name('index');
-        Route::post('/', [PropertyController::class, 'store'])->name('store');
-        Route::get('{property}', [PropertyController::class, 'show'])->name('show');
-        Route::put('{id}', [PropertyController::class, 'update'])->whereNumber('id')->name('update');
-        Route::patch('{id}', [PropertyController::class, 'update'])->whereNumber('id')->name('patch');
-        Route::delete('{id}', [PropertyController::class, 'destroy'])->whereNumber('id')->name('destroy');
+   Route::prefix('properties')->name('properties.')->group(function () {
+       // PROPERTY CRUD
+       Route::get('/', [PropertyController::class, 'index'])->name('index');
+       Route::post('/', [PropertyController::class, 'store'])->name('store');
+       Route::get('{property}', [PropertyController::class, 'show'])->whereNumber('property')->name('show');
+       Route::put('{id}', [PropertyController::class, 'update'])->whereNumber('id')->name('update');
+       Route::patch('{id}', [PropertyController::class, 'update'])->whereNumber('id')->name('patch');
+       Route::delete('{id}', [PropertyController::class, 'destroy'])->whereNumber('id')->name('destroy');
+
+       // PROPERTY FEATURES
+       Route::prefix('{property}/features')->name('features.')->whereNumber('property') ->group(function () {
+           Route::get('/', [PropertyFeatureAssignmentController::class, 'index'])->name('index');
+           Route::post('{feature}', [PropertyFeatureAssignmentController::class, 'attach'])->whereNumber('feature')->name('attach');
+           Route::put('{feature}', [PropertyFeatureAssignmentController::class, 'update'])->whereNumber('feature')->name('update');
+           Route::patch('{feature}', [PropertyFeatureAssignmentController::class, 'update'])->whereNumber('feature')->name('patch');
+           Route::delete('{feature}', [PropertyFeatureAssignmentController::class, 'detach'])->whereNumber('feature')->name('detach');
+
+        });
+
+        //  PROPERTY AMENITIES
+
+        Route::prefix('{property}/amenities')->name('amenities.')->whereNumber('property')->group(function () {
+            Route::get('/', [PropertyAmenityController::class, 'index'])->name('index');
+            Route::post('{amenity}', [PropertyAmenityController::class, 'attach'])->whereNumber('amenity')->name('attach');
+            Route::put('{amenity}', [PropertyAmenityController::class, 'update'])->whereNumber('amenity')->name('update');
+            Route::patch('{amenity}', [PropertyAmenityController::class, 'update'])->whereNumber('amenity')->name('patch');
+            Route::delete('{amenity}', [PropertyAmenityController::class, 'detach'])->whereNumber('amenity') ->name('detach');
+                
+               
+        });
+
+               
+                
+                
+                
+                
+                
+               
+
+        
+        
+
+               
+              
+                
+                
+               
+                
+                
+        
+       
+        
+       
+        
+       
+        
+        
     });
 
     /*
@@ -204,6 +256,24 @@ Route::prefix('property-favorites')->name('property-favorites.')->group(function
     });
 
 
+   /*
+   |--------------------------------------------------------------------------
+   | PROPERTY FAVORITES
+   |--------------------------------------------------------------------------
+   */
+
+   Route::prefix('property-analytics')->group(function () {
+     Route::get('/', [PropertyAnalyticsController::class, 'index'])->name('property-analytics.index');
+     Route::get('/{id}', [PropertyAnalyticsController::class, 'show'])->name('property-analytics.show');
+     Route::post('/', [PropertyAnalyticsController::class, 'store'])->name('property-analytics.store');
+     Route::put('/{id}', [PropertyAnalyticsController::class, 'update'])->name('property-analytics.update');
+     Route::patch('/{id}', [PropertyAnalyticsController::class, 'update'])->name('property-analytics.patch');
+     Route::delete('/{id}', [PropertyAnalyticsController::class, 'destroy'])->name('property-analytics.destroy');
+
+  });
+
+
+
 
     /*
     |--------------------------------------------------------------------------
@@ -214,6 +284,7 @@ Route::prefix('property-favorites')->name('property-favorites.')->group(function
     Route::apiResource('property-categories', PropertyCategoryController::class);
     Route::apiResource('property-types', PropertyTypeController::class);
     Route::apiResource('property-features', PropertyFeatureController::class);
+    Route::apiResource('property-analytics', PropertyAnalyticsController::class);
     Route::apiResource('units', UnitController::class);
 
         /*
