@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Services\Appartment;
+namespace App\Services;
 
-use App\Models\Appartment;
+use App\Models\Apartment;
 use App\Traits\HandlesImages;
 use Illuminate\Support\Facades\DB;
 
-class AppartmentService
+class ApartmentService
 {
     use HandlesImages;
 
@@ -17,7 +17,7 @@ class AppartmentService
     */
     public function getAll($request)
     {
-        return Appartment::query()
+        return Apartment::query()
             ->latest()
             ->paginate(10);
     }
@@ -51,7 +51,7 @@ class AppartmentService
                 }
             }
 
-            return Appartment::create($data);
+            return Apartment::create($data);
         });
     }
 
@@ -62,7 +62,7 @@ class AppartmentService
     */
     public function findById($id)
     {
-        return Appartment::findOrFail($id);
+        return Apartment::findOrFail($id);
     }
 
     /*
@@ -74,7 +74,7 @@ class AppartmentService
     {
         return DB::transaction(function () use ($id, $data) {
 
-            $apartment = Appartment::findOrFail($id);
+            $apartment = Apartment::findOrFail($id);
 
             /*
             |------------------------------------------
@@ -112,7 +112,7 @@ class AppartmentService
     {
         return DB::transaction(function () use ($id) {
 
-            $apartment = Appartment::findOrFail($id);
+            $apartment = Apartment::findOrFail($id);
 
             /*
             |------------------------------------------
