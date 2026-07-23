@@ -1,56 +1,61 @@
 <?php
 
-namespace App\Http\Controllers\Api\Appartment;
-
-use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+namespace App\Http\Controllers\Api\Apartment;
 
 use App\Helpers\ApiResponse;
-use App\Http\Requests\Appartment\StoreApartmentRequests;
-use App\Http\Requests\Appartment\UpdateApartmentRequest;
-use App\Http\Resources\AppartmentResource;
-use App\Services\Appartment\AppartmentService;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Apartment\StoreApartmentRequest;
+use App\Http\Requests\Apartment\UpdateApartmentRequest;
+use App\Http\Resources\ApartmentResource;
+use App\Services\ApartmentService;
+use Illuminate\Http\Request;
 
-class AppartmentController extends Controller
+class ApartmentController extends Controller
 {
-    protected AppartmentService $service;
+    /**
+     * Apartment Service
+     */
+    protected ApartmentService $service;
 
-    public function __construct(AppartmentService $service)
+    /**
+     * Constructor
+     */
+    public function __construct(ApartmentService $service)
     {
         $this->service = $service;
 
         /*
         |--------------------------------------------------------------------------
-        | MIDDLEWARE PROTECTION
+        | Middleware
         |--------------------------------------------------------------------------
         */
 
-        // Must be logged in
         $this->middleware('auth:sanctum');
-
-        // Optional RBAC protection (adjust permissions to your system)
         $this->middleware('permission:apartments.view')->only(['index', 'show']);
         $this->middleware('permission:apartments.create')->only(['store']);
         $this->middleware('permission:apartments.edit')->only(['update']);
         $this->middleware('permission:apartments.delete')->only(['destroy']);
+           
     }
 
     /*
     |--------------------------------------------------------------------------
-    | LIST APARTMENTS
+    | List Apartments
     |--------------------------------------------------------------------------
     */
     public function index(Request $request)
     {
         try {
-            $apartments = $this->service->getAll($request);
+
+            $apartments = $this->service->getAll($request->all());
 
             return ApiResponse::success(
-                AppartmentResource::collection($apartments),
+                ApartmentResource::collection($apartments),
                 'Apartments fetched successfully'
             );
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+
             return ApiResponse::serverError(
                 'Failed to fetch apartments',
                 $e->getMessage()
@@ -60,21 +65,25 @@ class AppartmentController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | CREATE APARTMENT
+    | Store Apartment
     |--------------------------------------------------------------------------
     */
-    public function store(StoreApartmentRequests $request)
+    public function store(StoreApartmentRequest $request)
     {
         try {
-            $apartment = $this->service->create($request->validated());
+
+            $apartment = $this->service->create(
+                $request->validated()
+            );
 
             return ApiResponse::success(
-                new AppartmentResource($apartment),
+                new ApartmentResource($apartment),
                 'Apartment created successfully',
                 201
             );
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+
             return ApiResponse::serverError(
                 'Failed to create apartment',
                 $e->getMessage()
@@ -84,40 +93,49 @@ class AppartmentController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | SHOW APARTMENT
+    | Show Apartment
     |--------------------------------------------------------------------------
     */
     public function show($id)
     {
         try {
+
             $apartment = $this->service->findById($id);
 
             return ApiResponse::success(
-                new AppartmentResource($apartment),
+                new ApartmentResource($apartment),
                 'Apartment fetched successfully'
             );
 
-        } catch (\Exception $e) {
-            return ApiResponse::notFound('Apartment not found');
+        } catch (\Throwable $e) {
+
+            return ApiResponse::notFound(
+                'Apartment not found'
+            );
         }
     }
 
     /*
     |--------------------------------------------------------------------------
-    | UPDATE APARTMENT
+    | Update Apartment
     |--------------------------------------------------------------------------
     */
     public function update(UpdateApartmentRequest $request, $id)
     {
         try {
-            $apartment = $this->service->update($id, $request->validated());
+
+            $apartment = $this->service->update(
+                $id,
+                $request->validated()
+            );
 
             return ApiResponse::success(
-                new AppartmentResource($apartment),
+                new ApartmentResource($apartment),
                 'Apartment updated successfully'
             );
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+
             return ApiResponse::serverError(
                 'Failed to update apartment',
                 $e->getMessage()
@@ -127,12 +145,13 @@ class AppartmentController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | DELETE APARTMENT
+    | Delete Apartment
     |--------------------------------------------------------------------------
     */
     public function destroy($id)
     {
         try {
+
             $this->service->delete($id);
 
             return ApiResponse::success(
@@ -140,7 +159,8 @@ class AppartmentController extends Controller
                 'Apartment deleted successfully'
             );
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+
             return ApiResponse::serverError(
                 'Failed to delete apartment',
                 $e->getMessage()

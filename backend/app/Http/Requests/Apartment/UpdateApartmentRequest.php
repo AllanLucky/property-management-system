@@ -1,24 +1,26 @@
 <?php
 
-namespace App\Http\Requests\Appartment;
+namespace App\Http\Requests\Apartment;
 
+use App\Models\Apartment;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class UpdateApartmentRequest extends FormRequest
 {
     /**
-     * Authorize request
+     * Determine whether the user is authorized.
      */
     public function authorize(): bool
     {
-        // TODO: connect RBAC later (apartments.update)
+        // Replace with Policy or Permission later
         // return auth()->user()->can('apartments.update');
+
         return true;
     }
 
     /**
-     * Validation rules
+     * Validation Rules
      */
     public function rules(): array
     {
@@ -26,27 +28,66 @@ class UpdateApartmentRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | RELATIONSHIP
+            | PROPERTY
             |--------------------------------------------------------------------------
             */
-            'property_id' => ['sometimes', 'integer', 'exists:properties,id'],
+            'property_id' => [
+                'sometimes',
+                'integer',
+                'exists:properties,id',
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC INFO
+            | BASIC INFORMATION
             |--------------------------------------------------------------------------
             */
-            'name'        => ['sometimes', 'string', 'max:255'],
-            'slug'        => ['sometimes', 'string', 'max:255'],
-            'code'        => ['nullable', 'string', 'max:50'],
-            'description' => ['nullable', 'string'],
+            'name' => [
+                'sometimes',
+                'string',
+                'max:255',
+            ],
+
+            'slug' => [
+                'sometimes',
+                'string',
+                'max:255',
+                Rule::unique('apartments', 'slug')->ignore($this->route('apartment')),
+            ],
+
+            'description' => [
+                'nullable',
+                'string',
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | STRUCTURE (MATCH DB)
+            | BUILDING INFORMATION
             |--------------------------------------------------------------------------
             */
-            'total_floors' => ['nullable', 'integer', 'min:0'],
+            'block' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'floor' => [
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+
+            'total_floors' => [
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+
+            'total_units' => [
+                'nullable',
+                'integer',
+                'min:0',
+            ],
 
             /*
             |--------------------------------------------------------------------------
@@ -55,15 +96,40 @@ class UpdateApartmentRequest extends FormRequest
             */
             'status' => [
                 'nullable',
-                Rule::in(['active', 'inactive', 'maintenance']),
+                Rule::in(Apartment::STATUSES),
             ],
 
             /*
             |--------------------------------------------------------------------------
-            | MEDIA
+            | FEATURES
             |--------------------------------------------------------------------------
             */
-            'image' => [
+            'has_elevator' => [
+                'nullable',
+                'boolean',
+            ],
+
+            'has_backup_generator' => [
+                'nullable',
+                'boolean',
+            ],
+
+            'has_security' => [
+                'nullable',
+                'boolean',
+            ],
+
+            'has_parking' => [
+                'nullable',
+                'boolean',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | THUMBNAIL
+            |--------------------------------------------------------------------------
+            */
+            'thumbnail' => [
                 'nullable',
                 'image',
                 'mimes:jpg,jpeg,png,webp',
@@ -72,55 +138,91 @@ class UpdateApartmentRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | NOTES
+            | SEO
             |--------------------------------------------------------------------------
             */
-            'notes' => ['nullable', 'string'],
+            'meta_title' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'meta_description' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+
+            'meta_keywords' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
         ];
     }
 
     /**
-     * Custom messages
+     * Custom Messages
      */
     public function messages(): array
     {
         return [
 
-            'property_id.exists' => 'Selected property does not exist.',
+            'property_id.exists' => 'The selected property does not exist.',
 
-            'name.string' => 'Apartment name must be a valid string.',
-            'name.max'    => 'Apartment name must not exceed 255 characters.',
+            'name.max' => 'Apartment name may not exceed 255 characters.',
 
-            'slug.string' => 'Slug must be a valid string.',
-            'slug.max'    => 'Slug must not exceed 255 characters.',
+            'slug.unique' => 'This apartment slug already exists.',
 
-            'code.string' => 'Code must be a valid string.',
-            'code.max'    => 'Code must not exceed 50 characters.',
+            'block.max' => 'Block may not exceed 100 characters.',
+
+            'floor.integer' => 'Floor must be a valid number.',
+            'floor.min' => 'Floor cannot be negative.',
 
             'total_floors.integer' => 'Total floors must be a valid number.',
-            'total_floors.min'     => 'Total floors cannot be negative.',
+            'total_floors.min' => 'Total floors cannot be negative.',
 
-            'status.in' => 'Status must be active, inactive, or maintenance.',
+            'total_units.integer' => 'Total units must be a valid number.',
+            'total_units.min' => 'Total units cannot be negative.',
 
-            'image.image' => 'Uploaded file must be an image.',
-            'image.mimes' => 'Allowed formats: jpg, jpeg, png, webp.',
-            'image.max'   => 'Image must not exceed 5MB.',
+            'status.in' => 'Invalid apartment status.',
+
+            'thumbnail.image' => 'Thumbnail must be an image.',
+            'thumbnail.mimes' => 'Thumbnail must be a JPG, JPEG, PNG or WEBP image.',
+            'thumbnail.max' => 'Thumbnail may not be greater than 5 MB.',
         ];
     }
 
     /**
-     * Normalize input before validation
+     * Prepare data before validation.
      */
     protected function prepareForValidation(): void
     {
         $this->merge([
 
-            /*
-            |--------------------------------------------------------------------------
-            | SAFE DEFAULT STATUS HANDLING
-            |--------------------------------------------------------------------------
-            */
-            'status' => $this->status ?? null,
+            'has_elevator' => filter_var(
+                $this->has_elevator,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+
+            'has_backup_generator' => filter_var(
+                $this->has_backup_generator,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+
+            'has_security' => filter_var(
+                $this->has_security,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+
+            'has_parking' => filter_var(
+                $this->has_parking,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
         ]);
     }
 }
