@@ -127,6 +127,7 @@ import PropertyFavoriteList from "../modules/super-admin/propertyFavorite/Proper
 import CreatePropertyFavorite from "../modules/super-admin/propertyFavorite/CreatePropertyFavorite";
 import EditPropertyFavorite from "../modules/super-admin/propertyFavorite/EditPropertyFavorite";
 import { PropertyAnalyticsList } from "../modules/super-admin/property-analytics";
+import { ApartmentList } from "../modules/super-admin/apartments";
 
 /*
 |--------------------------------------------------------------------------
@@ -611,6 +612,17 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="property-analytics.view">
             <PropertyAnalyticsList />
+          </PermissionGuard>
+        }
+      />
+
+      
+      {/* PROPERTY APARTMENTS */}
+      <Route
+        path="apartments"
+        element={
+          <PermissionGuard permission="apartments.view">
+            <ApartmentList />
           </PermissionGuard>
         }
       />
