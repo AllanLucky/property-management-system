@@ -46,10 +46,6 @@ const ApartmentList = () => {
 
   const [search, setSearch] = useState("");
 
-  // Default table view
-  const [viewMode] = useState("table");
-
-
   const [currentPage, setCurrentPage] = useState(1);
 
 
@@ -67,7 +63,6 @@ const ApartmentList = () => {
 
 
 
-
   useEffect(() => {
 
     document.title = "Apartment Management";
@@ -80,7 +75,6 @@ const ApartmentList = () => {
 
   useEffect(() => {
 
-
     getApartments({
 
       page: currentPage,
@@ -89,10 +83,8 @@ const ApartmentList = () => {
 
 
   }, [
-
     currentPage,
     getApartments,
-
   ]);
 
 
@@ -110,12 +102,9 @@ const ApartmentList = () => {
 
 
   }, [
-
     currentPage,
     getApartments,
-
   ]);
-
 
 
 
@@ -156,11 +145,11 @@ const ApartmentList = () => {
 
 
 
-
   const resetFilters = () => {
 
 
     setSearch("");
+
 
     setFilters({
 
@@ -178,7 +167,6 @@ const ApartmentList = () => {
 
 
   };
-
 
 
 
@@ -205,21 +193,31 @@ const ApartmentList = () => {
     return apartments.filter((apartment) => {
 
 
+
       const property =
         apartment?.property || {};
 
 
 
+      const building =
+        apartment?.building || {};
+
+
+
+      const features =
+        apartment?.features || {};
+
+
+
+      const status =
+        apartment?.status?.value ||
+        apartment?.status ||
+        "";
+
+
+
       const keyword =
         search.toLowerCase();
-
-
-
-
-      const statusValue =
-        typeof apartment.status === "object"
-          ? apartment.status?.value
-          : apartment.status;
 
 
 
@@ -233,17 +231,26 @@ const ApartmentList = () => {
           ?.toLowerCase()
           .includes(keyword) ||
 
-        apartment?.block
+
+        building?.block
           ?.toLowerCase()
           .includes(keyword) ||
+
 
         apartment?.slug
           ?.toLowerCase()
           .includes(keyword) ||
 
+
         property?.title
           ?.toLowerCase()
+          .includes(keyword) ||
+
+
+        property?.property_code
+          ?.toLowerCase()
           .includes(keyword);
+
 
 
 
@@ -261,11 +268,15 @@ const ApartmentList = () => {
 
 
 
+
+
       const matchesStatus =
 
         !filters.status ||
 
-        statusValue === filters.status;
+        status === filters.status;
+
+
 
 
 
@@ -275,8 +286,11 @@ const ApartmentList = () => {
 
         !filters.elevator ||
 
-        Number(apartment.has_elevator)
+        Number(features?.has_elevator)
+
         === Number(filters.elevator);
+
+
 
 
 
@@ -286,8 +300,11 @@ const ApartmentList = () => {
 
         !filters.parking ||
 
-        Number(apartment.has_parking)
+        Number(features?.has_parking)
+
         === Number(filters.parking);
+
+
 
 
 
@@ -297,8 +314,11 @@ const ApartmentList = () => {
 
         !filters.security ||
 
-        Number(apartment.has_security)
+        Number(features?.has_security)
+
         === Number(filters.security);
+
+
 
 
 
@@ -308,8 +328,10 @@ const ApartmentList = () => {
 
         !filters.generator ||
 
-        Number(apartment.has_backup_generator)
+        Number(features?.has_backup_generator)
+
         === Number(filters.generator);
+
 
 
 
@@ -339,7 +361,7 @@ const ApartmentList = () => {
     filters,
 
   ]);
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Statistics
   |--------------------------------------------------------------------------
@@ -347,76 +369,120 @@ const ApartmentList = () => {
 
   const dashboardStats = useMemo(() => {
 
+
     return {
+
 
       totalApartments:
         filteredApartments.length,
 
 
+
       totalFloors:
         filteredApartments.reduce(
-          (sum, item) =>
+
+          (sum,item) =>
+
             sum +
-            Number(item?.total_floors || 0),
+
+            Number(
+              item?.counts?.floors || 0
+            ),
+
           0
+
         ),
+
 
 
       totalUnits:
         filteredApartments.reduce(
-          (sum, item) =>
+
+          (sum,item) =>
+
             sum +
+
             Number(
-              item?.units_count ??
-              item?.total_units ??
-              0
+              item?.counts?.units || 0
             ),
+
           0
+
         ),
 
 
+
+
       activeApartments:
-        filteredApartments.filter(item => {
+        filteredApartments.filter(
 
-          const status =
-            typeof item.status === "object"
-              ? item.status?.value
-              : item.status;
+          item =>
 
-          return status === "active";
+            (
+              item?.status?.value ||
+              item?.status
+            ) === "active"
 
-        }).length,
+        ).length,
+
+
+
 
 
       elevators:
         filteredApartments.filter(
-          item => item?.has_elevator
+
+          item =>
+            item?.features?.has_elevator
+
         ).length,
+
+
+
 
 
       parking:
         filteredApartments.filter(
-          item => item?.has_parking
+
+          item =>
+            item?.features?.has_parking
+
         ).length,
+
+
+
 
 
       security:
         filteredApartments.filter(
-          item => item?.has_security
+
+          item =>
+            item?.features?.has_security
+
         ).length,
+
+
+
 
 
       generators:
         filteredApartments.filter(
-          item => item?.has_backup_generator
+
+          item =>
+            item?.features?.has_backup_generator
+
         ).length,
+
 
     };
 
 
-  }, [
+  },[
     filteredApartments,
   ]);
+
+
+
 
 
 
@@ -428,56 +494,114 @@ const ApartmentList = () => {
   |--------------------------------------------------------------------------
   */
 
+
   const chartData = useMemo(() => {
 
 
     return filteredApartments
-      .slice(0, 10)
+
+      .slice(0,10)
+
       .map(apartment => ({
 
 
+
         name:
-          apartment?.block
-            ?.substring(0, 18) ||
+
+          apartment?.building?.block
+
+            ?.substring(0,18)
+
+          ||
+
           "Apartment",
 
 
+
+
+
         floors:
+
           Number(
-            apartment?.total_floors || 0
+            apartment?.counts?.floors || 0
           ),
+
+
+
 
 
         units:
+
           Number(
-            apartment?.units_count ??
-            apartment?.total_units ??
-            0
+            apartment?.counts?.units || 0
           ),
 
 
+
+
+
+        occupied:
+
+          Number(
+            apartment?.counts?.occupied_units || 0
+          ),
+
+
+
+
+
+        vacant:
+
+          Number(
+            apartment?.counts?.vacant_units || 0
+          ),
+
+
+
+
+
         elevator:
-          apartment?.has_elevator ? 1 : 0,
+
+          apartment?.features?.has_elevator
+            ? 1
+            : 0,
+
+
+
 
 
         parking:
-          apartment?.has_parking ? 1 : 0,
+
+          apartment?.features?.has_parking
+            ? 1
+            : 0,
+
+
+
 
 
         security:
-          apartment?.has_security ? 1 : 0,
+
+          apartment?.features?.has_security
+            ? 1
+            : 0,
+
+
+
 
 
         generator:
-          apartment?.has_backup_generator
+
+          apartment?.features?.has_backup_generator
             ? 1
             : 0,
+
 
 
       }));
 
 
-  }, [
+  },[
     filteredApartments,
   ]);
 
@@ -485,16 +609,21 @@ const ApartmentList = () => {
 
 
 
-  if (
+
+  if(
     loading &&
     apartments.length === 0
-  ) {
+  ){
 
     return (
+
       <ApartmentSkeleton />
+
     );
 
   }
+
+
 
 
 
@@ -506,17 +635,20 @@ const ApartmentList = () => {
 
 
 
+
+
       <ApartmentHeader
 
         title="Apartment Management"
 
         description="
-          Manage apartment blocks, floors,
-          units, amenities, occupancy,
-          and availability.
+          Manage apartment blocks,
+          floors, units, amenities,
+          occupancy, and availability.
         "
 
       />
+
 
 
 
@@ -533,6 +665,8 @@ const ApartmentList = () => {
         Loader2={Loader2}
 
       />
+
+
 
 
 
@@ -563,20 +697,23 @@ const ApartmentList = () => {
             />
 
 
+
             <div>
 
-
-              <h3 className="font-semibold text-red-700">
-
+              <h3 className="
+                font-semibold
+                text-red-700
+              ">
                 Unable to load apartments
-
               </h3>
 
 
-              <p className="mt-1 text-sm text-red-600">
-
+              <p className="
+                mt-1
+                text-sm
+                text-red-600
+              ">
                 {error}
-
               </p>
 
 
@@ -587,6 +724,8 @@ const ApartmentList = () => {
 
         )
       }
+
+
 
 
 
@@ -619,6 +758,7 @@ const ApartmentList = () => {
 
 
 
+
       <ApartmentStats
 
         stats={dashboardStats}
@@ -631,7 +771,6 @@ const ApartmentList = () => {
 
 
 
-      {/* Search + Filters */}
 
       <div className="
         rounded-xl
@@ -680,7 +819,7 @@ const ApartmentList = () => {
 
               value={search}
 
-              onChange={(e) =>
+              onChange={(e)=>
                 setSearch(e.target.value)
               }
 
@@ -699,6 +838,7 @@ const ApartmentList = () => {
 
 
           </div>
+
 
 
 
@@ -728,9 +868,11 @@ const ApartmentList = () => {
 
 
 
+
+
       <ApartmentCharts
 
-        data={chartData}
+        data={filteredApartments}
 
       />
 
@@ -740,10 +882,16 @@ const ApartmentList = () => {
 
 
 
+
+
       {
         !loading &&
-          filteredApartments.length === 0 ? (
+        filteredApartments.length === 0
 
+        ?
+
+
+        (
 
           <ApartmentEmptyState
 
@@ -752,8 +900,13 @@ const ApartmentList = () => {
           />
 
 
-        ) : (
+        )
 
+
+        :
+
+
+        (
 
           <div className="
             overflow-hidden
@@ -782,7 +935,10 @@ const ApartmentList = () => {
 
 
         )
+
       }
+
+
 
 
 
@@ -810,7 +966,13 @@ const ApartmentList = () => {
 
 
 
-      <div className="border-t border-gray-200 pt-6">
+
+
+      <div className="
+        border-t
+        border-gray-200
+        pt-6
+      ">
 
 
         <div className="
@@ -831,7 +993,10 @@ const ApartmentList = () => {
             Showing{" "}
 
 
-            <span className="font-semibold text-gray-700">
+            <span className="
+              font-semibold
+              text-gray-700
+            ">
 
               {filteredApartments.length}
 
@@ -841,7 +1006,10 @@ const ApartmentList = () => {
             {" "}of{" "}
 
 
-            <span className="font-semibold text-gray-700">
+            <span className="
+              font-semibold
+              text-gray-700
+            ">
 
               {
                 pagination?.total ??
@@ -859,6 +1027,8 @@ const ApartmentList = () => {
 
 
 
+
+
           <div>
 
             Last updated:
@@ -867,8 +1037,8 @@ const ApartmentList = () => {
 
             {new Date().toLocaleString()}
 
-
           </div>
+
 
 
 
@@ -876,6 +1046,7 @@ const ApartmentList = () => {
 
 
       </div>
+
 
 
 
