@@ -13,6 +13,8 @@ const ApartmentTable = ({
   onView,
   onEdit,
   onDelete,
+
+
 }) => {
   if (!apartments.length) {
     return (
@@ -84,6 +86,17 @@ const ApartmentTable = ({
 
           {apartments.map((apartment) => {
             const property = apartment.property || {};
+
+            const status =
+              typeof apartment.status === "object" && apartment.status !== null
+                ? apartment.status
+                : {
+                  value: apartment.status || "",
+                  label: apartment.status || "Unknown",
+                };
+
+            const statusValue = String(status.value || "").toLowerCase();
+            const statusLabel = status.label || "Unknown";
 
             return (
               <tr
@@ -184,7 +197,7 @@ const ApartmentTable = ({
 
                 </td>
 
-                                {/* Features */}
+                {/* Features */}
 
                 <td className="px-6 py-5">
                   <div className="flex flex-wrap justify-center gap-2">
@@ -228,19 +241,18 @@ const ApartmentTable = ({
                 {/* Status */}
 
                 <td className="px-6 py-5 text-center">
-
                   <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${
-                      apartment.status === "active"
-                        ? "bg-green-100 text-green-700"
-                        : apartment.status === "inactive"
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusValue === "active"
+                      ? "bg-green-100 text-green-700"
+                      : statusValue === "inactive"
                         ? "bg-red-100 text-red-700"
-                        : "bg-yellow-100 text-yellow-700"
-                    }`}
+                        : statusValue === "maintenance"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-gray-100 text-gray-700"
+                      }`}
                   >
-                    {apartment.status}
+                    {statusLabel}
                   </span>
-
                 </td>
 
                 {/* Actions */}
