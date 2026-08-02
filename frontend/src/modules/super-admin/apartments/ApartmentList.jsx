@@ -1,20 +1,25 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+} from "react";
+
 import {
   Search,
   RefreshCw,
-  LayoutGrid,
-  Table as TableIcon,
   Loader2,
   AlertTriangle,
 } from "lucide-react";
 
+
 import useApartment from "../../../hooks/useApartment";
+
 
 import {
   ApartmentStats,
   ApartmentCharts,
   ApartmentFilters,
-  ApartmentCard,
   ApartmentTable,
   ApartmentSkeleton,
   ApartmentHeader,
@@ -24,7 +29,9 @@ import {
 } from ".";
 
 
+
 const ApartmentList = () => {
+
 
   const {
     apartments = [],
@@ -36,48 +43,63 @@ const ApartmentList = () => {
   } = useApartment();
 
 
-  const [search, setSearch] = useState("");
 
-  const [viewMode, setViewMode] = useState("cards");
+  const [search, setSearch] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
 
 
+
   const [filters, setFilters] = useState({
+
     property: "",
     status: "",
     elevator: "",
     parking: "",
     security: "",
     generator: "",
+
   });
 
 
 
   useEffect(() => {
+
     document.title = "Apartment Management";
+
   }, []);
+
+
 
 
 
   useEffect(() => {
 
     getApartments({
+
       page: currentPage,
+
     });
+
 
   }, [
     currentPage,
     getApartments,
   ]);
+
+
 
 
 
   const handleRefresh = useCallback(() => {
 
+
     getApartments({
+
       page: currentPage,
+
     });
+
 
   }, [
     currentPage,
@@ -86,22 +108,67 @@ const ApartmentList = () => {
 
 
 
+
+
+  const handleView = (apartment) => {
+
+    console.log(
+      "View Apartment:",
+      apartment
+    );
+
+  };
+
+
+
+  const handleEdit = (apartment) => {
+
+    console.log(
+      "Edit Apartment:",
+      apartment
+    );
+
+  };
+
+
+
+  const handleDelete = (apartment) => {
+
+    console.log(
+      "Delete Apartment:",
+      apartment
+    );
+
+  };
+
+
+
+
+
   const resetFilters = () => {
+
 
     setSearch("");
 
+
     setFilters({
+
       property: "",
       status: "",
       elevator: "",
       parking: "",
       security: "",
       generator: "",
+
     });
+
 
     setCurrentPage(1);
 
+
   };
+
+
 
 
 
@@ -116,16 +183,36 @@ const ApartmentList = () => {
 
 
     if (!apartments.length) {
+
       return [];
+
     }
 
 
 
-    return apartments.filter((apartment)=>{
+    return apartments.filter((apartment) => {
+
 
 
       const property =
-        apartment.property || {};
+        apartment?.property || {};
+
+
+
+      const building =
+        apartment?.building || {};
+
+
+
+      const features =
+        apartment?.features || {};
+
+
+
+      const status =
+        apartment?.status?.value ||
+        apartment?.status ||
+        "";
 
 
 
@@ -134,76 +221,119 @@ const ApartmentList = () => {
 
 
 
+
+
       const matchesSearch =
+
         !search ||
 
-        apartment.name
+        apartment?.name
           ?.toLowerCase()
           .includes(keyword) ||
 
-        apartment.block
+
+        building?.block
           ?.toLowerCase()
           .includes(keyword) ||
 
-        apartment.slug
+
+        apartment?.slug
           ?.toLowerCase()
           .includes(keyword) ||
 
-        property.title
+
+        property?.title
           ?.toLowerCase()
           .includes(keyword) ||
 
-        property.property_code
+
+        property?.property_code
           ?.toLowerCase()
           .includes(keyword);
 
 
 
+
+
+
+
       const matchesProperty =
+
         !filters.property ||
 
-        String(property.id)
-          === String(filters.property);
+        String(property?.id)
+        === String(filters.property);
+
+
+
+
 
 
 
       const matchesStatus =
+
         !filters.status ||
 
-        apartment.status
-          === filters.status;
+        status === filters.status;
+
+
+
+
 
 
 
       const matchesElevator =
+
         !filters.elevator ||
 
-        Number(apartment.has_elevator)
+        Number(features?.has_elevator)
+
         === Number(filters.elevator);
 
 
 
+
+
+
+
       const matchesParking =
+
         !filters.parking ||
 
-        Number(apartment.has_parking)
+        Number(features?.has_parking)
+
         === Number(filters.parking);
 
 
 
+
+
+
+
       const matchesSecurity =
+
         !filters.security ||
 
-        Number(apartment.has_security)
+        Number(features?.has_security)
+
         === Number(filters.security);
 
 
 
+
+
+
+
       const matchesGenerator =
+
         !filters.generator ||
 
-        Number(apartment.has_backup_generator)
+        Number(features?.has_backup_generator)
+
         === Number(filters.generator);
+
+
+
 
 
 
@@ -223,22 +353,21 @@ const ApartmentList = () => {
     });
 
 
-  },[
+
+  }, [
+
     apartments,
     search,
-    filters
+    filters,
+
   ]);
-
-
-
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Statistics
   |--------------------------------------------------------------------------
   */
 
-
-  const dashboardStats = useMemo(()=>{
+  const dashboardStats = useMemo(() => {
 
 
     return {
@@ -251,66 +380,97 @@ const ApartmentList = () => {
 
       totalFloors:
         filteredApartments.reduce(
-          (sum,item)=>
+
+          (sum,item) =>
+
             sum +
+
             Number(
-              item.total_floors || 0
+              item?.counts?.floors || 0
             ),
+
           0
+
         ),
 
 
 
       totalUnits:
         filteredApartments.reduce(
-          (sum,item)=>
+
+          (sum,item) =>
+
             sum +
+
             Number(
-              item.units_count ??
-              item.total_units ??
-              0
+              item?.counts?.units || 0
             ),
+
           0
+
         ),
+
 
 
 
       activeApartments:
         filteredApartments.filter(
+
           item =>
-            item.status === "active"
+
+            (
+              item?.status?.value ||
+              item?.status
+            ) === "active"
+
         ).length,
+
+
 
 
 
       elevators:
         filteredApartments.filter(
+
           item =>
-            item.has_elevator
+            item?.features?.has_elevator
+
         ).length,
+
+
 
 
 
       parking:
         filteredApartments.filter(
+
           item =>
-            item.has_parking
+            item?.features?.has_parking
+
         ).length,
+
+
 
 
 
       security:
         filteredApartments.filter(
+
           item =>
-            item.has_security
+            item?.features?.has_security
+
         ).length,
+
+
 
 
 
       generators:
         filteredApartments.filter(
+
           item =>
-            item.has_backup_generator
+            item?.features?.has_backup_generator
+
         ).length,
 
 
@@ -318,62 +478,135 @@ const ApartmentList = () => {
 
 
   },[
-    filteredApartments
+    filteredApartments,
   ]);
 
 
 
-  const chartData = useMemo(()=>{
+
+
+
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | Chart Data
+  |--------------------------------------------------------------------------
+  */
+
+
+  const chartData = useMemo(() => {
 
 
     return filteredApartments
+
       .slice(0,10)
-      .map(apartment=>({
+
+      .map(apartment => ({
+
+
 
         name:
-          apartment.block
+
+          apartment?.building?.block
+
             ?.substring(0,18)
-            || "Apartment",
+
+          ||
+
+          "Apartment",
+
+
+
 
 
         floors:
+
           Number(
-            apartment.total_floors || 0
+            apartment?.counts?.floors || 0
           ),
+
+
+
 
 
         units:
+
           Number(
-            apartment.units_count ??
-            apartment.total_units ??
-            0
+            apartment?.counts?.units || 0
           ),
 
 
+
+
+
+        occupied:
+
+          Number(
+            apartment?.counts?.occupied_units || 0
+          ),
+
+
+
+
+
+        vacant:
+
+          Number(
+            apartment?.counts?.vacant_units || 0
+          ),
+
+
+
+
+
         elevator:
-          apartment.has_elevator ? 1 : 0,
+
+          apartment?.features?.has_elevator
+            ? 1
+            : 0,
+
+
+
 
 
         parking:
-          apartment.has_parking ? 1 : 0,
+
+          apartment?.features?.has_parking
+            ? 1
+            : 0,
+
+
+
 
 
         security:
-          apartment.has_security ? 1 : 0,
+
+          apartment?.features?.has_security
+            ? 1
+            : 0,
+
+
+
 
 
         generator:
-          apartment.has_backup_generator
-          ? 1
-          : 0,
+
+          apartment?.features?.has_backup_generator
+            ? 1
+            : 0,
+
 
 
       }));
 
 
   },[
-    filteredApartments
+    filteredApartments,
   ]);
+
+
+
 
 
 
@@ -383,114 +616,183 @@ const ApartmentList = () => {
   ){
 
     return (
+
       <ApartmentSkeleton />
+
     );
 
   }
-    return (
+
+
+
+
+
+
+
+  return (
+
     <div className="space-y-6">
 
 
-      {/* ==========================================================
-          Header
-      ========================================================== */}
+
+
 
       <ApartmentHeader
+
         title="Apartment Management"
-        description="Manage apartment blocks, floors, units, amenities, occupancy, and availability."
+
+        description="
+          Manage apartment blocks,
+          floors, units, amenities,
+          occupancy, and availability.
+        "
+
       />
 
 
-      {/* ==========================================================
-          Actions
-      ========================================================== */}
+
+
+
 
       <ApartmentActions
+
         loading={loading}
+
         onRefresh={handleRefresh}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        LayoutGrid={LayoutGrid}
-        TableIcon={TableIcon}
+
         RefreshCw={RefreshCw}
+
         Loader2={Loader2}
+
       />
 
 
 
-      {/* ==========================================================
-          Error Message
-      ========================================================== */}
-
-      {error && (
-
-        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
-
-          <AlertTriangle className="mt-0.5 h-5 w-5 text-red-600" />
 
 
-          <div>
-
-            <h3 className="font-semibold text-red-700">
-              Unable to load apartments
-            </h3>
 
 
-            <p className="mt-1 text-sm text-red-600">
-              {error}
-            </p>
+      {
+        error && (
+
+          <div className="
+            flex
+            items-start
+            gap-3
+            rounded-xl
+            border
+            border-red-200
+            bg-red-50
+            p-4
+          ">
+
+
+            <AlertTriangle
+              className="
+                mt-0.5
+                h-5
+                w-5
+                text-red-600
+              "
+            />
+
+
+
+            <div>
+
+              <h3 className="
+                font-semibold
+                text-red-700
+              ">
+                Unable to load apartments
+              </h3>
+
+
+              <p className="
+                mt-1
+                text-sm
+                text-red-600
+              ">
+                {error}
+              </p>
+
+
+            </div>
 
 
           </div>
 
-
-        </div>
-
-      )}
-
-
-
-      {/* ==========================================================
-          Success Message
-      ========================================================== */}
-
-      {message && (
-
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-
-          {message}
-
-        </div>
-
-      )}
+        )
+      }
 
 
 
 
-      {/* ==========================================================
-          Statistics
-      ========================================================== */}
+
+
+
+
+      {
+        message && (
+
+          <div className="
+            rounded-xl
+            border
+            border-green-200
+            bg-green-50
+            px-4
+            py-3
+            text-sm
+            text-green-700
+          ">
+
+            {message}
+
+          </div>
+
+        )
+      }
+
+
+
+
+
+
 
       <ApartmentStats
+
         stats={dashboardStats}
+
       />
 
 
 
 
 
-      {/* ==========================================================
-          Search + Filters
-      ========================================================== */}
 
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+
+      <div className="
+        rounded-xl
+        border
+        border-gray-200
+        bg-white
+        p-5
+        shadow-sm
+      ">
 
 
-        <div className="grid gap-4 lg:grid-cols-12">
+        <div className="
+          grid
+          gap-4
+          lg:grid-cols-12
+        ">
 
 
-          <div className="relative lg:col-span-5">
+          <div className="
+            relative
+            lg:col-span-5
+          ">
 
 
             <Search
@@ -510,11 +812,16 @@ const ApartmentList = () => {
 
               type="text"
 
-              placeholder="Search apartment, block or property..."
+              placeholder="
+                Search apartment,
+                block or property...
+              "
 
               value={search}
 
-              onChange={(e)=>setSearch(e.target.value)}
+              onChange={(e)=>
+                setSearch(e.target.value)
+              }
 
               className="
                 w-full
@@ -525,16 +832,13 @@ const ApartmentList = () => {
                 pl-10
                 pr-4
                 text-sm
-                focus:border-indigo-500
-                focus:outline-none
-                focus:ring-2
-                focus:ring-indigo-200
               "
 
             />
 
 
           </div>
+
 
 
 
@@ -562,14 +866,13 @@ const ApartmentList = () => {
 
 
 
-      {/* ==========================================================
-          Charts
-      ========================================================== */}
+
+
 
 
       <ApartmentCharts
 
-        data={chartData}
+        data={filteredApartments}
 
       />
 
@@ -577,9 +880,8 @@ const ApartmentList = () => {
 
 
 
-      {/* ==========================================================
-          Empty State
-      ========================================================== */}
+
+
 
 
       {
@@ -587,6 +889,7 @@ const ApartmentList = () => {
         filteredApartments.length === 0
 
         ?
+
 
         (
 
@@ -596,100 +899,51 @@ const ApartmentList = () => {
 
           />
 
+
         )
 
 
         :
 
+
         (
 
-          <>
+          <div className="
+            overflow-hidden
+            rounded-xl
+            border
+            border-gray-200
+            bg-white
+            shadow-sm
+          ">
 
 
-            {/* Cards */}
+            <ApartmentTable
 
-            {
-              viewMode === "cards" && (
+              apartments={filteredApartments}
 
-                <div
-                  className="
-                    grid
-                    gap-6
-                    sm:grid-cols-1
-                    lg:grid-cols-2
-                    xl:grid-cols-3
-                  "
-                >
+              onView={handleView}
+
+              onEdit={handleEdit}
+
+              onDelete={handleDelete}
+
+            />
 
 
-                  {
-                    filteredApartments.map(
-                      (apartment)=>(
+          </div>
 
-                        <ApartmentCard
-
-                          key={apartment.id}
-
-                          apartment={apartment}
-
-                        />
-
-                      )
-                    )
-                  }
-
-
-                </div>
-
-              )
-            }
-
-
-
-
-
-            {/* Table */}
-
-
-            {
-              viewMode === "table" && (
-
-                <div
-                  className="
-                    overflow-hidden
-                    rounded-xl
-                    border
-                    border-gray-200
-                    bg-white
-                    shadow-sm
-                  "
-                >
-
-                  <ApartmentTable
-
-                    apartments={filteredApartments}
-
-                  />
-
-                </div>
-
-              )
-            }
-
-
-
-          </>
 
         )
+
       }
 
 
 
 
 
-      {/* ==========================================================
-          Pagination
-      ========================================================== */}
+
+
 
 
       {
@@ -710,33 +964,39 @@ const ApartmentList = () => {
 
 
 
-      {/* ==========================================================
-          Footer
-      ========================================================== */}
 
 
-      <div className="border-t border-gray-200 pt-6">
 
 
-        <div
-          className="
-            flex
-            flex-col
-            items-center
-            justify-between
-            gap-3
-            text-sm
-            text-gray-500
-            md:flex-row
-          "
-        >
+      <div className="
+        border-t
+        border-gray-200
+        pt-6
+      ">
+
+
+        <div className="
+          flex
+          flex-col
+          items-center
+          justify-between
+          gap-3
+          text-sm
+          text-gray-500
+          md:flex-row
+        ">
 
 
           <div>
 
+
             Showing{" "}
 
-            <span className="font-semibold text-gray-700">
+
+            <span className="
+              font-semibold
+              text-gray-700
+            ">
 
               {filteredApartments.length}
 
@@ -746,7 +1006,10 @@ const ApartmentList = () => {
             {" "}of{" "}
 
 
-            <span className="font-semibold text-gray-700">
+            <span className="
+              font-semibold
+              text-gray-700
+            ">
 
               {
                 pagination?.total ??
@@ -764,22 +1027,18 @@ const ApartmentList = () => {
 
 
 
-          <div className="flex items-center gap-2">
 
 
-            <span>
+          <div>
 
-              Last updated:
+            Last updated:
 
-              {" "}
+            {" "}
 
-              {new Date()
-                .toLocaleString()}
-
-            </span>
-
+            {new Date().toLocaleString()}
 
           </div>
+
 
 
 
@@ -789,10 +1048,15 @@ const ApartmentList = () => {
       </div>
 
 
+
+
+
     </div>
+
   );
 
 };
+
 
 
 export default ApartmentList;
