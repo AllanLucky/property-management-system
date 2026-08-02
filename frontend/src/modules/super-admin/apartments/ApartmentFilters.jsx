@@ -1,186 +1,350 @@
-import { Building2, Filter } from "lucide-react";
+import {
+  Building2,
+  Filter,
+  Zap,
+  Car,
+  ShieldCheck,
+  RefreshCcw,
+} from "lucide-react";
 
 const ApartmentFilters = ({
   filters,
   setFilters,
   properties = [],
 }) => {
+
+
   const handleChange = (field, value) => {
+
     setFilters((prev) => ({
       ...prev,
       [field]: value,
     }));
+
   };
 
+
+
+  const resetFilters = () => {
+
+    setFilters({
+      property: "",
+      status: "",
+      elevator: "",
+      parking: "",
+      security: "",
+      generator: "",
+    });
+
+  };
+
+
+
   return (
+
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 
-      {/* ============================================
-          Property Filter
-      ============================================ */}
+
+      {/* Property */}
 
       <div>
+
         <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-          <Building2 className="h-4 w-4 text-indigo-600" />
+
+          <Building2 className="h-4 w-4 text-indigo-600"/>
+
           Property
+
         </label>
 
-        <select
-          value={filters.property}
-          onChange={(e) =>
-            handleChange("property", e.target.value)
-          }
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-        >
-          <option value="">All Properties</option>
 
-          {properties.map((property) => (
+        <select
+
+          value={filters.property}
+
+          onChange={(e)=>
+            handleChange(
+              "property",
+              e.target.value
+            )
+          }
+
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+
+        >
+
+          <option value="">
+            All Properties
+          </option>
+
+
+          {properties.map(property=>(
+
             <option
               key={property.id}
               value={property.id}
             >
+
               {property.title}
+
             </option>
+
           ))}
+
+
         </select>
+
+
       </div>
 
-      {/* ============================================
-          Status Filter
-      ============================================ */}
+
+
+
+
+      {/* Status */}
 
       <div>
+
         <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-          <Filter className="h-4 w-4 text-green-600" />
+
+          <Filter className="h-4 w-4 text-green-600"/>
+
           Status
+
         </label>
 
+
         <select
+
           value={filters.status}
-          onChange={(e) =>
-            handleChange("status", e.target.value)
+
+          onChange={(e)=>
+            handleChange(
+              "status",
+              e.target.value
+            )
           }
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+
         >
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="maintenance">Maintenance</option>
+
+          <option value="">
+            All Status
+          </option>
+
+          <option value="active">
+            Active
+          </option>
+
+          <option value="inactive">
+            Inactive
+          </option>
+
+          <option value="maintenance">
+            Maintenance
+          </option>
+
+
         </select>
-      </div>
-            {/* ============================================
-          Elevator Filter
-      ============================================ */}
 
-      <div>
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-          Elevator
-        </label>
 
-        <select
-          value={filters.elevator}
-          onChange={(e) =>
-            handleChange("elevator", e.target.value)
-          }
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-        >
-          <option value="">All</option>
-          <option value="1">Available</option>
-          <option value="0">Not Available</option>
-        </select>
-      </div>
-
-      {/* ============================================
-          Parking Filter
-      ============================================ */}
-
-      <div>
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-          Parking
-        </label>
-
-        <select
-          value={filters.parking}
-          onChange={(e) =>
-            handleChange("parking", e.target.value)
-          }
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-        >
-          <option value="">All</option>
-          <option value="1">Available</option>
-          <option value="0">Not Available</option>
-        </select>
       </div>
 
-      {/* ============================================
-          Security Filter
-      ============================================ */}
 
-      <div>
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-          Security
-        </label>
 
-        <select
-          value={filters.security}
-          onChange={(e) =>
-            handleChange("security", e.target.value)
-          }
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-        >
-          <option value="">All</option>
-          <option value="1">Available</option>
-          <option value="0">Not Available</option>
-        </select>
-      </div>
 
-      {/* ============================================
-          Generator Filter
-      ============================================ */}
 
-      <div>
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-          Backup Generator
-        </label>
+      {/* Elevator */}
 
-        <select
-          value={filters.generator}
-          onChange={(e) =>
-            handleChange("generator", e.target.value)
-          }
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-        >
-          <option value="">All</option>
-          <option value="1">Available</option>
-          <option value="0">Not Available</option>
-        </select>
-      </div>
+      <FeatureSelect
+        label="Elevator"
+        icon={<Zap className="h-4 w-4 text-yellow-500"/>}
+        value={filters.elevator}
+        onChange={(value)=>
+          handleChange(
+            "elevator",
+            value
+          )
+        }
+      />
 
-      {/* ============================================
-          Reset Filters
-      ============================================ */}
+
+
+      {/* Parking */}
+
+      <FeatureSelect
+        label="Parking"
+        icon={<Car className="h-4 w-4 text-blue-600"/>}
+        value={filters.parking}
+        onChange={(value)=>
+          handleChange(
+            "parking",
+            value
+          )
+        }
+      />
+
+
+
+
+      {/* Security */}
+
+      <FeatureSelect
+        label="Security"
+        icon={<ShieldCheck className="h-4 w-4 text-green-600"/>}
+        value={filters.security}
+        onChange={(value)=>
+          handleChange(
+            "security",
+            value
+          )
+        }
+      />
+
+
+
+
+
+      {/* Generator */}
+
+      <FeatureSelect
+        label="Backup Generator"
+        icon={<Zap className="h-4 w-4 text-orange-600"/>}
+        value={filters.generator}
+        onChange={(value)=>
+          handleChange(
+            "generator",
+            value
+          )
+        }
+      />
+
+
+
+
+
+      {/* Reset */}
 
       <div className="flex items-end">
+
         <button
+
           type="button"
-          onClick={() =>
-            setFilters({
-              property: "",
-              status: "",
-              elevator: "",
-              parking: "",
-              security: "",
-              generator: "",
-            })
-          }
-          className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-gray-800"
+
+          onClick={resetFilters}
+
+          className="
+          flex
+          w-full
+          items-center
+          justify-center
+          gap-2
+          rounded-lg
+          bg-gray-900
+          px-4
+          py-2.5
+          text-sm
+          font-medium
+          text-white
+          hover:bg-gray-800
+          "
+
         >
+
+          <RefreshCcw className="h-4 w-4"/>
+
           Reset Filters
+
         </button>
+
+
       </div>
 
+
     </div>
+
   );
+
 };
+
+
+
+
+
+/*
+|--------------------------------------------------------------------------
+| Reusable Feature Select
+|--------------------------------------------------------------------------
+*/
+
+const FeatureSelect = ({
+  label,
+  icon,
+  value,
+  onChange,
+}) => {
+
+
+  return (
+
+    <div>
+
+
+      <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+
+        {icon}
+
+        {label}
+
+      </label>
+
+
+
+      <select
+
+        value={value}
+
+        onChange={(e)=>
+          onChange(e.target.value)
+        }
+
+        className="
+        w-full
+        rounded-lg
+        border
+        border-gray-300
+        bg-white
+        px-3
+        py-2.5
+        text-sm
+        "
+
+      >
+
+        <option value="">
+          All
+        </option>
+
+
+        <option value="1">
+          Available
+        </option>
+
+
+        <option value="0">
+          Not Available
+        </option>
+
+
+      </select>
+
+
+    </div>
+
+  );
+
+};
+
 
 export default ApartmentFilters;
