@@ -10,7 +10,7 @@ import ApartmentForm from "./ApartmentForm";
 const CreateApartment = () => {
   const navigate = useNavigate();
 
-  const { addApartment, loading } = useApartment();
+  const { createApartment, loading } = useApartment();
   const { properties, getProperties } = useProperty();
 
   const [form, setForm] = useState({
@@ -60,7 +60,7 @@ const CreateApartment = () => {
         }
       });
 
-      await addApartment(formData);
+      await createApartment(formData);
       navigate("/super-admin/apartments");
     } catch (error) {
       console.error(error);
