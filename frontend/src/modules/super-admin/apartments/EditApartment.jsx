@@ -14,7 +14,7 @@ const EditApartment = () => {
   const {
     apartment,
     getApartment,
-    editApartment,
+    updateApartment,
     loading,
   } = useApartment();
 
@@ -178,7 +178,7 @@ const EditApartment = () => {
         }
       );
 
-      await editApartment(id, formData);
+      await updateApartment(id, formData);
 
       navigate("/super-admin/apartments");
     } catch (error) {
