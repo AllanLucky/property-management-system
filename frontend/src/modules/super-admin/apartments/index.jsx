@@ -1,5 +1,4 @@
 export { default as ApartmentList } from "./ApartmentList";
-export { default as ApartmentCard } from "./ApartmentCard";
 export { default as ApartmentTable } from "./ApartmentTable";
 export { default as ApartmentStats } from "./ApartmentStats";
 export { default as ApartmentCharts } from "./ApartmentCharts";
