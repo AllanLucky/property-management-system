@@ -23,9 +23,7 @@ const ApartmentForm = ({
   onImageChange,
   onSubmit,
 }) => {
-  const [preview, setPreview] = useState(
-    form?.thumbnail_url || null
-  );
+  const [preview, setPreview] = useState(form?.thumbnail_url || null);
 
   const propertyList = useMemo(() => {
     if (Array.isArray(properties)) return properties;
@@ -35,7 +33,6 @@ const ApartmentForm = ({
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-
     if (!file) return;
 
     setPreview(URL.createObjectURL(file));
@@ -52,9 +49,8 @@ const ApartmentForm = ({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-
     if (onSubmit) {
-      onSubmit();
+      onSubmit(e); // ✅ forward the event
     }
   };
 
@@ -64,19 +60,13 @@ const ApartmentForm = ({
       className="space-y-8 rounded-2xl bg-white p-8 shadow-md"
     >
       {/* General Information */}
-      <div>
+      <section>
         <h2 className="mb-6 text-xl font-semibold text-gray-900">
           General Information
         </h2>
 
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Property */}
-          <div>
-            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <Building2 className="h-4 w-4" />
-              Property
-            </label>
-
+          <FormField icon={<Building2 className="h-4 w-4" />} label="Property">
             <select
               name="property_id"
               value={form.property_id}
@@ -84,28 +74,16 @@ const ApartmentForm = ({
               className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-indigo-500 focus:outline-none"
               required
             >
-              <option value="">
-                Select Property
-              </option>
-
+              <option value="">Select Property</option>
               {propertyList.map((property) => (
-                <option
-                  key={property.id}
-                  value={property.id}
-                >
+                <option key={property.id} value={property.id}>
                   {property.title}
                 </option>
               ))}
             </select>
-          </div>
+          </FormField>
 
-          {/* Apartment Name */}
-          <div>
-            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <Building2 className="h-4 w-4" />
-              Apartment Name
-            </label>
-
+          <FormField icon={<Building2 className="h-4 w-4" />} label="Apartment Name">
             <input
               type="text"
               name="name"
@@ -115,15 +93,9 @@ const ApartmentForm = ({
               placeholder="Apartment Name"
               required
             />
-          </div>
+          </FormField>
 
-          {/* Block */}
-          <div>
-            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <Hash className="h-4 w-4" />
-              Block
-            </label>
-
+          <FormField icon={<Hash className="h-4 w-4" />} label="Block">
             <input
               type="text"
               name="block"
@@ -132,15 +104,9 @@ const ApartmentForm = ({
               className="w-full rounded-lg border border-gray-300 px-4 py-3"
               placeholder="A, B, C..."
             />
-          </div>
+          </FormField>
 
-          {/* Floor */}
-          <div>
-            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <ArrowUp className="h-4 w-4" />
-              Floor
-            </label>
-
+          <FormField icon={<ArrowUp className="h-4 w-4" />} label="Floor">
             <input
               type="number"
               min="1"
@@ -149,15 +115,9 @@ const ApartmentForm = ({
               onChange={onChange}
               className="w-full rounded-lg border border-gray-300 px-4 py-3"
             />
-          </div>
+          </FormField>
 
-          {/* Total Floors */}
-          <div>
-            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <Layers3 className="h-4 w-4" />
-              Total Floors
-            </label>
-
+          <FormField icon={<Layers3 className="h-4 w-4" />} label="Total Floors">
             <input
               type="number"
               min="1"
@@ -166,15 +126,9 @@ const ApartmentForm = ({
               onChange={onChange}
               className="w-full rounded-lg border border-gray-300 px-4 py-3"
             />
-          </div>
+          </FormField>
 
-          {/* Total Units */}
-          <div>
-            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <Building2 className="h-4 w-4" />
-              Total Units
-            </label>
-
+          <FormField icon={<Building2 className="h-4 w-4" />} label="Total Units">
             <input
               type="number"
               min="0"
@@ -183,57 +137,38 @@ const ApartmentForm = ({
               onChange={onChange}
               className="w-full rounded-lg border border-gray-300 px-4 py-3"
             />
-          </div>
+          </FormField>
 
-          {/* Status */}
-          <div>
-            <label className="mb-2 text-sm font-medium">
-              Status
-            </label>
-
+          <FormField label="Status">
             <select
               name="status"
               value={form.status}
               onChange={onChange}
               className="w-full rounded-lg border border-gray-300 px-4 py-3"
             >
-              <option value="active">
-                Active
-              </option>
-              <option value="inactive">
-                Inactive
-              </option>
-              <option value="maintenance">
-                Maintenance
-              </option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="maintenance">Maintenance</option>
             </select>
-          </div>
+          </FormField>
         </div>
-      </div>
+      </section>
 
-      {/* Description */}
-      <div>
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-          <FileText className="h-4 w-4" />
-          Description
-        </label>
+      <section>
+        <FormField icon={<FileText className="h-4 w-4" />} label="Description">
+          <textarea
+            rows={5}
+            name="description"
+            value={form.description}
+            onChange={onChange}
+            className="w-full rounded-lg border border-gray-300 px-4 py-3"
+            placeholder="Apartment description..."
+          />
+        </FormField>
+      </section>
 
-        <textarea
-          rows={5}
-          name="description"
-          value={form.description}
-          onChange={onChange}
-          className="w-full rounded-lg border border-gray-300 px-4 py-3"
-          placeholder="Apartment description..."
-        />
-      </div>
-
-      {/* Features */}
-      <div>
-        <h2 className="mb-4 text-lg font-semibold">
-          Features
-        </h2>
-
+      <section>
+        <h2 className="mb-4 text-lg font-semibold">Features</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Checkbox
             icon={<ShieldCheck className="h-4 w-4" />}
@@ -242,7 +177,6 @@ const ApartmentForm = ({
             checked={form.has_security}
             onChange={onChange}
           />
-
           <Checkbox
             icon={<Car className="h-4 w-4" />}
             label="Parking"
@@ -250,7 +184,6 @@ const ApartmentForm = ({
             checked={form.has_parking}
             onChange={onChange}
           />
-
           <Checkbox
             icon={<Zap className="h-4 w-4" />}
             label="Backup Generator"
@@ -258,7 +191,6 @@ const ApartmentForm = ({
             checked={form.has_backup_generator}
             onChange={onChange}
           />
-
           <Checkbox
             icon={<Building2 className="h-4 w-4" />}
             label="Elevator"
@@ -267,32 +199,26 @@ const ApartmentForm = ({
             onChange={onChange}
           />
         </div>
-      </div>
+      </section>
 
-      {/* Thumbnail */}
-      <div>
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium">
-          <ImageIcon className="h-4 w-4" />
-          Apartment Thumbnail
-        </label>
-
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          className="w-full rounded-lg border border-gray-300 px-4 py-3"
-        />
-
-        {preview && (
-          <img
-            src={preview}
-            alt="Preview"
-            className="mt-4 h-56 w-full rounded-xl border object-cover"
+      <section>
+        <FormField icon={<ImageIcon className="h-4 w-4" />} label="Apartment Thumbnail">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="w-full rounded-lg border border-gray-300 px-4 py-3"
           />
-        )}
-      </div>
+          {preview && (
+            <img
+              src={preview}
+              alt="Preview"
+              className="mt-4 h-56 w-full rounded-xl border object-cover"
+            />
+          )}
+        </FormField>
+      </section>
 
-      {/* Footer */}
       <div className="flex justify-end">
         <button
           type="submit"
@@ -307,9 +233,7 @@ const ApartmentForm = ({
           ) : (
             <>
               <Save className="h-5 w-5" />
-              {mode === "edit"
-                ? "Update Apartment"
-                : "Create Apartment"}
+              {mode === "edit" ? "Update Apartment" : "Create Apartment"}
             </>
           )}
         </button>
@@ -318,13 +242,17 @@ const ApartmentForm = ({
   );
 };
 
-const Checkbox = ({
-  icon,
-  label,
-  name,
-  checked,
-  onChange,
-}) => (
+const FormField = ({ icon, label, children }) => (
+  <div>
+    <label className="mb-2 flex items-center gap-2 text-sm font-medium">
+      {icon}
+      {label}
+    </label>
+    {children}
+  </div>
+);
+
+const Checkbox = ({ icon, label, name, checked, onChange }) => (
   <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 p-4 transition hover:bg-gray-50">
     <input
       type="checkbox"
@@ -333,14 +261,8 @@ const Checkbox = ({
       onChange={onChange}
       className="h-4 w-4"
     />
-
-    <span className="text-indigo-600">
-      {icon}
-    </span>
-
-    <span className="text-sm font-medium text-gray-700">
-      {label}
-    </span>
+    <span className="text-indigo-600">{icon}</span>
+    <span className="text-sm font-medium text-gray-700">{label}</span>
   </label>
 );
 
