@@ -424,6 +424,12 @@ const PropertyList = () => {
                   <td className="px-4 py-4 text-center">
                     <span
                       className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${property.status === "published"
+                          ? "bg-green-100 text-green-700"
+                          : property.status === "draft"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : property.status === "archived"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-gray-100 text-gray-700"
                         ? "bg-green-100 text-green-700"
                         : property.status === "draft"
                           ? "bg-yellow-100 text-yellow-700"
