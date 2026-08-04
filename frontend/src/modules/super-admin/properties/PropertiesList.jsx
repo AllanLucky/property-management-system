@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import useProperty from "../../../hooks/useProperty";
+import useProperty from "../../../hooks/useProperties";
 
 import {
   Loader2,
@@ -186,11 +186,11 @@ const PropertyList = () => {
       }
     );
   }, [properties]);
-    /*
-  |--------------------------------------------------------------------------
-  | LOADING STATE
-  |--------------------------------------------------------------------------
-  */
+  /*
+|--------------------------------------------------------------------------
+| LOADING STATE
+|--------------------------------------------------------------------------
+*/
 
   if (loading) {
     return (
@@ -352,7 +352,7 @@ const PropertyList = () => {
           </thead>
 
           <tbody>
-                        {filteredProperties.length > 0 ? (
+            {filteredProperties.length > 0 ? (
               filteredProperties.map((property) => (
                 <tr
                   key={property.id}
@@ -423,15 +423,14 @@ const PropertyList = () => {
                   {/* Status */}
                   <td className="px-4 py-4 text-center">
                     <span
-                      className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                        property.status === "published"
-                          ? "bg-green-100 text-green-700"
-                          : property.status === "draft"
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${property.status === "published"
+                        ? "bg-green-100 text-green-700"
+                        : property.status === "draft"
                           ? "bg-yellow-100 text-yellow-700"
                           : property.status === "archived"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-gray-100 text-gray-700"
-                      }`}
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
                     >
                       {property.status || "Draft"}
                     </span>
@@ -474,7 +473,7 @@ const PropertyList = () => {
                 </tr>
               ))
             ) : (
-                            <tr>
+              <tr>
                 <td
                   colSpan={8}
                   className="px-6 py-16 text-center"

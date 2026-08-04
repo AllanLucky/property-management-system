@@ -6,11 +6,17 @@ const PROPERTY_ENDPOINT = "/properties";
 |--------------------------------------------------------------------------
 | RESPONSE NORMALIZER
 |--------------------------------------------------------------------------
-| Supports Laravel API structures like:
-| { data: ..., message: ..., status: true }
+| Keep the complete Laravel API response so hooks can access:
+| - response.data
+| - response.message
+| - response.meta
+| - response.links
+| - response.status
+| - response.code
+|--------------------------------------------------------------------------
 */
 const handleResponse = (response) => {
-  return response?.data?.data ?? response?.data ?? response;
+  return response?.data ?? response;
 };
 
 /*
@@ -23,9 +29,13 @@ const handleError = (error, label) => {
 
   console.error(`❌ ${label} ERROR:`, errData || error.message);
 
-  throw errData || {
-    message: error.message || "Unexpected error",
-  };
+  throw (
+    errData || {
+      status: false,
+      message: error.message || "Unexpected error",
+      errors: null,
+    }
+  );
 };
 
 /*
@@ -37,7 +47,11 @@ const buildQuery = (params = {}) => {
   const query = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== null && value !== undefined && value !== "") {
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
       query.append(key, value);
     }
   });
@@ -49,10 +63,6 @@ const buildQuery = (params = {}) => {
 |--------------------------------------------------------------------------
 | GET ALL PROPERTIES
 |--------------------------------------------------------------------------
-| Supports:
-| - with_relations
-| - status filters
-| - pagination (future-ready)
 */
 export const getPropertiesApi = async (params = {}) => {
   try {
@@ -94,11 +104,15 @@ export const getPropertyApi = async (id, params = {}) => {
 */
 export const createPropertyApi = async (formData) => {
   try {
-    const response = await api.post(PROPERTY_ENDPOINT, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+    const response = await api.post(
+      PROPERTY_ENDPOINT,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
 
     return handleResponse(response);
   } catch (error) {
@@ -108,20 +122,35 @@ export const createPropertyApi = async (formData) => {
 
 /*
 |--------------------------------------------------------------------------
-| UPDATE PROPERTY (Laravel safe method spoofing)
+| UPDATE PROPERTY
 |--------------------------------------------------------------------------
-| Uses: POST + _method=PUT
+| Laravel-safe method spoofing (POST + _method=PUT)
 |--------------------------------------------------------------------------
 */
 export const updatePropertyApi = async (id, formData) => {
   try {
     const data = new FormData();
 
-    // safely clone FormData
-    for (let [key, value] of formData.entries()) {
-      if (value !== undefined && value !== null && value !== "") {
-        data.append(key, value);
+    if (formData instanceof FormData) {
+      for (const [key, value] of formData.entries()) {
+        if (
+          value !== undefined &&
+          value !== null &&
+          value !== ""
+        ) {
+          data.append(key, value);
+        }
       }
+    } else {
+      Object.entries(formData || {}).forEach(([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          value !== ""
+        ) {
+          data.append(key, value);
+        }
+      });
     }
 
     data.append("_method", "PUT");
@@ -149,7 +178,10 @@ export const updatePropertyApi = async (id, formData) => {
 */
 export const deletePropertyApi = async (id) => {
   try {
-    const response = await api.delete(`${PROPERTY_ENDPOINT}/${id}`);
+    const response = await api.delete(
+      `${PROPERTY_ENDPOINT}/${id}`
+    );
+
     return handleResponse(response);
   } catch (error) {
     handleError(error, "DELETE PROPERTY");
@@ -158,15 +190,15 @@ export const deletePropertyApi = async (id) => {
 
 /*
 |--------------------------------------------------------------------------
-| EXTRA: PROPERTY DASHBOARD STATS (OPTIONAL BUT USEFUL)
-|--------------------------------------------------------------------------
-| If you later add:
-| GET /properties/stats
+| PROPERTY DASHBOARD STATS
 |--------------------------------------------------------------------------
 */
 export const getPropertyStatsApi = async () => {
   try {
-    const response = await api.get(`${PROPERTY_ENDPOINT}/stats`);
+    const response = await api.get(
+      `${PROPERTY_ENDPOINT}/stats`
+    );
+
     return handleResponse(response);
   } catch (error) {
     handleError(error, "GET PROPERTY STATS");
