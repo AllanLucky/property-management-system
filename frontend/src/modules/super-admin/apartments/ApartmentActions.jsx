@@ -6,32 +6,22 @@ import {
   Download,
   Loader2,
 } from "lucide-react";
-
+import { Link } from "react-router-dom";
 
 const ApartmentActions = ({
   view = "grid",
   setView,
-  onCreate,
   onRefresh,
   onExport,
   loading = false,
 }) => {
-
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-
-
-      {/* ==========================================================
-          Left Actions
-      ========================================================== */}
-
+      {/* Left Actions */}
       <div className="flex flex-wrap items-center gap-3">
-
-
         {/* Create */}
-
-        <button
-          onClick={onCreate}
+        <Link
+          to="/super-admin/apartments/create"
           className="
             inline-flex
             items-center
@@ -47,18 +37,11 @@ const ApartmentActions = ({
             hover:bg-indigo-700
           "
         >
-
           <Plus className="h-4 w-4" />
-
           New Apartment
-
-        </button>
-
-
-
+        </Link>
 
         {/* Refresh */}
-
         <button
           onClick={onRefresh}
           disabled={loading}
@@ -81,35 +64,16 @@ const ApartmentActions = ({
             disabled:opacity-50
           "
         >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
 
-          {
-            loading ? (
-
-              <Loader2 className="h-4 w-4 animate-spin" />
-
-            ) : (
-
-              <RefreshCw className="h-4 w-4" />
-
-            )
-          }
-
-
-          {
-            loading
-              ? "Refreshing..."
-              : "Refresh"
-          }
-
-
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
 
-
-
-
-
         {/* Export */}
-
         <button
           onClick={onExport}
           className="
@@ -129,25 +93,12 @@ const ApartmentActions = ({
             hover:bg-emerald-100
           "
         >
-
           <Download className="h-4 w-4" />
-
           Export
-
         </button>
-
-
       </div>
 
-
-
-
-
-      {/* ==========================================================
-          View Switcher
-      ========================================================== */}
-
-
+      {/* View Switcher */}
       <div
         className="
           flex
@@ -159,10 +110,7 @@ const ApartmentActions = ({
           p-1
         "
       >
-
-
-        {/* Grid View */}
-
+        {/* Grid */}
         <button
           type="button"
           onClick={() => setView?.("grid")}
@@ -176,26 +124,17 @@ const ApartmentActions = ({
             text-sm
             font-medium
             transition
-            ${
-              view === "grid"
-                ? "bg-white text-indigo-600 shadow"
-                : "text-gray-600 hover:text-indigo-600"
+            ${view === "grid"
+              ? "bg-white text-indigo-600 shadow"
+              : "text-gray-600 hover:text-indigo-600"
             }
           `}
         >
-
           <LayoutGrid className="h-4 w-4" />
-
           Grid
-
         </button>
 
-
-
-
-
-        {/* Table View */}
-
+        {/* Table */}
         <button
           type="button"
           onClick={() => setView?.("table")}
@@ -209,28 +148,18 @@ const ApartmentActions = ({
             text-sm
             font-medium
             transition
-            ${
-              view === "table"
-                ? "bg-white text-indigo-600 shadow"
-                : "text-gray-600 hover:text-indigo-600"
+            ${view === "table"
+              ? "bg-white text-indigo-600 shadow"
+              : "text-gray-600 hover:text-indigo-600"
             }
           `}
         >
-
           <Table2 className="h-4 w-4" />
-
           Table
-
         </button>
-
-
-
       </div>
-
-
     </div>
   );
 };
-
 
 export default ApartmentActions;
