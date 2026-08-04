@@ -10,15 +10,8 @@ import ApartmentForm from "./ApartmentForm";
 const CreateApartment = () => {
   const navigate = useNavigate();
 
-  const {
-    addApartment,
-    loading,
-  } = useApartment();
-
-  const {
-    properties,
-    getProperties,
-  } = useProperty();
+  const { addApartment, loading } = useApartment();
+  const { properties, getProperties } = useProperty();
 
   const [form, setForm] = useState({
     property_id: "",
@@ -39,20 +32,14 @@ const CreateApartment = () => {
   });
 
   useEffect(() => {
-    getProperties({
-      with_relations: true,
-    });
+    getProperties({ with_relations: true });
   }, [getProperties]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-
     setForm((prev) => ({
       ...prev,
-      [name]:
-        type === "checkbox"
-          ? checked
-          : value,
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
@@ -63,22 +50,17 @@ const CreateApartment = () => {
     }));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault(); // ✅ now safe because event is forwarded
     try {
       const formData = new FormData();
-
       Object.entries(form).forEach(([key, value]) => {
-        if (
-          value !== null &&
-          value !== undefined &&
-          value !== ""
-        ) {
+        if (value !== null && value !== undefined && value !== "") {
           formData.append(key, value);
         }
       });
 
       await addApartment(formData);
-
       navigate("/super-admin/apartments");
     } catch (error) {
       console.error(error);
@@ -88,19 +70,16 @@ const CreateApartment = () => {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Header */}
-      {/* Header */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-gray-900">
               Create Apartment
             </h1>
-
             <p className="mt-2 text-sm text-gray-600">
               Create a new apartment and assign it to an existing property.
             </p>
           </div>
-
           <Link
             to="/super-admin/apartments"
             className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 hover:border-gray-400"
