@@ -13,7 +13,6 @@ import {
   Car,
   ShieldCheck,
   Zap,
-  Elevator,
 } from "lucide-react";
 
 
@@ -29,7 +28,6 @@ const ApartmentStats = ({
       icon: Building2,
       color: "text-indigo-600",
       bg: "bg-indigo-50",
-      border: "border-indigo-100",
     },
 
     {
@@ -38,7 +36,6 @@ const ApartmentStats = ({
       icon: Layers3,
       color: "text-blue-600",
       bg: "bg-blue-50",
-      border: "border-blue-100",
     },
 
     {
@@ -47,7 +44,6 @@ const ApartmentStats = ({
       icon: DoorOpen,
       color: "text-emerald-600",
       bg: "bg-emerald-50",
-      border: "border-emerald-100",
     },
 
     {
@@ -56,7 +52,6 @@ const ApartmentStats = ({
       icon: CheckCircle2,
       color: "text-green-600",
       bg: "bg-green-50",
-      border: "border-green-100",
     },
   ];
 
@@ -64,35 +59,63 @@ const ApartmentStats = ({
 
   const occupancyCards = [
     {
-      title:"Occupied Units",
+      title: "Occupied Units",
       value: stats.occupiedUnits ?? 0,
       icon: Users,
-      color:"text-green-600",
-      bg:"bg-green-50",
+      color: "text-green-600",
+      bg: "bg-green-50",
     },
 
     {
-      title:"Vacant Units",
+      title: "Vacant Units",
       value: stats.vacantUnits ?? 0,
       icon: Home,
-      color:"text-blue-600",
-      bg:"bg-blue-50",
+      color: "text-blue-600",
+      bg: "bg-blue-50",
     },
 
     {
-      title:"Maintenance Units",
+      title: "Maintenance Units",
       value: stats.maintenanceUnits ?? 0,
       icon: Wrench,
-      color:"text-orange-600",
-      bg:"bg-orange-50",
+      color: "text-orange-600",
+      bg: "bg-orange-50",
     },
 
     {
-      title:"Occupancy Rate",
-      value:`${stats.occupancyRate ?? 0}%`,
+      title: "Occupancy Rate",
+      value: `${stats.occupancyRate ?? 0}%`,
       icon: TrendingUp,
-      color:"text-purple-600",
-      bg:"bg-purple-50",
+      color: "text-purple-600",
+      bg: "bg-purple-50",
+    },
+  ];
+
+
+
+  const features = [
+    {
+      name: "Elevators",
+      value: stats.elevators ?? 0,
+      icon: Building2,
+    },
+
+    {
+      name: "Parking",
+      value: stats.parking ?? 0,
+      icon: Car,
+    },
+
+    {
+      name: "Security",
+      value: stats.security ?? 0,
+      icon: ShieldCheck,
+    },
+
+    {
+      name: "Generators",
+      value: stats.generators ?? 0,
+      icon: Zap,
     },
   ];
 
@@ -103,144 +126,137 @@ const ApartmentStats = ({
     <div className="space-y-6">
 
 
-
       {/* ===============================
-          Overview Cards
+          Overview Statistics
       =============================== */}
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
 
 
-        {
-          overviewCards.map((card)=>{
-
-            const Icon = card.icon;
+        {overviewCards.map((card)=>{
 
 
-            return (
-
-              <div
-                key={card.title}
-                className="
-                  group
-                  rounded-2xl
-                  border
-                  bg-white
-                  p-6
-                  shadow-sm
-                  transition
-                  hover:-translate-y-1
-                  hover:shadow-xl
-                "
-              >
-
-                <div className="
-                  flex
-                  items-start
-                  justify-between
-                ">
+          const Icon = card.icon;
 
 
-                  <div>
+          return (
 
-                    <p className="
-                      text-sm
-                      font-medium
-                      text-gray-500
-                    ">
-                      {card.title}
-                    </p>
+            <div
+              key={card.title}
+              className="
+                group
+                rounded-2xl
+                border
+                border-gray-200
+                bg-white
+                p-6
+                shadow-sm
+                transition
+                hover:-translate-y-1
+                hover:shadow-xl
+              "
+            >
+
+              <div className="
+                flex
+                items-start
+                justify-between
+              ">
 
 
-                    <h2 className="
-                      mt-3
-                      text-4xl
-                      font-bold
-                      text-gray-900
-                    ">
-                      {card.value}
-                    </h2>
+                <div>
+
+                  <p className="
+                    text-sm
+                    font-medium
+                    text-gray-500
+                  ">
+                    {card.title}
+                  </p>
 
 
-                  </div>
-
-
-
-                  <div
-                    className={`
-                      flex
-                      h-14
-                      w-14
-                      items-center
-                      justify-center
-                      rounded-xl
-                      ${card.bg}
-                    `}
-                  >
-
-                    <Icon
-                      className={`
-                        h-7
-                        w-7
-                        ${card.color}
-                      `}
-                    />
-
-                  </div>
-
+                  <h2 className="
+                    mt-3
+                    text-4xl
+                    font-bold
+                    text-gray-900
+                  ">
+                    {card.value}
+                  </h2>
 
                 </div>
 
 
 
-                <div className="
-                  mt-6
-                  flex
-                  justify-between
-                  border-t
-                  pt-4
-                  text-sm
-                ">
+                <div className={`
+                  rounded-xl
+                  p-4
+                  ${card.bg}
+                `}>
 
-
-                  <span className="
-                    flex
-                    items-center
-                    gap-2
-                    text-green-600
-                  ">
-
-                    <TrendingUp className="h-4 w-4"/>
-
-                    Updated
-
-                  </span>
-
-
-
-                  <span className="
-                    flex
-                    items-center
-                    gap-1
-                    text-gray-400
-                  ">
-
-                    <Activity className="h-4 w-4"/>
-
-                    Live
-
-                  </span>
-
+                  <Icon
+                    className={`
+                      h-7
+                      w-7
+                      ${card.color}
+                    `}
+                  />
 
                 </div>
 
 
               </div>
 
-            );
 
-          })
-        }
+
+              <div className="
+                mt-6
+                flex
+                justify-between
+                border-t
+                border-gray-100
+                pt-4
+                text-sm
+              ">
+
+                <span className="
+                  flex
+                  items-center
+                  gap-2
+                  text-green-600
+                ">
+
+                  <TrendingUp className="h-4 w-4"/>
+
+                  Updated
+
+                </span>
+
+
+
+                <span className="
+                  flex
+                  items-center
+                  gap-1
+                  text-gray-400
+                ">
+
+                  <Activity className="h-4 w-4"/>
+
+                  Live Data
+
+                </span>
+
+
+              </div>
+
+
+            </div>
+
+          );
+
+
+        })}
 
 
       </div>
@@ -262,87 +278,82 @@ const ApartmentStats = ({
       ">
 
 
-        {
-          occupancyCards.map((card)=>{
+        {occupancyCards.map((card)=>{
 
 
-            const Icon = card.icon;
+          const Icon = card.icon;
 
 
-            return (
+          return (
 
-              <div
-                key={card.title}
-                className="
-                  rounded-2xl
-                  border
-                  border-gray-200
-                  bg-white
-                  p-5
-                  shadow-sm
-                "
-              >
+            <div
+              key={card.title}
+              className="
+                rounded-2xl
+                border
+                border-gray-200
+                bg-white
+                p-5
+                shadow-sm
+              "
+            >
 
-                <div className="
-                  flex
-                  items-center
-                  justify-between
-                ">
-
-                  <div>
-
-                    <p className="
-                      text-sm
-                      text-gray-500
-                    ">
-                      {card.title}
-                    </p>
+              <div className="
+                flex
+                items-center
+                justify-between
+              ">
 
 
-                    <h3 className="
-                      mt-2
-                      text-3xl
-                      font-bold
-                      text-gray-900
-                    ">
-                      {card.value}
-                    </h3>
+                <div>
+
+                  <p className="text-sm text-gray-500">
+                    {card.title}
+                  </p>
 
 
-                  </div>
+                  <h3 className="
+                    mt-2
+                    text-3xl
+                    font-bold
+                    text-gray-900
+                  ">
+                    {card.value}
+                  </h3>
 
 
-                  <div className={`
-                    rounded-xl
-                    p-3
-                    ${card.bg}
-                  `}>
+                </div>
 
-                    <Icon
-                      className={`
-                        h-6
-                        w-6
-                        ${card.color}
-                      `}
-                    />
 
-                  </div>
+                <div className={`
+                  rounded-xl
+                  p-3
+                  ${card.bg}
+                `}>
 
+                  <Icon
+                    className={`
+                      h-6
+                      w-6
+                      ${card.color}
+                    `}
+                  />
 
                 </div>
 
 
               </div>
 
-            );
 
-          })
+            </div>
 
-        }
+          );
+
+
+        })}
 
 
       </div>
-
 
 
 
@@ -372,10 +383,7 @@ const ApartmentStats = ({
 
           <div>
 
-            <p className="
-              text-sm
-              text-gray-500
-            ">
+            <p className="text-sm text-gray-500">
               Building Features
             </p>
 
@@ -387,6 +395,7 @@ const ApartmentStats = ({
             ">
               Amenities Summary
             </h3>
+
 
           </div>
 
@@ -422,100 +431,78 @@ const ApartmentStats = ({
         ">
 
 
-          {
-            [
-              {
-                name:"Elevators",
-                value:stats.elevators ?? 0,
-                icon:Elevator,
-              },
-
-              {
-                name:"Parking",
-                value:stats.parking ?? 0,
-                icon:Car,
-              },
-
-              {
-                name:"Security",
-                value:stats.security ?? 0,
-                icon:ShieldCheck,
-              },
-
-              {
-                name:"Generators",
-                value:stats.generators ?? 0,
-                icon:Zap,
-              },
-
-            ].map((item)=>{
+          {features.map((item)=>{
 
 
-              const Icon=item.icon;
+            const Icon = item.icon;
 
 
-              return (
+            return (
 
-                <div
-                  key={item.name}
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                    rounded-xl
-                    bg-gray-50
-                    p-4
-                  "
-                >
+              <div
+                key={item.name}
+                className="
+                  flex
+                  items-center
+                  justify-between
+                  rounded-xl
+                  bg-gray-50
+                  p-4
+                "
+              >
 
-                  <div className="
-                    flex
-                    items-center
-                    gap-3
-                  ">
 
-                    <Icon className="
+                <div className="
+                  flex
+                  items-center
+                  gap-3
+                ">
+
+
+                  <Icon
+                    className="
                       h-5
                       w-5
                       text-indigo-600
-                    "/>
-
-
-                    <span className="
-                      text-sm
-                      font-medium
-                      text-gray-700
-                    ">
-                      {item.name}
-                    </span>
-
-                  </div>
+                    "
+                  />
 
 
                   <span className="
-                    rounded-full
-                    bg-white
-                    px-3
-                    py-1
-                    font-bold
-                    text-gray-900
-                    shadow-sm
+                    text-sm
+                    font-medium
+                    text-gray-700
                   ">
-                    {item.value}
+                    {item.name}
                   </span>
 
 
                 </div>
 
-              );
 
 
-            })
-          }
+                <span className="
+                  rounded-full
+                  bg-white
+                  px-3
+                  py-1
+                  font-bold
+                  text-gray-900
+                  shadow-sm
+                ">
+                  {item.value}
+                </span>
+
+
+              </div>
+
+            );
+
+
+          })}
 
 
         </div>
-
 
 
 
@@ -526,6 +513,7 @@ const ApartmentStats = ({
           items-center
           justify-between
           border-t
+          border-gray-100
           pt-4
           text-sm
         ">
@@ -553,7 +541,6 @@ const ApartmentStats = ({
 
 
         </div>
-
 
 
       </div>
