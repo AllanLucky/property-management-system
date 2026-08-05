@@ -2,9 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Helpers\DateHelper;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use App\Helpers\DateHelper;
 
 class PropertyResource extends JsonResource
 {
@@ -12,26 +12,21 @@ class PropertyResource extends JsonResource
     {
         /*
         |--------------------------------------------------------------------------
-        | UNITS AGGREGATION (SAFE FIX)
+        | DATABASE COUNTS (FROM REPOSITORY)
+        |--------------------------------------------------------------------------
+        |
+        | These values come from:
+        | ->withCount(...)
+        | in PropertyRepository.
         |--------------------------------------------------------------------------
         */
-        $apartments = $this->relationLoaded('apartments')
-            ? collect($this->apartments)
-            : collect();
 
-        $units = $apartments->flatMap(function ($apartment) {
-            return $apartment->relationLoaded('units')
-                ? $apartment->units
-                : collect();
-        });
-
-        $units = collect($units);
-
-        $totalUnits = $units->count();
-        $occupiedUnits = $units->where('status', 'occupied')->count();
-        $vacantUnits = $units->where('status', 'vacant')->count();
-        $maintenanceUnits = $units->where('status', 'maintenance')->count();
-        $reservedUnits = $units->where('status', 'reserved')->count();
+        $totalUnits = (int) ($this->units_count ?? 0);
+        $occupiedUnits = (int) ($this->occupied_units_count ?? 0);
+        $vacantUnits = (int) ($this->vacant_units_count ?? 0);
+        $maintenanceUnits = (int) ($this->maintenance_units_count ?? 0);
+        $reservedUnits = (int) ($this->reserved_units_count ?? 0);
+        $apartmentsCount = (int) ($this->apartments_count ?? 0);
 
         $occupancyRate = $totalUnits > 0
             ? round(($occupiedUnits / $totalUnits) * 100, 2)
@@ -42,6 +37,7 @@ class PropertyResource extends JsonResource
         | MAP LINKS
         |--------------------------------------------------------------------------
         */
+
         $mapUrl = ($this->latitude && $this->longitude)
             ? "https://www.google.com/maps?q={$this->latitude},{$this->longitude}"
             : null;
@@ -52,31 +48,34 @@ class PropertyResource extends JsonResource
 
         /*
         |--------------------------------------------------------------------------
-        | MEDIA (FIXED IMAGE SYSTEM)
+        | MEDIA
         |--------------------------------------------------------------------------
         */
 
-        // NEW FIELD (preferred)
         $imageUrl = $this->image
-            ? (str_starts_with($this->image, 'http')
-                ? $this->image
-                : asset('storage/' . $this->image))
+            ? (
+                str_starts_with($this->image, 'http')
+                    ? $this->image
+                    : asset('storage/' . $this->image)
+            )
             : null;
 
-        // BACKWARD COMPATIBILITY (existing system)
         $thumbnailUrl = $this->thumbnail
-            ? (str_starts_with($this->thumbnail, 'http')
-                ? $this->thumbnail
-                : asset('storage/' . $this->thumbnail))
+            ? (
+                str_starts_with($this->thumbnail, 'http')
+                    ? $this->thumbnail
+                    : asset('storage/' . $this->thumbnail)
+            )
             : asset('images/default-property.jpg');
 
         return [
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC INFO
+            | BASIC INFORMATION
             |--------------------------------------------------------------------------
             */
+
             'id' => $this->id,
             'title' => $this->title,
             'slug' => $this->slug,
@@ -87,43 +86,57 @@ class PropertyResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | TYPE & CATEGORY
+            | PROPERTY TYPE
             |--------------------------------------------------------------------------
             */
-            'property_type' => $this->whenLoaded('propertyType', function () {
-                return [
+
+            'property_type' => $this->whenLoaded(
+                'propertyType',
+                fn () => [
                     'id' => $this->propertyType?->id,
                     'name' => $this->propertyType?->name,
                     'slug' => $this->propertyType?->slug,
-                ];
-            }),
-
-            'property_category' => $this->whenLoaded('propertyCategory', function () {
-                return [
-                    'id' => $this->propertyCategory?->id,
-                    'name' => $this->propertyCategory?->name,
-                    'slug' => $this->propertyCategory?->slug,
-                ];
-            }),
+                ]
+            ),
 
             /*
             |--------------------------------------------------------------------------
-            | USER
+            | PROPERTY CATEGORY
             |--------------------------------------------------------------------------
             */
-            'user' => $this->whenLoaded('user', fn () => [
-                'id' => $this->user?->id,
-                'name' => $this->user?->name,
-                'email' => $this->user?->email,
-                'phone' => $this->user?->phone,
-                'avatar' => $this->user?->avatar,
-            ]),
+
+            'property_category' => $this->whenLoaded(
+                'propertyCategory',
+                fn () => [
+                    'id' => $this->propertyCategory?->id,
+                    'name' => $this->propertyCategory?->name,
+                    'slug' => $this->propertyCategory?->slug,
+                ]
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | OWNER
+            |--------------------------------------------------------------------------
+            */
+
+            'user' => $this->whenLoaded(
+                'user',
+                fn () => [
+                    'id' => $this->user?->id,
+                    'name' => $this->user?->name,
+                    'email' => $this->user?->email,
+                    'phone' => $this->user?->phone,
+                    'avatar' => $this->user?->avatar,
+                ]
+            ),
 
             /*
             |--------------------------------------------------------------------------
             | LOCATION
             |--------------------------------------------------------------------------
             */
+
             'location' => [
                 'country_name' => $this->country_name,
                 'region_name' => $this->region_name,
@@ -143,11 +156,12 @@ class PropertyResource extends JsonResource
             | FEATURES
             |--------------------------------------------------------------------------
             */
+
             'features' => [
                 'bedrooms' => (int) $this->bedrooms,
                 'bathrooms' => (int) $this->bathrooms,
                 'toilets' => (int) $this->toilets,
-                'floors' => $this->floors,
+                'floors' => (int) $this->floors,
                 'size' => $this->size,
                 'size_unit' => $this->size_unit,
             ],
@@ -157,6 +171,7 @@ class PropertyResource extends JsonResource
             | PRICING
             |--------------------------------------------------------------------------
             */
+
             'pricing' => [
                 'price' => $this->price,
                 'monthly_rent' => $this->monthly_rent,
@@ -170,6 +185,7 @@ class PropertyResource extends JsonResource
             | FLAGS
             |--------------------------------------------------------------------------
             */
+
             'flags' => [
                 'is_featured' => (bool) $this->is_featured,
                 'is_verified' => (bool) $this->is_verified,
@@ -178,32 +194,38 @@ class PropertyResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | MEDIA (UPDATED SAFE)
+            | MEDIA
             |--------------------------------------------------------------------------
             */
+
             'media' => [
                 'image_url' => $imageUrl,
                 'thumbnail_url' => $thumbnailUrl,
                 'video_url' => $this->video_url,
                 'virtual_tour_url' => $this->virtual_tour_url,
             ],
-
-            /*
+                        /*
             |--------------------------------------------------------------------------
             | APARTMENTS
             |--------------------------------------------------------------------------
             */
-            'apartments' => $this->whenLoaded('apartments', fn () =>
-                $apartments->map(fn ($apartment) => [
-                    'id' => $apartment->id,
-                    'name' => $apartment->name,
-                    'slug' => $apartment->slug,
-                    'floor' => $apartment->floor,
-                    'status' => $apartment->status,
-                    'units_count' => $apartment->relationLoaded('units')
-                        ? $apartment->units->count()
-                        : 0,
-                ])
+
+            'apartments' => $this->whenLoaded(
+                'apartments',
+                fn () => $this->apartments->map(function ($apartment) {
+                    return [
+                        'id' => $apartment->id,
+                        'name' => $apartment->name,
+                        'slug' => $apartment->slug,
+                        'block' => $apartment->block,
+                        'floor' => $apartment->floor,
+                        'status' => $apartment->status,
+
+                        'units_count' => $apartment->relationLoaded('units')
+                            ? $apartment->units->count()
+                            : ($apartment->units_count ?? 0),
+                    ];
+                })
             ),
 
             /*
@@ -211,25 +233,32 @@ class PropertyResource extends JsonResource
             | UNITS
             |--------------------------------------------------------------------------
             */
-            'units' => $this->whenLoaded('apartments', fn () =>
-                $units->map(fn ($unit) => [
-                    'id' => $unit->id,
-                    'name' => $unit->name,
-                    'unit_number' => $unit->unit_number,
-                    'status' => $unit->status,
-                    'floor' => $unit->floor,
-                    'bedrooms' => $unit->bedrooms,
-                    'bathrooms' => $unit->bathrooms,
-                    'rent' => $unit->rent_amount,
-                ])
+
+            'units' => $this->whenLoaded(
+                'units',
+                fn () => $this->units->map(function ($unit) {
+                    return [
+                        'id' => $unit->id,
+                        'name' => $unit->name,
+                        'unit_number' => $unit->unit_number,
+                        'status' => $unit->status,
+                        'floor' => $unit->floor,
+                        'bedrooms' => $unit->bedrooms,
+                        'bathrooms' => $unit->bathrooms,
+                        'rent' => $unit->rent_amount,
+                    ];
+                })
             ),
 
             /*
             |--------------------------------------------------------------------------
-            | STATS
+            | STATISTICS
             |--------------------------------------------------------------------------
             */
+
             'stats' => [
+                'apartments' => $apartmentsCount,
+
                 'views_count' => (int) ($this->views_count ?? 0),
                 'favorites_count' => (int) ($this->favorites_count ?? 0),
 
@@ -247,6 +276,7 @@ class PropertyResource extends JsonResource
             | INSIGHTS
             |--------------------------------------------------------------------------
             */
+
             'insights' => [
                 'has_vacancy' => $vacantUnits > 0,
                 'fully_occupied' => $vacantUnits === 0 && $totalUnits > 0,
@@ -259,11 +289,22 @@ class PropertyResource extends JsonResource
             | COUNTS
             |--------------------------------------------------------------------------
             */
+
             'counts' => [
-                'images' => $this->relationLoaded('images') ? $this->images->count() : 0,
-                'reviews' => $this->relationLoaded('reviews') ? $this->reviews->count() : 0,
-                'favorites' => $this->relationLoaded('favorites') ? $this->favorites->count() : 0,
-                'apartments' => $this->relationLoaded('apartments') ? $this->apartments->count() : 0,
+                'apartments' => $apartmentsCount,
+                'units' => $totalUnits,
+
+                'images' => $this->relationLoaded('images')
+                    ? $this->images->count()
+                    : 0,
+
+                'reviews' => $this->relationLoaded('reviews')
+                    ? $this->reviews->count()
+                    : 0,
+
+                'favorites' => $this->relationLoaded('favorites')
+                    ? $this->favorites->count()
+                    : 0,
             ],
 
             /*
@@ -271,8 +312,14 @@ class PropertyResource extends JsonResource
             | DATES
             |--------------------------------------------------------------------------
             */
-            'created_at' => $this->created_at ? DateHelper::format($this->created_at) : null,
-            'updated_at' => $this->updated_at ? DateHelper::format($this->updated_at) : null,
+
+            'created_at' => $this->created_at
+                ? DateHelper::format($this->created_at)
+                : null,
+
+            'updated_at' => $this->updated_at
+                ? DateHelper::format($this->updated_at)
+                : null,
         ];
     }
 }
