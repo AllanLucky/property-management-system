@@ -2,37 +2,32 @@
 
 namespace App\Http\Requests\Apartment;
 
-use App\Models\Apartment;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class UpdateApartmentRequest extends FormRequest
+class StoreApartmentRequest extends FormRequest
 {
     /**
      * Determine whether the user is authorized.
      */
     public function authorize(): bool
     {
-        // Replace with Policy or Permission later
-        // return auth()->user()->can('apartments.update');
-
         return true;
     }
 
     /**
-     * Validation Rules
+     * Validation rules.
      */
     public function rules(): array
     {
         return [
-
             /*
             |--------------------------------------------------------------------------
             | PROPERTY
             |--------------------------------------------------------------------------
             */
             'property_id' => [
-                'sometimes',
+                'required',
                 'integer',
                 'exists:properties,id',
             ],
@@ -43,16 +38,16 @@ class UpdateApartmentRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
             'name' => [
-                'sometimes',
+                'required',
                 'string',
                 'max:255',
             ],
 
             'slug' => [
-                'sometimes',
+                'nullable',
                 'string',
                 'max:255',
-                Rule::unique('apartments', 'slug')->ignore($this->route('apartment')),
+                'unique:apartments,slug',
             ],
 
             'description' => [
@@ -86,7 +81,7 @@ class UpdateApartmentRequest extends FormRequest
             'total_units' => [
                 'nullable',
                 'integer',
-                'min:0',
+                'min:1',
             ],
 
             /*
@@ -96,7 +91,12 @@ class UpdateApartmentRequest extends FormRequest
             */
             'status' => [
                 'nullable',
-                Rule::in(Apartment::STATUSES),
+                Rule::in([
+                    'active',
+                    'inactive',
+                    'maintenance',
+                    'archived',
+                ]),
             ],
 
             /*
@@ -162,19 +162,18 @@ class UpdateApartmentRequest extends FormRequest
     }
 
     /**
-     * Custom Messages
+     * Custom validation messages.
      */
     public function messages(): array
     {
         return [
-
+            'property_id.required' => 'Property is required.',
             'property_id.exists' => 'The selected property does not exist.',
 
+            'name.required' => 'Apartment name is required.',
             'name.max' => 'Apartment name may not exceed 255 characters.',
 
             'slug.unique' => 'This apartment slug already exists.',
-
-            'block.max' => 'Block may not exceed 100 characters.',
 
             'floor.integer' => 'Floor must be a valid number.',
             'floor.min' => 'Floor cannot be negative.',
@@ -183,7 +182,7 @@ class UpdateApartmentRequest extends FormRequest
             'total_floors.min' => 'Total floors cannot be negative.',
 
             'total_units.integer' => 'Total units must be a valid number.',
-            'total_units.min' => 'Total units cannot be negative.',
+            'total_units.min' => 'Total units must be at least 1.',
 
             'status.in' => 'Invalid apartment status.',
 
@@ -199,30 +198,10 @@ class UpdateApartmentRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
-
-            'has_elevator' => filter_var(
-                $this->has_elevator,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
-
-            'has_backup_generator' => filter_var(
-                $this->has_backup_generator,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
-
-            'has_security' => filter_var(
-                $this->has_security,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
-
-            'has_parking' => filter_var(
-                $this->has_parking,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
+            'has_elevator' => filter_var($this->has_elevator, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            'has_backup_generator' => filter_var($this->has_backup_generator, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            'has_security' => filter_var($this->has_security, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            'has_parking' => filter_var($this->has_parking, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
         ]);
     }
 }
