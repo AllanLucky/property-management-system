@@ -537,7 +537,25 @@ const PropertyList = () => {
                             : status.value === "maintenance"
                               ? "bg-yellow-100 text-yellow-700"
                               : "bg-gray-100 text-gray-700"
-                          }`}
+                        ? "bg-green-100 text-green-700"
+                        : property.status === "draft"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : property.status === "archived"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                    >
+                      {property.status || "Draft"}
+                    </span>
+                  </td>
+
+                  {/* Actions */}
+                  <td className="px-4 py-4">
+                    <div className="flex justify-end gap-2">
+                      <Link
+                        to={`/super-admin/properties/${property.id}`}
+                        className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50"
+                        title="View Property"
                       >
                         {status.label}
                       </span>
