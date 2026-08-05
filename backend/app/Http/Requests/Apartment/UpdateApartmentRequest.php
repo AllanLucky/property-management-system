@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\Apartment;
 
-use App\Models\Apartment;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -96,7 +95,12 @@ class UpdateApartmentRequest extends FormRequest
             */
             'status' => [
                 'nullable',
-                Rule::in(Apartment::STATUSES),
+                Rule::in([
+                    'active',
+                    'inactive',
+                    'maintenance',
+                    'archived',
+                ]),
             ],
 
             /*
@@ -185,7 +189,7 @@ class UpdateApartmentRequest extends FormRequest
             'total_units.integer' => 'Total units must be a valid number.',
             'total_units.min' => 'Total units cannot be negative.',
 
-            'status.in' => 'Invalid apartment status.',
+            'status.in' => 'Invalid apartment status. Allowed values are: active, inactive, maintenance, archived.',
 
             'thumbnail.image' => 'Thumbnail must be an image.',
             'thumbnail.mimes' => 'Thumbnail must be a JPG, JPEG, PNG or WEBP image.',
@@ -199,7 +203,6 @@ class UpdateApartmentRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
-
             'has_elevator' => filter_var(
                 $this->has_elevator,
                 FILTER_VALIDATE_BOOLEAN,
