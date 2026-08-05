@@ -472,10 +472,10 @@ const PropertyList = () => {
                       </div>
                     </td>
 
-                    {/* Property Code */}
+                    {/* Code */}
                     <td className="px-4 py-4 text-center">
                       <span className="inline-flex rounded-lg bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
-                        {property?.property_code || "—"}
+                        {property.property_code || "—"}
                       </span>
                     </td>
 
@@ -504,7 +504,7 @@ const PropertyList = () => {
                       <div className="mx-auto w-28">
                         <div className="h-2 overflow-hidden rounded-full bg-gray-200">
                           <div
-                            className={`h-full rounded-full transition-all ${getOccupancy(property) >= 90
+                            className={`h-full rounded-full ${getOccupancy(property) >= 90
                               ? "bg-green-600"
                               : getOccupancy(property) >= 70
                                 ? "bg-blue-600"
@@ -513,10 +513,7 @@ const PropertyList = () => {
                                   : "bg-red-500"
                               }`}
                             style={{
-                              width: `${Math.min(
-                                getOccupancy(property),
-                                100
-                              )}%`,
+                              width: `${Math.min(getOccupancy(property), 100)}%`,
                             }}
                           />
                         </div>
@@ -537,25 +534,7 @@ const PropertyList = () => {
                             : status.value === "maintenance"
                               ? "bg-yellow-100 text-yellow-700"
                               : "bg-gray-100 text-gray-700"
-                        ? "bg-green-100 text-green-700"
-                        : property.status === "draft"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : property.status === "archived"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
-                    >
-                      {property.status || "Draft"}
-                    </span>
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-4">
-                    <div className="flex justify-end gap-2">
-                      <Link
-                        to={`/super-admin/properties/${property.id}`}
-                        className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50"
-                        title="View Property"
+                          }`}
                       >
                         {status.label}
                       </span>
@@ -605,7 +584,6 @@ const PropertyList = () => {
                   className="px-6 py-16 text-center"
                 >
                   <div className="flex flex-col items-center justify-center">
-
                     <Building2 className="mb-4 h-14 w-14 text-gray-300" />
 
                     <h3 className="text-lg font-semibold text-gray-700">
@@ -624,14 +602,11 @@ const PropertyList = () => {
                       <Plus className="h-4 w-4" />
                       Add Property
                     </Link>
-
                   </div>
                 </td>
               </tr>
             )}
-
           </tbody>
-
         </table>
 
       </div>
