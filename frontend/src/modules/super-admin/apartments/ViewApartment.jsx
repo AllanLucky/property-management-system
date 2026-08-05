@@ -1,12 +1,30 @@
+import { useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
+import useApartment from "../../../hooks/useApartment";
 import ApartmentDetails from "./ApartmentDetails";
 
-const ViewApartment = ({
-  apartment,
-  loading = false,
-}) => {
+const ViewApartment = () => {
+  const { id } = useParams();
+
+  const {
+    apartment,
+    loading,
+    getApartment,
+  } = useApartment();
+
+  /*
+  |--------------------------------------------------------------------------
+  | Load Apartment
+  |--------------------------------------------------------------------------
+  */
+  useEffect(() => {
+    if (id) {
+      getApartment(id);
+    }
+  }, [id, getApartment]);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Header */}
