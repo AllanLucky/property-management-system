@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Property;
 use App\Models\Apartment;
+use App\Models\Tenancy;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Model;
@@ -11,10 +12,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
 
 class Unit extends Model
 {
     use HasFactory, SoftDeletes;
+
 
     /*
     |--------------------------------------------------------------------------
@@ -22,6 +26,7 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     */
     protected $table = 'units';
+
 
     /*
     |--------------------------------------------------------------------------
@@ -33,6 +38,7 @@ class Unit extends Model
         'apartment',
     ];
 
+
     /*
     |--------------------------------------------------------------------------
     | STATUS CONSTANTS
@@ -43,15 +49,14 @@ class Unit extends Model
     public const STATUS_MAINTENANCE = 'maintenance';
     public const STATUS_RESERVED = 'reserved';
 
-    /**
-     * Available statuses.
-     */
+
     public const STATUSES = [
         self::STATUS_VACANT,
         self::STATUS_OCCUPIED,
         self::STATUS_MAINTENANCE,
         self::STATUS_RESERVED,
     ];
+
 
     /*
     |--------------------------------------------------------------------------
@@ -93,6 +98,7 @@ class Unit extends Model
         'notes',
     ];
 
+
     /*
     |--------------------------------------------------------------------------
     | CASTS
@@ -124,6 +130,7 @@ class Unit extends Model
         'deleted_at' => 'datetime',
     ];
 
+
     /*
     |--------------------------------------------------------------------------
     | APPENDS
@@ -137,6 +144,7 @@ class Unit extends Model
         'thumbnail_url',
     ];
 
+
     /*
     |--------------------------------------------------------------------------
     | MODEL EVENTS
@@ -146,6 +154,7 @@ class Unit extends Model
     {
         parent::boot();
 
+
         static::creating(function (Unit $unit) {
 
             if (blank($unit->slug)) {
@@ -154,10 +163,13 @@ class Unit extends Model
                 );
             }
 
+
             if (blank($unit->status)) {
                 $unit->status = self::STATUS_VACANT;
             }
+
         });
+
 
         static::updating(function (Unit $unit) {
 
@@ -165,13 +177,16 @@ class Unit extends Model
                 $unit->isDirty('unit_name') ||
                 $unit->isDirty('unit_number')
             ) {
+
                 $unit->slug = static::generateUniqueSlug(
                     $unit->unit_name ?: 'unit-' . $unit->unit_number,
                     $unit->id
                 );
             }
+
         });
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -183,11 +198,13 @@ class Unit extends Model
         return 'slug';
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | RELATIONSHIPS
     |--------------------------------------------------------------------------
     */
+
 
     /**
      * Property that owns this unit.
@@ -197,6 +214,7 @@ class Unit extends Model
         return $this->belongsTo(Property::class);
     }
 
+
     /**
      * Apartment that owns this unit.
      */
@@ -204,6 +222,17 @@ class Unit extends Model
     {
         return $this->belongsTo(Apartment::class);
     }
+
+
+    /**
+     * Unit tenancy history.
+     */
+    public function tenancies(): HasMany
+    {
+        return $this->hasMany(Tenancy::class);
+    }
+
+
 
     /*
     |--------------------------------------------------------------------------
@@ -216,20 +245,24 @@ class Unit extends Model
         return $query->where('status', self::STATUS_VACANT);
     }
 
+
     public function scopeOccupied(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_OCCUPIED);
     }
+
 
     public function scopeMaintenance(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_MAINTENANCE);
     }
 
+
     public function scopeReserved(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_RESERVED);
     }
+
 
     public function scopeActive(Builder $query): Builder
     {
@@ -240,46 +273,47 @@ class Unit extends Model
         ]);
     }
 
-    /**
-     * Filter by property.
-     */
-    public function scopeProperty(Builder $query, int $propertyId): Builder
-    {
+
+    public function scopeProperty(
+        Builder $query,
+        int $propertyId
+    ): Builder {
         return $query->where('property_id', $propertyId);
     }
 
-    /**
-     * Filter by apartment.
-     */
-    public function scopeApartment(Builder $query, int $apartmentId): Builder
-    {
+
+    public function scopeApartment(
+        Builder $query,
+        int $apartmentId
+    ): Builder {
         return $query->where('apartment_id', $apartmentId);
     }
 
-    /**
-     * Filter by floor.
-     */
-    public function scopeFloor(Builder $query, int $floor): Builder
-    {
+
+    public function scopeFloor(
+        Builder $query,
+        int $floor
+    ): Builder {
         return $query->where('floor', $floor);
     }
+
+
 
     /*
     |--------------------------------------------------------------------------
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
-        /**
-     * Get formatted price.
-     */
+
     public function getFormattedPriceAttribute(): string
     {
-        return 'KES ' . number_format((float) ($this->price ?? 0), 2);
+        return 'KES ' . number_format(
+            (float) ($this->price ?? 0),
+            2
+        );
     }
 
-    /**
-     * Get Bootstrap/Tailwind status badge.
-     */
+
     public function getStatusBadgeAttribute(): string
     {
         return match ($this->status) {
@@ -291,9 +325,7 @@ class Unit extends Model
         };
     }
 
-    /**
-     * Get human-readable status.
-     */
+
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
@@ -305,9 +337,7 @@ class Unit extends Model
         };
     }
 
-    /**
-     * Get display name.
-     */
+
     public function getFullUnitNameAttribute(): string
     {
         return filled($this->unit_name)
@@ -315,14 +345,13 @@ class Unit extends Model
             : 'Unit ' . $this->unit_number;
     }
 
-    /**
-     * Get thumbnail URL.
-     */
+
     public function getThumbnailUrlAttribute(): string
     {
         if (blank($this->thumbnail)) {
             return asset('images/default-unit.jpg');
         }
+
 
         if (
             str_starts_with($this->thumbnail, 'http://') ||
@@ -331,8 +360,11 @@ class Unit extends Model
             return $this->thumbnail;
         }
 
+
         return Storage::url($this->thumbnail);
     }
+
+
 
     /*
     |--------------------------------------------------------------------------
@@ -340,41 +372,30 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine if unit is vacant.
-     */
     public function isVacant(): bool
     {
         return $this->status === self::STATUS_VACANT;
     }
 
-    /**
-     * Determine if unit is occupied.
-     */
+
     public function isOccupied(): bool
     {
         return $this->status === self::STATUS_OCCUPIED;
     }
 
-    /**
-     * Determine if unit is reserved.
-     */
+
     public function isReserved(): bool
     {
         return $this->status === self::STATUS_RESERVED;
     }
 
-    /**
-     * Determine if unit is under maintenance.
-     */
+
     public function isUnderMaintenance(): bool
     {
         return $this->status === self::STATUS_MAINTENANCE;
     }
 
-    /**
-     * Determine if unit is available for booking or tenancy.
-     */
+
     public function isAvailable(): bool
     {
         return in_array($this->status, [
@@ -383,34 +404,41 @@ class Unit extends Model
         ], true);
     }
 
+
+
     /*
     |--------------------------------------------------------------------------
     | SLUG GENERATOR
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Generate a unique slug.
-     */
     protected static function generateUniqueSlug(
         string $text,
         ?int $ignoreId = null
     ): string {
+
         $baseSlug = Str::slug($text);
+
         $slug = $baseSlug;
+
         $counter = 1;
+
 
         while (
             static::where('slug', $slug)
                 ->when(
                     $ignoreId,
-                    fn (Builder $query) => $query->where('id', '!=', $ignoreId)
+                    fn (Builder $query) =>
+                    $query->where('id', '!=', $ignoreId)
                 )
                 ->exists()
         ) {
+
             $slug = "{$baseSlug}-{$counter}";
+
             $counter++;
         }
+
 
         return $slug;
     }
