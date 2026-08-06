@@ -7,6 +7,7 @@ use App\Models\Unit;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -16,6 +17,11 @@ class Apartment extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /*
+    |--------------------------------------------------------------------------
+    | TABLE
+    |--------------------------------------------------------------------------
+    */
     protected $table = 'apartments';
 
     /*
@@ -23,8 +29,15 @@ class Apartment extends Model
     | EAGER LOADING
     |--------------------------------------------------------------------------
     */
-    protected $with = ['property'];
+    protected $with = [
+        'property',
+    ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | RELATIONSHIP COUNTS
+    |--------------------------------------------------------------------------
+    */
     protected $withCount = [
         'units',
     ];
@@ -33,23 +46,34 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     | FILLABLE
     |--------------------------------------------------------------------------
+    |
+    | NOTE:
+    | Removed "floor".
+    | Each Unit belongs to a floor, not the Apartment.
+    |
     */
     protected $fillable = [
         'property_id',
+
         'name',
         'slug',
         'description',
+
         'block',
-        'floor',
+
         'total_floors',
         'total_units',
+
         'status',
+
         'has_elevator',
         'has_backup_generator',
         'has_security',
         'has_parking',
+
         'thumbnail',
         'thumbnail_public_id',
+
         'meta_title',
         'meta_description',
         'meta_keywords',
@@ -61,17 +85,19 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     */
     protected $casts = [
-        'property_id'           => 'integer',
-        'floor'                 => 'integer',
-        'total_floors'          => 'integer',
-        'total_units'           => 'integer',
-        'has_elevator'          => 'boolean',
-        'has_backup_generator'  => 'boolean',
-        'has_security'          => 'boolean',
-        'has_parking'           => 'boolean',
-        'created_at'            => 'datetime',
-        'updated_at'            => 'datetime',
-        'deleted_at'            => 'datetime',
+        'property_id' => 'integer',
+
+        'total_floors' => 'integer',
+        'total_units' => 'integer',
+
+        'has_elevator' => 'boolean',
+        'has_backup_generator' => 'boolean',
+        'has_security' => 'boolean',
+        'has_parking' => 'boolean',
+
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
     ];
 
     /*
@@ -84,9 +110,11 @@ class Apartment extends Model
         'status_label',
         'property_title',
         'full_name',
+
         'occupied_units_count',
         'vacant_units_count',
         'maintenance_units_count',
+
         'occupancy_rate',
     ];
 
@@ -104,7 +132,7 @@ class Apartment extends Model
     public const STATUS_ARCHIVED = 'archived';
 
     /**
-     * Available apartment statuses.
+     * Available statuses.
      */
     public const STATUSES = [
         self::STATUS_ACTIVE,
@@ -123,6 +151,7 @@ class Apartment extends Model
         parent::boot();
 
         static::creating(function (Apartment $apartment) {
+
             if (blank($apartment->slug) && filled($apartment->name)) {
                 $apartment->slug = static::generateUniqueSlug(
                     $apartment->name
@@ -135,6 +164,7 @@ class Apartment extends Model
         });
 
         static::updating(function (Apartment $apartment) {
+
             if (
                 $apartment->isDirty('name') &&
                 filled($apartment->name)
@@ -164,33 +194,91 @@ class Apartment extends Model
     */
 
     /**
-     * Property that owns the apartment.
+     * Property that owns this apartment.
      */
     public function property(): BelongsTo
     {
-        return $this->belongsTo(Property::class, 'property_id');
+        return $this->belongsTo(Property::class);
     }
 
     /**
-     * Apartment units.
+     * Units within this apartment.
      */
     public function units(): HasMany
     {
-        return $this->hasMany(Unit::class, 'apartment_id');
+        return $this->hasMany(Unit::class);
     }
 
-        /*
+    /*
+    |--------------------------------------------------------------------------
+    | QUERY SCOPES
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Active apartments.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_ACTIVE);
+    }
+
+    /**
+     * Inactive apartments.
+     */
+    public function scopeInactive(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_INACTIVE);
+    }
+
+    /**
+     * Apartments under maintenance.
+     */
+    public function scopeMaintenance(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_MAINTENANCE);
+    }
+
+    /**
+     * Archived apartments.
+     */
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_ARCHIVED);
+    }
+
+    /**
+     * Filter by property.
+     */
+    public function scopeProperty(
+        Builder $query,
+        int $propertyId
+    ): Builder {
+        return $query->where('property_id', $propertyId);
+    }
+
+    /**
+     * Filter by block.
+     */
+    public function scopeBlock(
+        Builder $query,
+        string $block
+    ): Builder {
+        return $query->where('block', $block);
+    }
+
+    /*
     |--------------------------------------------------------------------------
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
 
-    /**
+        /**
      * Get apartment thumbnail URL.
      */
     public function getThumbnailUrlAttribute(): string
     {
-        if (!$this->thumbnail) {
+        if (blank($this->thumbnail)) {
             return asset('images/default-apartment.jpg');
         }
 
@@ -239,37 +327,37 @@ class Apartment extends Model
     }
 
     /**
-     * Occupied units count.
+     * Get occupied units count.
      */
     public function getOccupiedUnitsCountAttribute(): int
     {
         return $this->units()
-            ->where('status', 'occupied')
+            ->occupied()
             ->count();
     }
 
     /**
-     * Vacant units count.
+     * Get vacant units count.
      */
     public function getVacantUnitsCountAttribute(): int
     {
         return $this->units()
-            ->where('status', 'vacant')
+            ->vacant()
             ->count();
     }
 
     /**
-     * Maintenance units count.
+     * Get maintenance units count.
      */
     public function getMaintenanceUnitsCountAttribute(): int
     {
         return $this->units()
-            ->where('status', 'maintenance')
+            ->maintenance()
             ->count();
     }
 
     /**
-     * Apartment occupancy rate.
+     * Get apartment occupancy rate.
      */
     public function getOccupancyRateAttribute(): float
     {
@@ -323,30 +411,29 @@ class Apartment extends Model
         return $this->status === self::STATUS_ARCHIVED;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | QUERY SCOPES
-    |--------------------------------------------------------------------------
-    */
-
-    public function scopeActive($query)
+    /**
+     * Check if apartment has vacant units.
+     */
+    public function hasVacantUnits(): bool
     {
-        return $query->where('status', self::STATUS_ACTIVE);
+        return $this->vacant_units_count > 0;
     }
 
-    public function scopeInactive($query)
+    /**
+     * Check if apartment has occupied units.
+     */
+    public function hasOccupiedUnits(): bool
     {
-        return $query->where('status', self::STATUS_INACTIVE);
+        return $this->occupied_units_count > 0;
     }
 
-    public function scopeMaintenance($query)
+    /**
+     * Check if apartment is fully occupied.
+     */
+    public function isFull(): bool
     {
-        return $query->where('status', self::STATUS_MAINTENANCE);
-    }
-
-    public function scopeArchived($query)
-    {
-        return $query->where('status', self::STATUS_ARCHIVED);
+        return $this->units_count > 0
+            && $this->vacant_units_count === 0;
     }
 
     /*
@@ -370,7 +457,7 @@ class Apartment extends Model
             static::where('slug', $slug)
                 ->when(
                     $ignoreId,
-                    fn ($query) => $query->where('id', '!=', $ignoreId)
+                    fn (Builder $query) => $query->where('id', '!=', $ignoreId)
                 )
                 ->exists()
         ) {

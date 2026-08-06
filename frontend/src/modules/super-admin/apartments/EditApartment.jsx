@@ -62,63 +62,85 @@ const EditApartment = () => {
   | Populate Form
   |--------------------------------------------------------------------------
   */
+  /*
+ |--------------------------------------------------------------------------
+ | Populate Form
+ |--------------------------------------------------------------------------
+ */
   useEffect(() => {
     if (!apartment) return;
 
+    console.log("Apartment:", apartment);
+
     setForm({
+      // Property
       property_id:
-        apartment.property_id ||
-        apartment.property?.id ||
+        apartment.property_id ??
+        apartment.property?.id ??
         "",
 
-      name: apartment.name || "",
-      slug: apartment.slug || "",
-      code: apartment.code || "",
-      description:
-        apartment.description || "",
+      // Basic Information
+      name: apartment.name ?? "",
+      slug: apartment.slug ?? "",
+      code: apartment.code ?? "",
+      description: apartment.description ?? "",
 
-      block: apartment.block || "",
-      floor: apartment.floor || 1,
+      // Building Information
+      block:
+        apartment.building?.block ??
+        apartment.block ??
+        "",
+
+      floor:
+        apartment.building?.floor ??
+        apartment.floor ??
+        1,
+
       total_floors:
-        apartment.total_floors || 1,
-      total_units:
-        apartment.total_units || 0,
+        apartment.building?.total_floors ??
+        apartment.total_floors ??
+        1,
 
+      total_units:
+        apartment.counts?.units ??
+        apartment.total_units ??
+        0,
+
+      // Status
       status:
-        apartment.status?.value ||
-        apartment.status ||
+        apartment.status?.value ??
+        apartment.status ??
         "active",
 
+      // Featuress
       has_elevator:
-        apartment.features
-          ?.has_elevator ??
+        apartment.features?.has_elevator ??
         apartment.has_elevator ??
         false,
 
       has_backup_generator:
-        apartment.features
-          ?.has_backup_generator ??
+        apartment.features?.has_backup_generator ??
         apartment.has_backup_generator ??
         false,
 
       has_security:
-        apartment.features
-          ?.has_security ??
+        apartment.features?.has_security ??
         apartment.has_security ??
         false,
 
       has_parking:
-        apartment.features
-          ?.has_parking ??
+        apartment.features?.has_parking ??
         apartment.has_parking ??
         false,
 
+      // Image
       thumbnail: null,
 
       thumbnail_url:
-        apartment.image_url ||
-        apartment.thumbnail_url ||
-        apartment.thumbnail ||
+        apartment.media?.thumbnail_url ??
+        apartment.media?.thumbnail ??
+        apartment.thumbnail_url ??
+        apartment.thumbnail ??
         "",
     });
   }, [apartment]);

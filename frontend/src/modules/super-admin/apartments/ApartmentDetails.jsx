@@ -45,9 +45,8 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-        colors[status] || "bg-gray-100 text-gray-700"
-      }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${colors[status] || "bg-gray-100 text-gray-700"
+        }`}
     >
       {status || "Unknown"}
     </span>
@@ -56,11 +55,10 @@ const StatusBadge = ({ status }) => {
 
 const FeatureBadge = ({ active, label, icon }) => (
   <div
-    className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-      active
+    className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${active
         ? "border-green-200 bg-green-50 text-green-700"
         : "border-gray-200 bg-gray-50 text-gray-400"
-    }`}
+      }`}
   >
     {icon}
 
@@ -132,61 +130,48 @@ const ApartmentDetails = ({
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <DetailItem
-            icon={<Building2 className="h-5 w-5" />}
-            label="Property"
-            value={property.title}
-          />
-
-          <DetailItem
             icon={<Layers3 className="h-5 w-5" />}
             label="Block"
-            value={apartment.block}
-          />
-
-          <DetailItem
-            icon={<Home className="h-5 w-5" />}
-            label="Apartment Name"
-            value={apartment.name}
-          />
-
-          <DetailItem
-            icon={<DoorOpen className="h-5 w-5" />}
-            label="Total Units"
-            value={apartment.total_units}
+            value={apartment.building?.block}
           />
 
           <DetailItem
             icon={<Building2 className="h-5 w-5" />}
             label="Floor"
-            value={apartment.floor}
+            value={apartment.building?.floor}
           />
 
           <DetailItem
             icon={<Layers3 className="h-5 w-5" />}
             label="Total Floors"
-            value={apartment.total_floors}
+            value={apartment.building?.total_floors}
+          />
+
+          <DetailItem
+            icon={<DoorOpen className="h-5 w-5" />}
+            label="Total Units"
+            value={apartment.counts?.units}
           />
 
           <DetailItem
             icon={<Users className="h-5 w-5" />}
             label="Occupied Units"
-            value={apartment.occupied_units_count}
+            value={apartment.counts?.occupied_units}
           />
 
           <DetailItem
             icon={<Home className="h-5 w-5" />}
             label="Vacant Units"
-            value={apartment.vacant_units_count}
+            value={apartment.counts?.vacant_units}
           />
-
           <DetailItem
             icon={<Calendar className="h-5 w-5" />}
             label="Created"
             value={
               apartment.created_at
                 ? new Date(
-                    apartment.created_at
-                  ).toLocaleDateString()
+                  apartment.created_at
+                ).toLocaleDateString()
                 : "—"
             }
           />
