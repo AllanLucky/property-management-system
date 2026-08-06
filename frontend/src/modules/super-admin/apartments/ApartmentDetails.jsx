@@ -14,11 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 
-const DetailItem = ({
-  icon,
-  label,
-  value,
-}) => (
+const DetailItem = ({ icon, label, value }) => (
   <div className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4">
     <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
       {icon}
@@ -30,13 +26,23 @@ const DetailItem = ({
       </p>
 
       <p className="mt-1 text-sm font-semibold text-gray-900">
-        {value || "—"}
+        {value ?? "—"}
       </p>
     </div>
   </div>
 );
 
 const StatusBadge = ({ status }) => {
+  const statusValue =
+    typeof status === "object"
+      ? status?.value
+      : status;
+
+  const statusLabel =
+    typeof status === "object"
+      ? status?.label
+      : status;
+
   const colors = {
     active: "bg-green-100 text-green-700",
     inactive: "bg-red-100 text-red-700",
@@ -45,24 +51,28 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${colors[status] || "bg-gray-100 text-gray-700"
-        }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+        colors[statusValue] || "bg-gray-100 text-gray-700"
+      }`}
     >
-      {status || "Unknown"}
+      {statusLabel || "Unknown"}
     </span>
   );
 };
 
 const FeatureBadge = ({ active, label, icon }) => (
   <div
-    className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${active
+    className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+      active
         ? "border-green-200 bg-green-50 text-green-700"
         : "border-gray-200 bg-gray-50 text-gray-400"
-      }`}
+    }`}
   >
     {icon}
 
-    <span className="text-sm font-medium">{label}</span>
+    <span className="text-sm font-medium">
+      {label}
+    </span>
 
     {active ? (
       <CheckCircle2 className="ml-auto h-4 w-4" />
@@ -100,8 +110,17 @@ const ApartmentDetails = ({
     );
   }
 
-  const property = apartment.property || {};
-  const features = apartment.features || {};
+  const property = apartment.property ?? {};
+  const building = apartment.building ?? {};
+  const counts = apartment.counts ?? {};
+
+  const features = apartment.features ?? {
+    has_security: apartment.has_security,
+    has_parking: apartment.has_parking,
+    has_backup_generator:
+      apartment.has_backup_generator,
+    has_elevator: apartment.has_elevator,
+  };
 
   return (
     <div className="space-y-6">
@@ -114,11 +133,14 @@ const ApartmentDetails = ({
             </h1>
 
             <p className="mt-2 text-sm text-gray-500">
-              {apartment.description || "No description available."}
+              {apartment.description ||
+                "No description available."}
             </p>
           </div>
 
-          <StatusBadge status={apartment.status} />
+          <StatusBadge
+            status={apartment.status}
+          />
         </div>
       </div>
 
@@ -130,48 +152,82 @@ const ApartmentDetails = ({
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <DetailItem
+            icon={<Building2 className="h-5 w-5" />}
+            label="Property"
+            value={
+              property.title ||
+              property.name
+            }
+          />
+
+          <DetailItem
             icon={<Layers3 className="h-5 w-5" />}
             label="Block"
-            value={apartment.building?.block}
+            value={
+              building.block ??
+              apartment.block
+            }
           />
 
           <DetailItem
-            icon={<Building2 className="h-5 w-5" />}
-            label="Floor"
-            value={apartment.building?.floor}
-          />
-
-          <DetailItem
-            icon={<Layers3 className="h-5 w-5" />}
-            label="Total Floors"
-            value={apartment.building?.total_floors}
+            icon={<Home className="h-5 w-5" />}
+            label="Apartment Name"
+            value={apartment.name}
           />
 
           <DetailItem
             icon={<DoorOpen className="h-5 w-5" />}
             label="Total Units"
-            value={apartment.counts?.units}
+            value={
+              counts.units ??
+              apartment.total_units
+            }
+          />
+
+          <DetailItem
+            icon={<Building2 className="h-5 w-5" />}
+            label="Floor"
+            value={
+              building.floor ??
+              apartment.floor
+            }
+          />
+
+          <DetailItem
+            icon={<Layers3 className="h-5 w-5" />}
+            label="Total Floors"
+            value={
+              building.total_floors ??
+              apartment.total_floors
+            }
           />
 
           <DetailItem
             icon={<Users className="h-5 w-5" />}
             label="Occupied Units"
-            value={apartment.counts?.occupied_units}
+            value={
+              counts.occupied_units ??
+              apartment.occupied_units_count
+            }
           />
 
           <DetailItem
             icon={<Home className="h-5 w-5" />}
             label="Vacant Units"
-            value={apartment.counts?.vacant_units}
+            value={
+              counts.vacant_units ??
+              apartment.vacant_units_count
+            }
           />
+
           <DetailItem
             icon={<Calendar className="h-5 w-5" />}
             label="Created"
             value={
               apartment.created_at
                 ? new Date(
-                  apartment.created_at
-                ).toLocaleDateString()
+                    apartment.created_at
+                  ).toLocaleDateString()
                 : "—"
             }
           />
@@ -188,7 +244,9 @@ const ApartmentDetails = ({
           <FeatureBadge
             active={features.has_security}
             label="Security"
-            icon={<ShieldCheck className="h-5 w-5" />}
+            icon={
+              <ShieldCheck className="h-5 w-5" />
+            }
           />
 
           <FeatureBadge
@@ -198,7 +256,9 @@ const ApartmentDetails = ({
           />
 
           <FeatureBadge
-            active={features.has_backup_generator}
+            active={
+              features.has_backup_generator
+            }
             label="Generator"
             icon={<Zap className="h-5 w-5" />}
           />
@@ -206,7 +266,9 @@ const ApartmentDetails = ({
           <FeatureBadge
             active={features.has_elevator}
             label="Elevator"
-            icon={<Building2 className="h-5 w-5" />}
+            icon={
+              <Building2 className="h-5 w-5" />
+            }
           />
         </div>
       </div>
@@ -222,8 +284,11 @@ const ApartmentDetails = ({
 
           <div>
             <p className="font-medium text-gray-900">
-              {property?.location?.full_location ||
-                property?.location?.street_address ||
+              {property?.location
+                ?.full_location ||
+                property?.location
+                  ?.street_address ||
+                property?.street_address ||
                 "No location available"}
             </p>
           </div>
