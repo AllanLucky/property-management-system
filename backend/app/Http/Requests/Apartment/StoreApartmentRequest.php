@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Apartment;
 
+use App\Models\Apartment;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,11 +22,13 @@ class StoreApartmentRequest extends FormRequest
     public function rules(): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | PROPERTY
             |--------------------------------------------------------------------------
             */
+
             'property_id' => [
                 'required',
                 'integer',
@@ -37,6 +40,7 @@ class StoreApartmentRequest extends FormRequest
             | BASIC INFORMATION
             |--------------------------------------------------------------------------
             */
+
             'name' => [
                 'required',
                 'string',
@@ -60,28 +64,23 @@ class StoreApartmentRequest extends FormRequest
             | BUILDING INFORMATION
             |--------------------------------------------------------------------------
             */
+
             'block' => [
                 'nullable',
                 'string',
                 'max:100',
             ],
 
-            'floor' => [
-                'nullable',
-                'integer',
-                'min:0',
-            ],
-
             'total_floors' => [
-                'nullable',
+                'required',
                 'integer',
-                'min:0',
+                'min:1',
             ],
 
             'total_units' => [
                 'nullable',
                 'integer',
-                'min:1',
+                'min:0',
             ],
 
             /*
@@ -89,14 +88,10 @@ class StoreApartmentRequest extends FormRequest
             | STATUS
             |--------------------------------------------------------------------------
             */
+
             'status' => [
                 'nullable',
-                Rule::in([
-                    'active',
-                    'inactive',
-                    'maintenance',
-                    'archived',
-                ]),
+                Rule::in(Apartment::STATUSES),
             ],
 
             /*
@@ -104,6 +99,7 @@ class StoreApartmentRequest extends FormRequest
             | FEATURES
             |--------------------------------------------------------------------------
             */
+
             'has_elevator' => [
                 'nullable',
                 'boolean',
@@ -129,6 +125,7 @@ class StoreApartmentRequest extends FormRequest
             | THUMBNAIL
             |--------------------------------------------------------------------------
             */
+
             'thumbnail' => [
                 'nullable',
                 'image',
@@ -141,6 +138,7 @@ class StoreApartmentRequest extends FormRequest
             | SEO
             |--------------------------------------------------------------------------
             */
+
             'meta_title' => [
                 'nullable',
                 'string',
@@ -167,6 +165,7 @@ class StoreApartmentRequest extends FormRequest
     public function messages(): array
     {
         return [
+
             'property_id.required' => 'Property is required.',
             'property_id.exists' => 'The selected property does not exist.',
 
@@ -175,14 +174,12 @@ class StoreApartmentRequest extends FormRequest
 
             'slug.unique' => 'This apartment slug already exists.',
 
-            'floor.integer' => 'Floor must be a valid number.',
-            'floor.min' => 'Floor cannot be negative.',
-
+            'total_floors.required' => 'Total floors is required.',
             'total_floors.integer' => 'Total floors must be a valid number.',
-            'total_floors.min' => 'Total floors cannot be negative.',
+            'total_floors.min' => 'Total floors must be at least 1.',
 
             'total_units.integer' => 'Total units must be a valid number.',
-            'total_units.min' => 'Total units must be at least 1.',
+            'total_units.min' => 'Total units cannot be negative.',
 
             'status.in' => 'Invalid apartment status.',
 
@@ -197,11 +194,21 @@ class StoreApartmentRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'has_elevator' => filter_var($this->has_elevator, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-            'has_backup_generator' => filter_var($this->has_backup_generator, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-            'has_security' => filter_var($this->has_security, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-            'has_parking' => filter_var($this->has_parking, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-        ]);
+        foreach ([
+            'has_elevator',
+            'has_backup_generator',
+            'has_security',
+            'has_parking',
+        ] as $field) {
+            if ($this->has($field)) {
+                $this->merge([
+                    $field => filter_var(
+                        $this->$field,
+                        FILTER_VALIDATE_BOOLEAN,
+                        FILTER_NULL_ON_FAILURE
+                    ),
+                ]);
+            }
+        }
     }
 }

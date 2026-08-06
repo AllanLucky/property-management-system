@@ -6,6 +6,9 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::create('apartments', function (Blueprint $table) {
@@ -18,12 +21,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
             $table->foreignId('property_id')
-                ->constrained('properties')
+                ->constrained()
                 ->cascadeOnDelete();
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC INFO
+            | BASIC INFORMATION
             |--------------------------------------------------------------------------
             */
             $table->string('name');
@@ -32,22 +35,26 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | STRUCTURE
+            | BUILDING INFORMATION
             |--------------------------------------------------------------------------
             */
             $table->string('block')->nullable();
-            $table->integer('floor')->nullable();
 
-            $table->integer('total_floors')->default(1);
-            $table->integer('total_units')->default(0);
+            // Building statistics
+            $table->unsignedInteger('total_floors')->default(1);
+            $table->unsignedInteger('total_units')->default(0);
 
             /*
             |--------------------------------------------------------------------------
             | STATUS
             |--------------------------------------------------------------------------
             */
-            $table->enum('status', ['active', 'inactive', 'maintenance'])
-                ->default('active');
+            $table->enum('status', [
+                'active',
+                'inactive',
+                'maintenance',
+                'archived',
+            ])->default('active');
 
             /*
             |--------------------------------------------------------------------------
@@ -78,7 +85,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | TIMESTAMPS + SOFT DELETES
+            | TIMESTAMPS
             |--------------------------------------------------------------------------
             */
             $table->timestamps();
@@ -89,11 +96,18 @@ return new class extends Migration
             | INDEXES
             |--------------------------------------------------------------------------
             */
+            $table->index('property_id');
+            $table->index('status');
+            $table->index('block');
+            $table->index('total_floors');
             $table->index(['property_id', 'status']);
-            $table->index('slug');
+            $table->index(['property_id', 'block']);
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::dropIfExists('apartments');
