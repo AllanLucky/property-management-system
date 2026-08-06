@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Apartment;
 
+use App\Models\Apartment;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -12,17 +13,19 @@ class UpdateApartmentRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        // Replace with Policy or Permission later
-        // return auth()->user()->can('apartments.update');
+        // Later replace with Policy
+        // return auth()->user()->can('update', $this->route('apartment'));
 
         return true;
     }
 
     /**
-     * Validation Rules
+     * Validation Rules.
      */
     public function rules(): array
     {
+        $apartment = $this->route('apartment');
+
         return [
 
             /*
@@ -30,6 +33,7 @@ class UpdateApartmentRequest extends FormRequest
             | PROPERTY
             |--------------------------------------------------------------------------
             */
+
             'property_id' => [
                 'sometimes',
                 'integer',
@@ -41,6 +45,7 @@ class UpdateApartmentRequest extends FormRequest
             | BASIC INFORMATION
             |--------------------------------------------------------------------------
             */
+
             'name' => [
                 'sometimes',
                 'string',
@@ -51,7 +56,8 @@ class UpdateApartmentRequest extends FormRequest
                 'sometimes',
                 'string',
                 'max:255',
-                Rule::unique('apartments', 'slug')->ignore($this->route('apartment')),
+                Rule::unique('apartments', 'slug')
+                    ->ignore($apartment?->id ?? $apartment),
             ],
 
             'description' => [
@@ -64,26 +70,21 @@ class UpdateApartmentRequest extends FormRequest
             | BUILDING INFORMATION
             |--------------------------------------------------------------------------
             */
+
             'block' => [
                 'nullable',
                 'string',
                 'max:100',
             ],
 
-            'floor' => [
-                'nullable',
-                'integer',
-                'min:0',
-            ],
-
             'total_floors' => [
-                'nullable',
+                'sometimes',
                 'integer',
-                'min:0',
+                'min:1',
             ],
 
             'total_units' => [
-                'nullable',
+                'sometimes',
                 'integer',
                 'min:0',
             ],
@@ -93,14 +94,10 @@ class UpdateApartmentRequest extends FormRequest
             | STATUS
             |--------------------------------------------------------------------------
             */
+
             'status' => [
-                'nullable',
-                Rule::in([
-                    'active',
-                    'inactive',
-                    'maintenance',
-                    'archived',
-                ]),
+                'sometimes',
+                Rule::in(Apartment::STATUSES),
             ],
 
             /*
@@ -108,23 +105,24 @@ class UpdateApartmentRequest extends FormRequest
             | FEATURES
             |--------------------------------------------------------------------------
             */
+
             'has_elevator' => [
-                'nullable',
+                'sometimes',
                 'boolean',
             ],
 
             'has_backup_generator' => [
-                'nullable',
+                'sometimes',
                 'boolean',
             ],
 
             'has_security' => [
-                'nullable',
+                'sometimes',
                 'boolean',
             ],
 
             'has_parking' => [
-                'nullable',
+                'sometimes',
                 'boolean',
             ],
 
@@ -133,6 +131,7 @@ class UpdateApartmentRequest extends FormRequest
             | THUMBNAIL
             |--------------------------------------------------------------------------
             */
+
             'thumbnail' => [
                 'nullable',
                 'image',
@@ -145,6 +144,7 @@ class UpdateApartmentRequest extends FormRequest
             | SEO
             |--------------------------------------------------------------------------
             */
+
             'meta_title' => [
                 'nullable',
                 'string',
@@ -166,7 +166,7 @@ class UpdateApartmentRequest extends FormRequest
     }
 
     /**
-     * Custom Messages
+     * Custom Messages.
      */
     public function messages(): array
     {
@@ -180,16 +180,13 @@ class UpdateApartmentRequest extends FormRequest
 
             'block.max' => 'Block may not exceed 100 characters.',
 
-            'floor.integer' => 'Floor must be a valid number.',
-            'floor.min' => 'Floor cannot be negative.',
-
             'total_floors.integer' => 'Total floors must be a valid number.',
-            'total_floors.min' => 'Total floors cannot be negative.',
+            'total_floors.min' => 'Total floors must be at least 1.',
 
             'total_units.integer' => 'Total units must be a valid number.',
             'total_units.min' => 'Total units cannot be negative.',
 
-            'status.in' => 'Invalid apartment status. Allowed values are: active, inactive, maintenance, archived.',
+            'status.in' => 'Invalid apartment status.',
 
             'thumbnail.image' => 'Thumbnail must be an image.',
             'thumbnail.mimes' => 'Thumbnail must be a JPG, JPEG, PNG or WEBP image.',
@@ -202,30 +199,22 @@ class UpdateApartmentRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'has_elevator' => filter_var(
-                $this->has_elevator,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
+        foreach ([
+            'has_elevator',
+            'has_backup_generator',
+            'has_security',
+            'has_parking',
+        ] as $field) {
 
-            'has_backup_generator' => filter_var(
-                $this->has_backup_generator,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
-
-            'has_security' => filter_var(
-                $this->has_security,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
-
-            'has_parking' => filter_var(
-                $this->has_parking,
-                FILTER_VALIDATE_BOOLEAN,
-                FILTER_NULL_ON_FAILURE
-            ),
-        ]);
+            if ($this->has($field)) {
+                $this->merge([
+                    $field => filter_var(
+                        $this->input($field),
+                        FILTER_VALIDATE_BOOLEAN,
+                        FILTER_NULL_ON_FAILURE
+                    ),
+                ]);
+            }
+        }
     }
 }
