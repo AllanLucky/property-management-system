@@ -7,11 +7,17 @@ use Illuminate\Validation\Rule;
 
 class UpdateUnitRequest extends FormRequest
 {
+    /**
+     * Determine whether the user is authorized.
+     */
     public function authorize(): bool
     {
         return auth()->check();
     }
 
+    /**
+     * Validation Rules
+     */
     public function rules(): array
     {
         return [
@@ -41,11 +47,12 @@ class UpdateUnitRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC INFO
+            | BASIC INFORMATION
             |--------------------------------------------------------------------------
             */
-            'name' => [
+            'unit_name' => [
                 'sometimes',
+                'nullable',
                 'string',
                 'min:2',
                 'max:150',
@@ -53,7 +60,6 @@ class UpdateUnitRequest extends FormRequest
 
             'unit_number' => [
                 'sometimes',
-                'nullable',
                 'string',
                 'max:50',
             ],
@@ -67,7 +73,7 @@ class UpdateUnitRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | UNIT TYPE (FIXED TO MATCH CREATE REQUEST)
+            | UNIT TYPE
             |--------------------------------------------------------------------------
             */
             'type' => [
@@ -92,32 +98,11 @@ class UpdateUnitRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | STRUCTURE
-            |--------------------------------------------------------------------------
-            */
-            'floor' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:200'],
-            'bedrooms' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:20'],
-            'bathrooms' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:20'],
-            'size' => ['sometimes', 'nullable', 'numeric', 'min:0'],
-
-            /*
-            |--------------------------------------------------------------------------
-            | FINANCIALS
-            |--------------------------------------------------------------------------
-            */
-            'rent_amount' => ['sometimes', 'numeric', 'min:0'],
-            'deposit_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'service_charge' => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'late_fee' => ['sometimes', 'nullable', 'numeric', 'min:0'],
-
-            /*
-            |--------------------------------------------------------------------------
             | STATUS
             |--------------------------------------------------------------------------
             */
             'status' => [
                 'sometimes',
-                'string',
                 Rule::in([
                     'vacant',
                     'occupied',
@@ -129,36 +114,107 @@ class UpdateUnitRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | FLAGS
+            | UNIT DETAILS
             |--------------------------------------------------------------------------
             */
-            'is_featured' => ['sometimes', 'boolean'],
-            'is_published' => ['sometimes', 'boolean'],
-            'is_furnished' => ['sometimes', 'boolean'],
-            'is_short_term' => ['sometimes', 'boolean'],
+            'floor' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+
+            'bedrooms' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+
+            'bathrooms' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+
+            'toilets' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+
+            'size' => [
+                'sometimes',
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+
+            'size_unit' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:20',
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | AMENITIES
+            | PRICING
             |--------------------------------------------------------------------------
             */
-            'amenities' => ['sometimes', 'nullable', 'array'],
-            'amenities.*' => ['string', 'max:100'],
+            'price' => [
+                'sometimes',
+                'numeric',
+                'min:0',
+            ],
+
+            'deposit' => [
+                'sometimes',
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+
+            'service_charge' => [
+                'sometimes',
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | GEO
+            | FEATURES
             |--------------------------------------------------------------------------
             */
-            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            'has_balcony' => [
+                'sometimes',
+                'boolean',
+            ],
+
+            'has_wifi' => [
+                'sometimes',
+                'boolean',
+            ],
+
+            'has_furnished' => [
+                'sometimes',
+                'boolean',
+            ],
+
+            'has_air_conditioning' => [
+                'sometimes',
+                'boolean',
+            ],
 
             /*
             |--------------------------------------------------------------------------
             | MEDIA
             |--------------------------------------------------------------------------
             */
-            'cover_image' => [
+            'thumbnail' => [
                 'sometimes',
                 'nullable',
                 'image',
@@ -168,56 +224,101 @@ class UpdateUnitRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
+            | AVAILABILITY
+            |--------------------------------------------------------------------------
+            */
+            'available_from' => [
+                'sometimes',
+                'nullable',
+                'date',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
             | NOTES
             |--------------------------------------------------------------------------
             */
-            'notes' => ['sometimes', 'nullable', 'string'],
+            'notes' => [
+                'sometimes',
+                'nullable',
+                'string',
+            ],
         ];
     }
 
+    /**
+     * Custom Messages
+     */
     public function messages(): array
     {
         return [
 
             'property_id.exists' => 'Selected property does not exist.',
+
             'apartment_id.exists' => 'Selected apartment does not exist.',
 
-            'name.min' => 'Unit name must be at least 2 characters.',
-            'name.max' => 'Unit name may not exceed 150 characters.',
+            'unit_name.min' => 'Unit name must be at least 2 characters.',
+
+            'unit_name.max' => 'Unit name may not exceed 150 characters.',
 
             'type.in' => 'Invalid unit type selected.',
 
-            'rent_amount.numeric' => 'Rent amount must be a valid number.',
-            'rent_amount.min' => 'Rent amount cannot be negative.',
-
-            'deposit_amount.numeric' => 'Deposit amount must be a valid number.',
-            'deposit_amount.min' => 'Deposit amount cannot be negative.',
-
             'status.in' => 'Invalid unit status selected.',
 
-            'latitude.between' => 'Latitude must be between -90 and 90.',
-            'longitude.between' => 'Longitude must be between -180 and 180.',
+            'price.numeric' => 'Price must be a valid number.',
+
+            'price.min' => 'Price cannot be negative.',
+
+            'deposit.numeric' => 'Deposit must be a valid number.',
+
+            'deposit.min' => 'Deposit cannot be negative.',
+
+            'service_charge.numeric' => 'Service charge must be a valid number.',
+
+            'service_charge.min' => 'Service charge cannot be negative.',
+
+            'thumbnail.image' => 'Thumbnail must be an image.',
+
+            'thumbnail.mimes' => 'Thumbnail must be JPG, JPEG, PNG or WEBP.',
+
+            'thumbnail.max' => 'Thumbnail may not be greater than 5 MB.',
         ];
     }
 
+    /**
+     * Custom Attributes
+     */
     public function attributes(): array
     {
         return [
+
             'property_id' => 'property',
+
             'apartment_id' => 'apartment',
+
+            'unit_name' => 'unit name',
+
             'unit_number' => 'unit number',
-            'rent_amount' => 'rent amount',
-            'deposit_amount' => 'deposit amount',
-            'cover_image' => 'cover image',
+
+            'price' => 'price',
+
+            'deposit' => 'deposit',
+
+            'service_charge' => 'service charge',
+
+            'thumbnail' => 'thumbnail',
         ];
     }
 
+    /**
+     * Prepare data before validation.
+     */
     protected function prepareForValidation(): void
     {
         $this->merge([
 
-            'name' => $this->has('name')
-                ? trim((string) $this->name)
+            'unit_name' => $this->has('unit_name')
+                ? trim((string) $this->unit_name)
                 : null,
 
             'description' => $this->has('description')
@@ -236,10 +337,29 @@ class UpdateUnitRequest extends FormRequest
                 ? strtolower(trim((string) $this->status))
                 : null,
 
-            'is_featured' => filter_var($this->is_featured, FILTER_VALIDATE_BOOLEAN),
-            'is_published' => filter_var($this->is_published, FILTER_VALIDATE_BOOLEAN),
-            'is_furnished' => filter_var($this->is_furnished, FILTER_VALIDATE_BOOLEAN),
-            'is_short_term' => filter_var($this->is_short_term, FILTER_VALIDATE_BOOLEAN),
+            'has_balcony' => filter_var(
+                $this->has_balcony,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+
+            'has_wifi' => filter_var(
+                $this->has_wifi,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+
+            'has_furnished' => filter_var(
+                $this->has_furnished,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+
+            'has_air_conditioning' => filter_var(
+                $this->has_air_conditioning,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
         ]);
     }
 }
