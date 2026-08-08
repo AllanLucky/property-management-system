@@ -12,6 +12,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 
+import Swal from "sweetalert2";
+import { useDispatch } from "react-redux";
+
+import { addNotification } from "../../../store/uiSlice";
+
 import useApartment from "../../../hooks/useApartment";
 
 import {
@@ -27,6 +32,8 @@ import {
 } from ".";
 
 const ApartmentList = () => {
+  const dispatch = useDispatch();
+
   const {
     apartments = [],
     loading,
@@ -34,6 +41,7 @@ const ApartmentList = () => {
     message,
     pagination,
     getApartments,
+    deleteApartment,
   } = useApartment();
 
   /*
@@ -43,6 +51,7 @@ const ApartmentList = () => {
   */
 
   const [search, setSearch] = useState("");
+
   const [currentPage, setCurrentPage] = useState(1);
 
   const [filters, setFilters] = useState({
@@ -53,6 +62,8 @@ const ApartmentList = () => {
     security: "",
     generator: "",
   });
+
+  const [deletingId, setDeletingId] = useState(null);
 
   /*
   |--------------------------------------------------------------------------
@@ -94,9 +105,9 @@ const ApartmentList = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleView = (apartment) => {
+  const handleView = useCallback((apartment) => {
     console.log("View Apartment:", apartment);
-  };
+  }, []);
 
   /*
   |--------------------------------------------------------------------------
@@ -104,19 +115,187 @@ const ApartmentList = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleEdit = (apartment) => {
+  const handleEdit = useCallback((apartment) => {
     console.log("Edit Apartment:", apartment);
-  };
+  }, []);
 
   /*
   |--------------------------------------------------------------------------
-  | DELETE
+  | DELETE APARTMENT
+  |--------------------------------------------------------------------------
+  |
+  | SweetAlert confirmation
+  | API deletion
+  | Toast notification
+  | Success/Error feedback
+  |
   |--------------------------------------------------------------------------
   */
 
-  const handleDelete = (apartment) => {
-    console.log("Delete Apartment:", apartment);
-  };
+  const handleDelete = useCallback(
+    async (apartment) => {
+      if (!apartment?.id) {
+        dispatch(
+          addNotification({
+            type: "error",
+            message:
+              "Unable to delete apartment. Apartment ID is missing.",
+          })
+        );
+
+        return;
+      }
+
+      if (deletingId) {
+        return;
+      }
+
+      const apartmentName =
+        apartment?.name ||
+        apartment?.building?.block ||
+        `Apartment #${apartment.id}`;
+
+      /*
+      |--------------------------------------------------------------------------
+      | SWEETALERT CONFIRMATION
+      |--------------------------------------------------------------------------
+      */
+
+      const result = await Swal.fire({
+        title: "Delete Apartment?",
+        html: `
+          <div style="font-size: 15px; line-height: 1.6;">
+            Are you sure you want to delete
+            <strong>${apartmentName}</strong>?
+            <br />
+            <span style="color: #dc2626;">
+              This action cannot be undone.
+            </span>
+          </div>
+        `,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, Delete",
+        cancelButtonText: "Cancel",
+        reverseButtons: true,
+        focusCancel: true,
+        allowOutsideClick: false,
+        allowEscapeKey: true,
+      });
+
+      /*
+      |--------------------------------------------------------------------------
+      | USER CANCELLED
+      |--------------------------------------------------------------------------
+      */
+
+      if (!result.isConfirmed) {
+        return;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | START DELETE
+      |--------------------------------------------------------------------------
+      */
+
+      try {
+        setDeletingId(apartment.id);
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE FROM API
+        |--------------------------------------------------------------------------
+        */
+
+        await deleteApartment(apartment.id);
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUCCESS TOAST
+        |--------------------------------------------------------------------------
+        */
+
+        dispatch(
+          addNotification({
+            type: "success",
+            message: `${apartmentName} was deleted successfully.`,
+          })
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUCCESS SWEETALERT
+        |--------------------------------------------------------------------------
+        */
+
+        await Swal.fire({
+          title: "Deleted!",
+          text: `${apartmentName} has been deleted successfully.`,
+          icon: "success",
+          timer: 1800,
+          showConfirmButton: false,
+          toast: true,
+          position: "top-end",
+        });
+
+        /*
+        |--------------------------------------------------------------------------
+        | REFRESH DATA
+        |--------------------------------------------------------------------------
+        */
+
+        await getApartments({
+          page: currentPage,
+        });
+      } catch (deleteError) {
+        console.error(
+          "Failed to delete apartment:",
+          deleteError
+        );
+
+        const errorMessage =
+          deleteError?.response?.data?.message ||
+          deleteError?.message ||
+          "Failed to delete apartment. Please try again.";
+
+        /*
+        |--------------------------------------------------------------------------
+        | ERROR TOAST
+        |--------------------------------------------------------------------------
+        */
+
+        dispatch(
+          addNotification({
+            type: "error",
+            message: errorMessage,
+          })
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | ERROR SWEETALERT
+        |--------------------------------------------------------------------------
+        */
+
+        await Swal.fire({
+          title: "Delete Failed",
+          text: errorMessage,
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [
+      currentPage,
+      deleteApartment,
+      deletingId,
+      dispatch,
+      getApartments,
+    ]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -124,7 +303,7 @@ const ApartmentList = () => {
   |--------------------------------------------------------------------------
   */
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setSearch("");
 
     setFilters({
@@ -137,24 +316,23 @@ const ApartmentList = () => {
     });
 
     setCurrentPage(1);
-  };
+  }, []);
 
   /*
   |--------------------------------------------------------------------------
   | FILTER APARTMENTS
   |--------------------------------------------------------------------------
   |
-  | Search fields:
-  |
+  | Search:
   | - Apartment name
-  | | - Building / block
+  | - Building / block
   | - Property title
   |
   | Removed:
-  |
   | - slug
   | - property_code
   |
+  |--------------------------------------------------------------------------
   */
 
   const filteredApartments = useMemo(() => {
@@ -166,7 +344,9 @@ const ApartmentList = () => {
 
     return apartments.filter((apartment) => {
       const property = apartment?.property || {};
+
       const building = apartment?.building || {};
+
       const features = apartment?.features || {};
 
       const status =
@@ -254,8 +434,9 @@ const ApartmentList = () => {
 
       const matchesGenerator =
         !filters.generator ||
-        Number(features?.has_backup_generator) ===
-          Number(filters.generator);
+        Number(
+          features?.has_backup_generator
+        ) === Number(filters.generator);
 
       return (
         matchesSearch &&
@@ -280,6 +461,56 @@ const ApartmentList = () => {
   */
 
   const dashboardStats = useMemo(() => {
+    const totalUnits =
+      filteredApartments.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item?.counts?.units || 0
+          ),
+        0
+      );
+
+    const occupiedUnits =
+      filteredApartments.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item?.counts?.occupied_units || 0
+          ),
+        0
+      );
+
+    const vacantUnits =
+      filteredApartments.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item?.counts?.vacant_units || 0
+          ),
+        0
+      );
+
+    const maintenanceUnits =
+      filteredApartments.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item?.counts?.maintenance_units || 0
+          ),
+        0
+      );
+
+    const occupancyRate =
+      totalUnits > 0
+        ? Number(
+            (
+              (occupiedUnits / totalUnits) *
+              100
+            ).toFixed(1)
+          )
+        : 0;
+
     return {
       totalApartments:
         filteredApartments.length,
@@ -294,15 +525,15 @@ const ApartmentList = () => {
           0
         ),
 
-      totalUnits:
-        filteredApartments.reduce(
-          (sum, item) =>
-            sum +
-            Number(
-              item?.counts?.units || 0
-            ),
-          0
-        ),
+      totalUnits,
+
+      occupiedUnits,
+
+      vacantUnits,
+
+      maintenanceUnits,
+
+      occupancyRate,
 
       activeApartments:
         filteredApartments.filter(
@@ -352,13 +583,31 @@ const ApartmentList = () => {
   |--------------------------------------------------------------------------
   | INITIAL LOADING
   |--------------------------------------------------------------------------
+  |
+  | Show a full-page apartment skeleton while there is no existing data.
+  |
+  |--------------------------------------------------------------------------
   */
 
   if (
     loading &&
     apartments.length === 0
   ) {
-    return <ApartmentSkeleton />;
+    return (
+      <div className="space-y-6">
+        <ApartmentSkeleton />
+
+        <div className="flex min-h-[160px] items-center justify-center">
+          <div className="flex flex-col items-center justify-center gap-3">
+            <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+
+            <p className="text-sm font-medium text-gray-600">
+              Loading apartments...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   /*
@@ -368,9 +617,63 @@ const ApartmentList = () => {
   */
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
 
-      {/* Header */}
+      {/* ================================================================
+          LOADING OVERLAY
+      ================================================================ */}
+
+      {loading && apartments.length > 0 && (
+        <div
+          className="
+            fixed
+            inset-0
+            z-50
+            flex
+            items-center
+            justify-center
+            bg-black/20
+            backdrop-blur-[2px]
+          "
+        >
+          <div
+            className="
+              flex
+              min-w-[180px]
+              flex-col
+              items-center
+              justify-center
+              gap-3
+              rounded-2xl
+              bg-white
+              px-8
+              py-6
+              shadow-2xl
+            "
+          >
+            <Loader2
+              className="
+                h-9
+                w-9
+                animate-spin
+                text-indigo-600
+              "
+            />
+
+            <p className="
+              text-sm
+              font-semibold
+              text-gray-700
+            ">
+              Loading apartments...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+          HEADER
+      ================================================================ */}
 
       <ApartmentHeader
         title="Apartment Management"
@@ -381,7 +684,9 @@ const ApartmentList = () => {
         "
       />
 
-      {/* Actions */}
+      {/* ================================================================
+          ACTIONS
+      ================================================================ */}
 
       <ApartmentActions
         loading={loading}
@@ -390,7 +695,9 @@ const ApartmentList = () => {
         Loader2={Loader2}
       />
 
-      {/* Error */}
+      {/* ================================================================
+          ERROR
+      ================================================================ */}
 
       {error && (
         <div
@@ -410,6 +717,7 @@ const ApartmentList = () => {
               mt-0.5
               h-5
               w-5
+              shrink-0
               text-red-600
             "
           />
@@ -437,7 +745,9 @@ const ApartmentList = () => {
         </div>
       )}
 
-      {/* Message */}
+      {/* ================================================================
+          MESSAGE
+      ================================================================ */}
 
       {message && (
         <div
@@ -456,13 +766,17 @@ const ApartmentList = () => {
         </div>
       )}
 
-      {/* Statistics */}
+      {/* ================================================================
+          STATISTICS
+      ================================================================ */}
 
       <ApartmentStats
         stats={dashboardStats}
       />
 
-      {/* Search + Filters */}
+      {/* ================================================================
+          SEARCH + FILTERS
+      ================================================================ */}
 
       <div
         className="
@@ -481,7 +795,7 @@ const ApartmentList = () => {
             lg:grid-cols-12
           "
         >
-          {/* Search */}
+          {/* SEARCH */}
 
           <div
             className="
@@ -525,7 +839,7 @@ const ApartmentList = () => {
             />
           </div>
 
-          {/* Filters */}
+          {/* FILTERS */}
 
           <div className="lg:col-span-7">
             <ApartmentFilters
@@ -536,13 +850,17 @@ const ApartmentList = () => {
         </div>
       </div>
 
-      {/* Charts */}
+      {/* ================================================================
+          CHARTS
+      ================================================================ */}
 
       <ApartmentCharts
         data={filteredApartments}
       />
 
-      {/* Empty / Table */}
+      {/* ================================================================
+          EMPTY / TABLE
+      ================================================================ */}
 
       {!loading &&
       filteredApartments.length === 0 ? (
@@ -565,11 +883,14 @@ const ApartmentList = () => {
             onView={handleView}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            deletingId={deletingId}
           />
         </div>
       )}
 
-      {/* Pagination */}
+      {/* ================================================================
+          PAGINATION
+      ================================================================ */}
 
       {pagination?.lastPage > 1 && (
         <ApartmentPagination
@@ -578,7 +899,9 @@ const ApartmentList = () => {
         />
       )}
 
-      {/* Footer */}
+      {/* ================================================================
+          FOOTER
+      ================================================================ */}
 
       <div
         className="
@@ -634,7 +957,6 @@ const ApartmentList = () => {
           </div>
         </div>
       </div>
-
     </div>
   );
 };

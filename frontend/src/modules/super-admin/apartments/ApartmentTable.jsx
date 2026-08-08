@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const ApartmentTable = ({ apartments = [], onView, onEdit, onDelete }) => {
+const ApartmentTable = ({ apartments = [],  onDelete }) => {
   if (!apartments.length) {
     return (
       <div className="flex h-64 flex-col items-center justify-center bg-white">
