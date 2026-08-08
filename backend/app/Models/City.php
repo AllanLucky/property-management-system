@@ -1,5 +1,6 @@
 <?php
 
+
 namespace App\Models;
 
 use Illuminate\Support\Str;
@@ -18,6 +19,7 @@ class City extends Model
     | TABLE
     |--------------------------------------------------------------------------
     */
+
     protected $table = 'cities';
 
     /*
@@ -25,6 +27,7 @@ class City extends Model
     | AUTO LOAD COUNTS
     |--------------------------------------------------------------------------
     */
+
     protected $withCount = [
         'areas',
         'properties',
@@ -35,11 +38,16 @@ class City extends Model
     | FILLABLE
     |--------------------------------------------------------------------------
     */
+
     protected $fillable = [
+        'country_id',
+        'region_id',
         'county_id',
+
         'name',
         'slug',
         'code',
+
         'is_active',
     ];
 
@@ -48,8 +56,14 @@ class City extends Model
     | CASTS
     |--------------------------------------------------------------------------
     */
+
     protected $casts = [
+        'country_id' => 'integer',
+        'region_id' => 'integer',
+        'county_id' => 'integer',
+
         'is_active' => 'boolean',
+
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -60,8 +74,10 @@ class City extends Model
     | APPENDS
     |--------------------------------------------------------------------------
     */
+
     protected $appends = [
         'status_label',
+        'full_location',
     ];
 
     /*
@@ -69,7 +85,8 @@ class City extends Model
     | BOOT
     |--------------------------------------------------------------------------
     */
-    protected static function boot()
+
+    protected static function boot(): void
     {
         parent::boot();
 
@@ -79,7 +96,6 @@ class City extends Model
                 empty($city->slug) ||
                 $city->isDirty('name')
             ) {
-
                 $baseSlug = Str::slug($city->name);
                 $slug = $baseSlug;
                 $count = 1;
@@ -102,6 +118,7 @@ class City extends Model
     | ROUTE MODEL BINDING
     |--------------------------------------------------------------------------
     */
+
     public function getRouteKeyName(): string
     {
         return 'slug';
@@ -114,7 +131,29 @@ class City extends Model
     */
 
     /**
-     * City belongs to County
+     * City belongs to Country.
+     */
+    public function country(): BelongsTo
+    {
+        return $this->belongsTo(
+            Country::class,
+            'country_id'
+        );
+    }
+
+    /**
+     * City belongs to Region.
+     */
+    public function region(): BelongsTo
+    {
+        return $this->belongsTo(
+            Region::class,
+            'region_id'
+        );
+    }
+
+    /**
+     * City belongs to County.
      */
     public function county(): BelongsTo
     {
@@ -125,7 +164,7 @@ class City extends Model
     }
 
     /**
-     * City has many Areas
+     * City has many Areas.
      */
     public function areas(): HasMany
     {
@@ -136,7 +175,7 @@ class City extends Model
     }
 
     /**
-     * City has many Properties
+     * City has many Properties.
      */
     public function properties(): HasMany
     {
@@ -152,6 +191,9 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Scope active cities.
+     */
     public function scopeActive($query)
     {
         return $query->where(
@@ -160,6 +202,9 @@ class City extends Model
         );
     }
 
+    /**
+     * Scope inactive cities.
+     */
     public function scopeInactive($query)
     {
         return $query->where(
@@ -168,6 +213,35 @@ class City extends Model
         );
     }
 
+    /**
+     * Scope cities by country.
+     */
+    public function scopeByCountry(
+        $query,
+        int $countryId
+    ) {
+        return $query->where(
+            'country_id',
+            $countryId
+        );
+    }
+
+    /**
+     * Scope cities by region.
+     */
+    public function scopeByRegion(
+        $query,
+        int $regionId
+    ) {
+        return $query->where(
+            'region_id',
+            $regionId
+        );
+    }
+
+    /**
+     * Scope cities by county.
+     */
     public function scopeByCounty(
         $query,
         int $countyId
@@ -178,14 +252,25 @@ class City extends Model
         );
     }
 
+    /**
+     * Search cities.
+     */
     public function scopeSearch(
         $query,
         string $search
     ) {
         return $query->where(function ($q) use ($search) {
 
-            $q->where('name', 'like', "%{$search}%")
-              ->orWhere('code', 'like', "%{$search}%");
+            $q->where(
+                'name',
+                'like',
+                "%{$search}%"
+            )
+            ->orWhere(
+                'code',
+                'like',
+                "%{$search}%"
+            );
 
         });
     }
@@ -196,11 +281,32 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Get status label.
+     */
     public function getStatusLabelAttribute(): string
     {
         return $this->is_active
             ? 'Active'
             : 'Inactive';
+    }
+
+    /**
+     * Get complete location name.
+     *
+     * Example:
+     * Nairobi, Nairobi County, Nairobi Region, Kenya
+     */
+    public function getFullLocationAttribute(): string
+    {
+        return collect([
+            $this->name,
+            $this->county?->name,
+            $this->region?->name,
+            $this->country?->name,
+        ])
+            ->filter()
+            ->implode(', ');
     }
 
     /*
@@ -209,13 +315,20 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Determine whether city is active.
+     */
     public function isActive(): bool
     {
         return (bool) $this->is_active;
     }
 
+    /**
+     * Determine whether city is inactive.
+     */
     public function isInactive(): bool
     {
         return ! $this->is_active;
     }
 }
+
