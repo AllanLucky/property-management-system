@@ -1,6 +1,11 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../../../api/axios";
+import { useDispatch } from "react-redux";
+import Swal from "sweetalert2";
+
+import useUnit from "../../../hooks/useUnits";
+import { addNotification } from "../../../store/uiSlice";
 
 import {
   Plus,
@@ -13,29 +18,45 @@ import {
   Home,
   TrendingUp,
   Wrench,
-  AlertTriangle,
   Search,
   DollarSign,
   Hash,
-  CheckCircle2,
 } from "lucide-react";
 
 const UnitList = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-  const [units, setUnits] = useState([]);
-  const [loading, setLoading] = useState(true);
+  /*
+  |--------------------------------------------------------------------------
+  | UNIT HOOK
+  |--------------------------------------------------------------------------
+  */
+
+  const {
+    units = [],
+    loading,
+    error,
+    getUnits,
+    removeUnit,
+  } = useUnit();
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOCAL STATE
+  |--------------------------------------------------------------------------
+  */
+
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
   const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   /*
   |--------------------------------------------------------------------------
   | NORMALIZE VALUE
   |--------------------------------------------------------------------------
   */
+
   const normalize = (value) => {
     if (
       value === null ||
@@ -49,12 +70,13 @@ const UnitList = () => {
       return (
         value?.name ||
         value?.title ||
+        value?.label ||
         value?.value ||
         "-"
       );
     }
 
-    return value;
+    return String(value);
   };
 
   /*
@@ -62,11 +84,14 @@ const UnitList = () => {
   | GET UNIT NAME
   |--------------------------------------------------------------------------
   */
+
   const getUnitName = (unit) => {
     return (
-      unit?.name ||
-      unit?.unit_number ||
-      `Unit #${unit?.id}`
+      normalize(unit?.name) !== "-"
+        ? normalize(unit?.name)
+        : normalize(unit?.unit_number) !== "-"
+          ? normalize(unit?.unit_number)
+          : `Unit #${unit?.id}`
     );
   };
 
@@ -75,11 +100,12 @@ const UnitList = () => {
   | GET UNIT TYPE
   |--------------------------------------------------------------------------
   */
+
   const getUnitType = (unit) => {
-    return (
-      unit?.type ||
-      unit?.unit_type ||
-      "-"
+    return normalize(
+      unit?.type ??
+      unit?.unit_type ??
+      unit?.category
     );
   };
 
@@ -88,6 +114,7 @@ const UnitList = () => {
   | GET RENT
   |--------------------------------------------------------------------------
   */
+
   const getRent = (unit) => {
     return (
       unit?.rent_amount ??
@@ -103,12 +130,24 @@ const UnitList = () => {
   | GET STATUS
   |--------------------------------------------------------------------------
   */
+
   const getStatus = (unit) => {
-    return (
-      unit?.status?.current ||
-      unit?.status ||
-      "unknown"
-    );
+    const status = unit?.status;
+
+    if (typeof status === "object") {
+      return (
+        status?.value ||
+        status?.current ||
+        status?.name ||
+        "unknown"
+      )
+        .toString()
+        .toLowerCase();
+    }
+
+    return String(
+      status || unit?.status?.current || "unknown"
+    ).toLowerCase();
   };
 
   /*
@@ -116,6 +155,7 @@ const UnitList = () => {
   | STATUS FORMAT
   |--------------------------------------------------------------------------
   */
+
   const formatStatus = (unit) => {
     const status = getStatus(unit);
 
@@ -155,6 +195,13 @@ const UnitList = () => {
             "bg-gray-100 text-gray-700 border border-gray-200",
         };
 
+      case "active":
+        return {
+          label: "Active",
+          color:
+            "bg-blue-100 text-blue-700 border border-blue-200",
+        };
+
       default:
         return {
           label: "Unknown",
@@ -169,41 +216,47 @@ const UnitList = () => {
   | FETCH UNITS
   |--------------------------------------------------------------------------
   */
+
   const fetchUnits = async (isRefresh = false) => {
     try {
-      setError("");
-
       if (isRefresh) {
         setRefreshing(true);
-      } else {
-        setLoading(true);
       }
 
-      const response = await api.get(
-        "/units?with_relations=true"
-      );
+      await getUnits();
 
-      const data =
-        response?.data?.data ||
-        response?.data ||
-        [];
-
-      setUnits(Array.isArray(data) ? data : []);
+      if (isRefresh) {
+        dispatch(
+          addNotification({
+            type: "success",
+            message: "Units refreshed successfully.",
+          })
+        );
+      }
     } catch (err) {
-      console.error("FAILED TO FETCH UNITS", err);
+      console.error("FAILED TO FETCH UNITS:", err);
 
-      setError(
-        err?.response?.data?.message ||
-          "Failed to load units."
+      dispatch(
+        addNotification({
+          type: "error",
+          message:
+            err?.message ||
+            "Failed to load units.",
+        })
       );
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | INITIAL LOAD
+  |--------------------------------------------------------------------------
+  */
+
   useEffect(() => {
-    fetchUnits();
+    fetchUnits(false);
   }, []);
 
   /*
@@ -211,31 +264,133 @@ const UnitList = () => {
   | DELETE UNIT
   |--------------------------------------------------------------------------
   */
+
   const handleDelete = async (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this unit?"
+    if (!id) {
+      return;
+    }
+
+    const unit = units.find(
+      (item) => item.id === id
     );
 
-    if (!confirmed) return;
+    const unitName = unit
+      ? getUnitName(unit)
+      : `Unit #${id}`;
+
+    const result = await Swal.fire({
+      title: "Delete Unit?",
+      html: `
+        <p class="text-gray-600">
+          You are about to delete
+          <strong>${unitName}</strong>.
+        </p>
+        <p class="text-sm text-red-500 mt-2">
+          This action cannot be undone.
+        </p>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, delete it",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+      focusCancel: true,
+      customClass: {
+        popup: "rounded-3xl",
+        confirmButton:
+          "px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold ml-2",
+        cancelButton:
+          "px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-semibold",
+      },
+      buttonsStyling: false,
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
 
     try {
-      setError("");
-      setSuccess("");
+      setDeletingId(id);
 
-      await api.delete(`/units/${id}`);
+      /*
+      |--------------------------------------------------------------------------
+      | SHOW DELETE LOADING
+      |--------------------------------------------------------------------------
+      */
 
-      setUnits((prev) =>
-        prev.filter((unit) => unit.id !== id)
+      Swal.fire({
+        title: "Deleting Unit...",
+        html: `
+          <div class="flex flex-col items-center justify-center py-3">
+            <div
+              class="w-10 h-10 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin"
+            ></div>
+
+            <p class="mt-4 text-sm text-gray-500">
+              Please wait while the unit is being deleted.
+            </p>
+          </div>
+        `,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        customClass: {
+          popup: "rounded-3xl",
+        },
+      });
+
+      /*
+      |--------------------------------------------------------------------------
+      | DELETE THROUGH HOOK
+      |--------------------------------------------------------------------------
+      */
+
+      await removeUnit(id);
+
+      /*
+      |--------------------------------------------------------------------------
+      | CLOSE LOADING
+      |--------------------------------------------------------------------------
+      */
+
+      await Swal.close();
+
+      /*
+      |--------------------------------------------------------------------------
+      | SUCCESS NOTIFICATION
+      |--------------------------------------------------------------------------
+      */
+
+      dispatch(
+        addNotification({
+          type: "success",
+          message: "Unit deleted successfully.",
+        })
       );
 
-      setSuccess("Unit deleted successfully.");
+      /*
+      |--------------------------------------------------------------------------
+      | RELOAD LIST
+      |--------------------------------------------------------------------------
+      */
+
+      await getUnits();
     } catch (err) {
-      console.error("DELETE FAILED", err);
+      console.error("DELETE UNIT FAILED:", err);
 
-      setError(
-        err?.response?.data?.message ||
-          "Failed to delete unit."
+      await Swal.close();
+
+      dispatch(
+        addNotification({
+          type: "error",
+          message:
+            err?.message ||
+            err?.response?.data?.message ||
+            "Failed to delete unit.",
+        })
       );
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -244,23 +399,41 @@ const UnitList = () => {
   | FILTERED UNITS
   |--------------------------------------------------------------------------
   */
+
   const filteredUnits = useMemo(() => {
-    const query = search.toLowerCase();
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return units;
+    }
 
     return units.filter((unit) => {
-      return (
-        getUnitName(unit)
-          ?.toLowerCase()
-          ?.includes(query) ||
+      const unitName =
+        getUnitName(unit).toLowerCase();
+
+      const unitNumber = normalize(
         unit?.unit_number
-          ?.toLowerCase()
-          ?.includes(query) ||
-        getUnitType(unit)
-          ?.toLowerCase()
-          ?.includes(query) ||
-        unit?.property?.name
-          ?.toLowerCase()
-          ?.includes(query)
+      ).toLowerCase();
+
+      const unitType =
+        getUnitType(unit).toLowerCase();
+
+      const propertyName =
+        normalize(
+          unit?.property?.name
+        ).toLowerCase();
+
+      const apartmentName =
+        normalize(
+          unit?.apartment?.name
+        ).toLowerCase();
+
+      return (
+        unitName.includes(query) ||
+        unitNumber.includes(query) ||
+        unitType.includes(query) ||
+        propertyName.includes(query) ||
+        apartmentName.includes(query)
       );
     });
   }, [units, search]);
@@ -270,6 +443,7 @@ const UnitList = () => {
   | STATS
   |--------------------------------------------------------------------------
   */
+
   const stats = useMemo(() => {
     return units.reduce(
       (acc, unit) => {
@@ -305,10 +479,10 @@ const UnitList = () => {
   | LOADING
   |--------------------------------------------------------------------------
   */
-  if (loading) {
+
+  if (loading && units.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-
         <Loader2
           size={38}
           className="animate-spin text-blue-600"
@@ -317,19 +491,26 @@ const UnitList = () => {
         <p className="mt-4 text-gray-500">
           Loading units...
         </p>
-
       </div>
     );
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | RENDER
+  |--------------------------------------------------------------------------
+  */
+
   return (
     <div className="space-y-6">
 
+      {/* ------------------------------------------------------------------ */}
       {/* HEADER */}
+      {/* ------------------------------------------------------------------ */}
+
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 
         <div>
-
           <h1 className="text-3xl font-bold text-gray-900">
             Units
           </h1>
@@ -337,19 +518,22 @@ const UnitList = () => {
           <p className="text-gray-500 mt-1">
             Manage apartment, office, shop and rental units.
           </p>
-
         </div>
 
         <div className="flex items-center gap-3">
 
           <button
+            type="button"
             onClick={() => fetchUnits(true)}
-            className="h-11 px-5 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center gap-2 transition"
+            disabled={refreshing}
+            className="h-11 px-5 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 transition"
           >
             <RefreshCcw
               size={16}
               className={
-                refreshing ? "animate-spin" : ""
+                refreshing
+                  ? "animate-spin"
+                  : ""
               }
             />
 
@@ -359,6 +543,7 @@ const UnitList = () => {
           </button>
 
           <button
+            type="button"
             onClick={() =>
               navigate(
                 "/super-admin/units/create"
@@ -367,6 +552,7 @@ const UnitList = () => {
             className="h-11 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 shadow-lg shadow-blue-200 transition"
           >
             <Plus size={18} />
+
             Create Unit
           </button>
 
@@ -374,31 +560,33 @@ const UnitList = () => {
 
       </div>
 
-      {/* ALERTS */}
+      {/* ------------------------------------------------------------------ */}
+      {/* ERROR */}
+      {/* ------------------------------------------------------------------ */}
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-4 rounded-2xl flex items-center gap-2">
-          <AlertTriangle size={18} />
-          {error}
+          <span className="font-medium">
+            {typeof error === "string"
+              ? error
+              : error?.message ||
+              "Failed to load units."}
+          </span>
         </div>
       )}
 
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-5 py-4 rounded-2xl flex items-center gap-2">
-          <CheckCircle2 size={18} />
-          {success}
-        </div>
-      )}
-
+      {/* ------------------------------------------------------------------ */}
       {/* STATS */}
+      {/* ------------------------------------------------------------------ */}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
 
         {/* TOTAL */}
-        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
 
+        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-center justify-between">
 
             <div>
-
               <p className="text-sm text-gray-500">
                 Total Units
               </p>
@@ -406,24 +594,23 @@ const UnitList = () => {
               <h3 className="text-3xl font-bold text-gray-900 mt-2">
                 {stats.total}
               </h3>
-
             </div>
 
             <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
-              <Building2 className="text-blue-600" />
+              <Building2
+                className="text-blue-600"
+              />
             </div>
 
           </div>
-
         </div>
 
         {/* VACANT */}
-        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
 
+        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-center justify-between">
 
             <div>
-
               <p className="text-sm text-gray-500">
                 Vacant
               </p>
@@ -431,24 +618,23 @@ const UnitList = () => {
               <h3 className="text-3xl font-bold text-green-600 mt-2">
                 {stats.vacant}
               </h3>
-
             </div>
 
             <div className="w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center">
-              <Home className="text-green-600" />
+              <Home
+                className="text-green-600"
+              />
             </div>
 
           </div>
-
         </div>
 
         {/* OCCUPIED */}
-        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
 
+        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-center justify-between">
 
             <div>
-
               <p className="text-sm text-gray-500">
                 Occupied
               </p>
@@ -456,24 +642,23 @@ const UnitList = () => {
               <h3 className="text-3xl font-bold text-red-600 mt-2">
                 {stats.occupied}
               </h3>
-
             </div>
 
             <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center">
-              <TrendingUp className="text-red-600" />
+              <TrendingUp
+                className="text-red-600"
+              />
             </div>
 
           </div>
-
         </div>
 
         {/* MAINTENANCE */}
-        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
 
+        <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-center justify-between">
 
             <div>
-
               <p className="text-sm text-gray-500">
                 Maintenance
               </p>
@@ -481,20 +666,23 @@ const UnitList = () => {
               <h3 className="text-3xl font-bold text-yellow-600 mt-2">
                 {stats.maintenance}
               </h3>
-
             </div>
 
             <div className="w-14 h-14 rounded-2xl bg-yellow-100 flex items-center justify-center">
-              <Wrench className="text-yellow-600" />
+              <Wrench
+                className="text-yellow-600"
+              />
             </div>
 
           </div>
-
         </div>
 
       </div>
 
+      {/* ------------------------------------------------------------------ */}
       {/* SEARCH */}
+      {/* ------------------------------------------------------------------ */}
+
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
 
         <div className="relative">
@@ -506,19 +694,22 @@ const UnitList = () => {
 
           <input
             type="text"
-            placeholder="Search by unit number, type or property..."
+            placeholder="Search by unit number, type, apartment or property..."
             value={search}
-            onChange={(e) =>
-              setSearch(e.target.value)
+            onChange={(event) =>
+              setSearch(event.target.value)
             }
-            className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
+            className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition"
           />
 
         </div>
 
       </div>
 
+      {/* ------------------------------------------------------------------ */}
       {/* TABLE */}
+      {/* ------------------------------------------------------------------ */}
+
       <div className="overflow-hidden bg-white rounded-3xl border border-gray-100 shadow-sm">
 
         <div className="overflow-x-auto">
@@ -564,6 +755,9 @@ const UnitList = () => {
                   const status =
                     formatStatus(unit);
 
+                  const isDeleting =
+                    deletingId === unit.id;
+
                   return (
                     <tr
                       key={unit.id}
@@ -571,11 +765,12 @@ const UnitList = () => {
                     >
 
                       {/* UNIT */}
+
                       <td className="px-6 py-5">
 
                         <div className="flex items-start gap-3">
 
-                          <div className="w-11 h-11 rounded-2xl bg-blue-100 flex items-center justify-center">
+                          <div className="w-11 h-11 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
                             <Building2
                               size={18}
                               className="text-blue-600"
@@ -590,8 +785,9 @@ const UnitList = () => {
 
                             <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                               <Hash size={12} />
+
                               {normalize(
-                                unit.unit_number
+                                unit?.unit_number
                               )}
                             </p>
 
@@ -602,6 +798,7 @@ const UnitList = () => {
                       </td>
 
                       {/* TYPE */}
+
                       <td className="px-6 py-5 text-gray-700 capitalize">
                         {normalize(
                           getUnitType(unit)
@@ -609,23 +806,34 @@ const UnitList = () => {
                       </td>
 
                       {/* PROPERTY */}
+
                       <td className="px-6 py-5">
 
-                        <div className="flex items-center gap-2 text-gray-700">
+                        <div className="flex flex-col gap-1">
 
-                          <Building2 size={16} />
+                          <div className="flex items-center gap-2 text-gray-700">
 
-                          <span>
-                            {unit?.property
-                              ?.name ||
-                              `Property #${unit.property_id}`}
-                          </span>
+                            <Building2 size={16} />
+
+                            <span>
+                              {unit?.property?.name ||
+                                `Property #${unit?.property_id}`}
+                            </span>
+
+                          </div>
+
+                          {unit?.apartment?.name && (
+                            <span className="text-xs text-gray-400 ml-6">
+                              {unit.apartment.name}
+                            </span>
+                          )}
 
                         </div>
 
                       </td>
 
                       {/* RENT */}
+
                       <td className="px-6 py-5">
 
                         <div className="flex items-center gap-1 font-semibold text-gray-900">
@@ -642,6 +850,7 @@ const UnitList = () => {
                       </td>
 
                       {/* STATUS */}
+
                       <td className="px-6 py-5">
 
                         <span
@@ -653,39 +862,62 @@ const UnitList = () => {
                       </td>
 
                       {/* ACTIONS */}
+
                       <td className="px-6 py-5">
 
                         <div className="flex items-center justify-end gap-2">
 
+                          {/* VIEW */}
+
                           <button
+                            type="button"
+                            disabled={isDeleting}
                             onClick={() =>
                               navigate(
                                 `/super-admin/units/${unit.id}`
                               )
                             }
-                            className="w-10 h-10 rounded-xl bg-green-100 hover:bg-green-200 text-green-600 flex items-center justify-center transition"
+                            className="w-10 h-10 rounded-xl bg-green-100 hover:bg-green-200 disabled:opacity-50 text-green-600 flex items-center justify-center transition"
+                            title="View Unit"
                           >
                             <Eye size={16} />
                           </button>
 
+                          {/* EDIT */}
+
                           <button
+                            type="button"
+                            disabled={isDeleting}
                             onClick={() =>
                               navigate(
                                 `/super-admin/units/edit/${unit.id}`
                               )
                             }
-                            className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition"
+                            className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 disabled:opacity-50 text-blue-600 flex items-center justify-center transition"
+                            title="Edit Unit"
                           >
                             <Edit size={16} />
                           </button>
 
+                          {/* DELETE */}
+
                           <button
+                            type="button"
+                            disabled={isDeleting}
                             onClick={() =>
                               handleDelete(unit.id)
                             }
-                            className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center transition"
+                            className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed text-red-600 flex items-center justify-center transition"
+                            title="Delete Unit"
                           >
-                            <Trash2 size={16} />
+                            {isDeleting ? (
+                              <Loader2
+                                size={16}
+                                className="animate-spin"
+                              />
+                            ) : (
+                              <Trash2 size={16} />
+                            )}
                           </button>
 
                         </div>
@@ -715,9 +947,25 @@ const UnitList = () => {
                       </p>
 
                       <p className="text-sm mt-1">
-                        Try adjusting your search
-                        or create a new unit.
+                        {search
+                          ? "Try adjusting your search."
+                          : "Create a new unit to get started."}
                       </p>
+
+                      {!search && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              "/super-admin/units/create"
+                            )
+                          }
+                          className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition"
+                        >
+                          <Plus size={16} />
+                          Create Unit
+                        </button>
+                      )}
 
                     </div>
 
@@ -739,3 +987,4 @@ const UnitList = () => {
 };
 
 export default UnitList;
+
