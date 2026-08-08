@@ -127,6 +127,7 @@ import PropertyFavoriteList from "../modules/super-admin/propertyFavorite/Proper
 import CreatePropertyFavorite from "../modules/super-admin/propertyFavorite/CreatePropertyFavorite";
 import EditPropertyFavorite from "../modules/super-admin/propertyFavorite/EditPropertyFavorite";
 import { PropertyAnalyticsList } from "../modules/super-admin/property-analytics";
+import { ApartmentList, CreateApartment, DeleteApartmentModal, EditApartment, ViewApartment } from "../modules/super-admin/apartments";
 
 /*
 |--------------------------------------------------------------------------
@@ -611,6 +612,61 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="property-analytics.view">
             <PropertyAnalyticsList />
+          </PermissionGuard>
+        }
+      />
+
+
+      {/* ==========================================================
+    PROPERTY APARTMENTS
+========================================================== */}
+
+      {/* Apartment List */}
+      <Route
+        path="apartments"
+        element={
+          <PermissionGuard permission="apartments.view">
+            <ApartmentList />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Create Apartment */}
+      <Route
+        path="apartments/create"
+        element={
+          <PermissionGuard permission="apartments.create">
+            <CreateApartment />
+          </PermissionGuard>
+        }
+      />
+
+      {/* View Apartment */}
+      <Route
+        path="apartments/:id"
+        element={
+          <PermissionGuard permission="apartments.view">
+            <ViewApartment />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Edit Apartment */}
+      <Route
+        path="apartments/:id/edit"
+        element={
+          <PermissionGuard permission="apartments.update">
+            <EditApartment />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Delete Apartment (Optional) */}
+      <Route
+        path="apartments/:id/delete"
+        element={
+          <PermissionGuard permission="apartments.delete">
+            <DeleteApartmentModal />
           </PermissionGuard>
         }
       />
