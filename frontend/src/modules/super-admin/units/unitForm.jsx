@@ -1,3 +1,4 @@
+
 import {
     useCallback,
     useEffect,
@@ -24,7 +25,7 @@ import Swal from "sweetalert2";
 
 /*
 |--------------------------------------------------------------------------
-| Default Form
+| DEFAULT FORM
 |--------------------------------------------------------------------------
 */
 
@@ -64,7 +65,7 @@ const DEFAULT_FORM = {
 
 /*
 |--------------------------------------------------------------------------
-| Constants
+| STATUS OPTIONS
 |--------------------------------------------------------------------------
 */
 
@@ -86,6 +87,12 @@ const STATUS_OPTIONS = [
         label: "Maintenance",
     },
 ];
+
+/*
+|--------------------------------------------------------------------------
+| TYPE OPTIONS
+|--------------------------------------------------------------------------
+*/
 
 const TYPE_OPTIONS = [
     {
@@ -130,6 +137,12 @@ const TYPE_OPTIONS = [
     },
 ];
 
+/*
+|--------------------------------------------------------------------------
+| SIZE UNITS
+|--------------------------------------------------------------------------
+*/
+
 const SIZE_UNITS = [
     {
         value: "sqm",
@@ -143,10 +156,35 @@ const SIZE_UNITS = [
 
 /*
 |--------------------------------------------------------------------------
-| Helpers
+| HELPERS
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Normalize Laravel/API collection responses.
+ *
+ * Supports:
+ *
+ * []
+ *
+ * {
+ *   data: []
+ * }
+ *
+ * {
+ *   data: {
+ *      data: []
+ *   }
+ * }
+ *
+ * {
+ *   results: []
+ * }
+ *
+ * {
+ *   items: []
+ * }
+ */
 const normalizeCollection = (response) => {
     if (!response) {
         return [];
@@ -175,14 +213,26 @@ const normalizeCollection = (response) => {
     return [];
 };
 
+/**
+ * Safely extract an ID from Laravel resources.
+ */
 const getId = (item) => {
     if (!item) {
         return "";
     }
 
-    return item.id ?? item.value ?? "";
+    return (
+        item.id ??
+        item.value ??
+        item.property_id ??
+        item.apartment_id ??
+        ""
+    );
 };
 
+/**
+ * Safely extract a display name.
+ */
 const getName = (item, fallback = "") => {
     if (!item) {
         return fallback;
@@ -194,34 +244,114 @@ const getName = (item, fallback = "") => {
         item.label ??
         item.property_name ??
         item.apartment_name ??
+        item.display_name ??
         fallback
     );
 };
 
+/**
+ * Normalize IDs that may arrive as numbers,
+ * strings, or nested Laravel resources.
+ */
+const normalizeId = (value) => {
+    if (value === null || value === undefined) {
+        return "";
+    }
+
+    if (typeof value === "object") {
+        return String(
+            value.id ??
+            value.value ??
+            ""
+        );
+    }
+
+    return String(value);
+};
+
+/**
+ * Normalize enum/resource values.
+ *
+ * Supports:
+ *
+ * "vacant"
+ *
+ * {
+ *   value: "vacant",
+ *   label: "Vacant"
+ * }
+ */
+const normalizeValue = (
+    value,
+    fallback = ""
+) => {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return fallback;
+    }
+
+    if (typeof value === "object") {
+        return (
+            value.value ??
+            value.id ??
+            fallback
+        );
+    }
+
+    return value;
+};
+
+/**
+ * Convert API date into HTML date input format.
+ */
 const formatDateForInput = (value) => {
     if (!value) {
         return "";
     }
 
-    if (typeof value === "string") {
+    if (
+        typeof value === "string"
+    ) {
         return value.substring(0, 10);
     }
 
     try {
-        return new Date(value).toISOString().substring(0, 10);
+        return new Date(value)
+            .toISOString()
+            .substring(0, 10);
     } catch {
         return "";
     }
 };
 
+/**
+ * Convert Laravel boolean-ish values
+ * into real JavaScript booleans.
+ */
+const normalizeBoolean = (value) => {
+    if (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "true"
+    ) {
+        return true;
+    }
+
+    return false;
+};
+
 /*
 |--------------------------------------------------------------------------
-| Component
+| COMPONENT
 |--------------------------------------------------------------------------
 */
 
 const UnitForm = ({
     unit = null,
+
     properties = [],
     apartments = [],
 
@@ -236,148 +366,226 @@ const UnitForm = ({
     title,
     submitLabel,
 }) => {
-    const isEditing = Boolean(unit?.id);
+    const isEditing = Boolean(
+        unit?.id
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | State
+    | STATE
     |--------------------------------------------------------------------------
     */
 
-    const [form, setForm] = useState(DEFAULT_FORM);
-
-    const [errors, setErrors] = useState({});
-
-    const [thumbnailPreview, setThumbnailPreview] = useState("");
-
-    /*
-    |--------------------------------------------------------------------------
-    | Normalize Properties
-    |--------------------------------------------------------------------------
-    */
-
-    const propertyOptions = useMemo(() => {
-        return normalizeCollection(properties);
-    }, [properties]);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Normalize Apartments
-    |--------------------------------------------------------------------------
-    */
-
-    const apartmentOptions = useMemo(() => {
-        return normalizeCollection(apartments);
-    }, [apartments]);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Filter Apartments By Property
-    |--------------------------------------------------------------------------
-    */
-
-    const filteredApartments = useMemo(() => {
-        if (!form.property_id) {
-            return apartmentOptions;
-        }
-
-        return apartmentOptions.filter((apartment) => {
-            const apartmentPropertyId =
-                apartment.property_id ??
-                apartment.property?.id ??
-                apartment.property?.value;
-
-            return String(apartmentPropertyId) === String(form.property_id);
+    const [form, setForm] =
+        useState({
+            ...DEFAULT_FORM,
         });
-    }, [
-        apartmentOptions,
-        form.property_id,
-    ]);
+
+    const [errors, setErrors] =
+        useState({});
+
+    const [
+        thumbnailPreview,
+        setThumbnailPreview,
+    ] = useState("");
 
     /*
     |--------------------------------------------------------------------------
-    | Populate Form For Edit
+    | NORMALIZE PROPERTIES
+    |--------------------------------------------------------------------------
+    */
+
+    const propertyOptions = useMemo(
+        () =>
+            normalizeCollection(
+                properties
+            ),
+        [properties]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE APARTMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    const apartmentOptions = useMemo(
+        () =>
+            normalizeCollection(
+                apartments
+            ),
+        [apartments]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | FILTER APARTMENTS BY PROPERTY
+    |--------------------------------------------------------------------------
+    */
+
+    const filteredApartments =
+        useMemo(() => {
+            if (!form.property_id) {
+                return apartmentOptions;
+            }
+
+            return apartmentOptions.filter(
+                (apartment) => {
+                    const apartmentPropertyId =
+                        apartment.property_id ??
+                        apartment.property?.id ??
+                        apartment.property?.value;
+
+                    return (
+                        normalizeId(
+                            apartmentPropertyId
+                        ) ===
+                        normalizeId(
+                            form.property_id
+                        )
+                    );
+                }
+            );
+        }, [
+            apartmentOptions,
+            form.property_id,
+        ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | POPULATE FORM
     |--------------------------------------------------------------------------
     */
 
     useEffect(() => {
         if (!unit) {
-            setForm(DEFAULT_FORM);
+            setForm({
+                ...DEFAULT_FORM,
+            });
+
+            setErrors({});
             setThumbnailPreview("");
+
             return;
         }
 
+        const propertyId =
+            unit.property_id ??
+            unit.property?.id ??
+            unit.property?.value ??
+            "";
+
+        const apartmentId =
+            unit.apartment_id ??
+            unit.apartment?.id ??
+            unit.apartment?.value ??
+            "";
+
+        const thumbnail =
+            unit.thumbnail_url ??
+            unit.thumbnail ??
+            unit.image_url ??
+            unit.image ??
+            "";
+
         setForm({
             property_id:
-                unit.property_id ??
-                unit.property?.id ??
-                "",
+                normalizeId(propertyId),
 
             apartment_id:
-                unit.apartment_id ??
-                unit.apartment?.id ??
-                "",
+                normalizeId(apartmentId),
 
             unit_number:
-                unit.unit_number ?? "",
+                unit.unit_number ??
+                unit.number ??
+                "",
 
             unit_name:
-                unit.unit_name ?? "",
+                unit.unit_name ??
+                unit.name ??
+                "",
 
             description:
-                unit.description ?? "",
+                unit.description ??
+                "",
 
             status:
-                typeof unit.status === "object"
-                    ? unit.status?.value ?? "vacant"
-                    : unit.status ?? "vacant",
+                normalizeValue(
+                    unit.status,
+                    "vacant"
+                ),
 
             type:
-                typeof unit.type === "object"
-                    ? unit.type?.value ?? "apartment"
-                    : unit.type ?? "apartment",
+                normalizeValue(
+                    unit.type,
+                    "apartment"
+                ),
 
             bedrooms:
-                unit.bedrooms ?? 1,
+                unit.bedrooms ??
+                1,
 
             bathrooms:
-                unit.bathrooms ?? 1,
+                unit.bathrooms ??
+                1,
 
             toilets:
-                unit.toilets ?? 1,
+                unit.toilets ??
+                1,
 
             floor:
-                unit.floor ?? 1,
+                unit.floor ??
+                unit.floor_number ??
+                1,
 
             size:
-                unit.size ?? "",
+                unit.size ??
+                unit.area ??
+                "",
 
             size_unit:
-                unit.size_unit ?? "sqm",
+                normalizeValue(
+                    unit.size_unit,
+                    "sqm"
+                ),
 
             price:
-                unit.price ?? "",
+                unit.price ??
+                unit.rent ??
+                unit.rent_amount ??
+                "",
 
             deposit:
-                unit.deposit ?? "",
+                unit.deposit ??
+                "",
 
             service_charge:
-                unit.service_charge ?? "",
+                unit.service_charge ??
+                "",
 
             has_balcony:
-                Boolean(unit.has_balcony),
+                normalizeBoolean(
+                    unit.has_balcony
+                ),
 
             has_wifi:
-                Boolean(unit.has_wifi),
+                normalizeBoolean(
+                    unit.has_wifi
+                ),
 
             has_furnished:
-                Boolean(unit.has_furnished),
+                normalizeBoolean(
+                    unit.has_furnished
+                ),
 
             has_air_conditioning:
-                Boolean(unit.has_air_conditioning),
+                normalizeBoolean(
+                    unit.has_air_conditioning
+                ),
 
             thumbnail:
-                unit.thumbnail ?? "",
+                unit.thumbnail ??
+                "",
 
             available_from:
                 formatDateForInput(
@@ -385,242 +593,333 @@ const UnitForm = ({
                 ),
 
             notes:
-                unit.notes ?? "",
+                unit.notes ??
+                "",
         });
 
+        setErrors({});
+
         setThumbnailPreview(
-            unit.thumbnail_url ??
-            unit.thumbnail ??
-            ""
+            thumbnail
         );
     }, [unit]);
 
     /*
     |--------------------------------------------------------------------------
-    | Input Change
+    | INPUT CHANGE
     |--------------------------------------------------------------------------
     */
 
-    const handleChange = useCallback((event) => {
-        const {
-            name,
-            value,
-            type,
-            checked,
-        } = event.target;
+    const handleChange =
+        useCallback((event) => {
+            const {
+                name,
+                value,
+                type,
+                checked,
+            } = event.target;
 
-        setForm((previous) => ({
-            ...previous,
-            [name]:
-                type === "checkbox"
-                    ? checked
-                    : value,
-        }));
+            setForm(
+                (previous) => ({
+                    ...previous,
 
-        setErrors((previous) => {
-            if (!previous[name]) {
-                return previous;
+                    [name]:
+                        type ===
+                        "checkbox"
+                            ? checked
+                            : value,
+                })
+            );
+
+            setErrors(
+                (previous) => {
+                    if (!previous[name]) {
+                        return previous;
+                    }
+
+                    const next = {
+                        ...previous,
+                    };
+
+                    delete next[name];
+
+                    return next;
+                }
+            );
+        }, []);
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY CHANGE
+    |--------------------------------------------------------------------------
+    */
+
+    const handlePropertyChange =
+        useCallback(
+            (event) => {
+                const propertyId =
+                    event.target.value;
+
+                setForm(
+                    (previous) => ({
+                        ...previous,
+
+                        property_id:
+                            propertyId,
+
+                        apartment_id:
+                            "",
+                    })
+                );
+
+                setErrors(
+                    (previous) => {
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next.property_id;
+                        delete next.apartment_id;
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | THUMBNAIL CHANGE
+    |--------------------------------------------------------------------------
+    */
+
+    const handleThumbnailChange =
+        useCallback(
+            (event) => {
+                const value =
+                    event.target.value;
+
+                setForm(
+                    (previous) => ({
+                        ...previous,
+                        thumbnail:
+                            value,
+                    })
+                );
+
+                setThumbnailPreview(
+                    value
+                );
+
+                setErrors(
+                    (previous) => {
+                        if (
+                            !previous.thumbnail
+                        ) {
+                            return previous;
+                        }
+
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next.thumbnail;
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    const validate =
+        useCallback(() => {
+            const validationErrors =
+                {};
+
+            if (!form.property_id) {
+                validationErrors.property_id =
+                    "Please select a property.";
             }
 
-            const next = {
-                ...previous,
-            };
+            if (
+                !form.unit_number?.trim()
+            ) {
+                validationErrors.unit_number =
+                    "Unit number is required.";
+            }
 
-            delete next[name];
+            if (!form.type) {
+                validationErrors.type =
+                    "Please select the unit type.";
+            }
 
-            return next;
-        });
-    }, []);
+            if (!form.status) {
+                validationErrors.status =
+                    "Please select the unit status.";
+            }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Property Change
-    |--------------------------------------------------------------------------
-    */
+            if (
+                form.price !== "" &&
+                Number(form.price) < 0
+            ) {
+                validationErrors.price =
+                    "Rent amount cannot be negative.";
+            }
 
-    const handlePropertyChange = useCallback((event) => {
-        const propertyId = event.target.value;
+            if (
+                form.deposit !== "" &&
+                Number(form.deposit) < 0
+            ) {
+                validationErrors.deposit =
+                    "Deposit cannot be negative.";
+            }
 
-        setForm((previous) => ({
-            ...previous,
-            property_id: propertyId,
-            apartment_id: "",
-        }));
+            if (
+                form.service_charge !==
+                    "" &&
+                Number(
+                    form.service_charge
+                ) < 0
+            ) {
+                validationErrors.service_charge =
+                    "Service charge cannot be negative.";
+            }
 
-        setErrors((previous) => {
-            const next = {
-                ...previous,
-            };
+            if (
+                form.size !== "" &&
+                Number(form.size) < 0
+            ) {
+                validationErrors.size =
+                    "Size cannot be negative.";
+            }
 
-            delete next.property_id;
-            delete next.apartment_id;
+            if (
+                Number(form.bedrooms) < 0
+            ) {
+                validationErrors.bedrooms =
+                    "Bedrooms cannot be negative.";
+            }
 
-            return next;
-        });
-    }, []);
+            if (
+                Number(form.bathrooms) < 0
+            ) {
+                validationErrors.bathrooms =
+                    "Bathrooms cannot be negative.";
+            }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Thumbnail Change
-    |--------------------------------------------------------------------------
-    */
+            if (
+                Number(form.toilets) < 0
+            ) {
+                validationErrors.toilets =
+                    "Toilets cannot be negative.";
+            }
 
-    const handleThumbnailChange = useCallback((event) => {
-        const value = event.target.value;
+            if (
+                Number(form.floor) < 0
+            ) {
+                validationErrors.floor =
+                    "Floor cannot be negative.";
+            }
 
-        setForm((previous) => ({
-            ...previous,
-            thumbnail: value,
-        }));
+            setErrors(
+                validationErrors
+            );
 
-        setThumbnailPreview(value);
-    }, []);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Validation
-    |--------------------------------------------------------------------------
-    */
-
-    const validate = useCallback(() => {
-        const validationErrors = {};
-
-        if (!form.property_id) {
-            validationErrors.property_id =
-                "Please select a property.";
-        }
-
-        if (!form.unit_number?.trim()) {
-            validationErrors.unit_number =
-                "Unit number is required.";
-        }
-
-        if (!form.type) {
-            validationErrors.type =
-                "Please select the unit type.";
-        }
-
-        if (!form.status) {
-            validationErrors.status =
-                "Please select the unit status.";
-        }
-
-        if (
-            form.price !== "" &&
-            Number(form.price) < 0
-        ) {
-            validationErrors.price =
-                "Price cannot be negative.";
-        }
-
-        if (
-            form.deposit !== "" &&
-            Number(form.deposit) < 0
-        ) {
-            validationErrors.deposit =
-                "Deposit cannot be negative.";
-        }
-
-        if (
-            form.service_charge !== "" &&
-            Number(form.service_charge) < 0
-        ) {
-            validationErrors.service_charge =
-                "Service charge cannot be negative.";
-        }
-
-        if (
-            form.size !== "" &&
-            Number(form.size) < 0
-        ) {
-            validationErrors.size =
-                "Size cannot be negative.";
-        }
-
-        if (Number(form.bedrooms) < 0) {
-            validationErrors.bedrooms =
-                "Bedrooms cannot be negative.";
-        }
-
-        if (Number(form.bathrooms) < 0) {
-            validationErrors.bathrooms =
-                "Bathrooms cannot be negative.";
-        }
-
-        if (Number(form.toilets) < 0) {
-            validationErrors.toilets =
-                "Toilets cannot be negative.";
-        }
-
-        if (Number(form.floor) < 0) {
-            validationErrors.floor =
-                "Floor cannot be negative.";
-        }
-
-        setErrors(validationErrors);
-
-        return (
-            Object.keys(validationErrors).length === 0
-        );
-    }, [form]);
+            return (
+                Object.keys(
+                    validationErrors
+                ).length === 0
+            );
+        }, [form]);
 
     /*
     |--------------------------------------------------------------------------
-    | Submit
+    | SUBMIT
     |--------------------------------------------------------------------------
     */
 
-    const handleSubmit = async (event) => {
+    const handleSubmit = async (
+        event
+    ) => {
         event.preventDefault();
 
         if (!validate()) {
             await Swal.fire({
                 icon: "warning",
                 title: "Check the form",
-                text: "Please correct the highlighted fields.",
-                confirmButtonText: "Okay",
+                text:
+                    "Please correct the highlighted fields.",
+                confirmButtonText:
+                    "Okay",
             });
 
             return;
         }
 
         const payload = {
-            property_id: Number(form.property_id),
+            property_id:
+                Number(
+                    form.property_id
+                ),
 
             apartment_id:
                 form.apartment_id
-                    ? Number(form.apartment_id)
+                    ? Number(
+                          form.apartment_id
+                      )
                     : null,
 
             unit_number:
                 form.unit_number.trim(),
 
             unit_name:
-                form.unit_name?.trim() || null,
+                form.unit_name?.trim() ||
+                null,
 
             description:
-                form.description?.trim() || null,
+                form.description?.trim() ||
+                null,
 
             status:
-                form.status,
+                normalizeValue(
+                    form.status,
+                    "vacant"
+                ),
 
             type:
-                form.type,
+                normalizeValue(
+                    form.type,
+                    "apartment"
+                ),
 
             bedrooms:
                 form.bedrooms === ""
                     ? 0
-                    : Number(form.bedrooms),
+                    : Number(
+                          form.bedrooms
+                      ),
 
             bathrooms:
                 form.bathrooms === ""
                     ? 0
-                    : Number(form.bathrooms),
+                    : Number(
+                          form.bathrooms
+                      ),
 
             toilets:
                 form.toilets === ""
                     ? 0
-                    : Number(form.toilets),
+                    : Number(
+                          form.toilets
+                      ),
 
             floor:
                 form.floor === ""
@@ -643,21 +942,29 @@ const UnitForm = ({
             deposit:
                 form.deposit === ""
                     ? null
-                    : Number(form.deposit),
+                    : Number(
+                          form.deposit
+                      ),
 
             service_charge:
                 form.service_charge === ""
                     ? null
-                    : Number(form.service_charge),
+                    : Number(
+                          form.service_charge
+                      ),
 
             has_balcony:
-                Boolean(form.has_balcony),
+                Boolean(
+                    form.has_balcony
+                ),
 
             has_wifi:
                 Boolean(form.has_wifi),
 
             has_furnished:
-                Boolean(form.has_furnished),
+                Boolean(
+                    form.has_furnished
+                ),
 
             has_air_conditioning:
                 Boolean(
@@ -665,17 +972,22 @@ const UnitForm = ({
                 ),
 
             thumbnail:
-                form.thumbnail?.trim() || null,
+                form.thumbnail?.trim() ||
+                null,
 
             available_from:
-                form.available_from || null,
+                form.available_from ||
+                null,
 
             notes:
-                form.notes?.trim() || null,
+                form.notes?.trim() ||
+                null,
         };
 
         try {
-            await onSubmit?.(payload);
+            await onSubmit?.(
+                payload
+            );
         } catch (submitError) {
             console.error(
                 "Unit form submission failed:",
@@ -686,27 +998,37 @@ const UnitForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | Error Helper
+    | FIELD ERROR
     |--------------------------------------------------------------------------
     */
 
-    const getFieldError = (field) => {
+    const getFieldError = (
+        field
+    ) => {
         if (errors[field]) {
             return errors[field];
         }
 
         if (
             error?.errors &&
-            typeof error.errors === "object"
+            typeof error.errors ===
+                "object"
         ) {
             const serverError =
                 error.errors[field];
 
-            if (Array.isArray(serverError)) {
+            if (
+                Array.isArray(
+                    serverError
+                )
+            ) {
                 return serverError[0];
             }
 
-            if (typeof serverError === "string") {
+            if (
+                typeof serverError ===
+                "string"
+            ) {
                 return serverError;
             }
         }
@@ -716,11 +1038,26 @@ const UnitForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | Shared Input Classes
+    | SERVER ERROR MESSAGE
     |--------------------------------------------------------------------------
     */
 
-    const inputClass = (field) => `
+    const serverErrorMessage =
+        typeof error === "string"
+            ? error
+            : error?.message ??
+              error?.error ??
+              "Unable to save the unit. Please try again.";
+
+    /*
+    |--------------------------------------------------------------------------
+    | SHARED INPUT CLASS
+    |--------------------------------------------------------------------------
+    */
+
+    const inputClass = (
+        field
+    ) => `
         w-full
         rounded-xl
         border
@@ -738,27 +1075,32 @@ const UnitForm = ({
         transition
         placeholder:text-slate-400
         focus:ring-4
+        disabled:cursor-not-allowed
+        disabled:bg-slate-50
+        disabled:text-slate-500
     `;
 
     /*
     |--------------------------------------------------------------------------
-    | Render
+    | RENDER
     |--------------------------------------------------------------------------
     */
 
     return (
         <form
-            onSubmit={handleSubmit}
+            onSubmit={
+                handleSubmit
+            }
             className="space-y-6"
         >
-            {/* ------------------------------------------------------------ */}
-            {/* Header */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* HEADER */}
+            {/* -------------------------------------------------------- */}
 
             <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                             <Home
                                 size={22}
                             />
@@ -782,22 +1124,27 @@ const UnitForm = ({
                 </div>
             </div>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Server Error */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* SERVER ERROR */}
+            {/* -------------------------------------------------------- */}
 
             {error && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    {typeof error === "string"
-                        ? error
-                        : error.message ??
-                          "Unable to save the unit. Please try again."}
+                    <p className="font-semibold">
+                        Unable to save unit
+                    </p>
+
+                    <p className="mt-1">
+                        {
+                            serverErrorMessage
+                        }
+                    </p>
                 </div>
             )}
 
-            {/* ------------------------------------------------------------ */}
-            {/* Property & Apartment */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* PROPERTY & APARTMENT */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -807,12 +1154,14 @@ const UnitForm = ({
                 />
 
                 <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
-                    {/* Property */}
+                    {/* PROPERTY */}
 
                     <Field
                         label="Property"
                         required
-                        error={getFieldError("property_id")}
+                        error={getFieldError(
+                            "property_id"
+                        )}
                     >
                         <div className="relative">
                             <select
@@ -836,23 +1185,26 @@ const UnitForm = ({
                                 </option>
 
                                 {propertyOptions.map(
-                                    (property) => (
-                                        <option
-                                            key={getId(
+                                    (
+                                        property
+                                    ) => {
+                                        const id =
+                                            getId(
                                                 property
-                                            )}
-                                            value={getId(
-                                                property
-                                            )}
-                                        >
-                                            {getName(
-                                                property,
-                                                `Property #${getId(
-                                                    property
-                                                )}`
-                                            )}
-                                        </option>
-                                    )
+                                            );
+
+                                        return (
+                                            <option
+                                                key={id}
+                                                value={id}
+                                            >
+                                                {getName(
+                                                    property,
+                                                    `Property #${id}`
+                                                )}
+                                            </option>
+                                        );
+                                    }
                                 )}
                             </select>
 
@@ -863,7 +1215,7 @@ const UnitForm = ({
                         </div>
                     </Field>
 
-                    {/* Apartment */}
+                    {/* APARTMENT */}
 
                     <Field
                         label="Apartment"
@@ -887,7 +1239,7 @@ const UnitForm = ({
                                 }
                                 className={`${inputClass(
                                     "apartment_id"
-                                )} appearance-none pr-10 disabled:cursor-not-allowed disabled:bg-slate-50`}
+                                )} appearance-none pr-10`}
                             >
                                 <option value="">
                                     {form.property_id
@@ -896,23 +1248,26 @@ const UnitForm = ({
                                 </option>
 
                                 {filteredApartments.map(
-                                    (apartment) => (
-                                        <option
-                                            key={getId(
+                                    (
+                                        apartment
+                                    ) => {
+                                        const id =
+                                            getId(
                                                 apartment
-                                            )}
-                                            value={getId(
-                                                apartment
-                                            )}
-                                        >
-                                            {getName(
-                                                apartment,
-                                                `Apartment #${getId(
-                                                    apartment
-                                                )}`
-                                            )}
-                                        </option>
-                                    )
+                                            );
+
+                                        return (
+                                            <option
+                                                key={id}
+                                                value={id}
+                                            >
+                                                {getName(
+                                                    apartment,
+                                                    `Apartment #${id}`
+                                                )}
+                                            </option>
+                                        );
+                                    }
                                 )}
                             </select>
 
@@ -921,13 +1276,21 @@ const UnitForm = ({
                                 className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
                             />
                         </div>
+
+                        {form.property_id &&
+                            filteredApartments.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-amber-600">
+                                    No apartments are available for this property.
+                                </p>
+                            )}
                     </Field>
                 </div>
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Basic Information */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* BASIC INFORMATION */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -937,8 +1300,6 @@ const UnitForm = ({
                 />
 
                 <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-                    {/* Unit Number */}
-
                     <Field
                         label="Unit Number"
                         required
@@ -956,14 +1317,14 @@ const UnitForm = ({
                                 handleChange
                             }
                             placeholder="e.g. A101"
-                            disabled={submitting}
+                            disabled={
+                                submitting
+                            }
                             className={inputClass(
                                 "unit_number"
                             )}
                         />
                     </Field>
-
-                    {/* Unit Name */}
 
                     <Field
                         label="Unit Name"
@@ -981,24 +1342,28 @@ const UnitForm = ({
                                 handleChange
                             }
                             placeholder="e.g. Grand Royale A101"
-                            disabled={submitting}
+                            disabled={
+                                submitting
+                            }
                             className={inputClass(
                                 "unit_name"
                             )}
                         />
                     </Field>
 
-                    {/* Type */}
-
                     <Field
                         label="Unit Type"
                         required
-                        error={getFieldError("type")}
+                        error={getFieldError(
+                            "type"
+                        )}
                     >
                         <div className="relative">
                             <select
                                 name="type"
-                                value={form.type}
+                                value={
+                                    form.type
+                                }
                                 onChange={
                                     handleChange
                                 }
@@ -1010,7 +1375,9 @@ const UnitForm = ({
                                 )} appearance-none pr-10`}
                             >
                                 {TYPE_OPTIONS.map(
-                                    (option) => (
+                                    (
+                                        option
+                                    ) => (
                                         <option
                                             key={
                                                 option.value
@@ -1033,8 +1400,6 @@ const UnitForm = ({
                             />
                         </div>
                     </Field>
-
-                    {/* Status */}
 
                     <Field
                         label="Status"
@@ -1060,7 +1425,9 @@ const UnitForm = ({
                                 )} appearance-none pr-10`}
                             >
                                 {STATUS_OPTIONS.map(
-                                    (option) => (
+                                    (
+                                        option
+                                    ) => (
                                         <option
                                             key={
                                                 option.value
@@ -1084,31 +1451,23 @@ const UnitForm = ({
                         </div>
                     </Field>
 
-                    {/* Floor */}
-
-                    <Field
+                    <NumberField
                         label="Floor"
+                        name="floor"
+                        value={
+                            form.floor
+                        }
+                        onChange={
+                            handleChange
+                        }
                         error={getFieldError(
                             "floor"
                         )}
-                    >
-                        <input
-                            type="number"
-                            min="0"
-                            name="floor"
-                            value={form.floor}
-                            onChange={
-                                handleChange
-                            }
-                            disabled={submitting}
-                            className={inputClass(
-                                "floor"
-                            )}
-                        />
-                    </Field>
+                        disabled={
+                            submitting
+                        }
+                    />
                 </div>
-
-                {/* Description */}
 
                 <div className="mt-5">
                     <Field
@@ -1127,7 +1486,9 @@ const UnitForm = ({
                                 handleChange
                             }
                             placeholder="Describe the unit, layout, finishes, location and other useful details..."
-                            disabled={submitting}
+                            disabled={
+                                submitting
+                            }
                             className={`${inputClass(
                                 "description"
                             )} resize-none`}
@@ -1136,9 +1497,9 @@ const UnitForm = ({
                 </div>
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Rooms & Size */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* ROOMS & SIZE */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -1160,7 +1521,9 @@ const UnitForm = ({
                         error={getFieldError(
                             "bedrooms"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                     />
 
                     <NumberField
@@ -1175,7 +1538,9 @@ const UnitForm = ({
                         error={getFieldError(
                             "bathrooms"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                     />
 
                     <NumberField
@@ -1190,20 +1555,26 @@ const UnitForm = ({
                         error={getFieldError(
                             "toilets"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                     />
 
                     <NumberField
                         label="Floor"
                         name="floor"
-                        value={form.floor}
+                        value={
+                            form.floor
+                        }
                         onChange={
                             handleChange
                         }
                         error={getFieldError(
                             "floor"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                     />
 
                     <Field
@@ -1270,9 +1641,9 @@ const UnitForm = ({
                 </div>
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Pricing */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* PRICING */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -1285,14 +1656,18 @@ const UnitForm = ({
                     <MoneyField
                         label="Rent Amount"
                         name="price"
-                        value={form.price}
+                        value={
+                            form.price
+                        }
                         onChange={
                             handleChange
                         }
                         error={getFieldError(
                             "price"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                         placeholder="e.g. 35000"
                     />
 
@@ -1308,7 +1683,9 @@ const UnitForm = ({
                         error={getFieldError(
                             "deposit"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                         placeholder="e.g. 35000"
                     />
 
@@ -1324,7 +1701,9 @@ const UnitForm = ({
                         error={getFieldError(
                             "service_charge"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                         placeholder="e.g. 5000"
                     />
                 </div>
@@ -1340,9 +1719,9 @@ const UnitForm = ({
                 </div>
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Features */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* FEATURES */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -1414,9 +1793,9 @@ const UnitForm = ({
                 </div>
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Availability & Media */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* AVAILABILITY & MEDIA */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -1426,8 +1805,6 @@ const UnitForm = ({
                 />
 
                 <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
-                    {/* Available From */}
-
                     <Field
                         label="Available From"
                         error={getFieldError(
@@ -1459,8 +1836,6 @@ const UnitForm = ({
                         </div>
                     </Field>
 
-                    {/* Thumbnail */}
-
                     <Field
                         label="Thumbnail URL"
                         error={getFieldError(
@@ -1477,15 +1852,15 @@ const UnitForm = ({
                                 handleThumbnailChange
                             }
                             placeholder="https://example.com/unit.jpg"
-                            disabled={submitting}
+                            disabled={
+                                submitting
+                            }
                             className={inputClass(
                                 "thumbnail"
                             )}
                         />
                     </Field>
                 </div>
-
-                {/* Preview */}
 
                 {thumbnailPreview && (
                     <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
@@ -1507,9 +1882,9 @@ const UnitForm = ({
                 )}
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Notes */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* NOTES */}
+            {/* -------------------------------------------------------- */}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeader
@@ -1528,12 +1903,16 @@ const UnitForm = ({
                         <textarea
                             name="notes"
                             rows={5}
-                            value={form.notes}
+                            value={
+                                form.notes
+                            }
                             onChange={
                                 handleChange
                             }
                             placeholder="Add any additional notes..."
-                            disabled={submitting}
+                            disabled={
+                                submitting
+                            }
                             className={`${inputClass(
                                 "notes"
                             )} resize-none`}
@@ -1542,19 +1921,24 @@ const UnitForm = ({
                 </div>
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Actions */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
+            {/* ACTIONS */}
+            {/* -------------------------------------------------------- */}
 
             <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:justify-end">
                 {onCancel && (
                     <button
                         type="button"
-                        onClick={onCancel}
-                        disabled={submitting}
+                        onClick={
+                            onCancel
+                        }
+                        disabled={
+                            submitting
+                        }
                         className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         <X size={18} />
+
                         Cancel
                     </button>
                 )}
@@ -1602,7 +1986,7 @@ const UnitForm = ({
 
 /*
 |--------------------------------------------------------------------------
-| Section Header
+| SECTION HEADER
 |--------------------------------------------------------------------------
 */
 
@@ -1613,7 +1997,7 @@ const SectionHeader = ({
 }) => {
     return (
         <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
                 <Icon size={19} />
             </div>
 
@@ -1632,7 +2016,7 @@ const SectionHeader = ({
 
 /*
 |--------------------------------------------------------------------------
-| Field
+| FIELD
 |--------------------------------------------------------------------------
 */
 
@@ -1667,7 +2051,7 @@ const Field = ({
 
 /*
 |--------------------------------------------------------------------------
-| Number Field
+| NUMBER FIELD
 |--------------------------------------------------------------------------
 */
 
@@ -1697,8 +2081,8 @@ const NumberField = ({
                     border
                     ${
                         error
-                            ? "border-red-400"
-                            : "border-slate-200"
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                            : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
                     }
                     bg-white
                     px-4
@@ -1707,9 +2091,10 @@ const NumberField = ({
                     text-slate-900
                     outline-none
                     transition
-                    focus:border-indigo-500
                     focus:ring-4
-                    focus:ring-indigo-500/20
+                    disabled:cursor-not-allowed
+                    disabled:bg-slate-50
+                    disabled:text-slate-500
                 `}
             />
         </Field>
@@ -1718,7 +2103,7 @@ const NumberField = ({
 
 /*
 |--------------------------------------------------------------------------
-| Money Field
+| MONEY FIELD
 |--------------------------------------------------------------------------
 */
 
@@ -1737,9 +2122,9 @@ const MoneyField = ({
             error={error}
         >
             <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center border-r border-slate-200 px-3 text-xs font-bold text-slate-500">
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-sm font-semibold text-slate-500">
                     KES
-                </div>
+                </span>
 
                 <input
                     type="number"
@@ -1758,8 +2143,8 @@ const MoneyField = ({
                         border
                         ${
                             error
-                                ? "border-red-400"
-                                : "border-slate-200"
+                                ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                                : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
                         }
                         bg-white
                         py-3
@@ -1770,9 +2155,10 @@ const MoneyField = ({
                         outline-none
                         transition
                         placeholder:text-slate-400
-                        focus:border-indigo-500
                         focus:ring-4
-                        focus:ring-indigo-500/20
+                        disabled:cursor-not-allowed
+                        disabled:bg-slate-50
+                        disabled:text-slate-500
                     `}
                 />
             </div>
@@ -1782,7 +2168,7 @@ const MoneyField = ({
 
 /*
 |--------------------------------------------------------------------------
-| Feature Checkbox
+| FEATURE CHECKBOX
 |--------------------------------------------------------------------------
 */
 
@@ -1796,9 +2182,9 @@ const FeatureCheckbox = ({
 }) => {
     return (
         <label
+            htmlFor={name}
             className={`
                 flex
-                cursor-pointer
                 items-start
                 gap-3
                 rounded-xl
@@ -1813,47 +2199,47 @@ const FeatureCheckbox = ({
                 ${
                     disabled
                         ? "cursor-not-allowed opacity-60"
-                        : ""
+                        : "cursor-pointer"
                 }
             `}
         >
-            <div className="relative mt-0.5">
-                <input
-                    type="checkbox"
-                    name={name}
-                    checked={checked}
-                    onChange={onChange}
-                    disabled={disabled}
-                    className="peer sr-only"
-                />
+            <input
+                id={name}
+                type="checkbox"
+                name={name}
+                checked={checked}
+                onChange={onChange}
+                disabled={disabled}
+                className="sr-only"
+            />
 
-                <div
-                    className={`
-                        flex
-                        h-5
-                        w-5
-                        items-center
-                        justify-center
-                        rounded-md
-                        border
-                        transition
-                        ${
-                            checked
-                                ? "border-indigo-600 bg-indigo-600"
-                                : "border-slate-300 bg-white"
-                        }
-                    `}
-                >
-                    {checked && (
-                        <Check
-                            size={14}
-                            className="text-white"
-                        />
-                    )}
-                </div>
+            <div
+                className={`
+                    flex
+                    h-5
+                    w-5
+                    shrink-0
+                    items-center
+                    justify-center
+                    rounded-md
+                    border
+                    transition
+                    ${
+                        checked
+                            ? "border-indigo-600 bg-indigo-600"
+                            : "border-slate-300 bg-white"
+                    }
+                `}
+            >
+                {checked && (
+                    <Check
+                        size={14}
+                        className="text-white"
+                    />
+                )}
             </div>
 
-            <div>
+            <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-800">
                     {label}
                 </p>
@@ -1867,3 +2253,4 @@ const FeatureCheckbox = ({
 };
 
 export default UnitForm;
+
