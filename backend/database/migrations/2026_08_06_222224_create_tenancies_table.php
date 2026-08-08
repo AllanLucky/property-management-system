@@ -11,105 +11,132 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('apartments', function (Blueprint $table) {
+        Schema::create('tenancies', function (Blueprint $table) {
 
             $table->id();
 
             /*
             |--------------------------------------------------------------------------
-            | RELATIONSHIP
+            | Relationships
             |--------------------------------------------------------------------------
             */
             $table->foreignId('property_id')
-                ->constrained()
+                ->constrained('properties')
                 ->cascadeOnDelete();
 
-            /*
-            |--------------------------------------------------------------------------
-            | BASIC INFORMATION
-            |--------------------------------------------------------------------------
-            */
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->text('description')->nullable();
+            $table->foreignId('apartment_id')
+                ->nullable()
+                ->constrained('apartments')
+                ->nullOnDelete();
+
+            $table->foreignId('unit_id')
+                ->nullable()
+                ->constrained('units')
+                ->nullOnDelete();
+
+            $table->foreignId('tenant_id')
+                ->constrained('tenants')
+                ->cascadeOnDelete();
+
 
             /*
             |--------------------------------------------------------------------------
-            | BUILDING INFORMATION
+            | Tenancy Information
             |--------------------------------------------------------------------------
             */
-            $table->string('block')->nullable();
+            $table->string('tenancy_number')->unique();
 
-            // Building statistics
-            $table->unsignedInteger('total_floors')->default(1);
-            $table->unsignedInteger('total_units')->default(0);
+            $table->date('start_date')->nullable();
+            $table->date('end_date')->nullable();
 
-            /*
-            |--------------------------------------------------------------------------
-            | STATUS
-            |--------------------------------------------------------------------------
-            */
-            $table->enum('status', [
-                'active',
-                'inactive',
-                'maintenance',
-                'archived',
-            ])->default('active');
+            $table->date('move_in_date')->nullable();
+            $table->date('move_out_date')->nullable();
+
 
             /*
             |--------------------------------------------------------------------------
-            | FEATURES
+            | Financial
             |--------------------------------------------------------------------------
             */
-            $table->boolean('has_elevator')->default(false);
-            $table->boolean('has_backup_generator')->default(false);
-            $table->boolean('has_security')->default(false);
-            $table->boolean('has_parking')->default(false);
+            $table->decimal('rent_amount', 12, 2)
+                ->default(0);
+
+            $table->decimal('deposit_amount', 12, 2)
+                ->default(0);
+
+            $table->decimal('service_charge', 12, 2)
+                ->default(0);
+
+            $table->decimal('late_fee', 12, 2)
+                ->default(0);
+
 
             /*
             |--------------------------------------------------------------------------
-            | MEDIA
+            | Payment
             |--------------------------------------------------------------------------
             */
-            $table->string('thumbnail')->nullable();
-            $table->string('thumbnail_public_id')->nullable();
+            $table->string('payment_frequency')
+                ->default('monthly');
+
+            $table->unsignedTinyInteger('due_day')
+                ->nullable();
+
 
             /*
             |--------------------------------------------------------------------------
-            | SEO
+            | Status
             |--------------------------------------------------------------------------
             */
-            $table->string('meta_title')->nullable();
-            $table->text('meta_description')->nullable();
-            $table->text('meta_keywords')->nullable();
+            $table->string('status')
+                ->default('active');
+
 
             /*
             |--------------------------------------------------------------------------
-            | TIMESTAMPS
+            | Documents
             |--------------------------------------------------------------------------
             */
+            $table->string('agreement_file')
+                ->nullable();
+
+            $table->string('agreement_public_id')
+                ->nullable();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Notes
+            |--------------------------------------------------------------------------
+            */
+            $table->text('notes')
+                ->nullable();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Flags
+            |--------------------------------------------------------------------------
+            */
+            $table->boolean('is_active')
+                ->default(true);
+
+
             $table->timestamps();
             $table->softDeletes();
 
-            /*
-            |--------------------------------------------------------------------------
-            | INDEXES
-            |--------------------------------------------------------------------------
-            */
-            $table->index('property_id');
             $table->index('status');
-            $table->index('block');
-            $table->index('total_floors');
-            $table->index(['property_id', 'status']);
-            $table->index(['property_id', 'block']);
+            $table->index('tenant_id');
+            $table->index('property_id');
         });
     }
+
 
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-        Schema::dropIfExists('apartments');
+        Schema::dropIfExists('tenancies');
     }
 };

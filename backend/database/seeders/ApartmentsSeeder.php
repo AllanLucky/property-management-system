@@ -2,68 +2,131 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Apartment;
 use App\Models\Property;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 class ApartmentsSeeder extends Seeder
 {
+    /**
+     * Run the database seeds.
+     */
     public function run(): void
     {
         $properties = Property::all();
 
         if ($properties->isEmpty()) {
-            $this->command->warn("No properties found. Run PropertySeeder first.");
+            $this->command->warn(
+                'No properties found. Please run PropertySeeder first.'
+            );
+
             return;
         }
 
-        $blockNames = [
-            'Sunrise Block',
-            'Sunset Block',
-            'Garden Block',
-            'Skyline Block',
-            'Riverside Block',
-            'Palm Block',
+        $blocks = [
+            'Block A',
+            'Block B',
+            'Block C',
+            'Block D',
+            'Block E',
+            'Block F',
         ];
 
         foreach ($properties as $property) {
-            for ($i = 0; $i < 5; $i++) {
-                $block = $blockNames[$i] ?? "Block " . ($i + 1);
-                $name  = "{$block} - {$property->title}";
+
+            $numberOfBlocks = rand(2, 6);
+
+            for ($i = 0; $i < $numberOfBlocks; $i++) {
+
+                $block = $blocks[$i] ?? 'Block ' . chr(65 + $i);
+
+                $name = "{$property->title} {$block}";
 
                 Apartment::create([
-                    'property_id'   => $property->id,
-                    'name'          => $name,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | RELATIONSHIP
+                    |--------------------------------------------------------------------------
+                    */
+                    'property_id' => $property->id,
 
-                    // ✅ Safe unique slug
-                    'slug'          => Str::slug($name . '-' . uniqid()),
+                    /*
+                    |--------------------------------------------------------------------------
+                    | BASIC INFORMATION
+                    |--------------------------------------------------------------------------
+                    */
+                    'name' => $name,
+                    'slug' => Str::slug($name . '-' . Str::random(6)),
+                    'description' =>
+                        "Modern apartment building {$block} located within {$property->title}.",
 
-                    'description'   => "Modern {$block} located within {$property->title}",
+                    /*
+                    |--------------------------------------------------------------------------
+                    | BUILDING INFORMATION
+                    |--------------------------------------------------------------------------
+                    */
+                    'block' => $block,
+                    'total_floors' => rand(3, 15),
 
-                    'block'         => $block,
-                    'floor'         => 1, // default ground floor
-                    'total_floors'  => rand(3, 12),
-                    'total_units'   => 0, // will be updated after seeding units
+                    // Updated later by UnitsSeeder
+                    'total_units' => 0,
 
-                    'status'        => Apartment::STATUS_ACTIVE,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | STATUS
+                    |--------------------------------------------------------------------------
+                    */
+                    'status' => Apartment::STATUS_ACTIVE,
 
-                    'has_elevator'        => (bool) rand(0, 1),
-                    'has_backup_generator'=> (bool) rand(0, 1),
-                    'has_security'        => (bool) rand(0, 1),
-                    'has_parking'         => (bool) rand(0, 1),
+                    /*
+                    |--------------------------------------------------------------------------
+                    | FEATURES
+                    |--------------------------------------------------------------------------
+                    */
+                    'has_elevator' => (bool) rand(0, 1),
+                    'has_backup_generator' => (bool) rand(0, 1),
+                    'has_security' => true,
+                    'has_parking' => (bool) rand(0, 1),
 
-                    'thumbnail'     => 'images/default-apartment.jpg',
-                    'meta_title'    => $name,
-                    'meta_description'=> "Apartment block {$block} in {$property->title}",
-                    'meta_keywords' => "{$block}, {$property->title}, apartment",
+                    /*
+                    |--------------------------------------------------------------------------
+                    | MEDIA
+                    |--------------------------------------------------------------------------
+                    */
+                    'thumbnail' => 'images/default-apartment.jpg',
+                    'thumbnail_public_id' => null,
 
-                    'created_at'    => now(),
-                    'updated_at'    => now(),
+                    /*
+                    |--------------------------------------------------------------------------
+                    | SEO
+                    |--------------------------------------------------------------------------
+                    */
+                    'meta_title' => $name,
+                    'meta_description' =>
+                        "Apartment building {$block} within {$property->title}.",
+                    'meta_keywords' =>
+                        implode(', ', [
+                            $property->title,
+                            $block,
+                            'Apartment',
+                            'Real Estate',
+                            'Rental',
+                        ]),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | TIMESTAMPS
+                    |--------------------------------------------------------------------------
+                    */
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             }
         }
 
-        $this->command->info('Apartments seeded successfully.');
+        $this->command->info(
+            Apartment::count() . ' apartment buildings seeded successfully.'
+        );
     }
 }

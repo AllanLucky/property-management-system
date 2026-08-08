@@ -13,26 +13,61 @@ class PropertyRepository implements PropertyRepositoryInterface
     | RELATIONS
     |--------------------------------------------------------------------------
     */
-    protected array $lightRelations = ['user'];
 
-    // ❌ REMOVED: images (no longer exists)
+    protected array $lightRelations = [
+        'user',
+    ];
+
     protected array $fullRelations = [
         'user',
-        'units',
+        'propertyType',
+        'propertyCategory',
+        'features',
         'apartments',
-        'features'
+        'apartments.units', // <-- IMPORTANT
+        'units',
     ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | BASE QUERY
+    |--------------------------------------------------------------------------
+    */
+
+    protected function baseQuery()
+    {
+        return Property::query()->withCount([
+            'apartments',
+            'units',
+
+            'units as occupied_units_count' => function ($query) {
+                $query->where('status', 'occupied');
+            },
+
+            'units as vacant_units_count' => function ($query) {
+                $query->where('status', 'vacant');
+            },
+
+            'units as maintenance_units_count' => function ($query) {
+                $query->where('status', 'maintenance');
+            },
+
+            'units as reserved_units_count' => function ($query) {
+                $query->where('status', 'reserved');
+            },
+        ]);
+    }
 
     /*
     |--------------------------------------------------------------------------
     | GET ALL
     |--------------------------------------------------------------------------
     */
+
     public function all(): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units', 'apartments'])
             ->latest()
             ->get();
     }
@@ -42,38 +77,38 @@ class PropertyRepository implements PropertyRepositoryInterface
     | GET ALL WITH RELATIONS
     |--------------------------------------------------------------------------
     */
+
     public function allWithRelations(): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->fullRelations)
-            ->withCount(['units', 'apartments'])
             ->latest()
             ->get();
     }
 
     /*
     |--------------------------------------------------------------------------
-    | FIND BASIC
+    | FIND
     |--------------------------------------------------------------------------
     */
+
     public function find(int $id): ?Property
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units', 'apartments'])
             ->find($id);
     }
 
     /*
     |--------------------------------------------------------------------------
-    | FIND FULL
+    | FIND WITH RELATIONS
     |--------------------------------------------------------------------------
     */
+
     public function findWithRelations(int $id): ?Property
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->fullRelations)
-            ->withCount(['units', 'apartments'])
             ->find($id);
     }
 
@@ -82,6 +117,7 @@ class PropertyRepository implements PropertyRepositoryInterface
     | CREATE
     |--------------------------------------------------------------------------
     */
+
     public function create(array $data): Property
     {
         return Property::create($data);
@@ -92,12 +128,24 @@ class PropertyRepository implements PropertyRepositoryInterface
     | UPDATE
     |--------------------------------------------------------------------------
     */
+
     public function update(int $id, array $data): Property
     {
         $property = Property::findOrFail($id);
+
         $property->update($data);
 
-        return $property->refresh()->load($this->fullRelations);
+        return $property
+            ->refresh()
+            ->load($this->fullRelations)
+            ->loadCount([
+                'apartments',
+                'units',
+                'units as occupied_units_count' => fn($q) => $q->where('status', 'occupied'),
+                'units as vacant_units_count' => fn($q) => $q->where('status', 'vacant'),
+                'units as maintenance_units_count' => fn($q) => $q->where('status', 'maintenance'),
+                'units as reserved_units_count' => fn($q) => $q->where('status', 'reserved'),
+            ]);
     }
 
     /*
@@ -105,6 +153,7 @@ class PropertyRepository implements PropertyRepositoryInterface
     | DELETE
     |--------------------------------------------------------------------------
     */
+
     public function delete(int $id): bool
     {
         return (bool) Property::findOrFail($id)->delete();
@@ -115,12 +164,26 @@ class PropertyRepository implements PropertyRepositoryInterface
     | ASSIGN OWNER
     |--------------------------------------------------------------------------
     */
+
     public function assignOwner(int $propertyId, int $userId): Property
     {
         $property = Property::findOrFail($propertyId);
-        $property->update(['user_id' => $userId]);
 
-        return $property->refresh()->load($this->fullRelations);
+        $property->update([
+            'user_id' => $userId,
+        ]);
+
+        return $property
+            ->refresh()
+            ->load($this->fullRelations)
+            ->loadCount([
+                'apartments',
+                'units',
+                'units as occupied_units_count' => fn($q) => $q->where('status', 'occupied'),
+                'units as vacant_units_count' => fn($q) => $q->where('status', 'vacant'),
+                'units as maintenance_units_count' => fn($q) => $q->where('status', 'maintenance'),
+                'units as reserved_units_count' => fn($q) => $q->where('status', 'reserved'),
+            ]);
     }
 
     /*
@@ -128,11 +191,11 @@ class PropertyRepository implements PropertyRepositoryInterface
     | BY OWNER
     |--------------------------------------------------------------------------
     */
+
     public function getByOwner(int $userId): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units', 'apartments'])
             ->where('user_id', $userId)
             ->latest()
             ->get();
@@ -143,11 +206,11 @@ class PropertyRepository implements PropertyRepositoryInterface
     | BY STATUS
     |--------------------------------------------------------------------------
     */
+
     public function getByStatus(string $status): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units', 'apartments'])
             ->where('status', $status)
             ->latest()
             ->get();
@@ -155,14 +218,14 @@ class PropertyRepository implements PropertyRepositoryInterface
 
     /*
     |--------------------------------------------------------------------------
-    | ACTIVE PROPERTIES
+    | ACTIVE
     |--------------------------------------------------------------------------
     */
+
     public function getActive(): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units', 'apartments'])
             ->where('is_published', true)
             ->latest()
             ->get();
@@ -173,9 +236,10 @@ class PropertyRepository implements PropertyRepositoryInterface
     | FEATURED
     |--------------------------------------------------------------------------
     */
+
     public function getFeatured(): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
             ->where('is_featured', true)
             ->latest()
@@ -187,13 +251,13 @@ class PropertyRepository implements PropertyRepositoryInterface
     | VACANT
     |--------------------------------------------------------------------------
     */
+
     public function getVacant(): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units'])
-            ->whereHas('units', function ($q) {
-                $q->where('status', 'vacant');
+            ->whereHas('units', function ($query) {
+                $query->where('status', 'vacant');
             })
             ->latest()
             ->get();
@@ -204,13 +268,13 @@ class PropertyRepository implements PropertyRepositoryInterface
     | FULLY OCCUPIED
     |--------------------------------------------------------------------------
     */
+
     public function getFullyOccupied(): Collection
     {
-        return Property::query()
+        return $this->baseQuery()
             ->with($this->lightRelations)
-            ->withCount(['units'])
-            ->whereDoesntHave('units', function ($q) {
-                $q->where('status', 'vacant');
+            ->whereDoesntHave('units', function ($query) {
+                $query->where('status', 'vacant');
             })
             ->whereHas('units')
             ->latest()
@@ -219,16 +283,16 @@ class PropertyRepository implements PropertyRepositoryInterface
 
     /*
     |--------------------------------------------------------------------------
-    | SAFE RELATIONS FILTER
+    | SAFE RELATIONS
     |--------------------------------------------------------------------------
     */
+
     public function getWithSafeRelations(array $requested = []): Collection
     {
         $relations = array_intersect($requested, $this->fullRelations);
 
-        return Property::query()
-            ->with($relations ?: $this->lightRelations)
-            ->withCount(['units', 'apartments'])
+        return $this->baseQuery()
+            ->with(!empty($relations) ? $relations : $this->lightRelations)
             ->latest()
             ->get();
     }
