@@ -1,6 +1,9 @@
 // src/store/unitSlice.js
 
-import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import {
+  createSlice,
+  createAsyncThunk,
+} from "@reduxjs/toolkit";
 
 import {
   fetchUnits,
@@ -18,11 +21,33 @@ import {
 
 /**
  * Extract useful error message from Laravel/API response.
+ *
+ * Supports:
+ *
+ * Axios error:
+ * {
+ *   response: {
+ *     data: {
+ *       message: "..."
+ *     }
+ *   }
+ * }
+ *
+ * Or service-level error:
+ *
+ * {
+ *   status: false,
+ *   message: "...",
+ *   errors: {}
+ * }
  */
-const getErrorMessage = (error, fallback) => {
+const getErrorMessage = (
+  error,
+  fallback = "Something went wrong."
+) => {
   return (
     error?.response?.data?.message ||
-    error?.response?.data?.error ||
+    error?.data?.message ||
     error?.message ||
     fallback
   );
@@ -34,42 +59,81 @@ const getErrorMessage = (error, fallback) => {
 const getValidationErrors = (error) => {
   return (
     error?.response?.data?.errors ||
+    error?.data?.errors ||
     error?.errors ||
     {}
   );
 };
 
 /**
- * Normalize API payload.
+ * Extract the actual data from an API response.
  *
- * Supports:
+ * Supported responses:
+ *
+ * 1. Laravel:
  *
  * {
  *   status: true,
+ *   code: 200,
  *   message: "...",
  *   data: [...]
  * }
  *
- * or:
+ * 2. Paginated:
  *
  * {
- *   data: [...]
+ *   status: true,
+ *   data: {
+ *     data: [],
+ *     current_page: 1,
+ *     last_page: 10,
+ *     per_page: 15,
+ *     total: 150,
+ *     from: 1,
+ *     to: 15
+ *   }
  * }
  *
- * or:
+ * 3. Direct array:
  *
  * [...]
  */
-const getPayloadData = (payload, fallback = null) => {
-  if (payload?.data !== undefined) {
+const getPayloadData = (
+  payload,
+  fallback = null
+) => {
+  if (
+    payload &&
+    Object.prototype.hasOwnProperty.call(
+      payload,
+      "data"
+    )
+  ) {
     return payload.data;
   }
 
-  if (payload !== undefined && payload !== null) {
+  if (
+    payload !== undefined &&
+    payload !== null
+  ) {
     return payload;
   }
 
   return fallback;
+};
+
+/**
+ * Get response message.
+ */
+const getResponseMessage = (
+  payload,
+  fallback = null
+) => {
+  return (
+    payload?.message ||
+    payload?.data?.message ||
+    fallback
+  );
 };
 
 /*
@@ -80,24 +144,27 @@ const getPayloadData = (payload, fallback = null) => {
 
 const initialState = {
   /*
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   | Collection
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   */
+
   units: [],
 
   /*
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   | Current unit
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   */
+
   unit: null,
 
   /*
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   | Pagination
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   */
+
   pagination: {
     currentPage: 1,
     lastPage: 1,
@@ -108,10 +175,11 @@ const initialState = {
   },
 
   /*
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   | Loading states
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   */
+
   loading: false,
   fetching: false,
   creating: false,
@@ -119,18 +187,20 @@ const initialState = {
   deleting: false,
 
   /*
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   | Error state
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   */
+
   error: null,
   validationErrors: {},
 
   /*
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   | Success state
-  |----------------------------------------------------------------------
+  |--------------------------------------------------------------------------
   */
+
   successMessage: null,
 };
 
@@ -142,9 +212,11 @@ const initialState = {
 
 export const getUnits = createAsyncThunk(
   "unit/getUnits",
+
   async (params = {}, thunkAPI) => {
     try {
-      const response = await fetchUnits(params);
+      const response =
+        await fetchUnits(params);
 
       return response;
     } catch (error) {
@@ -153,7 +225,11 @@ export const getUnits = createAsyncThunk(
           error,
           "Failed to fetch units."
         ),
-        errors: getValidationErrors(error),
+
+        errors:
+          getValidationErrors(error),
+
+        originalError: error,
       });
     }
   }
@@ -167,9 +243,11 @@ export const getUnits = createAsyncThunk(
 
 export const getUnit = createAsyncThunk(
   "unit/getUnit",
+
   async (id, thunkAPI) => {
     try {
-      const response = await fetchUnit(id);
+      const response =
+        await fetchUnit(id);
 
       return response;
     } catch (error) {
@@ -178,7 +256,11 @@ export const getUnit = createAsyncThunk(
           error,
           "Failed to fetch unit."
         ),
-        errors: getValidationErrors(error),
+
+        errors:
+          getValidationErrors(error),
+
+        originalError: error,
       });
     }
   }
@@ -192,9 +274,11 @@ export const getUnit = createAsyncThunk(
 
 export const storeUnit = createAsyncThunk(
   "unit/storeUnit",
+
   async (data, thunkAPI) => {
     try {
-      const response = await createUnit(data);
+      const response =
+        await createUnit(data);
 
       return response;
     } catch (error) {
@@ -203,7 +287,11 @@ export const storeUnit = createAsyncThunk(
           error,
           "Failed to create unit."
         ),
-        errors: getValidationErrors(error),
+
+        errors:
+          getValidationErrors(error),
+
+        originalError: error,
       });
     }
   }
@@ -217,9 +305,11 @@ export const storeUnit = createAsyncThunk(
 
 export const editUnit = createAsyncThunk(
   "unit/editUnit",
+
   async ({ id, data }, thunkAPI) => {
     try {
-      const response = await updateUnit(id, data);
+      const response =
+        await updateUnit(id, data);
 
       return response;
     } catch (error) {
@@ -228,7 +318,11 @@ export const editUnit = createAsyncThunk(
           error,
           "Failed to update unit."
         ),
-        errors: getValidationErrors(error),
+
+        errors:
+          getValidationErrors(error),
+
+        originalError: error,
       });
     }
   }
@@ -242,9 +336,11 @@ export const editUnit = createAsyncThunk(
 
 export const removeUnit = createAsyncThunk(
   "unit/removeUnit",
+
   async (id, thunkAPI) => {
     try {
-      const response = await deleteUnit(id);
+      const response =
+        await deleteUnit(id);
 
       return {
         id,
@@ -256,7 +352,11 @@ export const removeUnit = createAsyncThunk(
           error,
           "Failed to delete unit."
         ),
-        errors: getValidationErrors(error),
+
+        errors:
+          getValidationErrors(error),
+
+        originalError: error,
       });
     }
   }
@@ -333,306 +433,613 @@ const unitSlice = createSlice({
 
       /*
       |--------------------------------------------------------------------------
-      | GET ALL UNITS
+      | GET ALL UNITS - PENDING
       |--------------------------------------------------------------------------
       */
 
-      .addCase(getUnits.pending, (state) => {
-        state.loading = true;
-        state.fetching = true;
+      .addCase(
+        getUnits.pending,
+        (state) => {
+          state.loading = true;
+          state.fetching = true;
 
-        state.error = null;
-        state.validationErrors = {};
-      })
+          state.error = null;
+          state.validationErrors = {};
+        }
+      )
 
-      .addCase(getUnits.fulfilled, (state, action) => {
-        state.loading = false;
-        state.fetching = false;
+      /*
+      |--------------------------------------------------------------------------
+      | GET ALL UNITS - SUCCESS
+      |--------------------------------------------------------------------------
+      */
 
-        const payload = action.payload;
+      .addCase(
+        getUnits.fulfilled,
+        (state, action) => {
+          state.loading = false;
+          state.fetching = false;
 
-        const data = getPayloadData(payload, []);
+          const payload =
+            action.payload;
 
-        /*
-        | Laravel pagination:
-        |
-        | data: {
-        |   current_page,
-        |   data: [],
-        |   last_page,
-        |   per_page,
-        |   total,
-        |   from,
-        |   to
-        | }
-        */
+          /*
+          |--------------------------------------------------------------------------
+          | Expected current API response:
+          |
+          | {
+          |   status: true,
+          |   code: 200,
+          |   message: "...",
+          |   data: [...]
+          | }
+          |--------------------------------------------------------------------------
+          */
 
-        if (
-          data &&
-          !Array.isArray(data) &&
-          Array.isArray(data.data)
-        ) {
-          state.units = data.data;
+          const data =
+            getPayloadData(
+              payload,
+              []
+            );
+
+          /*
+          |--------------------------------------------------------------------------
+          | PAGINATED RESPONSE
+          |--------------------------------------------------------------------------
+          |
+          | data = {
+          |   data: [],
+          |   current_page: 1,
+          |   last_page: 10,
+          |   per_page: 15,
+          |   total: 150,
+          |   from: 1,
+          |   to: 15
+          | }
+          |
+          |--------------------------------------------------------------------------
+          */
+
+          if (
+            data &&
+            !Array.isArray(data) &&
+            Array.isArray(data.data)
+          ) {
+            state.units = data.data;
+
+            state.pagination = {
+              currentPage:
+                data.current_page ??
+                1,
+
+              lastPage:
+                data.last_page ??
+                1,
+
+              perPage:
+                data.per_page ??
+                data.data.length ??
+                15,
+
+              total:
+                data.total ??
+                data.data.length,
+
+              from:
+                data.from ??
+                (
+                  data.data.length
+                    ? 1
+                    : null
+                ),
+
+              to:
+                data.to ??
+                (
+                  data.data.length
+                    ? data.data.length
+                    : null
+                ),
+            };
+
+            return;
+          }
+
+          /*
+          |--------------------------------------------------------------------------
+          | NON-PAGINATED RESPONSE
+          |--------------------------------------------------------------------------
+          |
+          | Your current API returns:
+          |
+          | data: [...]
+          |
+          |--------------------------------------------------------------------------
+          */
+
+          if (Array.isArray(data)) {
+            state.units = data;
+
+            state.pagination = {
+              currentPage: 1,
+              lastPage: 1,
+
+              perPage:
+                data.length || 15,
+
+              total:
+                data.length,
+
+              from:
+                data.length
+                  ? 1
+                  : null,
+
+              to:
+                data.length
+                  ? data.length
+                  : null,
+            };
+
+            return;
+          }
+
+          /*
+          |--------------------------------------------------------------------------
+          | SAFETY FALLBACK
+          |--------------------------------------------------------------------------
+          */
+
+          state.units = [];
 
           state.pagination = {
-            currentPage: data.current_page ?? 1,
-            lastPage: data.last_page ?? 1,
-            perPage: data.per_page ?? 15,
-            total: data.total ?? data.data.length,
-            from: data.from ?? null,
-            to: data.to ?? null,
+            currentPage: 1,
+            lastPage: 1,
+            perPage: 15,
+            total: 0,
+            from: null,
+            to: null,
           };
-
-          return;
         }
-
-        /*
-        | Non-paginated response:
-        |
-        | data: []
-        */
-
-        state.units = Array.isArray(data)
-          ? data
-          : [];
-
-        state.pagination = {
-          currentPage: 1,
-          lastPage: 1,
-          perPage: state.units.length || 15,
-          total: state.units.length,
-          from: state.units.length
-            ? 1
-            : null,
-          to: state.units.length
-            ? state.units.length
-            : null,
-        };
-      })
-
-      .addCase(getUnits.rejected, (state, action) => {
-        state.loading = false;
-        state.fetching = false;
-
-        state.error =
-          action.payload?.message ||
-          action.error?.message ||
-          "Failed to fetch units.";
-
-        state.validationErrors =
-          action.payload?.errors || {};
-      })
+      )
 
       /*
       |--------------------------------------------------------------------------
-      | GET SINGLE UNIT
+      | GET ALL UNITS - ERROR
       |--------------------------------------------------------------------------
       */
 
-      .addCase(getUnit.pending, (state) => {
-        state.loading = true;
+      .addCase(
+        getUnits.rejected,
+        (state, action) => {
+          state.loading = false;
+          state.fetching = false;
 
-        state.error = null;
-        state.validationErrors = {};
-      })
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to fetch units.";
 
-      .addCase(getUnit.fulfilled, (state, action) => {
-        state.loading = false;
-
-        const unit = getPayloadData(
-          action.payload,
-          null
-        );
-
-        state.unit = unit;
-      })
-
-      .addCase(getUnit.rejected, (state, action) => {
-        state.loading = false;
-
-        state.error =
-          action.payload?.message ||
-          action.error?.message ||
-          "Failed to fetch unit.";
-
-        state.validationErrors =
-          action.payload?.errors || {};
-      })
-
-      /*
-      |--------------------------------------------------------------------------
-      | CREATE UNIT
-      |--------------------------------------------------------------------------
-      */
-
-      .addCase(storeUnit.pending, (state) => {
-        state.loading = true;
-        state.creating = true;
-
-        state.error = null;
-        state.validationErrors = {};
-        state.successMessage = null;
-      })
-
-      .addCase(storeUnit.fulfilled, (state, action) => {
-        state.loading = false;
-        state.creating = false;
-
-        const unit = getPayloadData(
-          action.payload,
-          null
-        );
-
-        if (unit) {
-          state.units.unshift(unit);
-
-          /*
-          | Update pagination total.
-          */
-          state.pagination.total += 1;
+          state.validationErrors =
+            action.payload?.errors ||
+            {};
         }
-
-        state.successMessage =
-          action.payload?.message ||
-          "Unit created successfully.";
-      })
-
-      .addCase(storeUnit.rejected, (state, action) => {
-        state.loading = false;
-        state.creating = false;
-
-        state.error =
-          action.payload?.message ||
-          action.error?.message ||
-          "Failed to create unit.";
-
-        state.validationErrors =
-          action.payload?.errors || {};
-      })
+      )
 
       /*
       |--------------------------------------------------------------------------
-      | UPDATE UNIT
+      | GET SINGLE UNIT - PENDING
       |--------------------------------------------------------------------------
       */
 
-      .addCase(editUnit.pending, (state) => {
-        state.loading = true;
-        state.updating = true;
+      .addCase(
+        getUnit.pending,
+        (state) => {
+          state.loading = true;
 
-        state.error = null;
-        state.validationErrors = {};
-        state.successMessage = null;
-      })
+          state.error = null;
+          state.validationErrors = {};
+        }
+      )
 
-      .addCase(editUnit.fulfilled, (state, action) => {
-        state.loading = false;
-        state.updating = false;
+      /*
+      |--------------------------------------------------------------------------
+      | GET SINGLE UNIT - SUCCESS
+      |--------------------------------------------------------------------------
+      */
 
-        const updated = getPayloadData(
-          action.payload,
-          null
-        );
+      .addCase(
+        getUnit.fulfilled,
+        (state, action) => {
+          state.loading = false;
 
-        if (updated) {
+          const payload =
+            action.payload;
+
+          const data =
+            getPayloadData(
+              payload,
+              null
+            );
+
           /*
-          | Update collection.
+          |--------------------------------------------------------------------------
+          | Handles:
+          |
+          | data: {
+          |   id: 1,
+          |   ...
+          | }
+          |--------------------------------------------------------------------------
           */
-          state.units = state.units.map((unit) =>
-            unit.id === updated.id
-              ? updated
-              : unit
-          );
+
+          state.unit = data;
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | GET SINGLE UNIT - ERROR
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        getUnit.rejected,
+        (state, action) => {
+          state.loading = false;
+
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to fetch unit.";
+
+          state.validationErrors =
+            action.payload?.errors ||
+            {};
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE UNIT - PENDING
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        storeUnit.pending,
+        (state) => {
+          state.loading = true;
+          state.creating = true;
+
+          state.error = null;
+          state.validationErrors = {};
+          state.successMessage = null;
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE UNIT - SUCCESS
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        storeUnit.fulfilled,
+        (state, action) => {
+          state.loading = false;
+          state.creating = false;
+
+          const payload =
+            action.payload;
+
+          const unit =
+            getPayloadData(
+              payload,
+              null
+            );
 
           /*
-          | Update current unit.
+          |--------------------------------------------------------------------------
+          | Add created unit to collection.
+          |--------------------------------------------------------------------------
           */
+
+          if (
+            unit &&
+            typeof unit === "object" &&
+            unit.id
+          ) {
+            state.units.unshift(unit);
+
+            state.pagination.total += 1;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Keep current page range correct.
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+              state.pagination.from === null
+            ) {
+              state.pagination.from = 1;
+            }
+
+            if (
+              state.pagination.to !== null
+            ) {
+              state.pagination.to += 1;
+            }
+          }
+
+          state.successMessage =
+            getResponseMessage(
+              payload,
+              "Unit created successfully."
+            );
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE UNIT - ERROR
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        storeUnit.rejected,
+        (state, action) => {
+          state.loading = false;
+          state.creating = false;
+
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to create unit.";
+
+          state.validationErrors =
+            action.payload?.errors ||
+            {};
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | UPDATE UNIT - PENDING
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        editUnit.pending,
+        (state) => {
+          state.loading = true;
+          state.updating = true;
+
+          state.error = null;
+          state.validationErrors = {};
+          state.successMessage = null;
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | UPDATE UNIT - SUCCESS
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        editUnit.fulfilled,
+        (state, action) => {
+          state.loading = false;
+          state.updating = false;
+
+          const payload =
+            action.payload;
+
+          const updated =
+            getPayloadData(
+              payload,
+              null
+            );
+
+          if (
+            updated &&
+            typeof updated === "object" &&
+            updated.id
+          ) {
+            /*
+            |--------------------------------------------------------------------------
+            | Update collection.
+            |--------------------------------------------------------------------------
+            */
+
+            state.units =
+              state.units.map(
+                (item) =>
+                  item.id === updated.id
+                    ? {
+                      ...item,
+                      ...updated,
+                    }
+                    : item
+              );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Update current unit.
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+              state.unit &&
+              state.unit.id ===
+              updated.id
+            ) {
+              state.unit = {
+                ...state.unit,
+                ...updated,
+              };
+            }
+          }
+
+          state.successMessage =
+            getResponseMessage(
+              payload,
+              "Unit updated successfully."
+            );
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | UPDATE UNIT - ERROR
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        editUnit.rejected,
+        (state, action) => {
+          state.loading = false;
+          state.updating = false;
+
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to update unit.";
+
+          state.validationErrors =
+            action.payload?.errors ||
+            {};
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | DELETE UNIT - PENDING
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        removeUnit.pending,
+        (state) => {
+          state.loading = true;
+          state.deleting = true;
+
+          state.error = null;
+          state.validationErrors = {};
+          state.successMessage = null;
+        }
+      )
+
+      /*
+      |--------------------------------------------------------------------------
+      | DELETE UNIT - SUCCESS
+      |--------------------------------------------------------------------------
+      */
+
+      .addCase(
+        removeUnit.fulfilled,
+        (state, action) => {
+          state.loading = false;
+          state.deleting = false;
+
+          const deletedId =
+            action.payload?.id;
+
+          /*
+          |--------------------------------------------------------------------------
+          | Remove unit from collection.
+          |--------------------------------------------------------------------------
+          */
+
+          state.units =
+            state.units.filter(
+              (item) =>
+                item.id !== deletedId
+            );
+
+          /*
+          |--------------------------------------------------------------------------
+          | Clear current unit.
+          |--------------------------------------------------------------------------
+          */
+
           if (
             state.unit &&
-            state.unit.id === updated.id
+            state.unit.id === deletedId
           ) {
-            state.unit = updated;
+            state.unit = null;
           }
+
+          /*
+          |--------------------------------------------------------------------------
+          | Update pagination.
+          |--------------------------------------------------------------------------
+          */
+
+          state.pagination.total =
+            Math.max(
+              0,
+              state.pagination.total - 1
+            );
+
+          /*
+          |--------------------------------------------------------------------------
+          | Update displayed range.
+          |--------------------------------------------------------------------------
+          */
+
+          if (
+            state.units.length === 0
+          ) {
+            state.pagination.from =
+              null;
+
+            state.pagination.to =
+              null;
+          } else {
+            state.pagination.from =
+              state.pagination.from ?? 1;
+
+            state.pagination.to =
+              Math.min(
+                state.pagination.total,
+                state.pagination.from +
+                state.units.length -
+                1
+              );
+          }
+
+          state.successMessage =
+            getResponseMessage(
+              action.payload?.response,
+              "Unit deleted successfully."
+            );
         }
-
-        state.successMessage =
-          action.payload?.message ||
-          "Unit updated successfully.";
-      })
-
-      .addCase(editUnit.rejected, (state, action) => {
-        state.loading = false;
-        state.updating = false;
-
-        state.error =
-          action.payload?.message ||
-          action.error?.message ||
-          "Failed to update unit.";
-
-        state.validationErrors =
-          action.payload?.errors || {};
-      })
+      )
 
       /*
       |--------------------------------------------------------------------------
-      | DELETE UNIT
+      | DELETE UNIT - ERROR
       |--------------------------------------------------------------------------
       */
 
-      .addCase(removeUnit.pending, (state) => {
-        state.loading = true;
-        state.deleting = true;
+      .addCase(
+        removeUnit.rejected,
+        (state, action) => {
+          state.loading = false;
+          state.deleting = false;
 
-        state.error = null;
-        state.validationErrors = {};
-        state.successMessage = null;
-      })
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to delete unit.";
 
-      .addCase(removeUnit.fulfilled, (state, action) => {
-        state.loading = false;
-        state.deleting = false;
-
-        const deletedId = action.payload?.id;
-
-        state.units = state.units.filter(
-          (unit) => unit.id !== deletedId
-        );
-
-        /*
-        | Clear current unit if it was deleted.
-        */
-        if (
-          state.unit &&
-          state.unit.id === deletedId
-        ) {
-          state.unit = null;
+          state.validationErrors =
+            action.payload?.errors ||
+            {};
         }
-
-        /*
-        | Keep pagination total correct.
-        */
-        state.pagination.total = Math.max(
-          0,
-          state.pagination.total - 1
-        );
-
-        state.successMessage =
-          action.payload?.response?.message ||
-          "Unit deleted successfully.";
-      })
-
-      .addCase(removeUnit.rejected, (state, action) => {
-        state.loading = false;
-        state.deleting = false;
-
-        state.error =
-          action.payload?.message ||
-          action.error?.message ||
-          "Failed to delete unit.";
-
-        state.validationErrors =
-          action.payload?.errors || {};
-      });
+      );
   },
 });
 
@@ -680,21 +1087,69 @@ export const selectUnitDeleting = (state) =>
 export const selectUnitError = (state) =>
   state.unit?.error || null;
 
-export const selectUnitValidationErrors = (state) =>
-  state.unit?.validationErrors || {};
+export const selectUnitValidationErrors =
+  (state) =>
+    state.unit?.validationErrors || {};
 
-export const selectUnitSuccessMessage = (state) =>
-  state.unit?.successMessage || null;
+export const selectUnitSuccessMessage =
+  (state) =>
+    state.unit?.successMessage || null;
 
-export const selectUnitPagination = (state) =>
-  state.unit?.pagination || {
-    currentPage: 1,
-    lastPage: 1,
-    perPage: 15,
-    total: 0,
-    from: null,
-    to: null,
-  };
+export const selectUnitPagination =
+  (state) =>
+    state.unit?.pagination || {
+      currentPage: 1,
+      lastPage: 1,
+      perPage: 15,
+      total: 0,
+      from: null,
+      to: null,
+    };
+
+/*
+|--------------------------------------------------------------------------
+| ADDITIONAL SELECTORS
+|--------------------------------------------------------------------------
+|
+| Useful for UnitList, UnitStats and dashboards.
+|--------------------------------------------------------------------------
+*/
+
+export const selectUnitCount = (state) =>
+  state.unit?.units?.length || 0;
+
+export const selectTotalUnits = (state) =>
+  state.unit?.pagination?.total || 0;
+
+export const selectOccupiedUnits = (state) =>
+  (state.unit?.units || []).filter(
+    (unit) =>
+      unit?.status?.value === "occupied" ||
+      unit?.status === "occupied"
+  ).length;
+
+export const selectVacantUnits = (state) =>
+  (state.unit?.units || []).filter(
+    (unit) =>
+      unit?.status?.value === "vacant" ||
+      unit?.status === "vacant"
+  ).length;
+
+export const selectReservedUnits = (state) =>
+  (state.unit?.units || []).filter(
+    (unit) =>
+      unit?.status?.value === "reserved" ||
+      unit?.status === "reserved"
+  ).length;
+
+export const selectMaintenanceUnits =
+  (state) =>
+    (state.unit?.units || []).filter(
+      (unit) =>
+        unit?.status?.value ===
+        "maintenance" ||
+        unit?.status === "maintenance"
+    ).length;
 
 /*
 |--------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 import {
     useCallback,
     useEffect,
+    useMemo,
+    useRef,
     useState,
 } from "react";
 
@@ -51,6 +53,151 @@ const useUnit = (options = {}) => {
 
     /*
     |--------------------------------------------------------------------------
+    | INITIAL PARAMS REF
+    |--------------------------------------------------------------------------
+    |
+    | Prevent unnecessary API calls when an object is recreated by the
+    | parent component.
+    |
+    */
+
+    const initialParamsRef = useRef(initialParams);
+
+    useEffect(() => {
+        initialParamsRef.current = initialParams;
+    }, [initialParams]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizeStatus = useCallback((status) => {
+        if (!status) {
+            return {
+                value: "unknown",
+                label: "Unknown",
+            };
+        }
+
+        if (typeof status === "string") {
+            return {
+                value: status,
+                label:
+                    status.charAt(0).toUpperCase() +
+                    status.slice(1).replace(/_/g, " "),
+            };
+        }
+
+        if (typeof status === "object") {
+            return {
+                ...status,
+                value:
+                    status.value ??
+                    status.current ??
+                    "unknown",
+                label:
+                    status.label ??
+                    status.name ??
+                    status.value ??
+                    "Unknown",
+            };
+        }
+
+        return {
+            value: "unknown",
+            label: "Unknown",
+        };
+    }, []);
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE UNIT
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizeUnit = useCallback(
+        (item) => {
+            if (!item || typeof item !== "object") {
+                return item;
+            }
+
+            return {
+                ...item,
+
+                status: normalizeStatus(
+                    item.status
+                ),
+
+                property: item.property
+                    ? {
+                          ...item.property,
+                          name:
+                              item.property.name ??
+                              item.property.title ??
+                              `Property #${item.property.id}`,
+                      }
+                    : null,
+
+                apartment: item.apartment
+                    ? {
+                          ...item.apartment,
+                          name:
+                              item.apartment.name ??
+                              `Apartment #${item.apartment.id}`,
+                      }
+                    : null,
+
+                details: item.details ?? {},
+
+                pricing: item.pricing ?? {},
+
+                features: item.features ?? {},
+
+                tenant: item.tenant ?? null,
+
+                tenancy: item.tenancy ?? null,
+
+                tenancy_statistics:
+                    item.tenancy_statistics ?? {
+                        total: 0,
+                        active: 0,
+                        pending: 0,
+                        expired: 0,
+                        terminated: 0,
+                        cancelled: 0,
+                    },
+
+                maintenance:
+                    item.maintenance ?? {
+                        total: 0,
+                        open: 0,
+                        pending: 0,
+                        assigned: 0,
+                        in_progress: 0,
+                        on_hold: 0,
+                        completed: 0,
+                        cancelled: 0,
+                        rejected: 0,
+                        estimated_cost: 0,
+                        actual_cost: 0,
+                    },
+
+                maintenance_summary:
+                    item.maintenance_summary ?? {},
+
+                insights: item.insights ?? {},
+
+                availability:
+                    item.availability ?? {},
+            };
+        },
+        [normalizeStatus]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
     | NORMALIZE API RESPONSE
     |--------------------------------------------------------------------------
     */
@@ -59,58 +206,127 @@ const useUnit = (options = {}) => {
         (response) => {
             /*
             |--------------------------------------------------------------------------
-            | Laravel pagination:
+            | Service may return:
             |
             | {
             |     status: true,
-            |     data: {
-            |         data: [],
-            |         current_page: 1,
-            |         ...
-            |     }
+            |     code: 200,
+            |     message: "...",
+            |     data: []
             | }
             |--------------------------------------------------------------------------
             */
 
-            const payload = response?.data ?? response;
+            const payload =
+                response?.data ??
+                response ??
+                {};
+
+            /*
+            |--------------------------------------------------------------------------
+            | Direct array
+            |--------------------------------------------------------------------------
+            */
 
             if (Array.isArray(payload)) {
                 return {
-                    data: payload,
+                    data: payload.map(normalizeUnit),
                     meta: null,
                 };
             }
 
-            if (Array.isArray(payload?.data)) {
+            /*
+            |--------------------------------------------------------------------------
+            | Standard Laravel response:
+            |
+            | {
+            |     status: true,
+            |     data: []
+            | }
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                Array.isArray(
+                    payload?.data
+                )
+            ) {
+                /*
+                |--------------------------------------------------------------------------
+                | Non-paginated response
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    !payload.data.current_page &&
+                    !payload.data.data
+                ) {
+                    return {
+                        data: payload.data.map(
+                            normalizeUnit
+                        ),
+                        meta: payload,
+                    };
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Paginated response
+                |
+                | data: {
+                |     data: [],
+                |     current_page: 1,
+                |     last_page: 5,
+                |     ...
+                | }
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    Array.isArray(
+                        payload.data.data
+                    )
+                ) {
+                    return {
+                        data: payload.data.data.map(
+                            normalizeUnit
+                        ),
+                        meta: payload.data,
+                    };
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Payload contains units
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                Array.isArray(
+                    payload?.units
+                )
+            ) {
                 return {
-                    data: payload.data,
+                    data: payload.units.map(
+                        normalizeUnit
+                    ),
                     meta: payload,
                 };
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Non-paginated:
-            |
-            | {
-            |     data: []
-            | }
+            | Empty response
             |--------------------------------------------------------------------------
             */
-
-            if (Array.isArray(payload?.units)) {
-                return {
-                    data: payload.units,
-                    meta: payload,
-                };
-            }
 
             return {
                 data: [],
                 meta: payload,
             };
         },
-        []
+        [normalizeUnit]
     );
 
     /*
@@ -125,15 +341,24 @@ const useUnit = (options = {}) => {
             setError(null);
 
             try {
-                const response = await fetchUnits({
-                    ...initialParams,
-                    ...params,
-                });
+                const response =
+                    await fetchUnits({
+                        ...initialParamsRef.current,
+                        ...params,
+                    });
 
                 const normalized =
-                    normalizeUnitsResponse(response);
+                    normalizeUnitsResponse(
+                        response
+                    );
 
-                setUnits(normalized.data);
+                setUnits(
+                    Array.isArray(
+                        normalized.data
+                    )
+                        ? normalized.data
+                        : []
+                );
 
                 /*
                 |--------------------------------------------------------------------------
@@ -141,48 +366,64 @@ const useUnit = (options = {}) => {
                 |--------------------------------------------------------------------------
                 */
 
-                if (normalized.meta) {
-                    setPagination({
-                        current_page:
-                            normalized.meta.current_page ??
-                            1,
+                const meta =
+                    normalized.meta;
 
-                        last_page:
-                            normalized.meta.last_page ??
-                            1,
+                const dataLength =
+                    normalized.data.length;
 
-                        per_page:
-                            normalized.meta.per_page ??
-                            normalized.data.length,
+                setPagination({
+                    current_page:
+                        meta?.current_page ??
+                        1,
 
-                        total:
-                            normalized.meta.total ??
-                            normalized.data.length,
+                    last_page:
+                        meta?.last_page ??
+                        1,
 
-                        from:
-                            normalized.meta.from ??
-                            (normalized.data.length
-                                ? 1
-                                : 0),
+                    per_page:
+                        meta?.per_page ??
+                        dataLength,
 
-                        to:
-                            normalized.meta.to ??
-                            normalized.data.length,
-                    });
-                }
+                    total:
+                        meta?.total ??
+                        dataLength,
+
+                    from:
+                        meta?.from ??
+                        (dataLength > 0
+                            ? 1
+                            : 0),
+
+                    to:
+                        meta?.to ??
+                        dataLength,
+                });
 
                 return normalized.data;
             } catch (err) {
+                console.error(
+                    "FETCH UNITS ERROR:",
+                    err
+                );
+
                 setError(err);
+
+                /*
+                |--------------------------------------------------------------------------
+                | IMPORTANT
+                |
+                | Do not swallow the error. Callers such as UnitList can
+                | catch it and display their own notification.
+                |--------------------------------------------------------------------------
+                */
+
                 throw err;
             } finally {
                 setLoading(false);
             }
         },
-        [
-            initialParams,
-            normalizeUnitsResponse,
-        ]
+        [normalizeUnitsResponse]
     );
 
     /*
@@ -193,6 +434,19 @@ const useUnit = (options = {}) => {
 
     const getUnit = useCallback(
         async (id) => {
+            if (!id) {
+                const validationError = {
+                    status: 400,
+                    message:
+                        "Unit ID is required.",
+                    errors: null,
+                };
+
+                setError(validationError);
+
+                throw validationError;
+            }
+
             setLoadingUnit(true);
             setError(null);
 
@@ -201,23 +455,37 @@ const useUnit = (options = {}) => {
                     await fetchUnit(id);
 
                 const payload =
-                    response?.data ?? response;
+                    response?.data ??
+                    response ??
+                    {};
 
                 const result =
                     payload?.unit ??
+                    payload?.data ??
                     payload;
 
-                setUnit(result);
+                const normalizedUnit =
+                    normalizeUnit(result);
 
-                return result;
+                setUnit(
+                    normalizedUnit
+                );
+
+                return normalizedUnit;
             } catch (err) {
+                console.error(
+                    "FETCH UNIT ERROR:",
+                    err
+                );
+
                 setError(err);
+
                 throw err;
             } finally {
                 setLoadingUnit(false);
             }
         },
-        []
+        [normalizeUnit]
     );
 
     /*
@@ -236,34 +504,46 @@ const useUnit = (options = {}) => {
                     await createUnit(data);
 
                 const payload =
-                    response?.data ?? response;
+                    response?.data ??
+                    response ??
+                    {};
 
                 const createdUnit =
                     payload?.unit ??
+                    payload?.data ??
                     payload;
 
-                /*
-                |--------------------------------------------------------------------------
-                | Add new unit to current list
-                |--------------------------------------------------------------------------
-                */
+                const normalizedUnit =
+                    normalizeUnit(
+                        createdUnit
+                    );
 
-                if (createdUnit?.id) {
-                    setUnits((current) => [
-                        createdUnit,
-                        ...current,
-                    ]);
+                if (
+                    normalizedUnit?.id
+                ) {
+                    setUnits(
+                        (current) => [
+                            normalizedUnit,
+                            ...current,
+                        ]
+                    );
                 }
 
-                return createdUnit;
+                return normalizedUnit;
             } catch (err) {
+                console.error(
+                    "CREATE UNIT ERROR:",
+                    err
+                );
+
                 setError(err);
+
                 throw err;
             } finally {
                 setCreating(false);
             }
         },
-        []
+        [normalizeUnit]
     );
 
     /*
@@ -285,55 +565,64 @@ const useUnit = (options = {}) => {
                     );
 
                 const payload =
-                    response?.data ?? response;
+                    response?.data ??
+                    response ??
+                    {};
 
                 const updatedUnit =
                     payload?.unit ??
+                    payload?.data ??
                     payload;
 
-                /*
-                |--------------------------------------------------------------------------
-                | Update current list
-                |--------------------------------------------------------------------------
-                */
-
-                if (updatedUnit?.id) {
-                    setUnits((current) =>
-                        current.map((item) =>
-                            item.id === updatedUnit.id
-                                ? {
-                                      ...item,
-                                      ...updatedUnit,
-                                  }
-                                : item
-                        )
+                const normalizedUnit =
+                    normalizeUnit(
+                        updatedUnit
                     );
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Update selected unit
-                    |--------------------------------------------------------------------------
-                    */
+                if (
+                    normalizedUnit?.id
+                ) {
+                    setUnits(
+                        (current) =>
+                            current.map(
+                                (item) =>
+                                    item.id ===
+                                    normalizedUnit.id
+                                        ? {
+                                              ...item,
+                                              ...normalizedUnit,
+                                          }
+                                        : item
+                            )
+                    );
 
-                    setUnit((current) =>
-                        current?.id === updatedUnit.id
-                            ? {
-                                  ...current,
-                                  ...updatedUnit,
-                              }
-                            : current
+                    setUnit(
+                        (current) =>
+                            current?.id ===
+                            normalizedUnit.id
+                                ? {
+                                      ...current,
+                                      ...normalizedUnit,
+                                  }
+                                : current
                     );
                 }
 
-                return updatedUnit;
+                return normalizedUnit;
             } catch (err) {
+                console.error(
+                    "UPDATE UNIT ERROR:",
+                    err
+                );
+
                 setError(err);
+
                 throw err;
             } finally {
                 setUpdating(false);
             }
         },
-        []
+        [normalizeUnit]
     );
 
     /*
@@ -344,6 +633,21 @@ const useUnit = (options = {}) => {
 
     const removeUnit = useCallback(
         async (id) => {
+            if (!id) {
+                const validationError = {
+                    status: 400,
+                    message:
+                        "Unit ID is required.",
+                    errors: null,
+                };
+
+                setError(
+                    validationError
+                );
+
+                throw validationError;
+            }
+
             setDeleting(true);
             setError(null);
 
@@ -351,34 +655,30 @@ const useUnit = (options = {}) => {
                 const response =
                     await deleteUnit(id);
 
-                /*
-                |--------------------------------------------------------------------------
-                | Remove from current list
-                |--------------------------------------------------------------------------
-                */
-
-                setUnits((current) =>
-                    current.filter(
-                        (item) =>
-                            item.id !== id
-                    )
+                setUnits(
+                    (current) =>
+                        current.filter(
+                            (item) =>
+                                item.id !== id
+                        )
                 );
 
-                /*
-                |--------------------------------------------------------------------------
-                | Clear selected unit
-                |--------------------------------------------------------------------------
-                */
-
-                setUnit((current) =>
-                    current?.id === id
-                        ? null
-                        : current
+                setUnit(
+                    (current) =>
+                        current?.id === id
+                            ? null
+                            : current
                 );
 
                 return response;
             } catch (err) {
+                console.error(
+                    "DELETE UNIT ERROR:",
+                    err
+                );
+
                 setError(err);
+
                 throw err;
             } finally {
                 setDeleting(false);
@@ -407,59 +707,107 @@ const useUnit = (options = {}) => {
 
                     const payload =
                         response?.data ??
-                        response;
+                        response ??
+                        {};
 
                     const updatedUnit =
                         payload?.unit ??
+                        payload?.data ??
                         payload;
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Update local list
+                    | If backend returns complete unit
                     |--------------------------------------------------------------------------
                     */
 
-                    setUnits((current) =>
-                        current.map((item) =>
-                            item.id === id
-                                ? {
-                                      ...item,
-                                      ...(updatedUnit?.id
-                                          ? updatedUnit
-                                          : {
-                                                status,
-                                            }),
-                                  }
-                                : item
-                        )
-                    );
+                    if (
+                        updatedUnit?.id
+                    ) {
+                        const normalizedUnit =
+                            normalizeUnit(
+                                updatedUnit
+                            );
+
+                        setUnits(
+                            (current) =>
+                                current.map(
+                                    (item) =>
+                                        item.id ===
+                                        id
+                                            ? {
+                                                  ...item,
+                                                  ...normalizedUnit,
+                                              }
+                                            : item
+                                )
+                        );
+
+                        setUnit(
+                            (current) =>
+                                current?.id ===
+                                id
+                                    ? {
+                                          ...current,
+                                          ...normalizedUnit,
+                                      }
+                                    : current
+                        );
+
+                        return normalizedUnit;
+                    }
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Update selected unit
+                    | If backend only returns status
                     |--------------------------------------------------------------------------
                     */
 
-                    setUnit((current) =>
-                        current?.id === id
-                            ? {
-                                  ...current,
-                                  ...(updatedUnit?.id
-                                      ? updatedUnit
-                                      : {
-                                            status,
-                                        }),
-                              }
-                            : current
+                    const normalizedStatus =
+                        normalizeStatus(
+                            status
+                        );
+
+                    setUnits(
+                        (current) =>
+                            current.map(
+                                (item) =>
+                                    item.id ===
+                                    id
+                                        ? {
+                                              ...item,
+                                              status: normalizedStatus,
+                                          }
+                                        : item
+                            )
                     );
 
-                    return updatedUnit;
+                    setUnit(
+                        (current) =>
+                            current?.id === id
+                                ? {
+                                      ...current,
+                                      status: normalizedStatus,
+                                  }
+                                : current
+                    );
+
+                    return normalizedStatus;
                 } catch (err) {
+                    console.error(
+                        "UPDATE UNIT STATUS ERROR:",
+                        err
+                    );
+
                     setError(err);
+
                     throw err;
                 }
             },
-            []
+            [
+                normalizeStatus,
+                normalizeUnit,
+            ]
         );
 
     /*
@@ -469,29 +817,56 @@ const useUnit = (options = {}) => {
     */
 
     const getUnitAvailability =
-        useCallback(async (id) => {
-            setCheckingAvailability(true);
-            setError(null);
+        useCallback(
+            async (id) => {
+                if (!id) {
+                    const validationError = {
+                        status: 400,
+                        message:
+                            "Unit ID is required.",
+                        errors: null,
+                    };
 
-            try {
-                const response =
-                    await checkUnitAvailability(
-                        id
+                    setError(
+                        validationError
                     );
 
-                return (
-                    response?.data ??
-                    response
-                );
-            } catch (err) {
-                setError(err);
-                throw err;
-            } finally {
+                    throw validationError;
+                }
+
                 setCheckingAvailability(
-                    false
+                    true
                 );
-            }
-        }, []);
+
+                setError(null);
+
+                try {
+                    const response =
+                        await checkUnitAvailability(
+                            id
+                        );
+
+                    return (
+                        response?.data ??
+                        response
+                    );
+                } catch (err) {
+                    console.error(
+                        "CHECK UNIT AVAILABILITY ERROR:",
+                        err
+                    );
+
+                    setError(err);
+
+                    throw err;
+                } finally {
+                    setCheckingAvailability(
+                        false
+                    );
+                }
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -499,9 +874,10 @@ const useUnit = (options = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    const clearError = useCallback(() => {
-        setError(null);
-    }, []);
+    const clearError =
+        useCallback(() => {
+            setError(null);
+        }, []);
 
     /*
     |--------------------------------------------------------------------------
@@ -509,9 +885,10 @@ const useUnit = (options = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    const clearUnit = useCallback(() => {
-        setUnit(null);
-    }, []);
+    const clearUnit =
+        useCallback(() => {
+            setUnit(null);
+        }, []);
 
     /*
     |--------------------------------------------------------------------------
@@ -519,12 +896,13 @@ const useUnit = (options = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    const refreshUnits = useCallback(
-        async (params = {}) => {
-            return getUnits(params);
-        },
-        [getUnits]
-    );
+    const refreshUnits =
+        useCallback(
+            async (params = {}) => {
+                return getUnits(params);
+            },
+            [getUnits]
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -537,12 +915,112 @@ const useUnit = (options = {}) => {
             return;
         }
 
-        getUnits(initialParams);
-    }, [
-        autoFetch,
-        getUnits,
-        initialParams,
-    ]);
+        let mounted = true;
+
+        const load = async () => {
+            try {
+                await getUnits(
+                    initialParamsRef.current
+                );
+            } catch (err) {
+                /*
+                |--------------------------------------------------------------------------
+                | Prevent unhandled promise rejection from auto-fetch.
+                |
+                | The error has already been stored in state by getUnits().
+                |--------------------------------------------------------------------------
+                */
+
+                if (!mounted) {
+                    return;
+                }
+
+                console.error(
+                    "AUTO FETCH UNITS ERROR:",
+                    err
+                );
+            }
+        };
+
+        load();
+
+        return () => {
+            mounted = false;
+        };
+    }, [autoFetch, getUnits]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPUTED STATS
+    |--------------------------------------------------------------------------
+    */
+
+    const stats = useMemo(() => {
+        return units.reduce(
+            (acc, item) => {
+                acc.total += 1;
+
+                const status =
+                    item?.status?.value ??
+                    item?.status?.current ??
+                    item?.status ??
+                    "unknown";
+
+                const normalizedStatus =
+                    String(status)
+                        .toLowerCase()
+                        .replace(
+                            /[\s-]+/g,
+                            "_"
+                        );
+
+                if (
+                    normalizedStatus ===
+                    "vacant"
+                ) {
+                    acc.vacant += 1;
+                }
+
+                if (
+                    normalizedStatus ===
+                    "occupied"
+                ) {
+                    acc.occupied += 1;
+                }
+
+                if (
+                    normalizedStatus ===
+                    "reserved"
+                ) {
+                    acc.reserved += 1;
+                }
+
+                if (
+                    normalizedStatus ===
+                    "maintenance"
+                ) {
+                    acc.maintenance += 1;
+                }
+
+                if (
+                    normalizedStatus ===
+                    "inactive"
+                ) {
+                    acc.inactive += 1;
+                }
+
+                return acc;
+            },
+            {
+                total: 0,
+                vacant: 0,
+                occupied: 0,
+                reserved: 0,
+                maintenance: 0,
+                inactive: 0,
+            }
+        );
+    }, [units]);
 
     /*
     |--------------------------------------------------------------------------
@@ -552,14 +1030,21 @@ const useUnit = (options = {}) => {
 
     return {
         /*
+        |--------------------------------------------------------------------------
         | Data
+        |--------------------------------------------------------------------------
         */
+
         units,
         unit,
+        stats,
 
         /*
+        |--------------------------------------------------------------------------
         | Loading
+        |--------------------------------------------------------------------------
         */
+
         loading,
         loadingUnit,
         creating,
@@ -568,18 +1053,27 @@ const useUnit = (options = {}) => {
         checkingAvailability,
 
         /*
+        |--------------------------------------------------------------------------
         | Error
+        |--------------------------------------------------------------------------
         */
+
         error,
 
         /*
+        |--------------------------------------------------------------------------
         | Pagination
+        |--------------------------------------------------------------------------
         */
+
         pagination,
 
         /*
+        |--------------------------------------------------------------------------
         | CRUD
+        |--------------------------------------------------------------------------
         */
+
         getUnits,
         getUnit,
         addUnit,
@@ -587,25 +1081,38 @@ const useUnit = (options = {}) => {
         removeUnit,
 
         /*
+        |--------------------------------------------------------------------------
         | Status
+        |--------------------------------------------------------------------------
         */
+
         changeUnitStatus,
 
         /*
+        |--------------------------------------------------------------------------
         | Availability
+        |--------------------------------------------------------------------------
+
         */
+
         getUnitAvailability,
 
         /*
+        |--------------------------------------------------------------------------
         | Utilities
+        |--------------------------------------------------------------------------
         */
+
         refreshUnits,
         clearError,
         clearUnit,
 
         /*
-        | Backward-compatible aliases
+        |--------------------------------------------------------------------------
+        | Backward-Compatible Aliases
+        |--------------------------------------------------------------------------
         */
+
         createUnit: addUnit,
         updateUnit: editUnit,
         deleteUnit: removeUnit,

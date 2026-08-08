@@ -1,6 +1,10 @@
-// src/services/unit.service.js
-
 import api from "../api/axios";
+
+/*
+|--------------------------------------------------------------------------
+| ENDPOINT
+|--------------------------------------------------------------------------
+*/
 
 const UNIT_ENDPOINT = "/units";
 
@@ -9,16 +13,20 @@ const UNIT_ENDPOINT = "/units";
 | RESPONSE HANDLER
 |--------------------------------------------------------------------------
 |
-| Laravel responses are expected to look like:
+| Laravel response:
 |
 | {
 |     status: true,
-|     message: "...",
-|     data: {...}
+|     code: 200,
+|     message: "Units fetched successfully.",
+|     data: [...]
 | }
+|
+| We return the Laravel payload exactly as received.
 |
 |--------------------------------------------------------------------------
 */
+
 const handleResponse = (response) => {
     return response?.data ?? null;
 };
@@ -27,12 +35,31 @@ const handleResponse = (response) => {
 |--------------------------------------------------------------------------
 | ERROR HANDLER
 |--------------------------------------------------------------------------
+|
+| Keeps the Laravel error payload intact so the hook/component can access:
+|
+| {
+|     status: false,
+|     code: 500,
+|     message: "...",
+|     errors: {...}
+| }
+|
+|--------------------------------------------------------------------------
 */
+
 const handleError = (error, action) => {
+    const responseData = error?.response?.data;
+
     const errorData =
-        error?.response?.data ||
-        error?.message ||
-        error;
+        responseData ??
+        error?.message ??
+        error ??
+        {
+            status: 500,
+            message: "Something went wrong.",
+            errors: null,
+        };
 
     console.error(`${action} ERROR:`, errorData);
 
@@ -41,30 +68,60 @@ const handleError = (error, action) => {
 
 /*
 |--------------------------------------------------------------------------
+| FILE DETECTOR
+|--------------------------------------------------------------------------
+*/
+
+const isFile = (value) => {
+    if (typeof File !== "undefined" && value instanceof File) {
+        return true;
+    }
+
+    if (typeof Blob !== "undefined" && value instanceof Blob) {
+        return true;
+    }
+
+    return false;
+};
+
+/*
+|--------------------------------------------------------------------------
 | FORM DATA BUILDER
 |--------------------------------------------------------------------------
 |
-| Used when creating/updating units with files such as thumbnails.
+| Supports:
+| - Strings
+| - Numbers
+| - Booleans
+| - Null values
+| - Arrays
+| - Objects
+| - Files
+| - Laravel method spoofing
+|
 |--------------------------------------------------------------------------
 */
+
 const buildFormData = (data = {}, method = null) => {
     const formData = new FormData();
 
     Object.entries(data).forEach(([key, value]) => {
         /*
         |--------------------------------------------------------------------------
-        | Ignore undefined values
+        | Ignore undefined
         |--------------------------------------------------------------------------
         */
+
         if (value === undefined) {
             return;
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Null values
+        | Null
         |--------------------------------------------------------------------------
         */
+
         if (value === null) {
             formData.append(key, "");
             return;
@@ -75,7 +132,8 @@ const buildFormData = (data = {}, method = null) => {
         | Files
         |--------------------------------------------------------------------------
         */
-        if (value instanceof File || value instanceof Blob) {
+
+        if (isFile(value)) {
             formData.append(key, value);
             return;
         }
@@ -85,16 +143,28 @@ const buildFormData = (data = {}, method = null) => {
         | Arrays
         |--------------------------------------------------------------------------
         */
+
         if (Array.isArray(value)) {
             value.forEach((item) => {
-                if (item !== null && item !== undefined) {
+                if (item === null || item === undefined) {
+                    return;
+                }
+
+                if (isFile(item)) {
+                    formData.append(`${key}[]`, item);
+                    return;
+                }
+
+                if (typeof item === "object") {
                     formData.append(
                         `${key}[]`,
-                        typeof item === "object"
-                            ? JSON.stringify(item)
-                            : item
+                        JSON.stringify(item)
                     );
+
+                    return;
                 }
+
+                formData.append(`${key}[]`, String(item));
             });
 
             return;
@@ -105,6 +175,7 @@ const buildFormData = (data = {}, method = null) => {
         | Objects
         |--------------------------------------------------------------------------
         */
+
         if (typeof value === "object") {
             formData.append(
                 key,
@@ -119,6 +190,7 @@ const buildFormData = (data = {}, method = null) => {
         | Boolean
         |--------------------------------------------------------------------------
         */
+
         if (typeof value === "boolean") {
             formData.append(
                 key,
@@ -133,14 +205,16 @@ const buildFormData = (data = {}, method = null) => {
         | Strings / Numbers
         |--------------------------------------------------------------------------
         */
-        formData.append(key, value);
+
+        formData.append(key, String(value));
     });
 
     /*
     |--------------------------------------------------------------------------
-    | Laravel method spoofing
+    | Laravel Method Spoofing
     |--------------------------------------------------------------------------
     */
+
     if (method) {
         formData.append("_method", method);
     }
@@ -153,21 +227,22 @@ const buildFormData = (data = {}, method = null) => {
 | GET ALL UNITS
 |--------------------------------------------------------------------------
 |
-| Supports optional query parameters:
+| Example:
 |
 | fetchUnits({
-|     search: "A101",
-|     property_id: 1,
-|     apartment_id: 2,
-|     status: "vacant",
-|     floor: 1,
+|     search: "601",
+|     property_id: 20,
+|     apartment_id: 78,
+|     status: "occupied",
+|     floor: 6,
 |     page: 1,
 |     per_page: 20,
-|     with_relations: true
+|     with_relations: true,
 | });
 |
 |--------------------------------------------------------------------------
 */
+
 export const fetchUnits = async (params = {}) => {
     try {
         const response = await api.get(
@@ -188,12 +263,11 @@ export const fetchUnits = async (params = {}) => {
 | GET SINGLE UNIT
 |--------------------------------------------------------------------------
 */
+
 export const fetchUnit = async (id) => {
     try {
         if (!id) {
-            throw new Error(
-                "Unit ID is required."
-            );
+            throw new Error("Unit ID is required.");
         }
 
         const response = await api.get(
@@ -211,27 +285,40 @@ export const fetchUnit = async (id) => {
 | CREATE UNIT
 |--------------------------------------------------------------------------
 |
-| Uses JSON when there is no file.
+| JSON is used when there are no files.
 |
-| Automatically switches to multipart/form-data
-| when a File or Blob is included.
+| multipart/form-data is automatically used when
+| a File or Blob is detected.
+|
 |--------------------------------------------------------------------------
 */
+
 export const createUnit = async (data = {}) => {
     try {
         const hasFile = Object.values(data).some(
-            (value) =>
-                value instanceof File ||
-                value instanceof Blob
+            (value) => {
+                if (isFile(value)) {
+                    return true;
+                }
+
+                if (Array.isArray(value)) {
+                    return value.some((item) =>
+                        isFile(item)
+                    );
+                }
+
+                return false;
+            }
         );
 
         let response;
 
         /*
         |--------------------------------------------------------------------------
-        | JSON request
+        | JSON REQUEST
         |--------------------------------------------------------------------------
         */
+
         if (!hasFile) {
             response = await api.post(
                 UNIT_ENDPOINT,
@@ -241,12 +328,12 @@ export const createUnit = async (data = {}) => {
 
         /*
         |--------------------------------------------------------------------------
-        | Multipart request
+        | MULTIPART REQUEST
         |--------------------------------------------------------------------------
         */
+
         else {
-            const formData =
-                buildFormData(data);
+            const formData = buildFormData(data);
 
             response = await api.post(
                 UNIT_ENDPOINT,
@@ -271,32 +358,30 @@ export const createUnit = async (data = {}) => {
 | UPDATE UNIT
 |--------------------------------------------------------------------------
 |
-| Laravel does not always handle PUT/PATCH multipart
-| requests correctly.
-|
-| Therefore we send:
+| Laravel multipart requests are handled using:
 |
 | POST /units/{id}
 |
 | with:
 |
-| _method = PUT
+| _method=PUT
 |
 |--------------------------------------------------------------------------
 */
+
 export const updateUnit = async (
     id,
     data = {}
 ) => {
     try {
         if (!id) {
-            throw new Error(
-                "Unit ID is required."
-            );
+            throw new Error("Unit ID is required.");
         }
 
-        const formData =
-            buildFormData(data, "PUT");
+        const formData = buildFormData(
+            data,
+            "PUT"
+        );
 
         const response = await api.post(
             `${UNIT_ENDPOINT}/${id}`,
@@ -320,12 +405,11 @@ export const updateUnit = async (
 | DELETE UNIT
 |--------------------------------------------------------------------------
 */
+
 export const deleteUnit = async (id) => {
     try {
         if (!id) {
-            throw new Error(
-                "Unit ID is required."
-            );
+            throw new Error("Unit ID is required.");
         }
 
         const response = await api.delete(
@@ -340,15 +424,16 @@ export const deleteUnit = async (id) => {
 
 /*
 |--------------------------------------------------------------------------
-| OPTIONAL: UPDATE UNIT STATUS
+| UPDATE UNIT STATUS
 |--------------------------------------------------------------------------
 |
-| Only use this if your Laravel API has:
+| Expected Laravel route:
 |
 | PATCH /units/{id}/status
 |
 |--------------------------------------------------------------------------
 */
+
 export const updateUnitStatus = async (
     id,
     status
@@ -366,10 +451,40 @@ export const updateUnitStatus = async (
             );
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Support status objects
+        |--------------------------------------------------------------------------
+        |
+        | Your API returns status as:
+        |
+        | {
+        |     value: "occupied",
+        |     label: "Occupied",
+        |     ...
+        | }
+        |
+        | If the frontend accidentally passes the whole object,
+        | extract the actual value.
+        |
+        |--------------------------------------------------------------------------
+        */
+
+        const normalizedStatus =
+            typeof status === "object"
+                ? status?.value
+                : status;
+
+        if (!normalizedStatus) {
+            throw new Error(
+                "A valid unit status is required."
+            );
+        }
+
         const response = await api.patch(
             `${UNIT_ENDPOINT}/${id}/status`,
             {
-                status,
+                status: normalizedStatus,
             }
         );
 
@@ -384,15 +499,16 @@ export const updateUnitStatus = async (
 
 /*
 |--------------------------------------------------------------------------
-| OPTIONAL: CHECK UNIT AVAILABILITY
+| CHECK UNIT AVAILABILITY
 |--------------------------------------------------------------------------
 |
-| Only use this if your Laravel API has:
+| Expected Laravel route:
 |
 | GET /units/{id}/availability
 |
 |--------------------------------------------------------------------------
 */
+
 export const checkUnitAvailability = async (
     id
 ) => {
@@ -421,6 +537,7 @@ export const checkUnitAvailability = async (
 | DEFAULT EXPORT
 |--------------------------------------------------------------------------
 */
+
 export default {
     fetchUnits,
     fetchUnit,
@@ -430,3 +547,4 @@ export default {
     updateUnitStatus,
     checkUnitAvailability,
 };
+
