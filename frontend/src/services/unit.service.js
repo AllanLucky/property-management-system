@@ -14,15 +14,6 @@ const UNIT_ENDPOINT = "/units";
 | RESPONSE HANDLER
 |--------------------------------------------------------------------------
 |
-| Laravel success response:
-|
-| {
-|     status: true,
-|     code: 200,
-|     message: "Units fetched successfully.",
-|     data: [...]
-| }
-|
 | Axios response:
 |
 | {
@@ -36,21 +27,12 @@ const UNIT_ENDPOINT = "/units";
 |     ...
 | }
 |
-| We return the Laravel response body.
+| Return the Laravel response body.
 |--------------------------------------------------------------------------
 */
 
 const handleResponse = (response) => {
-    const payload = response?.data;
-
-    if (
-        payload === undefined ||
-        payload === null
-    ) {
-        return null;
-    }
-
-    return payload;
+    return response?.data ?? null;
 };
 
 /*
@@ -58,47 +40,125 @@ const handleResponse = (response) => {
 | ERROR HANDLER
 |--------------------------------------------------------------------------
 |
-| Preserve the Laravel error response so hooks/components can access:
-|
-| {
-|     status: false,
-|     code: 500,
-|     message: "...",
-|     errors: {...}
-| }
+| Always throw a normalized Error object while preserving the
+| Laravel response payload.
 |
 |--------------------------------------------------------------------------
 */
 
 const handleError = (error, label) => {
-    const responseData =
-        error?.response?.data;
+    const responseData = error?.response?.data;
 
-    const errorData =
-        responseData ??
-        error?.message ??
-        error ??
-        {
-            status: false,
-            code: 500,
-            message: "Something went wrong.",
-            errors: null,
-        };
+    /*
+    |--------------------------------------------------------------------------
+    | Laravel API error
+    |--------------------------------------------------------------------------
+    */
+
+    if (responseData) {
+        const normalizedError = new Error(
+            responseData?.message ||
+                "Something went wrong."
+        );
+
+        normalizedError.status =
+            responseData?.status ?? false;
+
+        normalizedError.code =
+            responseData?.code ??
+            error?.response?.status ??
+            500;
+
+        normalizedError.errors =
+            responseData?.errors ?? null;
+
+        normalizedError.data =
+            responseData?.data ?? null;
+
+        normalizedError.response =
+            responseData;
+
+        console.error(
+            `${label} ERROR:`,
+            responseData
+        );
+
+        throw normalizedError;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Axios error without Laravel payload
+    |--------------------------------------------------------------------------
+    */
+
+    if (error?.response) {
+        const normalizedError = new Error(
+            error?.message ||
+                `Request failed with status ${error.response.status}.`
+        );
+
+        normalizedError.status = false;
+
+        normalizedError.code =
+            error.response.status;
+
+        normalizedError.errors = null;
+
+        normalizedError.response =
+            error.response.data ?? null;
+
+        console.error(
+            `${label} ERROR:`,
+            error.response
+        );
+
+        throw normalizedError;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Existing Error
+    |--------------------------------------------------------------------------
+    */
+
+    if (error instanceof Error) {
+        console.error(
+            `${label} ERROR:`,
+            error
+        );
+
+        throw error;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Unknown error
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizedError = new Error(
+        typeof error === "string"
+            ? error
+            : "Something went wrong."
+    );
+
+    normalizedError.status = false;
+    normalizedError.code = 500;
+    normalizedError.errors = null;
+    normalizedError.response = null;
 
     console.error(
         `${label} ERROR:`,
-        errorData
+        error
     );
 
-    throw errorData;
+    throw normalizedError;
 };
 
 /*
 |--------------------------------------------------------------------------
 | FILE / BLOB DETECTOR
-|--------------------------------------------------------------------------
-|
-| Protects against File/Blob being undefined in some environments.
 |--------------------------------------------------------------------------
 */
 
@@ -118,6 +178,60 @@ const isFileOrBlob = (value) => {
     }
 
     return false;
+};
+
+/*
+|--------------------------------------------------------------------------
+| CHECK IF DATA CONTAINS FILE
+|--------------------------------------------------------------------------
+*/
+
+const containsFile = (data = {}) => {
+    return Object.values(data).some(
+        (value) => {
+            /*
+            |--------------------------------------------------------------------------
+            | Direct File / Blob
+            |--------------------------------------------------------------------------
+            */
+
+            if (isFileOrBlob(value)) {
+                return true;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | File inside array
+            |--------------------------------------------------------------------------
+            */
+
+            if (Array.isArray(value)) {
+                return value.some((item) =>
+                    isFileOrBlob(item)
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Nested object
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                value &&
+                typeof value === "object"
+            ) {
+                return Object.values(value).some(
+                    (nestedValue) =>
+                        isFileOrBlob(
+                            nestedValue
+                        )
+                );
+            }
+
+            return false;
+        }
+    );
 };
 
 /*
@@ -142,8 +256,7 @@ const isFileOrBlob = (value) => {
 
 const buildFormData = (
     data = {},
-    includeMethod = false,
-    method = "POST"
+    method = null
 ) => {
     const formData = new FormData();
 
@@ -163,13 +276,14 @@ const buildFormData = (
             |--------------------------------------------------------------------------
             | Null
             |--------------------------------------------------------------------------
-            |
-            | Sending an empty string allows Laravel to receive the field.
-            |--------------------------------------------------------------------------
             */
 
             if (value === null) {
-                formData.append(key, "");
+                formData.append(
+                    key,
+                    ""
+                );
+
                 return;
             }
 
@@ -180,7 +294,11 @@ const buildFormData = (
             */
 
             if (isFileOrBlob(value)) {
-                formData.append(key, value);
+                formData.append(
+                    key,
+                    value
+                );
+
                 return;
             }
 
@@ -191,64 +309,72 @@ const buildFormData = (
             */
 
             if (Array.isArray(value)) {
-                value.forEach((item) => {
-                    /*
-                    |------------------------------------------------------------------
-                    | Ignore null array items
-                    |------------------------------------------------------------------
-                    */
+                value.forEach(
+                    (item) => {
+                        /*
+                        |------------------------------------------------------------------
+                        | Ignore empty array items
+                        |------------------------------------------------------------------
+                        */
 
-                    if (
-                        item === undefined ||
-                        item === null
-                    ) {
-                        return;
-                    }
+                        if (
+                            item === undefined ||
+                            item === null
+                        ) {
+                            return;
+                        }
 
-                    /*
-                    |------------------------------------------------------------------
-                    | Array file
-                    |------------------------------------------------------------------
-                    */
+                        /*
+                        |------------------------------------------------------------------
+                        | Array File / Blob
+                        |------------------------------------------------------------------
+                        */
 
-                    if (isFileOrBlob(item)) {
+                        if (
+                            isFileOrBlob(
+                                item
+                            )
+                        ) {
+                            formData.append(
+                                `${key}[]`,
+                                item
+                            );
+
+                            return;
+                        }
+
+                        /*
+                        |------------------------------------------------------------------
+                        | Array object
+                        |------------------------------------------------------------------
+                        */
+
+                        if (
+                            typeof item ===
+                            "object"
+                        ) {
+                            formData.append(
+                                `${key}[]`,
+                                JSON.stringify(
+                                    item
+                                )
+                            );
+
+                            return;
+                        }
+
+                        /*
+                        |------------------------------------------------------------------
+                        | Primitive array value
+                        |------------------------------------------------------------------
+                        */
+
                         formData.append(
                             `${key}[]`,
-                            item
+                            String(item)
                         );
-
-                        return;
                     }
-
-                    /*
-                    |------------------------------------------------------------------
-                    | Array object
-                    |------------------------------------------------------------------
-                    */
-
-                    if (
-                        typeof item ===
-                        "object"
-                    ) {
-                        formData.append(
-                            `${key}[]`,
-                            JSON.stringify(item)
-                        );
-
-                        return;
-                    }
-
-                    /*
-                    |------------------------------------------------------------------
-                    | Array primitive
-                    |------------------------------------------------------------------
-                    */
-
-                    formData.append(
-                        `${key}[]`,
-                        String(item)
-                    );
-                });
+                );
 
                 return;
             }
@@ -260,11 +386,14 @@ const buildFormData = (
             */
 
             if (
-                typeof value === "object"
+                typeof value ===
+                "object"
             ) {
                 formData.append(
                     key,
-                    JSON.stringify(value)
+                    JSON.stringify(
+                        value
+                    )
                 );
 
                 return;
@@ -273,9 +402,6 @@ const buildFormData = (
             /*
             |--------------------------------------------------------------------------
             | Boolean
-            |--------------------------------------------------------------------------
-            |
-            | Laravel safely interprets 1 / 0.
             |--------------------------------------------------------------------------
             */
 
@@ -310,7 +436,7 @@ const buildFormData = (
     |--------------------------------------------------------------------------
     */
 
-    if (includeMethod) {
+    if (method) {
         formData.append(
             "_method",
             method
@@ -323,21 +449,6 @@ const buildFormData = (
 /*
 |--------------------------------------------------------------------------
 | GET ALL UNITS
-|--------------------------------------------------------------------------
-|
-| Supports:
-|
-| fetchUnits({
-|     property_id: 20,
-|     apartment_id: 78,
-|     status: "occupied",
-|     search: "601",
-|     floor: 6,
-|     page: 1,
-|     per_page: 20,
-|     with_relations: true,
-| });
-|
 |--------------------------------------------------------------------------
 */
 
@@ -352,7 +463,9 @@ export const fetchUnits = async (
             }
         );
 
-        return handleResponse(response);
+        return handleResponse(
+            response
+        );
     } catch (error) {
         handleError(
             error,
@@ -367,7 +480,9 @@ export const fetchUnits = async (
 |--------------------------------------------------------------------------
 */
 
-export const fetchUnit = async (id) => {
+export const fetchUnit = async (
+    id
+) => {
     try {
         if (!id) {
             throw new Error(
@@ -379,7 +494,9 @@ export const fetchUnit = async (id) => {
             `${UNIT_ENDPOINT}/${id}`
         );
 
-        return handleResponse(response);
+        return handleResponse(
+            response
+        );
     } catch (error) {
         handleError(
             error,
@@ -393,9 +510,9 @@ export const fetchUnit = async (id) => {
 | CREATE UNIT
 |--------------------------------------------------------------------------
 |
-| Uses JSON when no files are present.
+| JSON is used when no files are present.
 |
-| Automatically switches to multipart/form-data
+| multipart/form-data is used automatically
 | when a File or Blob exists.
 |
 |--------------------------------------------------------------------------
@@ -405,43 +522,10 @@ export const createUnit = async (
     data = {}
 ) => {
     try {
-        const hasFile =
-            Object.values(data).some(
-                (value) => {
-                    /*
-                    |------------------------------------------------------------------
-                    | Direct File / Blob
-                    |------------------------------------------------------------------
-                    */
-
-                    if (
-                        isFileOrBlob(value)
-                    ) {
-                        return true;
-                    }
-
-                    /*
-                    |------------------------------------------------------------------
-                    | File inside array
-                    |------------------------------------------------------------------
-                    */
-
-                    if (
-                        Array.isArray(value)
-                    ) {
-                        return value.some(
-                            (item) =>
-                                isFileOrBlob(
-                                    item
-                                )
-                        );
-                    }
-
-                    return false;
-                }
-            );
-
         let response;
+
+        const hasFile =
+            containsFile(data);
 
         /*
         |--------------------------------------------------------------------------
@@ -468,17 +552,13 @@ export const createUnit = async (
 
             response = await api.post(
                 UNIT_ENDPOINT,
-                formData,
-                {
-                    headers: {
-                        "Content-Type":
-                            "multipart/form-data",
-                    },
-                }
+                formData
             );
         }
 
-        return handleResponse(response);
+        return handleResponse(
+            response
+        );
     } catch (error) {
         handleError(
             error,
@@ -512,25 +592,32 @@ export const updateUnit = async (
             );
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Always use FormData for updates.
+        |--------------------------------------------------------------------------
+        |
+        | This prevents problems with Laravel multipart PUT/PATCH requests
+        | and supports future file uploads.
+        |
+        |--------------------------------------------------------------------------
+        */
+
         const formData =
             buildFormData(
                 data,
-                true,
                 "PUT"
             );
 
-        const response = await api.post(
-            `${UNIT_ENDPOINT}/${id}`,
-            formData,
-            {
-                headers: {
-                    "Content-Type":
-                        "multipart/form-data",
-                },
-            }
-        );
+        const response =
+            await api.post(
+                `${UNIT_ENDPOINT}/${id}`,
+                formData
+            );
 
-        return handleResponse(response);
+        return handleResponse(
+            response
+        );
     } catch (error) {
         handleError(
             error,
@@ -555,11 +642,14 @@ export const deleteUnit = async (
             );
         }
 
-        const response = await api.delete(
-            `${UNIT_ENDPOINT}/${id}`
-        );
+        const response =
+            await api.delete(
+                `${UNIT_ENDPOINT}/${id}`
+            );
 
-        return handleResponse(response);
+        return handleResponse(
+            response
+        );
     } catch (error) {
         handleError(
             error,
@@ -573,11 +663,7 @@ export const deleteUnit = async (
 | BULK DELETE UNITS
 |--------------------------------------------------------------------------
 |
-| Expected backend endpoint:
-|
 | POST /units/bulk-delete
-|
-| Payload:
 |
 | {
 |     ids: [1, 2, 3]
@@ -599,14 +685,17 @@ export const deleteUnits = async (
             );
         }
 
-        const response = await api.post(
-            `${UNIT_ENDPOINT}/bulk-delete`,
-            {
-                ids,
-            }
-        );
+        const response =
+            await api.post(
+                `${UNIT_ENDPOINT}/bulk-delete`,
+                {
+                    ids,
+                }
+            );
 
-        return handleResponse(response);
+        return handleResponse(
+            response
+        );
     } catch (error) {
         handleError(
             error,
@@ -620,91 +709,86 @@ export const deleteUnits = async (
 | UPDATE UNIT STATUS
 |--------------------------------------------------------------------------
 |
-| Expected backend endpoint:
-|
 | PATCH /units/{id}/status
-|
-| The API returns status as an object:
-|
-| {
-|     value: "occupied",
-|     label: "Occupied",
-|     badge: "primary",
-|     ...
-| }
-|
-| The frontend may pass either:
-|
-| "occupied"
-|
-| OR:
-|
-| {
-|     value: "occupied",
-|     label: "Occupied"
-| }
 |
 |--------------------------------------------------------------------------
 */
 
-export const updateUnitStatus = async (
-    id,
-    status
-) => {
-    try {
-        if (!id) {
-            throw new Error(
-                "Unit ID is required."
+export const updateUnitStatus =
+    async (
+        id,
+        status
+    ) => {
+        try {
+            if (!id) {
+                throw new Error(
+                    "Unit ID is required."
+                );
+            }
+
+            if (!status) {
+                throw new Error(
+                    "Unit status is required."
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Normalize status
+            |--------------------------------------------------------------------------
+            |
+            | Supports:
+            |
+            | "occupied"
+            |
+            | OR:
+            |
+            | {
+            |     value: "occupied",
+            |     label: "Occupied"
+            | }
+            |
+            |--------------------------------------------------------------------------
+            */
+
+            const normalizedStatus =
+                typeof status ===
+                "object"
+                    ? status?.value
+                    : status;
+
+            if (
+                !normalizedStatus
+            ) {
+                throw new Error(
+                    "A valid unit status is required."
+                );
+            }
+
+            const response =
+                await api.patch(
+                    `${UNIT_ENDPOINT}/${id}/status`,
+                    {
+                        status:
+                            normalizedStatus,
+                    }
+                );
+
+            return handleResponse(
+                response
+            );
+        } catch (error) {
+            handleError(
+                error,
+                "UPDATE UNIT STATUS"
             );
         }
-
-        if (!status) {
-            throw new Error(
-                "Unit status is required."
-            );
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Normalize status
-        |--------------------------------------------------------------------------
-        */
-
-        const normalizedStatus =
-            typeof status === "object"
-                ? status?.value
-                : status;
-
-        if (!normalizedStatus) {
-            throw new Error(
-                "A valid unit status is required."
-            );
-        }
-
-        const response =
-            await api.patch(
-                `${UNIT_ENDPOINT}/${id}/status`,
-                {
-                    status:
-                        normalizedStatus,
-                }
-            );
-
-        return handleResponse(response);
-    } catch (error) {
-        handleError(
-            error,
-            "UPDATE UNIT STATUS"
-        );
-    }
-};
+    };
 
 /*
 |--------------------------------------------------------------------------
 | CHECK UNIT AVAILABILITY
 |--------------------------------------------------------------------------
-|
-| Expected backend endpoint:
 |
 | GET /units/{id}/availability
 |
@@ -752,3 +836,4 @@ export default {
     updateUnitStatus,
     checkUnitAvailability,
 };
+
