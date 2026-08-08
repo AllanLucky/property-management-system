@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   Car,
   Zap,
-  ArrowUp,
 } from "lucide-react";
 
 const ApartmentForm = ({
@@ -103,17 +102,6 @@ const ApartmentForm = ({
               onChange={onChange}
               className="w-full rounded-lg border border-gray-300 px-4 py-3"
               placeholder="A, B, C..."
-            />
-          </FormField>
-
-          <FormField icon={<ArrowUp className="h-4 w-4" />} label="Floor">
-            <input
-              type="number"
-              min="1"
-              name="floor"
-              value={form.floor}
-              onChange={onChange}
-              className="w-full rounded-lg border border-gray-300 px-4 py-3"
             />
           </FormField>
 
