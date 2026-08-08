@@ -1,3 +1,4 @@
+
 import { useCallback, useState } from "react";
 
 import {
@@ -9,13 +10,17 @@ import {
 } from "../api/property.api";
 
 const useProperty = () => {
+  /*
+  |--------------------------------------------------------------------------
+  | STATE
+  |--------------------------------------------------------------------------
+  */
+
   const [properties, setProperties] = useState([]);
   const [property, setProperty] = useState(null);
 
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState(null);
-
   const [message, setMessage] = useState(null);
 
   const [pagination, setPagination] = useState({
@@ -30,185 +35,452 @@ const useProperty = () => {
   |--------------------------------------------------------------------------
   */
 
-  const getProperties = useCallback(async (params = {}) => {
-    try {
-      setLoading(true);
-      setError(null);
+  const getProperties = useCallback(
+    async (params = {}) => {
+      try {
+        setLoading(true);
+        setError(null);
 
-      const response = await fetchProperties(params);
+        const response = await fetchProperties(params);
 
-      let list = [];
+        /*
+        |--------------------------------------------------------------------------
+        | NORMALIZE RESPONSE
+        |--------------------------------------------------------------------------
+        */
 
-      if (Array.isArray(response?.data)) {
-        list = response.data;
-      } else if (Array.isArray(response?.data?.data)) {
-        list = response.data.data;
+        let list = [];
+
+        if (Array.isArray(response?.data)) {
+          list = response.data;
+        } else if (
+          Array.isArray(response?.data?.data)
+        ) {
+          list = response.data.data;
+        } else if (Array.isArray(response)) {
+          list = response;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | SET PROPERTIES
+        |--------------------------------------------------------------------------
+        */
+
+        setProperties(list);
+
+        /*
+        |--------------------------------------------------------------------------
+        | PAGINATION
+        |--------------------------------------------------------------------------
+        */
+
+        setPagination({
+          currentPage:
+            response?.data?.current_page ??
+            response?.meta?.current_page ??
+            1,
+
+          lastPage:
+            response?.data?.last_page ??
+            response?.meta?.last_page ??
+            1,
+
+          total:
+            response?.data?.total ??
+            response?.meta?.total ??
+            list.length,
+        });
+
+        /*
+        |--------------------------------------------------------------------------
+        | MESSAGE
+        |--------------------------------------------------------------------------
+        */
+
+        setMessage(
+          response?.message ?? null
+        );
+
+        return response;
+      } catch (err) {
+        const errorMessage =
+          err?.response?.data?.message ||
+          err?.message ||
+          "Unable to load properties";
+
+        setError(errorMessage);
+
+        throw err;
+      } finally {
+        setLoading(false);
       }
+    },
+    []
+  );
 
-      setProperties(list);
+  /*
+  |--------------------------------------------------------------------------
+  | GET SINGLE PROPERTY
+  |--------------------------------------------------------------------------
+  */
 
-      setPagination({
-        currentPage:
-          response?.data?.current_page ??
-          response?.meta?.current_page ??
-          1,
+  const getProperty = useCallback(
+    async (id) => {
+      try {
+        setLoading(true);
+        setError(null);
 
-        lastPage:
-          response?.data?.last_page ??
-          response?.meta?.last_page ??
-          1,
+        const response =
+          await fetchProperty(id);
 
-        total:
-          response?.data?.total ??
-          response?.meta?.total ??
-          list.length,
-      });
+        /*
+        |--------------------------------------------------------------------------
+        | SET PROPERTY
+        |--------------------------------------------------------------------------
+        */
 
-      setMessage(response?.message ?? null);
+        setProperty(
+          response?.data ?? null
+        );
 
-      return response;
-    } catch (err) {
-      setError(
-        err?.message ||
+        setMessage(
+          response?.message ?? null
+        );
+
+        return response;
+      } catch (err) {
+        const errorMessage =
           err?.response?.data?.message ||
-          "Unable to load properties"
-      );
+          err?.message ||
+          "Unable to load property";
 
-      throw err;
-    } finally {
-      setLoading(false);
-    }
+        setError(errorMessage);
+
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | CREATE PROPERTY
+  |--------------------------------------------------------------------------
+  */
+
+  const addProperty = useCallback(
+    async (payload) => {
+      try {
+        setLoading(true);
+        setError(null);
+        setMessage(null);
+
+        /*
+        |--------------------------------------------------------------------------
+        | CREATE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        const response =
+          await createProperty(payload);
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE CURRENT PROPERTY
+        |--------------------------------------------------------------------------
+        */
+
+        if (response?.data) {
+          setProperty(response.data);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE PROPERTY LIST
+        |--------------------------------------------------------------------------
+        */
+
+        const createdProperty =
+          response?.data;
+
+        if (createdProperty) {
+          setProperties((prev) => [
+            createdProperty,
+            ...prev,
+          ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUCCESS MESSAGE
+        |--------------------------------------------------------------------------
+        */
+
+        setMessage(
+          response?.message ||
+            "Property created successfully"
+        );
+
+        return response;
+      } catch (err) {
+        const errorMessage =
+          err?.response?.data?.message ||
+          err?.message ||
+          "Unable to create property";
+
+        setError(errorMessage);
+
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | UPDATE PROPERTY
+  |--------------------------------------------------------------------------
+  */
+
+  const editProperty = useCallback(
+    async (id, payload) => {
+      try {
+        setLoading(true);
+        setError(null);
+        setMessage(null);
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        const response =
+          await updateProperty(
+            id,
+            payload
+          );
+
+        const updatedProperty =
+          response?.data;
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE CURRENT PROPERTY
+        |--------------------------------------------------------------------------
+        */
+
+        if (updatedProperty) {
+          setProperty(
+            updatedProperty
+          );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE PROPERTY LIST
+        |--------------------------------------------------------------------------
+        */
+
+        setProperties((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedProperty ||
+                item
+              : item
+          )
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUCCESS MESSAGE
+        |--------------------------------------------------------------------------
+        */
+
+        setMessage(
+          response?.message ||
+            "Property updated successfully"
+        );
+
+        return response;
+      } catch (err) {
+        const errorMessage =
+          err?.response?.data?.message ||
+          err?.message ||
+          "Unable to update property";
+
+        setError(errorMessage);
+
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | DELETE PROPERTY
+  |--------------------------------------------------------------------------
+  */
+
+  const removeProperty = useCallback(
+    async (id) => {
+      try {
+        setLoading(true);
+        setError(null);
+        setMessage(null);
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        const response =
+          await deleteProperty(id);
+
+        /*
+        |--------------------------------------------------------------------------
+        | REMOVE FROM LIST
+        |--------------------------------------------------------------------------
+        */
+
+        setProperties((prev) =>
+          prev.filter(
+            (item) => item.id !== id
+          )
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | CLEAR CURRENT PROPERTY
+        |--------------------------------------------------------------------------
+        */
+
+        setProperty((current) =>
+          current?.id === id
+            ? null
+            : current
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE PAGINATION TOTAL
+        |--------------------------------------------------------------------------
+        */
+
+        setPagination((prev) => ({
+          ...prev,
+          total: Math.max(
+            0,
+            prev.total - 1
+          ),
+        }));
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUCCESS MESSAGE
+        |--------------------------------------------------------------------------
+        */
+
+        setMessage(
+          response?.message ||
+            "Property deleted successfully"
+        );
+
+        return response;
+      } catch (err) {
+        const errorMessage =
+          err?.response?.data?.message ||
+          err?.message ||
+          "Unable to delete property";
+
+        setError(errorMessage);
+
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | CLEAR ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
   /*
   |--------------------------------------------------------------------------
-  | GET PROPERTY
+  | CLEAR MESSAGE
   |--------------------------------------------------------------------------
   */
 
-  const getProperty = useCallback(async (id) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetchProperty(id);
-
-      setProperty(response?.data ?? null);
-
-      return response;
-    } catch (err) {
-      setError(
-        err?.message ||
-          err?.response?.data?.message ||
-          "Unable to load property"
-      );
-
-      throw err;
-    } finally {
-      setLoading(false);
-    }
+  const clearMessage = useCallback(() => {
+    setMessage(null);
   }, []);
 
   /*
   |--------------------------------------------------------------------------
-  | CREATE
+  | CLEAR CURRENT PROPERTY
   |--------------------------------------------------------------------------
   */
 
-  const addProperty = async (payload) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await createProperty(payload);
-
-      setMessage(response?.message);
-
-      return response;
-    } catch (err) {
-      setError(
-        err?.message ||
-          err?.response?.data?.message ||
-          "Unable to create property"
-      );
-
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
+  const clearProperty = useCallback(() => {
+    setProperty(null);
+  }, []);
 
   /*
   |--------------------------------------------------------------------------
-  | UPDATE
+  | RETURN
   |--------------------------------------------------------------------------
   */
-
-  const editProperty = async (id, payload) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await updateProperty(id, payload);
-
-      setMessage(response?.message);
-
-      return response;
-    } catch (err) {
-      setError(
-        err?.message ||
-          err?.response?.data?.message ||
-          "Unable to update property"
-      );
-
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | DELETE
-  |--------------------------------------------------------------------------
-  */
-
-  const removeProperty = async (id) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await deleteProperty(id);
-
-      setProperties((prev) =>
-        prev.filter((item) => item.id !== id)
-      );
-
-      setMessage(response?.message);
-
-      return response;
-    } catch (err) {
-      setError(
-        err?.message ||
-          err?.response?.data?.message ||
-          "Unable to delete property"
-      );
-
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return {
+    /*
+    |--------------------------------------------------------------------------
+    | DATA
+    |--------------------------------------------------------------------------
+    */
+
     properties,
     property,
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATE
+    |--------------------------------------------------------------------------
+    */
 
     loading,
     error,
     message,
 
+    /*
+    |--------------------------------------------------------------------------
+    | PAGINATION
+    |--------------------------------------------------------------------------
+    */
+
     pagination,
+
+    /*
+    |--------------------------------------------------------------------------
+    | CRUD
+    |--------------------------------------------------------------------------
+    */
 
     getProperties,
     getProperty,
@@ -216,6 +488,16 @@ const useProperty = () => {
     addProperty,
     editProperty,
     removeProperty,
+
+    /*
+    |--------------------------------------------------------------------------
+    | HELPERS
+    |--------------------------------------------------------------------------
+    */
+
+    clearError,
+    clearMessage,
+    clearProperty,
   };
 };
 
