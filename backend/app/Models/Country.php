@@ -17,13 +17,23 @@ class Country extends Model
     | TABLE
     |--------------------------------------------------------------------------
     */
+
     protected $table = 'countries';
+
+    /*
+    |--------------------------------------------------------------------------
+    | PRIMARY KEY
+    |--------------------------------------------------------------------------
+    */
+
+    protected $primaryKey = 'id';
 
     /*
     |--------------------------------------------------------------------------
     | AUTO LOAD COUNTS
     |--------------------------------------------------------------------------
     */
+
     protected $withCount = [
         'regions',
         'counties',
@@ -37,6 +47,7 @@ class Country extends Model
     | FILLABLE
     |--------------------------------------------------------------------------
     */
+
     protected $fillable = [
         'name',
         'slug',
@@ -48,11 +59,23 @@ class Country extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | HIDDEN
+    |--------------------------------------------------------------------------
+    */
+
+    protected $hidden = [
+        'deleted_at',
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
     | CASTS
     |--------------------------------------------------------------------------
     */
+
     protected $casts = [
         'is_active' => 'boolean',
+
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -63,6 +86,7 @@ class Country extends Model
     | APPENDS
     |--------------------------------------------------------------------------
     */
+
     protected $appends = [
         'status_label',
     ];
@@ -72,30 +96,49 @@ class Country extends Model
     | BOOT
     |--------------------------------------------------------------------------
     */
+
     protected static function boot()
     {
         parent::boot();
 
-        static::saving(function ($country) {
+        /*
+        |--------------------------------------------------------------------------
+        | GENERATE SLUG
+        |--------------------------------------------------------------------------
+        */
+
+        static::saving(function (Country $country) {
 
             if (
                 empty($country->slug) ||
                 $country->isDirty('name')
             ) {
-
                 $baseSlug = Str::slug($country->name);
+
                 $slug = $baseSlug;
                 $count = 1;
 
                 while (
                     static::where('slug', $slug)
-                        ->where('id', '!=', $country->id)
+                        ->whereKeyNot($country->getKey())
                         ->exists()
                 ) {
                     $slug = $baseSlug . '-' . $count++;
                 }
 
                 $country->slug = $slug;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE CODE
+            |--------------------------------------------------------------------------
+            */
+
+            if (!empty($country->code)) {
+                $country->code = strtoupper(
+                    trim($country->code)
+                );
             }
         });
     }
@@ -105,6 +148,7 @@ class Country extends Model
     | ROUTE MODEL BINDING
     |--------------------------------------------------------------------------
     */
+
     public function getRouteKeyName(): string
     {
         return 'slug';
@@ -117,57 +161,62 @@ class Country extends Model
     */
 
     /**
-     * Country has many regions
+     * Country has many regions.
      */
     public function regions(): HasMany
     {
         return $this->hasMany(
             Region::class,
-            'country_id'
+            'country_id',
+            'id'
         );
     }
 
     /**
-     * Country has many counties
+     * Country has many counties.
      */
     public function counties(): HasMany
     {
         return $this->hasMany(
             County::class,
-            'country_id'
+            'country_id',
+            'id'
         );
     }
 
     /**
-     * Country has many cities
+     * Country has many cities.
      */
     public function cities(): HasMany
     {
         return $this->hasMany(
             City::class,
-            'country_id'
+            'country_id',
+            'id'
         );
     }
 
     /**
-     * Country has many areas
+     * Country has many areas.
      */
     public function areas(): HasMany
     {
         return $this->hasMany(
             Area::class,
-            'country_id'
+            'country_id',
+            'id'
         );
     }
 
     /**
-     * Country has many properties
+     * Country has many properties.
      */
     public function properties(): HasMany
     {
         return $this->hasMany(
             Property::class,
-            'country_id'
+            'country_id',
+            'id'
         );
     }
 
@@ -177,6 +226,9 @@ class Country extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Only active countries.
+     */
     public function scopeActive($query)
     {
         return $query->where(
@@ -185,6 +237,9 @@ class Country extends Model
         );
     }
 
+    /**
+     * Only inactive countries.
+     */
     public function scopeInactive($query)
     {
         return $query->where(
@@ -193,17 +248,44 @@ class Country extends Model
         );
     }
 
+    /**
+     * Search countries.
+     */
     public function scopeSearch(
         $query,
         string $search
     ) {
+        $search = trim($search);
+
+        if ($search === '') {
+            return $query;
+        }
+
         return $query->where(function ($q) use ($search) {
 
-            $q->where('name', 'like', "%{$search}%")
-              ->orWhere('code', 'like', "%{$search}%")
-              ->orWhere('currency', 'like', "%{$search}%")
-              ->orWhere('phone_code', 'like', "%{$search}%");
+            $q->where(
+                'name',
+                'like',
+                "%{$search}%"
+            )
 
+            ->orWhere(
+                'code',
+                'like',
+                "%{$search}%"
+            )
+
+            ->orWhere(
+                'currency',
+                'like',
+                "%{$search}%"
+            )
+
+            ->orWhere(
+                'phone_code',
+                'like',
+                "%{$search}%"
+            );
         });
     }
 
@@ -213,6 +295,9 @@ class Country extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Return human-readable status.
+     */
     public function getStatusLabelAttribute(): string
     {
         return $this->is_active
@@ -226,13 +311,40 @@ class Country extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Determine whether country is active.
+     */
     public function isActive(): bool
     {
         return (bool) $this->is_active;
     }
 
+    /**
+     * Determine whether country is inactive.
+     */
     public function isInactive(): bool
     {
         return ! $this->is_active;
     }
+
+    /**
+     * Return country display name.
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        if (!empty($this->code)) {
+            return "{$this->name} ({$this->code})";
+        }
+
+        return $this->name;
+    }
+
+    /**
+     * Return country name and code.
+     */
+    public function getNameWithCodeAttribute(): string
+    {
+        return $this->display_name;
+    }
 }
+
