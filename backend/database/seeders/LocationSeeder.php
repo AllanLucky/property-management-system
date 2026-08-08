@@ -3,165 +3,218 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
-use App\Models\Country;
-use App\Models\Region;
-use App\Models\County;
-use App\Models\City;
-use App\Models\Area;
+use App\Models\Property;
 
 class LocationSeeder extends Seeder
 {
+    /**
+     * Run the database seeds.
+     */
     public function run(): void
     {
         /*
         |--------------------------------------------------------------------------
-        | MASTER LOCATION DATA (5 COUNTRIES)
+        | LOCATION DATA
+        |--------------------------------------------------------------------------
+        |
+        | These values are stored directly on the properties table:
+        |
+        | country_name
+        | region_name
+        | county_name
+        | city_name
+        | area_name
+        | street_address
+        |
         |--------------------------------------------------------------------------
         */
+
         $locations = [
+
+            /*
+            |--------------------------------------------------------------------------
+            | KENYA
+            |--------------------------------------------------------------------------
+            */
             [
-                'country' => 'Kenya',
-                'code'    => 'KE',
-                'region'  => 'Nairobi Region',
-                'county'  => 'Nairobi County',
-                'city'    => 'Nairobi',
-                'areas'   => [
+                'country_name' => 'Kenya',
+                'region_name'  => 'Nairobi Region',
+                'county_name'  => 'Nairobi County',
+                'city_name'    => 'Nairobi',
+
+                'areas' => [
                     'Westlands',
                     'Kilimani',
                     'Kileleshwa',
                     'Karen',
-                    'Eastleigh',
+                    'Lavington',
+                    'Runda',
+                    'Muthaiga',
+                    'Parklands',
+                    'Hurlingham',
                     'South B',
+                    'South C',
+                    'Eastleigh',
                     'Embakasi',
+                    'Kasarani',
+                    'Roysambu',
+                    'Langata',
+                    'Dagoretti',
+                    'Ngong Road',
+                    'Upper Hill',
+                    'Gigiri',
+                    'Spring Valley',
+                    'Riverside',
                 ],
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | UGANDA
+            |--------------------------------------------------------------------------
+            */
             [
-                'country' => 'Uganda',
-                'code'    => 'UG',
-                'region'  => 'Central Region',
-                'county'  => 'Kampala District',
-                'city'    => 'Kampala',
-                'areas'   => [
+                'country_name' => 'Uganda',
+                'region_name'  => 'Central Region',
+                'county_name'  => 'Kampala District',
+                'city_name'    => 'Kampala',
+
+                'areas' => [
                     'Kampala Central',
                     'Ntinda',
                     'Nakasero',
                     'Kololo',
+                    'Naguru',
+                    'Bugolobi',
+                    'Muyenga',
+                    'Makindye',
+                    'Kansanga',
+                    'Bukoto',
                 ],
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | TANZANIA
+            |--------------------------------------------------------------------------
+            */
             [
-                'country' => 'Tanzania',
-                'code'    => 'TZ',
-                'region'  => 'Dar es Salaam Region',
-                'county'  => 'Ilala District',
-                'city'    => 'Dar es Salaam',
-                'areas'   => [
+                'country_name' => 'Tanzania',
+                'region_name'  => 'Dar es Salaam Region',
+                'county_name'  => 'Ilala District',
+                'city_name'    => 'Dar es Salaam',
+
+                'areas' => [
                     'Masaki',
                     'Oysterbay',
                     'Mikocheni',
                     'Upanga',
+                    'Msasani',
+                    'Kinondoni',
+                    'Sinza',
+                    'Kijitonyama',
+                    'Kariakoo',
+                    'Mbezi',
                 ],
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | RWANDA
+            |--------------------------------------------------------------------------
+            */
             [
-                'country' => 'Rwanda',
-                'code'    => 'RW',
-                'region'  => 'Kigali Province',
-                'county'  => 'Kigali District',
-                'city'    => 'Kigali',
-                'areas'   => [
+                'country_name' => 'Rwanda',
+                'region_name'  => 'Kigali Province',
+                'county_name'  => 'Kigali District',
+                'city_name'    => 'Kigali',
+
+                'areas' => [
                     'Kacyiru',
                     'Nyarutarama',
                     'Kimihurura',
                     'Remera',
+                    'Kiyovu',
+                    'Gacuriro',
+                    'Nyamirambo',
+                    'Kibagabaga',
+                    'Kagugu',
                 ],
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | NIGERIA
+            |--------------------------------------------------------------------------
+            */
             [
-                'country' => 'Nigeria',
-                'code'    => 'NG',
-                'region'  => 'Lagos State',
-                'county'  => 'Lagos Mainland',
-                'city'    => 'Lagos',
-                'areas'   => [
+                'country_name' => 'Nigeria',
+                'region_name'  => 'Lagos State',
+                'county_name'  => 'Lagos Mainland',
+                'city_name'    => 'Lagos',
+
+                'areas' => [
                     'Victoria Island',
                     'Ikoyi',
                     'Lekki',
                     'Yaba',
+                    'Surulere',
+                    'Ikeja',
+                    'Maryland',
+                    'Magodo',
+                    'Ajah',
+                    'Chevron',
+                    'Banana Island',
+                    'Oniru',
+                    'Ikate',
+                    'Admiralty',
                 ],
             ],
         ];
 
         /*
         |--------------------------------------------------------------------------
-        | SEED LOOP
+        | SEED LOCATIONS
+        |--------------------------------------------------------------------------
+        |
+        | We create a property record for each location combination.
+        | The location names are stored directly on the properties table.
+        |
         |--------------------------------------------------------------------------
         */
-        foreach ($locations as $loc) {
 
-            // COUNTRY
-            $country = Country::firstOrCreate(
-                ['code' => $loc['code']],
-                [
-                    'name'      => $loc['country'],
-                    'slug'      => Str::slug($loc['country']),
-                    'is_active' => true,
-                ]
-            );
+        foreach ($locations as $location) {
 
-            // REGION
-            $region = Region::firstOrCreate(
-                [
-                    'country_id' => $country->id,
-                    'name'       => $loc['region'],
-                ],
-                [
-                    'slug'      => Str::slug($loc['region']),
-                    'is_active' => true,
-                ]
-            );
+            foreach ($location['areas'] as $area) {
 
-            // COUNTY
-            $county = County::firstOrCreate(
-                [
-                    'country_id' => $country->id,
-                    'region_id'  => $region->id,
-                    'name'       => $loc['county'],
-                ],
-                [
-                    'slug'      => Str::slug($loc['county']),
-                    'is_active' => true,
-                ]
-            );
-
-            // CITY
-            $city = City::firstOrCreate(
-                [
-                    'country_id' => $country->id,
-                    'region_id'  => $region->id,
-                    'county_id'  => $county->id,
-                    'name'       => $loc['city'],
-                ],
-                [
-                    'slug'      => Str::slug($loc['city']),
-                    'is_active' => true,
-                ]
-            );
-
-            // AREAS
-            foreach ($loc['areas'] as $areaName) {
-                Area::firstOrCreate(
+                Property::updateOrCreate(
                     [
-                        'city_id' => $city->id,
-                        'name'    => $areaName,
+                        'country_name' => $location['country_name'],
+                        'region_name'  => $location['region_name'],
+                        'county_name'  => $location['county_name'],
+                        'city_name'    => $location['city_name'],
+                        'area_name'    => $area,
                     ],
                     [
-                        'country_id' => $country->id,
-                        'region_id'  => $region->id,
-                        'county_id'  => $county->id,
-                        'slug'       => Str::slug($areaName),
-                        'is_active'  => true,
+                        'title'          => $area . ', ' . $location['city_name'],
+                        'description'    => 'Property located in ' . $area . ', ' . $location['city_name'] . ', ' . $location['county_name'] . ', ' . $location['country_name'] . '.',
+                        'listing_type'   => 'sale',
+                        'status'         => 'draft',
+                        'is_featured'    => false,
+                        'is_verified'    => false,
+                        'is_published'   => false,
                     ]
                 );
             }
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUCCESS MESSAGE
+        |--------------------------------------------------------------------------
+        */
+
+        $this->command?->info('Property location data seeded successfully.');
     }
 }
+
