@@ -110,8 +110,8 @@ return new class extends Migration
                 ->default(0);
 
 
-            $table->unsignedSmallInteger('floor')
-                ->nullable();
+            $table->unsignedSmallInteger('floor')->default(1);
+   
 
 
             $table->decimal('size', 12, 2)
