@@ -18,7 +18,6 @@ class DatabaseSeeder extends Seeder
             | 1. ROLES & PERMISSIONS
             |--------------------------------------------------------------------------
             */
-
             PermissionsSeeder::class,
             RolesSeeder::class,
 
@@ -27,7 +26,6 @@ class DatabaseSeeder extends Seeder
             | 2. USERS
             |--------------------------------------------------------------------------
             */
-
             UsersSeeder::class,
 
             /*
@@ -35,7 +33,6 @@ class DatabaseSeeder extends Seeder
             | 3. LOCATION DATA
             |--------------------------------------------------------------------------
             */
-
             LocationSeeder::class,
 
             /*
@@ -43,7 +40,6 @@ class DatabaseSeeder extends Seeder
             | 4. PROPERTY MASTER DATA
             |--------------------------------------------------------------------------
             */
-
             PropertyTypesSeeder::class,
             PropertyCategoriesSeeder::class,
             PropertyFeaturesSeeder::class,
@@ -54,7 +50,6 @@ class DatabaseSeeder extends Seeder
             | 5. PROPERTIES
             |--------------------------------------------------------------------------
             */
-
             PropertiesSeeder::class,
 
             /*
@@ -62,7 +57,6 @@ class DatabaseSeeder extends Seeder
             | 6. PROPERTY RELATIONSHIPS
             |--------------------------------------------------------------------------
             */
-
             PropertyAmenitySeeder::class,
 
             /*
@@ -70,7 +64,6 @@ class DatabaseSeeder extends Seeder
             | 7. PROPERTY REVIEWS
             |--------------------------------------------------------------------------
             */
-
             PropertyReviewsSeeder::class,
 
             /*
@@ -78,7 +71,6 @@ class DatabaseSeeder extends Seeder
             | 8. PROPERTY VISITS
             |--------------------------------------------------------------------------
             */
-
             PropertyVisitsSeeder::class,
 
             /*
@@ -86,32 +78,28 @@ class DatabaseSeeder extends Seeder
             | 9. PROPERTY FAVORITES
             |--------------------------------------------------------------------------
             */
-             PropertyFavoritesSeeder::class,
-
-            /*
-
-             /*
-            |--------------------------------------------------------------------------
-            | 9. PROPERTY FAVORITES
-            |--------------------------------------------------------------------------
-            */
-             PropertyAnalyticsSeeder::class,
-
-            /*
-
-            |--------------------------------------------------------------------------
-            | 10. APARTMENTS
-            |--------------------------------------------------------------------------
-            */
-             ApartmentsSeeder::class,
+            PropertyFavoritesSeeder::class,
 
             /*
             |--------------------------------------------------------------------------
-            | 11. UNITS
+            | 10. PROPERTY ANALYTICS
             |--------------------------------------------------------------------------
             */
-             UnitsSeeder::class,
+            PropertyAnalyticsSeeder::class,
 
+            /*
+            |--------------------------------------------------------------------------
+            | 11. APARTMENTS
+            |--------------------------------------------------------------------------
+            */
+            ApartmentsSeeder::class,
+
+            /*
+            |--------------------------------------------------------------------------
+            | 12. UNITS
+            |--------------------------------------------------------------------------
+            */
+            UnitsSeeder::class,
         ]);
     }
 }

@@ -37,6 +37,7 @@ class County extends Model
     |--------------------------------------------------------------------------
     */
     protected $fillable = [
+        'country_id',
         'region_id',
         'name',
         'slug',
@@ -80,7 +81,6 @@ class County extends Model
                 empty($county->slug) ||
                 $county->isDirty('name')
             ) {
-
                 $baseSlug = Str::slug($county->name);
                 $slug = $baseSlug;
                 $count = 1;
@@ -113,6 +113,17 @@ class County extends Model
     | RELATIONSHIPS
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * County belongs to Country
+     */
+    public function country(): BelongsTo
+    {
+        return $this->belongsTo(
+            Country::class,
+            'country_id'
+        );
+    }
 
     /**
      * County belongs to Region
@@ -166,24 +177,24 @@ class County extends Model
 
     public function scopeActive($query)
     {
-        return $query->where(
-            'is_active',
-            true
-        );
+        return $query->where('is_active', true);
     }
 
     public function scopeInactive($query)
     {
+        return $query->where('is_active', false);
+    }
+
+    public function scopeByCountry($query, int $countryId)
+    {
         return $query->where(
-            'is_active',
-            false
+            'country_id',
+            $countryId
         );
     }
 
-    public function scopeByRegion(
-        $query,
-        int $regionId
-    ) {
+    public function scopeByRegion($query, int $regionId)
+    {
         return $query->where(
             'region_id',
             $regionId
