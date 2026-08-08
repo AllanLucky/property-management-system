@@ -1,242 +1,403 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import api from "../../../api/axios";
-import { Loader2 } from "lucide-react";
 
-const EditUnit = () => {
-  const { id } = useParams();
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  ArrowLeft,
+  AlertTriangle,
+  Loader2,
+  RefreshCcw,
+} from "lucide-react";
+
+import { useNavigate } from "react-router-dom";
+
+import { useDispatch } from "react-redux";
+
+import { addNotification } from "../../../store/uiSlice";
+
+import UnitForm from "./unitForm";
+
+import useUnit from "../../../hooks/useUnits";
+import useProperty from "../../../hooks/useProperties";
+import useApartment from "../../../hooks/useApartment";
+
+const CreateUnit = () => {
   const navigate = useNavigate();
-
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(true);
-  const [errors, setErrors] = useState({});
-
-  const [form, setForm] = useState({
-    name: "",
-    type: "",
-    unit_number: "",
-    rent_amount: "",
-    deposit_amount: "",
-    status: "vacant",
-  });
+  const dispatch = useDispatch();
 
   /*
   |--------------------------------------------------------------------------
-  | FETCH UNIT
+  | UNIT HOOK
   |--------------------------------------------------------------------------
   */
-  const fetchUnit = async () => {
-    setFetching(true);
 
-    try {
-      const res = await api.get(`/units/${id}`);
+  const {
+    createUnit,
+    loading: unitLoading,
+    error: unitError,
+  } = useUnit();
 
-      const data = res.data?.data || res.data || {};
+  /*
+  |--------------------------------------------------------------------------
+  | PROPERTY HOOK
+  |--------------------------------------------------------------------------
+  */
 
-      setForm({
-        name: data.name || "",
-        type: data.type || "",
-        unit_number: data.unit_number || "",
-        rent_amount: data.rent_amount ?? "",
-        deposit_amount: data.deposit_amount ?? "",
-        status: data.status || "vacant",
-      });
-    } catch (err) {
-      console.error("FAILED TO LOAD UNIT", err);
-    } finally {
-      setFetching(false);
-    }
-  };
+  const {
+    properties,
+    loading: propertiesLoading,
+    error: propertiesError,
+    getProperties,
+  } = useProperty();
+
+  /*
+  |--------------------------------------------------------------------------
+  | APARTMENT HOOK
+  |--------------------------------------------------------------------------
+  */
+
+  const {
+    apartments,
+    loading: apartmentsLoading,
+    error: apartmentsError,
+    getApartments,
+  } = useApartment();
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOCAL STATE
+  |--------------------------------------------------------------------------
+  */
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const [fetching, setFetching] =
+    useState(true);
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOAD FORM DATA
+  |--------------------------------------------------------------------------
+  */
+
+  const loadFormData = useCallback(
+    async () => {
+      setFetching(true);
+
+      try {
+        await Promise.all([
+          getProperties?.({
+            with_relations: true,
+          }),
+
+          getApartments?.({
+            with_relations: true,
+          }),
+        ]);
+      } catch (error) {
+        console.error(
+          "FAILED TO LOAD UNIT FORM DATA:",
+          error
+        );
+
+        dispatch(
+          addNotification({
+            type: "error",
+            message:
+              error?.response?.data
+                ?.message ||
+              error?.message ||
+              "Failed to load properties and apartments.",
+          })
+        );
+      } finally {
+        setFetching(false);
+      }
+    },
+    [
+      getProperties,
+      getApartments,
+      dispatch,
+    ]
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | INITIAL LOAD
+  |--------------------------------------------------------------------------
+  */
 
   useEffect(() => {
-    fetchUnit();
-  }, [id]);
+    loadFormData();
+  }, [loadFormData]);
 
   /*
   |--------------------------------------------------------------------------
-  | HANDLE CHANGE
+  | SUBMIT
   |--------------------------------------------------------------------------
   */
-  const handleChange = (e) => {
-    const { name, value } = e.target;
 
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+  const handleSubmit = useCallback(
+    async (payload) => {
+      setSubmitting(true);
+
+      try {
+        await createUnit(payload);
+
+        dispatch(
+          addNotification({
+            type: "success",
+            message:
+              "Unit created successfully.",
+          })
+        );
+
+        navigate(
+          "/super-admin/units"
+        );
+      } catch (error) {
+        console.error(
+          "CREATE UNIT ERROR:",
+          error
+        );
+
+        dispatch(
+          addNotification({
+            type: "error",
+            message:
+              error?.response?.data
+                ?.message ||
+              error?.message ||
+              "Failed to create unit.",
+          })
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Re-throw so UnitForm can also receive the error
+        |--------------------------------------------------------------------------
+        */
+
+        throw error;
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [
+      createUnit,
+      dispatch,
+      navigate,
+    ]
+  );
 
   /*
   |--------------------------------------------------------------------------
-  | UPDATE UNIT
+  | CANCEL
   |--------------------------------------------------------------------------
   */
-  const handleUpdate = async (e) => {
-    e.preventDefault();
 
-    setLoading(true);
-    setErrors({});
-
-    try {
-      const payload = {
-        ...form,
-        _method: "PUT",
-        rent_amount: Number(form.rent_amount || 0),
-        deposit_amount: Number(form.deposit_amount || 0),
-      };
-
-      await api.post(`/units/${id}`, payload);
-
-      navigate("/super-admin/units");
-    } catch (err) {
-      console.error("UPDATE ERROR:", err);
-
-      const apiErrors =
-        err?.response?.data?.errors ||
-        err?.errors ||
-        {};
-
-      setErrors(apiErrors);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleCancel = useCallback(() => {
+    navigate(
+      "/super-admin/units"
+    );
+  }, [navigate]);
 
   /*
   |--------------------------------------------------------------------------
-  | LOADING STATE
+  | RETRY
   |--------------------------------------------------------------------------
   */
+
+  const handleRetry = useCallback(() => {
+    loadFormData();
+  }, [loadFormData]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOADING
+  |--------------------------------------------------------------------------
+  */
+
   if (fetching) {
     return (
-      <div className="flex flex-col items-center justify-center p-20 text-gray-500">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <p className="text-sm mt-2">Loading unit...</p>
+      <div className="flex min-h-[450px] flex-col items-center justify-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50">
+          <Loader2
+            className="h-7 w-7 animate-spin text-indigo-600"
+          />
+        </div>
+
+        <p className="mt-4 text-sm font-semibold text-slate-700">
+          Loading unit form...
+        </p>
+
+        <p className="mt-1 text-xs text-slate-400">
+          Loading properties and apartments.
+        </p>
       </div>
     );
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | FORM DATA ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  const formDataError =
+    propertiesError ||
+    apartmentsError;
+
+  if (formDataError) {
+    const message =
+      typeof formDataError ===
+        "string"
+        ? formDataError
+        : formDataError?.message ||
+        formDataError?.error ||
+        "Unable to load the unit form data.";
+
+    return (
+      <div className="mx-auto w-full max-w-2xl px-4 py-12">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-100">
+              <AlertTriangle
+                size={24}
+                className="text-red-600"
+              />
+            </div>
+
+            <div className="flex-1">
+              <h2 className="text-lg font-bold text-red-800">
+                Unable to Load Form
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-red-700">
+                {message}
+              </p>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={
+                    handleRetry
+                  }
+                  disabled={
+                    fetching
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCcw
+                    size={
+                      17
+                    }
+                    className={
+                      fetching
+                        ? "animate-spin"
+                        : ""
+                    }
+                  />
+
+                  Retry
+                </button>
+
+                <button
+                  type="button"
+                  onClick={
+                    handleCancel
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <ArrowLeft
+                    size={
+                      17
+                    }
+                  />
+
+                  Back to Units
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | RENDER
+  |--------------------------------------------------------------------------
+  */
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      {/* HEADER */}
 
-      <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-        Edit Unit
-      </h1>
-
-      <form onSubmit={handleUpdate} className="space-y-4">
-
-        {/* NAME */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <input
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Unit name"
-            className="w-full border p-3 rounded"
-          />
-          {errors.name && (
-            <p className="text-red-500 text-sm">{errors.name[0]}</p>
-          )}
-        </div>
-
-        {/* TYPE */}
-        <div>
-          <input
-            name="type"
-            value={form.type}
-            onChange={handleChange}
-            placeholder="Type"
-            className="w-full border p-3 rounded"
-          />
-          {errors.type && (
-            <p className="text-red-500 text-sm">{errors.type[0]}</p>
-          )}
-        </div>
-
-        {/* UNIT NUMBER */}
-        <div>
-          <input
-            name="unit_number"
-            value={form.unit_number}
-            onChange={handleChange}
-            placeholder="Unit number"
-            className="w-full border p-3 rounded"
-          />
-          {errors.unit_number && (
-            <p className="text-red-500 text-sm">
-              {errors.unit_number[0]}
-            </p>
-          )}
-        </div>
-
-        {/* RENT */}
-        <div>
-          <input
-            name="rent_amount"
-            value={form.rent_amount}
-            onChange={handleChange}
-            placeholder="Rent"
-            type="number"
-            className="w-full border p-3 rounded"
-          />
-          {errors.rent_amount && (
-            <p className="text-red-500 text-sm">
-              {errors.rent_amount[0]}
-            </p>
-          )}
-        </div>
-
-        {/* DEPOSIT */}
-        <div>
-          <input
-            name="deposit_amount"
-            value={form.deposit_amount}
-            onChange={handleChange}
-            placeholder="Deposit"
-            type="number"
-            className="w-full border p-3 rounded"
-          />
-          {errors.deposit_amount && (
-            <p className="text-red-500 text-sm">
-              {errors.deposit_amount[0]}
-            </p>
-          )}
-        </div>
-
-        {/* STATUS */}
-        <div>
-          <select
-            name="status"
-            value={form.status}
-            onChange={handleChange}
-            className="w-full border p-3 rounded"
+          <button
+            type="button"
+            onClick={
+              handleCancel
+            }
+            className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-900"
           >
-            <option value="vacant">Vacant</option>
-            <option value="occupied">Occupied</option>
-            <option value="maintenance">Maintenance</option>
-          </select>
+            <ArrowLeft
+              size={17}
+            />
 
-          {errors.status && (
-            <p className="text-red-500 text-sm">
-              {errors.status[0]}
-            </p>
-          )}
+            Back to Units
+          </button>
+
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            Create Unit
+          </h1>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Add a new unit to your
+            property with pricing,
+            features and availability
+            information.
+          </p>
         </div>
+      </div>
 
-        {/* BUTTON */}
-        <button
-          disabled={loading}
-          className="w-full bg-green-600 text-white py-3 rounded flex items-center justify-center gap-2"
-        >
-          {loading && (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          )}
-          {loading ? "Updating..." : "Update Unit"}
-        </button>
+      {/* FORM */}
 
-      </form>
+      <UnitForm
+        properties={
+          properties ?? []
+        }
+        apartments={
+          apartments ?? []
+        }
+        loading={
+          unitLoading ||
+          propertiesLoading ||
+          apartmentsLoading
+        }
+        submitting={
+          submitting
+        }
+        error={unitError}
+        onSubmit={
+          handleSubmit
+        }
+        onCancel={
+          handleCancel
+        }
+        title="Create Unit"
+        submitLabel="Create Unit"
+      />
     </div>
   );
 };
 
-export default EditUnit;
+export default CreateUnit;
+
