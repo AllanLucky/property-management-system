@@ -47,13 +47,36 @@ const UnitTable = ({
 
     /*
     |--------------------------------------------------------------------------
+    | FORMAT TEXT
+    |--------------------------------------------------------------------------
+    */
+
+    const formatText = (value) => {
+        const text = normalize(value);
+
+        if (text === "-") {
+            return "-";
+        }
+
+        return text
+            .replace(/[_-]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .replace(/\b\w/g, (char) =>
+                char.toUpperCase()
+            );
+    };
+
+    /*
+    |--------------------------------------------------------------------------
     | UNIT NAME
     |--------------------------------------------------------------------------
     */
 
     const getUnitName = (unit) => {
         const name = normalize(
-            unit?.name
+            unit?.unit_name ??
+                unit?.name
         );
 
         if (name !== "-") {
@@ -75,14 +98,36 @@ const UnitTable = ({
     |--------------------------------------------------------------------------
     | UNIT TYPE
     |--------------------------------------------------------------------------
+    |
+    | API response:
+    |
+    | "details": {
+    |     "type": "bedsitter"
+    | }
+    |
+    | Therefore details.type must be checked first.
+    |
     */
 
     const getUnitType = (unit) => {
-        return normalize(
+        const type =
+            unit?.details?.type ??
             unit?.type ??
-                unit?.unit_type ??
-                unit?.category
-        );
+            unit?.unit_type ??
+            unit?.category ??
+            unit?.unit_category ??
+            unit?.details?.unit_type ??
+            null;
+
+        if (
+            type === null ||
+            type === undefined ||
+            type === ""
+        ) {
+            return "-";
+        }
+
+        return formatText(type);
     };
 
     /*
@@ -147,80 +192,115 @@ const UnitTable = ({
 
     /*
     |--------------------------------------------------------------------------
-    | RENT
+    | PRICE
     |--------------------------------------------------------------------------
     |
-    | Priority:
+    | The database field remains "price".
     |
-    | 1. Unit rent_amount
-    | 2. Unit rent
-    | 3. Unit rent_price
-    | 4. Unit pricing.rent_amount
-    | 5. Unit pricing.monthly_rent
-    | 6. Property pricing.monthly_rent
-    | 7. Property monthly_rent
-    | 8. 0
+    | A unit can represent:
+    |
+    | - rental price
+    | - sale price
+    | - another listing price
+    |
+    | We therefore use "Price" instead of "Rent".
+    |
+    | API:
+    |
+    | pricing.price
     |
     */
 
-    const getRent = (unit) => {
-        const rent =
+    const getPrice = (unit) => {
+        const price =
+            unit?.price ??
+            unit?.pricing?.price ??
+            unit?.sale_price ??
             unit?.rent_amount ??
             unit?.rent ??
             unit?.rent_price ??
             unit?.pricing?.rent_amount ??
             unit?.pricing?.monthly_rent ??
-            unit?.property?.pricing?.monthly_rent ??
-            unit?.property?.monthly_rent ??
             0;
 
         /*
         |--------------------------------------------------------------------------
-        | Handle nested rent objects
+        | Handle nested price object
         |--------------------------------------------------------------------------
         */
 
         if (
-            typeof rent === "object" &&
-            rent !== null
+            typeof price === "object" &&
+            price !== null
         ) {
             return (
-                rent?.amount ??
-                rent?.value ??
-                rent?.price ??
-                rent?.monthly_rent ??
+                price?.amount ??
+                price?.value ??
+                price?.price ??
+                price?.sale_price ??
+                price?.monthly_rent ??
                 0
             );
         }
 
-        return rent;
+        return price;
     };
 
     /*
     |--------------------------------------------------------------------------
-    | FORMAT RENT
+    | FORMAT PRICE
     |--------------------------------------------------------------------------
     */
 
-    const formatRent = (unit) => {
-        const rent = Number(
-            getRent(unit)
+    const formatPrice = (unit) => {
+        const price = Number(
+            getPrice(unit)
         );
 
         if (
-            Number.isNaN(rent) ||
-            rent <= 0
+            Number.isNaN(price) ||
+            price <= 0
         ) {
             return "KES 0";
         }
 
-        return `KES ${rent.toLocaleString(
+        return `KES ${price.toLocaleString(
             "en-KE",
             {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 2,
             }
         )}`;
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | PRICE TYPE
+    |--------------------------------------------------------------------------
+    |
+    | If your API later provides:
+    |
+    | listing_type: "rent"
+    | listing_type: "sale"
+    | listing_type: "rent_and_sale"
+    |
+    | this will display it automatically.
+    |
+    */
+
+    const getPriceType = (unit) => {
+        const type =
+            unit?.listing_type ??
+            unit?.price_type ??
+            unit?.transaction_type ??
+            unit?.availability?.listing_type ??
+            null;
+
+        if (!type) {
+            return null;
+        }
+
+        return formatText(type);
     };
 
     /*
@@ -238,8 +318,8 @@ const UnitTable = ({
             typeof status === "object"
         ) {
             return String(
-                status?.current ??
-                    status?.value ??
+                status?.value ??
+                    status?.current ??
                     status?.name ??
                     status?.label ??
                     "unknown"
@@ -333,13 +413,8 @@ const UnitTable = ({
                     label:
                         label === "-"
                             ? "Unknown"
-                            : label
-                                  .charAt(
-                                      0
-                                  )
-                                  .toUpperCase() +
-                              label.slice(
-                                  1
+                            : formatText(
+                                  label
                               ),
                     className:
                         "bg-slate-50 text-slate-700 border border-slate-200",
@@ -388,8 +463,9 @@ const UnitTable = ({
     return (
         <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
             <div className="overflow-x-auto">
-                <table className="w-full min-w-[1100px]">
+                <table className="w-full min-w-[1150px]">
                     {/* HEADER */}
+
                     <thead className="border-b border-gray-100 bg-gray-50">
                         <tr>
                             <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
@@ -409,7 +485,7 @@ const UnitTable = ({
                             </th>
 
                             <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                                Rent
+                                Price
                             </th>
 
                             <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
@@ -423,11 +499,17 @@ const UnitTable = ({
                     </thead>
 
                     {/* BODY */}
+
                     <tbody className="divide-y divide-gray-100">
                         {units.map(
                             (unit) => {
                                 const status =
                                     formatStatus(
+                                        unit
+                                    );
+
+                                const priceType =
+                                    getPriceType(
                                         unit
                                     );
 
@@ -451,6 +533,7 @@ const UnitTable = ({
                                         }`}
                                     >
                                         {/* UNIT */}
+
                                         <td className="px-6 py-5">
                                             <div className="flex items-start gap-3">
                                                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-100">
@@ -485,8 +568,9 @@ const UnitTable = ({
                                         </td>
 
                                         {/* TYPE */}
+
                                         <td className="px-6 py-5">
-                                            <span className="font-medium capitalize text-gray-700">
+                                            <span className="inline-flex rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-semibold capitalize text-blue-700">
                                                 {getUnitType(
                                                     unit
                                                 )}
@@ -494,6 +578,7 @@ const UnitTable = ({
                                         </td>
 
                                         {/* APARTMENT */}
+
                                         <td className="px-6 py-5">
                                             <div className="flex max-w-[220px] items-center gap-2 text-gray-700">
                                                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
@@ -514,6 +599,7 @@ const UnitTable = ({
                                         </td>
 
                                         {/* PROPERTY */}
+
                                         <td className="px-6 py-5">
                                             <div className="flex max-w-[220px] items-center gap-2 text-gray-700">
                                                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
@@ -533,28 +619,40 @@ const UnitTable = ({
                                             </div>
                                         </td>
 
-                                        {/* RENT */}
-                                        <td className="px-6 py-5">
-                                            <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                                <DollarSign
-                                                    size={
-                                                        15
-                                                    }
-                                                    className="text-gray-400"
-                                                />
+                                        {/* PRICE */}
 
-                                                <span className="font-semibold text-gray-900">
-                                                    {formatRent(
-                                                        unit
-                                                    )}
-                                                </span>
+                                        <td className="px-6 py-5">
+                                            <div className="flex flex-col">
+                                                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                                    <DollarSign
+                                                        size={
+                                                            15
+                                                        }
+                                                        className="text-gray-400"
+                                                    />
+
+                                                    <span className="font-semibold text-gray-900">
+                                                        {formatPrice(
+                                                            unit
+                                                        )}
+                                                    </span>
+                                                </div>
+
+                                                {priceType && (
+                                                    <span className="mt-1 text-xs text-gray-400">
+                                                        {
+                                                            priceType
+                                                        }
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
 
                                         {/* STATUS */}
+
                                         <td className="px-6 py-5">
                                             <span
-                                                className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${status.className}`}
+                                                className={`inline-flex items-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${status.className}`}
                                             >
                                                 <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
 
@@ -565,9 +663,11 @@ const UnitTable = ({
                                         </td>
 
                                         {/* ACTIONS */}
+
                                         <td className="px-6 py-5">
                                             <div className="flex items-center justify-end gap-2">
                                                 {/* VIEW */}
+
                                                 <button
                                                     type="button"
                                                     disabled={
@@ -591,6 +691,7 @@ const UnitTable = ({
                                                 </button>
 
                                                 {/* EDIT */}
+
                                                 <button
                                                     type="button"
                                                     disabled={
@@ -614,6 +715,7 @@ const UnitTable = ({
                                                 </button>
 
                                                 {/* DELETE */}
+
                                                 <button
                                                     type="button"
                                                     disabled={
@@ -658,3 +760,4 @@ const UnitTable = ({
 };
 
 export default UnitTable;
+

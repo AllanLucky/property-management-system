@@ -1,5 +1,5 @@
 
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 
 import {
     Search,
@@ -16,6 +16,17 @@ import {
 /*
 |--------------------------------------------------------------------------
 | UNIT FILTERS
+|--------------------------------------------------------------------------
+|
+| Supports:
+| - Laravel API resources
+| - { data: [] }
+| - { data: { data: [] } }
+| - Direct arrays
+| - Nested property/apartment resources
+| - Status objects such as:
+|   { value: "vacant", label: "Vacant" }
+|
 |--------------------------------------------------------------------------
 */
 
@@ -34,11 +45,11 @@ const UnitFilters = ({
     */
 
     const search = filters?.search ?? "";
-    const status = filters?.status ?? "";
-    const propertyId = filters?.property_id ?? "";
-    const apartmentId = filters?.apartment_id ?? "";
+    const status = normalizeValue(filters?.status);
+    const propertyId = normalizeId(filters?.property_id);
+    const apartmentId = normalizeId(filters?.apartment_id);
     const floor = filters?.floor ?? "";
-    const type = filters?.type ?? "";
+    const type = normalizeValue(filters?.type);
 
     /*
     |--------------------------------------------------------------------------
@@ -46,59 +57,52 @@ const UnitFilters = ({
     |--------------------------------------------------------------------------
     */
 
-    const normalizedProperties = useMemo(() => {
-        return Array.isArray(properties)
-            ? properties
-            : [];
-    }, [properties]);
+    const normalizedProperties = useMemo(
+        () => normalizeCollection(properties),
+        [properties]
+    );
 
-    const normalizedApartments = useMemo(() => {
-        return Array.isArray(apartments)
-            ? apartments
-            : [];
-    }, [apartments]);
+    const normalizedApartments = useMemo(
+        () => normalizeCollection(apartments),
+        [apartments]
+    );
 
-    const normalizedUnitTypes = useMemo(() => {
-        return Array.isArray(unitTypes)
-            ? unitTypes
-            : [];
-    }, [unitTypes]);
+    const normalizedUnitTypes = useMemo(
+        () => normalizeCollection(unitTypes),
+        [unitTypes]
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | HELPERS
+    | STATUS OPTIONS
     |--------------------------------------------------------------------------
     */
 
-    const getId = (item) => {
-        if (!item) {
-            return "";
-        }
-
-        return (
-            item?.id ??
-            item?.value ??
-            ""
-        );
-    };
-
-    const getName = (
-        item,
-        fallback = ""
-    ) => {
-        if (!item) {
-            return fallback;
-        }
-
-        return (
-            item?.name ??
-            item?.title ??
-            item?.label ??
-            item?.property_name ??
-            item?.apartment_name ??
-            fallback
-        );
-    };
+    const statusOptions = useMemo(
+        () => [
+            {
+                value: "",
+                label: "All Statuses",
+            },
+            {
+                value: "vacant",
+                label: "Vacant",
+            },
+            {
+                value: "occupied",
+                label: "Occupied",
+            },
+            {
+                value: "reserved",
+                label: "Reserved",
+            },
+            {
+                value: "maintenance",
+                label: "Maintenance",
+            },
+        ],
+        []
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -111,21 +115,20 @@ const UnitFilters = ({
             return normalizedApartments;
         }
 
-        return normalizedApartments.filter(
-            (apartment) => {
-                const apartmentPropertyId =
-                    apartment?.property_id ??
-                    apartment?.property?.id ??
-                    apartment?.property?.value;
+        return normalizedApartments.filter((apartment) => {
+            const apartmentPropertyId =
+                apartment?.property_id ??
+                apartment?.property?.id ??
+                apartment?.property?.value ??
+                apartment?.property?.data?.id ??
+                apartment?.property?.data?.value ??
+                "";
 
-                return (
-                    String(
-                        apartmentPropertyId
-                    ) ===
-                    String(propertyId)
-                );
-            }
-        );
+            return (
+                normalizeId(apartmentPropertyId) ===
+                normalizeId(propertyId)
+            );
+        });
     }, [
         normalizedApartments,
         propertyId,
@@ -133,32 +136,91 @@ const UnitFilters = ({
 
     /*
     |--------------------------------------------------------------------------
-    | STATUS OPTIONS
+    | SELECTED PROPERTY
     |--------------------------------------------------------------------------
     */
 
-    const statusOptions = [
-        {
-            value: "",
-            label: "All Statuses",
-        },
-        {
-            value: "vacant",
-            label: "Vacant",
-        },
-        {
-            value: "occupied",
-            label: "Occupied",
-        },
-        {
-            value: "reserved",
-            label: "Reserved",
-        },
-        {
-            value: "maintenance",
-            label: "Maintenance",
-        },
-    ];
+    const selectedProperty = useMemo(() => {
+        if (!propertyId) {
+            return null;
+        }
+
+        return (
+            normalizedProperties.find(
+                (property) =>
+                    normalizeId(getId(property)) ===
+                    normalizeId(propertyId)
+            ) ?? null
+        );
+    }, [
+        normalizedProperties,
+        propertyId,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | SELECTED APARTMENT
+    |--------------------------------------------------------------------------
+    */
+
+    const selectedApartment = useMemo(() => {
+        if (!apartmentId) {
+            return null;
+        }
+
+        return (
+            normalizedApartments.find(
+                (apartment) =>
+                    normalizeId(getId(apartment)) ===
+                    normalizeId(apartmentId)
+            ) ?? null
+        );
+    }, [
+        normalizedApartments,
+        apartmentId,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | SELECTED STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    const selectedStatus = useMemo(
+        () =>
+            statusOptions.find(
+                (option) =>
+                    option.value === status
+            ),
+        [
+            status,
+            statusOptions,
+        ]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | SELECTED TYPE
+    |--------------------------------------------------------------------------
+    */
+
+    const selectedUnitType = useMemo(() => {
+        if (!type) {
+            return null;
+        }
+
+        return (
+            normalizedUnitTypes.find(
+                (item) =>
+                    normalizeValue(
+                        getTypeValue(item)
+                    ) === type
+            ) ?? null
+        );
+    }, [
+        normalizedUnitTypes,
+        type,
+    ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -166,38 +228,38 @@ const UnitFilters = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleChange = (
-        field,
-        value
-    ) => {
-        if (
-            typeof onFilterChange !==
-            "function"
-        ) {
-            return;
-        }
+    const handleChange = useCallback(
+        (field, value) => {
+            if (
+                typeof onFilterChange !==
+                "function"
+            ) {
+                return;
+            }
 
-        onFilterChange(
-            field,
-            value
-        );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Reset apartment when property changes
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            field ===
-            "property_id"
-        ) {
             onFilterChange(
-                "apartment_id",
-                ""
+                field,
+                value
             );
-        }
-    };
+
+            /*
+            |--------------------------------------------------------------
+            | When property changes, always clear apartment.
+            |--------------------------------------------------------------
+            */
+
+            if (
+                field ===
+                "property_id"
+            ) {
+                onFilterChange(
+                    "apartment_id",
+                    ""
+                );
+            }
+        },
+        [onFilterChange]
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -205,21 +267,22 @@ const UnitFilters = ({
     |--------------------------------------------------------------------------
     */
 
-    const removeFilter = (
-        field
-    ) => {
-        if (
-            typeof onFilterChange !==
-            "function"
-        ) {
-            return;
-        }
+    const removeFilter = useCallback(
+        (field) => {
+            if (
+                typeof onFilterChange !==
+                "function"
+            ) {
+                return;
+            }
 
-        onFilterChange(
-            field,
-            ""
-        );
-    };
+            onFilterChange(
+                field,
+                ""
+            );
+        },
+        [onFilterChange]
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -227,14 +290,14 @@ const UnitFilters = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleReset = () => {
+    const handleReset = useCallback(() => {
         if (
             typeof onReset ===
             "function"
         ) {
             onReset();
         }
-    };
+    }, [onReset]);
 
     /*
     |--------------------------------------------------------------------------
@@ -242,28 +305,39 @@ const UnitFilters = ({
     |--------------------------------------------------------------------------
     */
 
-    const activeFilterCount = [
-        search,
-        status,
-        propertyId,
-        apartmentId,
-        floor,
-        type,
-    ].filter(
-        (value) =>
-            value !== "" &&
-            value !== null &&
-            value !== undefined
-    ).length;
+    const activeFilterCount = useMemo(
+        () =>
+            [
+                search,
+                status,
+                propertyId,
+                apartmentId,
+                floor,
+                type,
+            ].filter(
+                (value) =>
+                    value !== "" &&
+                    value !== null &&
+                    value !== undefined
+            ).length,
+        [
+            search,
+            status,
+            propertyId,
+            apartmentId,
+            floor,
+            type,
+        ]
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | SELECT CLASS
+    | SHARED CLASSES
     |--------------------------------------------------------------------------
     */
 
     const selectClass =
-        "w-full appearance-none rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 pr-10 text-sm font-medium text-gray-800 outline-none transition-all duration-200 hover:border-gray-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10";
+        "w-full appearance-none rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 pr-10 text-sm font-medium text-gray-800 outline-none transition-all duration-200 hover:border-gray-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400";
 
     const inputClass =
         "w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm font-medium text-gray-800 outline-none transition-all duration-200 placeholder:text-gray-400 hover:border-gray-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10";
@@ -304,9 +378,7 @@ const UnitFilters = ({
                             </div>
 
                             <p className="mt-0.5 text-xs text-gray-500">
-                                Search and refine
-                                your unit
-                                inventory
+                                Search and refine your unit inventory
                             </p>
                         </div>
                     </div>
@@ -340,11 +412,10 @@ const UnitFilters = ({
                     {/* -------------------------------------------------- */}
 
                     <div className="xl:col-span-2">
-                        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                            <Search className="h-3.5 w-3.5" />
-
-                            Search Units
-                        </label>
+                        <FilterLabel
+                            icon={Search}
+                            label="Search Units"
+                        />
 
                         <div className="relative">
                             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -390,13 +461,14 @@ const UnitFilters = ({
                     {/* -------------------------------------------------- */}
 
                     <div>
-                        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                            <Building2 className="h-3.5 w-3.5" />
+                        <FilterLabel
+                            icon={
+                                Building2
+                            }
+                            label="Property"
+                        />
 
-                            Property
-                        </label>
-
-                        <div className="relative">
+                        <SelectWrapper>
                             <select
                                 value={
                                     propertyId
@@ -421,18 +493,23 @@ const UnitFilters = ({
 
                                 {normalizedProperties.map(
                                     (
-                                        property
+                                        property,
+                                        index
                                     ) => {
                                         const id =
                                             getId(
                                                 property
                                             );
 
+                                        if (
+                                            !id
+                                        ) {
+                                            return null;
+                                        }
+
                                         return (
                                             <option
-                                                key={
-                                                    id
-                                                }
+                                                key={`${id}-${index}`}
                                                 value={
                                                     id
                                                 }
@@ -448,7 +525,7 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        </div>
+                        </SelectWrapper>
                     </div>
 
                     {/* -------------------------------------------------- */}
@@ -456,13 +533,12 @@ const UnitFilters = ({
                     {/* -------------------------------------------------- */}
 
                     <div>
-                        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                            <Home className="h-3.5 w-3.5" />
+                        <FilterLabel
+                            icon={Home}
+                            label="Apartment"
+                        />
 
-                            Apartment
-                        </label>
-
-                        <div className="relative">
+                        <SelectWrapper>
                             <select
                                 value={
                                     apartmentId
@@ -482,28 +558,38 @@ const UnitFilters = ({
                                     normalizedApartments.length ===
                                         0
                                 }
-                                className={`${selectClass} disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400`}
+                                className={
+                                    selectClass
+                                }
                             >
                                 <option value="">
                                     {propertyId
-                                        ? "All Apartments"
+                                        ? availableApartments.length >
+                                          0
+                                            ? "All Apartments"
+                                            : "No apartments found"
                                         : "All Apartments"}
                                 </option>
 
                                 {availableApartments.map(
                                     (
-                                        apartment
+                                        apartment,
+                                        index
                                     ) => {
                                         const id =
                                             getId(
                                                 apartment
                                             );
 
+                                        if (
+                                            !id
+                                        ) {
+                                            return null;
+                                        }
+
                                         return (
                                             <option
-                                                key={
-                                                    id
-                                                }
+                                                key={`${id}-${index}`}
                                                 value={
                                                     id
                                                 }
@@ -519,7 +605,15 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        </div>
+                        </SelectWrapper>
+
+                        {propertyId &&
+                            availableApartments.length ===
+                                0 && (
+                                <p className="mt-1.5 text-xs font-medium text-amber-600">
+                                    No apartments found for the selected property.
+                                </p>
+                            )}
                     </div>
 
                     {/* -------------------------------------------------- */}
@@ -527,13 +621,14 @@ const UnitFilters = ({
                     {/* -------------------------------------------------- */}
 
                     <div>
-                        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                        <FilterLabel
+                            label="Status"
+                            customIcon={
+                                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                            }
+                        />
 
-                            Status
-                        </label>
-
-                        <div className="relative">
+                        <SelectWrapper>
                             <select
                                 value={
                                     status
@@ -574,7 +669,7 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        </div>
+                        </SelectWrapper>
                     </div>
 
                     {/* -------------------------------------------------- */}
@@ -582,11 +677,12 @@ const UnitFilters = ({
                     {/* -------------------------------------------------- */}
 
                     <div>
-                        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                            <Layers3 className="h-3.5 w-3.5" />
-
-                            Floor
-                        </label>
+                        <FilterLabel
+                            icon={
+                                Layers3
+                            }
+                            label="Floor"
+                        />
 
                         <div className="relative">
                             <input
@@ -619,80 +715,76 @@ const UnitFilters = ({
                     {/* UNIT TYPE */}
                     {/* -------------------------------------------------- */}
 
-                    {normalizedUnitTypes.length >
-                        0 && (
-                        <div>
-                            <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                                <Home className="h-3.5 w-3.5" />
+                    <div>
+                        <FilterLabel
+                            icon={Home}
+                            label="Unit Type"
+                        />
 
-                                Unit Type
-                            </label>
-
-                            <div className="relative">
-                                <select
-                                    value={
-                                        type
-                                    }
-                                    onChange={(
+                        <SelectWrapper>
+                            <select
+                                value={
+                                    type
+                                }
+                                onChange={(
+                                    event
+                                ) =>
+                                    handleChange(
+                                        "type",
                                         event
-                                    ) =>
-                                        handleChange(
-                                            "type",
-                                            event
-                                                .target
-                                                .value
-                                        )
-                                    }
-                                    className={
-                                        selectClass
-                                    }
-                                >
-                                    <option value="">
-                                        All Types
-                                    </option>
+                                            .target
+                                            .value
+                                    )
+                                }
+                                className={
+                                    selectClass
+                                }
+                            >
+                                <option value="">
+                                    All Types
+                                </option>
 
-                                    {normalizedUnitTypes.map(
-                                        (
-                                            option,
-                                            index
-                                        ) => {
-                                            const value =
-                                                typeof option ===
-                                                "object"
-                                                    ? option?.value ??
-                                                      option?.id ??
-                                                      ""
-                                                    : option;
-
-                                            const label =
-                                                typeof option ===
-                                                "object"
-                                                    ? option?.label ??
-                                                      option?.name ??
-                                                      option?.title ??
-                                                      value
-                                                    : option;
-
-                                            return (
-                                                <option
-                                                    key={`${value}-${index}`}
-                                                    value={
-                                                        value
-                                                    }
-                                                >
-                                                    {
-                                                        label
-                                                    }
-                                                </option>
+                                {normalizedUnitTypes.map(
+                                    (
+                                        option,
+                                        index
+                                    ) => {
+                                        const value =
+                                            getTypeValue(
+                                                option
                                             );
-                                        }
-                                    )}
-                                </select>
 
-                                <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                            </div>
-                        </div>
-                    )}
+                                        const label =
+                                            getTypeLabel(
+                                                option,
+                                                value
+                                            );
+
+                                        if (
+                                            !value
+                                        ) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <option
+                                                key={`${value}-${index}`}
+                                                value={
+                                                    value
+                                                }
+                                            >
+                                                {
+                                                    label
+                                                }
+                                            </option>
+                                        );
+                                    }
+                                )}
+                            </select>
+
+                            <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        </SelectWrapper>
+                    </div>
                 </div>
 
                 {/* ------------------------------------------------------ */}
@@ -717,7 +809,8 @@ const UnitFilters = ({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                            {/* Search */}
+                            {/* SEARCH */}
+
                             {search && (
                                 <FilterBadge
                                     label={`Search: ${search}`}
@@ -729,23 +822,12 @@ const UnitFilters = ({
                                 />
                             )}
 
-                            {/* Property */}
+                            {/* PROPERTY */}
+
                             {propertyId && (
                                 <FilterBadge
                                     label={`Property: ${getName(
-                                        normalizedProperties.find(
-                                            (
-                                                item
-                                            ) =>
-                                                String(
-                                                    getId(
-                                                        item
-                                                    )
-                                                ) ===
-                                                String(
-                                                    propertyId
-                                                )
-                                        ),
+                                        selectedProperty,
                                         `#${propertyId}`
                                     )}`}
                                     onRemove={() =>
@@ -757,23 +839,12 @@ const UnitFilters = ({
                                 />
                             )}
 
-                            {/* Apartment */}
+                            {/* APARTMENT */}
+
                             {apartmentId && (
                                 <FilterBadge
                                     label={`Apartment: ${getName(
-                                        normalizedApartments.find(
-                                            (
-                                                item
-                                            ) =>
-                                                String(
-                                                    getId(
-                                                        item
-                                                    )
-                                                ) ===
-                                                String(
-                                                    apartmentId
-                                                )
-                                        ),
+                                        selectedApartment,
                                         `#${apartmentId}`
                                     )}`}
                                     onRemove={() =>
@@ -785,19 +856,15 @@ const UnitFilters = ({
                                 />
                             )}
 
-                            {/* Status */}
+                            {/* STATUS */}
+
                             {status && (
                                 <FilterBadge
                                     label={`Status: ${
-                                        statusOptions.find(
-                                            (
-                                                item
-                                            ) =>
-                                                item.value ===
-                                                status
+                                        selectedStatus?.label ??
+                                        formatLabel(
+                                            status
                                         )
-                                            ?.label ??
-                                        status
                                     }`}
                                     onRemove={() =>
                                         removeFilter(
@@ -819,7 +886,8 @@ const UnitFilters = ({
                                 />
                             )}
 
-                            {/* Floor */}
+                            {/* FLOOR */}
+
                             {floor !==
                                 "" && (
                                 <FilterBadge
@@ -833,32 +901,14 @@ const UnitFilters = ({
                                 />
                             )}
 
-                            {/* Type */}
+                            {/* TYPE */}
+
                             {type && (
                                 <FilterBadge
-                                    label={`Type: ${
-                                        normalizedUnitTypes.find(
-                                            (
-                                                item
-                                            ) =>
-                                                (typeof item ===
-                                                "object"
-                                                    ? item?.value
-                                                    : item) ===
-                                                type
-                                        )?.label ??
-                                        normalizedUnitTypes.find(
-                                            (
-                                                item
-                                            ) =>
-                                                (typeof item ===
-                                                "object"
-                                                    ? item?.value
-                                                    : item) ===
-                                                type
-                                        )?.name ??
+                                    label={`Type: ${getTypeLabel(
+                                        selectedUnitType,
                                         type
-                                    }`}
+                                    )}`}
                                     onRemove={() =>
                                         removeFilter(
                                             "type"
@@ -868,20 +918,59 @@ const UnitFilters = ({
                                 />
                             )}
 
-                            {/* None */}
+                            {/* NONE */}
+
                             {activeFilterCount ===
                                 0 && (
                                 <div className="flex items-center gap-2 text-xs text-gray-400">
                                     <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />
 
-                                    No filters
-                                    applied
+                                    No filters applied
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| FILTER LABEL
+|--------------------------------------------------------------------------
+*/
+
+const FilterLabel = ({
+    icon: Icon,
+    customIcon,
+    label,
+}) => {
+    return (
+        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
+            {customIcon ??
+                (Icon && (
+                    <Icon className="h-3.5 w-3.5" />
+                ))}
+
+            {label}
+        </label>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| SELECT WRAPPER
+|--------------------------------------------------------------------------
+*/
+
+const SelectWrapper = ({
+    children,
+}) => {
+    return (
+        <div className="relative">
+            {children}
         </div>
     );
 };
@@ -900,21 +989,31 @@ const FilterBadge = ({
     const colorClasses = {
         gray:
             "border-gray-200 bg-gray-50 text-gray-700",
+
         blue:
             "border-blue-100 bg-blue-50 text-blue-700",
+
         green:
             "border-emerald-100 bg-emerald-50 text-emerald-700",
+
         purple:
             "border-purple-100 bg-purple-50 text-purple-700",
+
         orange:
             "border-orange-100 bg-orange-50 text-orange-700",
+
         indigo:
             "border-indigo-100 bg-indigo-50 text-indigo-700",
     };
 
     return (
         <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${colorClasses[color] ?? colorClasses.gray}`}
+            className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                colorClasses[
+                    color
+                ] ??
+                colorClasses.gray
+            }`}
         >
             <span className="max-w-[220px] truncate">
                 {label}
@@ -923,13 +1022,294 @@ const FilterBadge = ({
             <button
                 type="button"
                 onClick={onRemove}
-                className="rounded-full p-0.5 opacity-60 transition hover:bg-black/5 hover:opacity-100"
+                className="shrink-0 rounded-full p-0.5 opacity-60 transition hover:bg-black/5 hover:opacity-100"
                 title="Remove filter"
+                aria-label={`Remove ${label}`}
             >
                 <X className="h-3 w-3" />
             </button>
         </span>
     );
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE COLLECTION
+|--------------------------------------------------------------------------
+*/
+
+const normalizeCollection = (
+    response
+) => {
+    if (!response) {
+        return [];
+    }
+
+    if (Array.isArray(response)) {
+        return response;
+    }
+
+    if (
+        Array.isArray(
+            response?.data
+        )
+    ) {
+        return response.data;
+    }
+
+    if (
+        Array.isArray(
+            response?.data?.data
+        )
+    ) {
+        return response.data.data;
+    }
+
+    if (
+        Array.isArray(
+            response?.results
+        )
+    ) {
+        return response.results;
+    }
+
+    if (
+        Array.isArray(
+            response?.items
+        )
+    ) {
+        return response.items;
+    }
+
+    return [];
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET ID
+|--------------------------------------------------------------------------
+*/
+
+const getId = (item) => {
+    if (!item) {
+        return "";
+    }
+
+    if (
+        typeof item !==
+        "object"
+    ) {
+        return item;
+    }
+
+    return (
+        item?.id ??
+        item?.value ??
+        item?.property_id ??
+        item?.apartment_id ??
+        item?.data?.id ??
+        item?.data?.value ??
+        ""
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE ID
+|--------------------------------------------------------------------------
+*/
+
+const normalizeId = (
+    value
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return "";
+    }
+
+    if (
+        typeof value ===
+        "object"
+    ) {
+        return String(
+            value?.id ??
+                value?.value ??
+                value?.data?.id ??
+                value?.data?.value ??
+                ""
+        );
+    }
+
+    return String(value);
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET NAME
+|--------------------------------------------------------------------------
+*/
+
+const getName = (
+    item,
+    fallback = ""
+) => {
+    if (!item) {
+        return fallback;
+    }
+
+    if (
+        typeof item !==
+        "object"
+    ) {
+        return String(item);
+    }
+
+    return (
+        item?.name ??
+        item?.title ??
+        item?.label ??
+        item?.display_name ??
+        item?.property_name ??
+        item?.apartment_name ??
+        item?.data?.name ??
+        item?.data?.title ??
+        item?.data?.label ??
+        fallback
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE VALUE
+|--------------------------------------------------------------------------
+*/
+
+const normalizeValue = (
+    value,
+    fallback = ""
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return fallback;
+    }
+
+    if (
+        typeof value ===
+        "object"
+    ) {
+        return String(
+            value?.value ??
+                value?.id ??
+                value?.data?.value ??
+                value?.data?.id ??
+                fallback
+        );
+    }
+
+    return String(value);
+};
+
+/*
+|--------------------------------------------------------------------------
+| TYPE VALUE
+|--------------------------------------------------------------------------
+*/
+
+const getTypeValue = (
+    item
+) => {
+    if (
+        item === null ||
+        item === undefined
+    ) {
+        return "";
+    }
+
+    if (
+        typeof item !==
+        "object"
+    ) {
+        return String(item);
+    }
+
+    return normalizeValue(
+        item?.value ??
+            item?.id ??
+            item?.type ??
+            item?.data?.value ??
+            item?.data?.id ??
+            ""
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| TYPE LABEL
+|--------------------------------------------------------------------------
+*/
+
+const getTypeLabel = (
+    item,
+    fallback = ""
+) => {
+    if (!item) {
+        return formatLabel(
+            fallback
+        );
+    }
+
+    if (
+        typeof item !==
+        "object"
+    ) {
+        return formatLabel(
+            String(item)
+        );
+    }
+
+    return (
+        item?.label ??
+        item?.name ??
+        item?.title ??
+        item?.data?.label ??
+        item?.data?.name ??
+        item?.data?.title ??
+        formatLabel(
+            getTypeValue(item) ||
+                fallback
+        )
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| FORMAT LABEL
+|--------------------------------------------------------------------------
+*/
+
+const formatLabel = (
+    value
+) => {
+    if (!value) {
+        return "";
+    }
+
+    return String(value)
+        .replace(
+            /[_-]+/g,
+            " "
+        )
+        .replace(
+            /\b\w/g,
+            (char) =>
+                char.toUpperCase()
+        );
 };
 
 export default UnitFilters;
