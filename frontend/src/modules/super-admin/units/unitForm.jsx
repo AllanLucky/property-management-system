@@ -164,7 +164,6 @@ const SIZE_UNITS = [
  * Normalize Laravel/API collection responses.
  *
  * Supports:
- *
  * []
  *
  * {
@@ -217,7 +216,11 @@ const normalizeCollection = (response) => {
  * Safely extract an ID.
  */
 const getId = (item) => {
-    if (!item) {
+    if (
+        item === null ||
+        item === undefined ||
+        item === ""
+    ) {
         return "";
     }
 
@@ -237,7 +240,10 @@ const getId = (item) => {
 /**
  * Safely extract a display name.
  */
-const getName = (item, fallback = "") => {
+const getName = (
+    item,
+    fallback = ""
+) => {
     if (!item) {
         return fallback;
     }
@@ -330,7 +336,9 @@ const formatDateForInput = (value) => {
         return "";
     }
 
-    if (typeof value === "string") {
+    if (
+        typeof value === "string"
+    ) {
         return value.substring(0, 10);
     }
 
@@ -354,6 +362,28 @@ const normalizeBoolean = (value) => {
         value === "1" ||
         value === "true"
     );
+};
+
+/**
+ * Safely convert numeric values.
+ */
+const normalizeNumber = (
+    value,
+    fallback = ""
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return fallback;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number)
+        ? number
+        : fallback;
 };
 
 /*
@@ -405,7 +435,10 @@ const UnitForm = ({
     */
 
     const propertyOptions = useMemo(
-        () => normalizeCollection(properties),
+        () =>
+            normalizeCollection(
+                properties
+            ),
         [properties]
     );
 
@@ -416,7 +449,10 @@ const UnitForm = ({
     */
 
     const apartmentOptions = useMemo(
-        () => normalizeCollection(apartments),
+        () =>
+            normalizeCollection(
+                apartments
+            ),
         [apartments]
     );
 
@@ -426,33 +462,34 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const filteredApartments = useMemo(() => {
-        if (!form.property_id) {
-            return apartmentOptions;
-        }
-
-        return apartmentOptions.filter(
-            (apartment) => {
-                const apartmentPropertyId =
-                    apartment?.property_id ??
-                    apartment?.property?.id ??
-                    apartment?.property?.value ??
-                    apartment?.property?.property_id;
-
-                return (
-                    normalizeId(
-                        apartmentPropertyId
-                    ) ===
-                    normalizeId(
-                        form.property_id
-                    )
-                );
+    const filteredApartments =
+        useMemo(() => {
+            if (!form.property_id) {
+                return [];
             }
-        );
-    }, [
-        apartmentOptions,
-        form.property_id,
-    ]);
+
+            return apartmentOptions.filter(
+                (apartment) => {
+                    const apartmentPropertyId =
+                        apartment?.property_id ??
+                        apartment?.property?.id ??
+                        apartment?.property?.value ??
+                        apartment?.property?.property_id;
+
+                    return (
+                        normalizeId(
+                            apartmentPropertyId
+                        ) ===
+                        normalizeId(
+                            form.property_id
+                        )
+                    );
+                }
+            );
+        }, [
+            apartmentOptions,
+            form.property_id,
+        ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -476,12 +513,14 @@ const UnitForm = ({
             unit.property_id ??
             unit.property?.id ??
             unit.property?.value ??
+            unit.property?.property_id ??
             "";
 
         const apartmentId =
             unit.apartment_id ??
             unit.apartment?.id ??
             unit.apartment?.value ??
+            unit.apartment?.apartment_id ??
             "";
 
         const thumbnail =
@@ -526,23 +565,36 @@ const UnitForm = ({
                 ),
 
             bedrooms:
-                unit.bedrooms ?? 1,
+                normalizeNumber(
+                    unit.bedrooms,
+                    1
+                ),
 
             bathrooms:
-                unit.bathrooms ?? 1,
+                normalizeNumber(
+                    unit.bathrooms,
+                    1
+                ),
 
             toilets:
-                unit.toilets ?? 1,
+                normalizeNumber(
+                    unit.toilets,
+                    1
+                ),
 
             floor:
-                unit.floor ??
-                unit.floor_number ??
-                1,
+                normalizeNumber(
+                    unit.floor ??
+                        unit.floor_number,
+                    1
+                ),
 
             size:
-                unit.size ??
-                unit.area ??
-                "",
+                normalizeNumber(
+                    unit.size ??
+                        unit.area,
+                    ""
+                ),
 
             size_unit:
                 normalizeValue(
@@ -551,18 +603,24 @@ const UnitForm = ({
                 ),
 
             price:
-                unit.price ??
-                unit.rent ??
-                unit.rent_amount ??
-                "",
+                normalizeNumber(
+                    unit.price ??
+                        unit.rent ??
+                        unit.rent_amount,
+                    ""
+                ),
 
             deposit:
-                unit.deposit ??
-                "",
+                normalizeNumber(
+                    unit.deposit,
+                    ""
+                ),
 
             service_charge:
-                unit.service_charge ??
-                "",
+                normalizeNumber(
+                    unit.service_charge,
+                    ""
+                ),
 
             has_balcony:
                 normalizeBoolean(
@@ -599,8 +657,43 @@ const UnitForm = ({
         });
 
         setErrors({});
-        setThumbnailPreview(thumbnail);
+        setThumbnailPreview(
+            thumbnail
+        );
     }, [unit]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | KEEP APARTMENT VALID
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+        if (!form.apartment_id) {
+            return;
+        }
+
+        const exists =
+            filteredApartments.some(
+                (apartment) =>
+                    normalizeId(
+                        getId(apartment)
+                    ) ===
+                    normalizeId(
+                        form.apartment_id
+                    )
+            );
+
+        if (!exists) {
+            setForm((previous) => ({
+                ...previous,
+                apartment_id: "",
+            }));
+        }
+    }, [
+        filteredApartments,
+        form.apartment_id,
+    ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -608,8 +701,8 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleChange = useCallback(
-        (event) => {
+    const handleChange =
+        useCallback((event) => {
             const {
                 name,
                 value,
@@ -639,9 +732,7 @@ const UnitForm = ({
 
                 return next;
             });
-        },
-        []
-    );
+        }, []);
 
     /*
     |--------------------------------------------------------------------------
@@ -656,7 +747,8 @@ const UnitForm = ({
 
             setForm((previous) => ({
                 ...previous,
-                property_id: propertyId,
+                property_id:
+                    propertyId,
                 apartment_id: "",
             }));
 
@@ -711,88 +803,131 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const validate = useCallback(() => {
-        const validationErrors = {};
+    const validate =
+        useCallback(() => {
+            const validationErrors =
+                {};
 
-        if (!form.property_id) {
-            validationErrors.property_id =
-                "Please select a property.";
-        }
+            if (!form.property_id) {
+                validationErrors.property_id =
+                    "Please select a property.";
+            }
 
-        if (!form.unit_number?.trim()) {
-            validationErrors.unit_number =
-                "Unit number is required.";
-        }
+            if (
+                !form.unit_number?.trim()
+            ) {
+                validationErrors.unit_number =
+                    "Unit number is required.";
+            }
 
-        if (!form.type) {
-            validationErrors.type =
-                "Please select the unit type.";
-        }
+            if (!form.type) {
+                validationErrors.type =
+                    "Please select the unit type.";
+            }
 
-        if (!form.status) {
-            validationErrors.status =
-                "Please select the unit status.";
-        }
+            if (!form.status) {
+                validationErrors.status =
+                    "Please select the unit status.";
+            }
 
-        if (
-            form.price !== "" &&
-            Number(form.price) < 0
-        ) {
-            validationErrors.price =
-                "Rent amount cannot be negative.";
-        }
+            if (
+                form.price !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(form.price)
+                    ) ||
+                    Number(form.price) < 0
+                )
+            ) {
+                validationErrors.price =
+                    "Enter a valid non-negative rent amount.";
+            }
 
-        if (
-            form.deposit !== "" &&
-            Number(form.deposit) < 0
-        ) {
-            validationErrors.deposit =
-                "Deposit cannot be negative.";
-        }
+            if (
+                form.deposit !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(form.deposit)
+                    ) ||
+                    Number(form.deposit) < 0
+                )
+            ) {
+                validationErrors.deposit =
+                    "Enter a valid non-negative deposit.";
+            }
 
-        if (
-            form.service_charge !== "" &&
-            Number(form.service_charge) < 0
-        ) {
-            validationErrors.service_charge =
-                "Service charge cannot be negative.";
-        }
+            if (
+                form.service_charge !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.service_charge
+                        )
+                    ) ||
+                    Number(
+                        form.service_charge
+                    ) < 0
+                )
+            ) {
+                validationErrors.service_charge =
+                    "Enter a valid non-negative service charge.";
+            }
 
-        if (
-            form.size !== "" &&
-            Number(form.size) < 0
-        ) {
-            validationErrors.size =
-                "Size cannot be negative.";
-        }
+            if (
+                form.size !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(form.size)
+                    ) ||
+                    Number(form.size) < 0
+                )
+            ) {
+                validationErrors.size =
+                    "Enter a valid non-negative size.";
+            }
 
-        if (Number(form.bedrooms) < 0) {
-            validationErrors.bedrooms =
-                "Bedrooms cannot be negative.";
-        }
+            if (
+                form.bedrooms !== "" &&
+                Number(form.bedrooms) < 0
+            ) {
+                validationErrors.bedrooms =
+                    "Bedrooms cannot be negative.";
+            }
 
-        if (Number(form.bathrooms) < 0) {
-            validationErrors.bathrooms =
-                "Bathrooms cannot be negative.";
-        }
+            if (
+                form.bathrooms !== "" &&
+                Number(form.bathrooms) < 0
+            ) {
+                validationErrors.bathrooms =
+                    "Bathrooms cannot be negative.";
+            }
 
-        if (Number(form.toilets) < 0) {
-            validationErrors.toilets =
-                "Toilets cannot be negative.";
-        }
+            if (
+                form.toilets !== "" &&
+                Number(form.toilets) < 0
+            ) {
+                validationErrors.toilets =
+                    "Toilets cannot be negative.";
+            }
 
-        if (Number(form.floor) < 0) {
-            validationErrors.floor =
-                "Floor cannot be negative.";
-        }
+            if (
+                form.floor !== "" &&
+                Number(form.floor) < 0
+            ) {
+                validationErrors.floor =
+                    "Floor cannot be negative.";
+            }
 
-        setErrors(validationErrors);
+            setErrors(
+                validationErrors
+            );
 
-        return (
-            Object.keys(validationErrors)
-                .length === 0
-        );
-    }, [form]);
+            return (
+                Object.keys(
+                    validationErrors
+                ).length === 0
+            );
+        }, [form]);
 
     /*
     |--------------------------------------------------------------------------
@@ -800,8 +935,14 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleSubmit = async (event) => {
+    const handleSubmit = async (
+        event
+    ) => {
         event.preventDefault();
+
+        if (submitting) {
+            return;
+        }
 
         if (!validate()) {
             await Swal.fire({
@@ -809,7 +950,8 @@ const UnitForm = ({
                 title: "Check the form",
                 text:
                     "Please correct the highlighted fields.",
-                confirmButtonText: "Okay",
+                confirmButtonText:
+                    "Okay",
             });
 
             return;
@@ -818,7 +960,9 @@ const UnitForm = ({
         const payload = {
             property_id:
                 form.property_id
-                    ? Number(form.property_id)
+                    ? Number(
+                          form.property_id
+                      )
                     : null,
 
             apartment_id:
@@ -854,7 +998,9 @@ const UnitForm = ({
             bedrooms:
                 form.bedrooms === ""
                     ? 0
-                    : Number(form.bedrooms),
+                    : Number(
+                          form.bedrooms
+                      ),
 
             bathrooms:
                 form.bathrooms === ""
@@ -866,30 +1012,41 @@ const UnitForm = ({
             toilets:
                 form.toilets === ""
                     ? 0
-                    : Number(form.toilets),
+                    : Number(
+                          form.toilets
+                      ),
 
             floor:
                 form.floor === ""
                     ? 0
-                    : Number(form.floor),
+                    : Number(
+                          form.floor
+                      ),
 
             size:
                 form.size === ""
                     ? null
-                    : Number(form.size),
+                    : Number(
+                          form.size
+                      ),
 
             size_unit:
-                form.size_unit || "sqm",
+                form.size_unit ||
+                "sqm",
 
             price:
                 form.price === ""
                     ? null
-                    : Number(form.price),
+                    : Number(
+                          form.price
+                      ),
 
             deposit:
                 form.deposit === ""
                     ? null
-                    : Number(form.deposit),
+                    : Number(
+                          form.deposit
+                      ),
 
             service_charge:
                 form.service_charge === ""
@@ -899,13 +1056,19 @@ const UnitForm = ({
                       ),
 
             has_balcony:
-                Boolean(form.has_balcony),
+                Boolean(
+                    form.has_balcony
+                ),
 
             has_wifi:
-                Boolean(form.has_wifi),
+                Boolean(
+                    form.has_wifi
+                ),
 
             has_furnished:
-                Boolean(form.has_furnished),
+                Boolean(
+                    form.has_furnished
+                ),
 
             has_air_conditioning:
                 Boolean(
@@ -941,19 +1104,26 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const getFieldError = (field) => {
+    const getFieldError = (
+        field
+    ) => {
         if (errors[field]) {
             return errors[field];
         }
 
         if (
             error?.errors &&
-            typeof error.errors === "object"
+            typeof error.errors ===
+                "object"
         ) {
             const serverError =
                 error.errors[field];
 
-            if (Array.isArray(serverError)) {
+            if (
+                Array.isArray(
+                    serverError
+                )
+            ) {
                 return serverError[0];
             }
 
@@ -1100,20 +1270,28 @@ const UnitForm = ({
                                 </option>
 
                                 {propertyOptions.map(
-                                    (property) => {
+                                    (
+                                        property
+                                    ) => {
                                         const id =
                                             getId(
                                                 property
                                             );
 
+                                        if (
+                                            !id
+                                        ) {
+                                            return null;
+                                        }
+
                                         return (
                                             <option
-                                                key={
+                                                key={String(
                                                     id
-                                                }
-                                                value={
+                                                )}
+                                                value={String(
                                                     id
-                                                }
+                                                )}
                                             >
                                                 {getName(
                                                     property,
@@ -1171,14 +1349,20 @@ const UnitForm = ({
                                                 apartment
                                             );
 
+                                        if (
+                                            !id
+                                        ) {
+                                            return null;
+                                        }
+
                                         return (
                                             <option
-                                                key={
+                                                key={String(
                                                     id
-                                                }
-                                                value={
+                                                )}
+                                                value={String(
                                                     id
-                                                }
+                                                )}
                                             >
                                                 {getName(
                                                     apartment,
@@ -1278,7 +1462,9 @@ const UnitForm = ({
                         <div className="relative">
                             <select
                                 name="type"
-                                value={form.type}
+                                value={
+                                    form.type
+                                }
                                 onChange={
                                     handleChange
                                 }
@@ -1290,7 +1476,9 @@ const UnitForm = ({
                                 )} appearance-none pr-10`}
                             >
                                 {TYPE_OPTIONS.map(
-                                    (option) => (
+                                    (
+                                        option
+                                    ) => (
                                         <option
                                             key={
                                                 option.value
@@ -1338,7 +1526,9 @@ const UnitForm = ({
                                 )} appearance-none pr-10`}
                             >
                                 {STATUS_OPTIONS.map(
-                                    (option) => (
+                                    (
+                                        option
+                                    ) => (
                                         <option
                                             key={
                                                 option.value
@@ -1365,14 +1555,18 @@ const UnitForm = ({
                     <NumberField
                         label="Floor"
                         name="floor"
-                        value={form.floor}
+                        value={
+                            form.floor
+                        }
                         onChange={
                             handleChange
                         }
                         error={getFieldError(
                             "floor"
                         )}
-                        disabled={submitting}
+                        disabled={
+                            submitting
+                        }
                     />
                 </div>
 
@@ -1413,7 +1607,7 @@ const UnitForm = ({
                     description="Specify the room configuration and unit size."
                 />
 
-                <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                     <NumberField
                         label="Bedrooms"
                         name="bedrooms"
@@ -1451,7 +1645,9 @@ const UnitForm = ({
                     <NumberField
                         label="Toilets"
                         name="toilets"
-                        value={form.toilets}
+                        value={
+                            form.toilets
+                        }
                         onChange={
                             handleChange
                         }
@@ -1504,7 +1700,9 @@ const UnitForm = ({
                                 className="rounded-r-xl border border-l-0 border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none"
                             >
                                 {SIZE_UNITS.map(
-                                    (option) => (
+                                    (
+                                        option
+                                    ) => (
                                         <option
                                             key={
                                                 option.value
@@ -1538,7 +1736,9 @@ const UnitForm = ({
                     <MoneyField
                         label="Rent Amount"
                         name="price"
-                        value={form.price}
+                        value={
+                            form.price
+                        }
                         onChange={
                             handleChange
                         }
@@ -1588,14 +1788,20 @@ const UnitForm = ({
                     />
                 </div>
 
-                <div className="mt-4 rounded-xl bg-slate-50 p-4">
-                    <p className="text-xs font-medium text-slate-500">
-                        Currency
-                    </p>
+                <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 p-4">
+                    <div>
+                        <p className="text-xs font-medium text-slate-500">
+                            Currency
+                        </p>
 
-                    <p className="mt-1 text-sm font-semibold text-slate-800">
-                        Kenyan Shilling (KES)
-                    </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                            Kenyan Shilling
+                        </p>
+                    </div>
+
+                    <span className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm">
+                        KES
+                    </span>
                 </div>
             </section>
 
@@ -1777,7 +1983,9 @@ const UnitForm = ({
                         <textarea
                             name="notes"
                             rows={5}
-                            value={form.notes}
+                            value={
+                                form.notes
+                            }
                             onChange={
                                 handleChange
                             }
@@ -1867,7 +2075,7 @@ const SectionHeader = ({
     return (
         <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                <Icon size={19} />
+                <Icon size={20} />
             </div>
 
             <div>
@@ -1993,7 +2201,7 @@ const MoneyField = ({
             error={error}
         >
             <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-sm font-semibold text-slate-500">
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-xs font-bold text-slate-500">
                     KES
                 </span>
 
@@ -2078,7 +2286,7 @@ const FeatureCheckbox = ({
                 id={name}
                 type="checkbox"
                 name={name}
-                checked={Boolean(checked)}
+                checked={checked}
                 onChange={onChange}
                 disabled={disabled}
                 className="sr-only"
