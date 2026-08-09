@@ -20,7 +20,6 @@ import {
     Plus,
     Loader2,
     RefreshCcw,
-    Building2,
     AlertTriangle,
 } from "lucide-react";
 
@@ -35,7 +34,6 @@ import {
     UnitFilters,
     UnitStats,
 } from "./";
-
 
 const UnitList = () => {
     const navigate = useNavigate();
@@ -68,9 +66,14 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const [refreshing, setRefreshing] = useState(false);
-    const [search, setSearch] = useState("");
-    const [deletingId, setDeletingId] = useState(null);
+    const [refreshing, setRefreshing] =
+        useState(false);
+
+    const [search, setSearch] =
+        useState("");
+
+    const [deletingId, setDeletingId] =
+        useState(null);
 
     /*
     |--------------------------------------------------------------------------
@@ -78,27 +81,33 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const normalize = useCallback((value) => {
-        if (
-            value === null ||
-            value === undefined ||
-            value === ""
-        ) {
-            return "-";
-        }
+    const normalize = useCallback(
+        (value) => {
+            if (
+                value === null ||
+                value === undefined ||
+                value === ""
+            ) {
+                return "-";
+            }
 
-        if (typeof value === "object") {
-            return (
-                value?.name ??
-                value?.title ??
-                value?.label ??
-                value?.value ??
-                "-"
-            );
-        }
+            if (
+                typeof value === "object"
+            ) {
+                return (
+                    value?.name ??
+                    value?.title ??
+                    value?.label ??
+                    value?.value ??
+                    value?.current ??
+                    "-"
+                );
+            }
 
-        return String(value);
-    }, []);
+            return String(value);
+        },
+        []
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -106,63 +115,99 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const getErrorMessage = useCallback((err) => {
-        if (!err) {
-            return "Failed to load units.";
-        }
+    const getErrorMessage =
+        useCallback(
+            (err) => {
+                if (!err) {
+                    return "Failed to load units.";
+                }
 
-        if (typeof err === "string") {
-            return err;
-        }
+                if (
+                    typeof err ===
+                    "string"
+                ) {
+                    return err;
+                }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Laravel validation / backend error
-        |--------------------------------------------------------------------------
-        */
+                /*
+                |--------------------------------------------------------------------------
+                | Laravel error
+                |--------------------------------------------------------------------------
+                */
 
-        if (
-            typeof err?.errors?.error ===
-            "string"
-        ) {
-            return err.errors.error;
-        }
+                if (
+                    typeof err
+                        ?.errors
+                        ?.error ===
+                    "string"
+                ) {
+                    return err.errors
+                        .error;
+                }
 
-        if (
-            typeof err?.errors?.message ===
-            "string"
-        ) {
-            return err.errors.message;
-        }
+                if (
+                    typeof err
+                        ?.errors
+                        ?.message ===
+                    "string"
+                ) {
+                    return err.errors
+                        .message;
+                }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Axios response error
-        |--------------------------------------------------------------------------
-        */
+                /*
+                |--------------------------------------------------------------------------
+                | Axios response error
+                |--------------------------------------------------------------------------
+                */
 
-        if (
-            typeof err?.response?.data?.message ===
-            "string"
-        ) {
-            return err.response.data.message;
-        }
+                if (
+                    typeof err
+                        ?.response
+                        ?.data
+                        ?.message ===
+                    "string"
+                ) {
+                    return err.response
+                        .data.message;
+                }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Standard error message
-        |--------------------------------------------------------------------------
-        */
+                /*
+                |--------------------------------------------------------------------------
+                | Axios response error details
+                |--------------------------------------------------------------------------
+                */
 
-        if (
-            typeof err?.message ===
-            "string"
-        ) {
-            return err.message;
-        }
+                if (
+                    typeof err
+                        ?.response
+                        ?.data
+                        ?.errors
+                        ?.error ===
+                    "string"
+                ) {
+                    return err.response
+                        .data.errors
+                        .error;
+                }
 
-        return "Failed to load units.";
-    }, []);
+                /*
+                |--------------------------------------------------------------------------
+                | Standard Error
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    typeof err?.message ===
+                    "string"
+                ) {
+                    return err.message;
+                }
+
+                return "Failed to load units.";
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -170,29 +215,38 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const getUnitName = useCallback(
-        (unit) => {
-            const name = normalize(
-                unit?.name
-            );
+    const getUnitName =
+        useCallback(
+            (unit) => {
+                const name =
+                    normalize(
+                        unit?.name
+                    );
 
-            if (name !== "-") {
-                return name;
-            }
+                if (
+                    name !== "-"
+                ) {
+                    return name;
+                }
 
-            const unitNumber =
-                normalize(
-                    unit?.unit_number
-                );
+                const unitNumber =
+                    normalize(
+                        unit?.unit_number
+                    );
 
-            if (unitNumber !== "-") {
-                return unitNumber;
-            }
+                if (
+                    unitNumber !==
+                    "-"
+                ) {
+                    return unitNumber;
+                }
 
-            return `Unit #${unit?.id ?? "-"}`;
-        },
-        [normalize]
-    );
+                return `Unit #${
+                    unit?.id ?? "-"
+                }`;
+            },
+            [normalize]
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -200,36 +254,186 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const getUnitType = useCallback(
-        (unit) => {
-            return normalize(
-                unit?.type ??
-                unit?.unit_type ??
-                unit?.category
-            );
-        },
-        [normalize]
-    );
+    const getUnitType =
+        useCallback(
+            (unit) => {
+                return normalize(
+                    unit?.type ??
+                        unit?.unit_type ??
+                        unit?.category ??
+                        unit?.unit_category
+                );
+            },
+            [normalize]
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | APARTMENT NAME
+    |--------------------------------------------------------------------------
+    */
+
+    const getApartmentName =
+        useCallback(
+            (unit) => {
+                const apartment =
+                    unit?.apartment;
+
+                if (apartment) {
+                    return (
+                        apartment?.name ??
+                        apartment?.title ??
+                        apartment?.block ??
+                        `Apartment #${
+                            apartment?.id ??
+                            unit?.apartment_id ??
+                            "-"
+                        }`
+                    );
+                }
+
+                if (
+                    unit?.apartment_id
+                ) {
+                    return `Apartment #${unit.apartment_id}`;
+                }
+
+                return "-";
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY NAME
+    |--------------------------------------------------------------------------
+    */
+
+    const getPropertyName =
+        useCallback(
+            (unit) => {
+                const property =
+                    unit?.property;
+
+                if (property) {
+                    return (
+                        property?.title ??
+                        property?.name ??
+                        property?.property_name ??
+                        `Property #${
+                            property?.id ??
+                            unit?.property_id ??
+                            "-"
+                        }`
+                    );
+                }
+
+                if (
+                    unit?.property_id
+                ) {
+                    return `Property #${unit.property_id}`;
+                }
+
+                return "-";
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
     | RENT
     |--------------------------------------------------------------------------
+    |
+    | Priority:
+    |
+    | 1. Unit rent_amount
+    | 2. Unit rent
+    | 3. Unit rent_price
+    | 4. Unit pricing.rent_amount
+    | 5. Unit pricing.monthly_rent
+    | 6. Property pricing.monthly_rent
+    | 7. Property monthly_rent
+    | 8. 0
+    |
     */
 
-    const getRent = useCallback(
-        (unit) => {
-            return (
-                unit?.rent_amount ??
-                unit?.pricing?.rent_amount ??
-                unit?.rent ??
-                unit?.rent_price ??
-                unit?.price ??
-                0
-            );
-        },
-        []
-    );
+    const getRent =
+        useCallback(
+            (unit) => {
+                const rent =
+                    unit?.rent_amount ??
+                    unit?.rent ??
+                    unit?.rent_price ??
+                    unit?.price ??
+                    unit?.pricing
+                        ?.rent_amount ??
+                    unit?.pricing
+                        ?.monthly_rent ??
+                    unit?.property
+                        ?.pricing
+                        ?.monthly_rent ??
+                    unit?.property
+                        ?.monthly_rent ??
+                    0;
+
+                /*
+                |--------------------------------------------------------------------------
+                | Handle nested rent object
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    typeof rent ===
+                        "object" &&
+                    rent !== null
+                ) {
+                    return (
+                        rent?.amount ??
+                        rent?.value ??
+                        rent?.price ??
+                        rent?.monthly_rent ??
+                        0
+                    );
+                }
+
+                return rent;
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORMAT RENT
+    |--------------------------------------------------------------------------
+    */
+
+    const formatRent =
+        useCallback(
+            (unit) => {
+                const rent =
+                    Number(
+                        getRent(unit)
+                    );
+
+                if (
+                    Number.isNaN(
+                        rent
+                    ) ||
+                    rent <= 0
+                ) {
+                    return "KES 0";
+                }
+
+                return `KES ${rent.toLocaleString(
+                    "en-KE",
+                    {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                    }
+                )}`;
+            },
+            [getRent]
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -237,41 +441,45 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const getStatus = useCallback(
-        (unit) => {
-            const status =
-                unit?.status;
+    const getStatus =
+        useCallback(
+            (unit) => {
+                const status =
+                    unit?.status;
 
-            if (
-                typeof status ===
-                "object"
-            ) {
+                if (
+                    status &&
+                    typeof status ===
+                        "object"
+                ) {
+                    return String(
+                        status?.value ??
+                            status?.current ??
+                            status?.name ??
+                            status?.label ??
+                            "unknown"
+                    )
+                        .toLowerCase()
+                        .trim()
+                        .replace(
+                            /[\s-]+/g,
+                            "_"
+                        );
+                }
+
                 return String(
-                    status?.value ??
-                    status?.current ??
-                    status?.name ??
-                    status?.label ??
-                    "unknown"
+                    status ??
+                        "unknown"
                 )
                     .toLowerCase()
+                    .trim()
                     .replace(
                         /[\s-]+/g,
                         "_"
                     );
-            }
-
-            return String(
-                status ??
-                "unknown"
-            )
-                .toLowerCase()
-                .replace(
-                    /[\s-]+/g,
-                    "_"
-                );
-        },
-        []
-    );
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -279,49 +487,79 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const fetchUnits = useCallback(
-        async (isRefresh = false) => {
-            try {
-                if (isRefresh) {
-                    setRefreshing(true);
-                }
+    const fetchUnits =
+        useCallback(
+            async (
+                isRefresh = false
+            ) => {
+                try {
+                    if (
+                        isRefresh
+                    ) {
+                        setRefreshing(
+                            true
+                        );
+                    }
 
-                await getUnits();
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Fetch relations
+                    |--------------------------------------------------------------------------
+                    |
+                    | This is important because rent fallback may come from
+                    | property.pricing.monthly_rent.
+                    |
+                    */
 
-                if (isRefresh) {
+                    await getUnits({
+                        with_relations:
+                            true,
+                        _t:
+                            Date.now(),
+                    });
+
+                    if (
+                        isRefresh
+                    ) {
+                        dispatch(
+                            addNotification(
+                                {
+                                    type: "success",
+                                    message:
+                                        "Units refreshed successfully.",
+                                }
+                            )
+                        );
+                    }
+                } catch (err) {
+                    console.error(
+                        "FAILED TO FETCH UNITS:",
+                        err
+                    );
+
                     dispatch(
-                        addNotification({
-                            type: "success",
-                            message:
-                                "Units refreshed successfully.",
-                        })
+                        addNotification(
+                            {
+                                type: "error",
+                                message:
+                                    getErrorMessage(
+                                        err
+                                    ),
+                            }
+                        )
+                    );
+                } finally {
+                    setRefreshing(
+                        false
                     );
                 }
-            } catch (err) {
-                console.error(
-                    "FAILED TO FETCH UNITS:",
-                    err
-                );
-
-                dispatch(
-                    addNotification({
-                        type: "error",
-                        message:
-                            getErrorMessage(
-                                err
-                            ),
-                    })
-                );
-            } finally {
-                setRefreshing(false);
-            }
-        },
-        [
-            getUnits,
-            dispatch,
-            getErrorMessage,
-        ]
-    );
+            },
+            [
+                getUnits,
+                dispatch,
+                getErrorMessage,
+            ]
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -339,146 +577,183 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const handleDelete = useCallback(
-        async (id) => {
-            if (!id) {
-                return;
-            }
+    const handleDelete =
+        useCallback(
+            async (id) => {
+                if (!id) {
+                    return;
+                }
 
-            const selectedUnit =
-                units.find(
-                    (item) =>
-                        String(
-                            item.id
-                        ) ===
-                        String(id)
-                );
+                const selectedUnit =
+                    units.find(
+                        (item) =>
+                            String(
+                                item?.id
+                            ) ===
+                            String(id)
+                    );
 
-            const unitName =
-                selectedUnit
-                    ? getUnitName(
-                          selectedUnit
-                      )
-                    : `Unit #${id}`;
+                const unitName =
+                    selectedUnit
+                        ? getUnitName(
+                              selectedUnit
+                          )
+                        : `Unit #${id}`;
 
-            const result =
-                await Swal.fire({
-                    title: "Delete Unit?",
-                    html: `
-                        <p class="text-gray-600">
-                            You are about to delete
-                            <strong>${unitName}</strong>.
-                        </p>
+                const result =
+                    await Swal.fire(
+                        {
+                            title:
+                                "Delete Unit?",
 
-                        <p class="text-sm text-red-500 mt-2">
-                            This action cannot be undone.
-                        </p>
-                    `,
-                    icon: "warning",
-                    showCancelButton: true,
-                    confirmButtonText:
-                        "Yes, delete it",
-                    cancelButtonText:
-                        "Cancel",
-                    reverseButtons: true,
-                    focusCancel: true,
-                    customClass: {
-                        popup:
-                            "rounded-3xl",
-                        confirmButton:
-                            "px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold ml-2",
-                        cancelButton:
-                            "px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-semibold",
-                    },
-                    buttonsStyling: false,
-                });
+                            html: `
+                                <p class="text-gray-600">
+                                    You are about to delete
+                                    <strong>${unitName}</strong>.
+                                </p>
 
-            if (
-                !result.isConfirmed
-            ) {
-                return;
-            }
+                                <p class="text-sm text-red-500 mt-2">
+                                    This action cannot be undone.
+                                </p>
+                            `,
 
-            try {
-                setDeletingId(id);
+                            icon: "warning",
 
-                Swal.fire({
-                    title:
-                        "Deleting Unit...",
-                    html: `
-                        <div class="flex flex-col items-center justify-center py-3">
-                            <div
-                                class="w-10 h-10 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin"
-                            ></div>
+                            showCancelButton:
+                                true,
 
-                            <p class="mt-4 text-sm text-gray-500">
-                                Please wait while the unit is being deleted.
-                            </p>
-                        </div>
-                    `,
-                    allowOutsideClick:
-                        false,
-                    allowEscapeKey:
-                        false,
-                    showConfirmButton:
-                        false,
-                    customClass: {
-                        popup:
-                            "rounded-3xl",
-                    },
-                });
+                            confirmButtonText:
+                                "Yes, delete it",
 
-                await removeUnit(id);
+                            cancelButtonText:
+                                "Cancel",
 
-                Swal.close();
+                            reverseButtons:
+                                true,
 
-                dispatch(
-                    addNotification({
-                        type: "success",
-                        message:
-                            "Unit deleted successfully.",
-                    })
-                );
+                            focusCancel:
+                                true,
 
-                /*
-                |--------------------------------------------------------------------------
-                | Refresh list from database
-                |--------------------------------------------------------------------------
-                */
+                            customClass: {
+                                popup:
+                                    "rounded-3xl",
 
-                await getUnits();
-            } catch (err) {
-                console.error(
-                    "DELETE UNIT FAILED:",
-                    err
-                );
+                                confirmButton:
+                                    "px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold ml-2",
 
-                Swal.close();
+                                cancelButton:
+                                    "px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-semibold",
+                            },
 
-                dispatch(
-                    addNotification({
-                        type: "error",
-                        message:
-                            getErrorMessage(
-                                err
-                            ),
-                    })
-                );
-            } finally {
-                setDeletingId(
-                    null
-                );
-            }
-        },
-        [
-            units,
-            getUnitName,
-            removeUnit,
-            getUnits,
-            dispatch,
-            getErrorMessage,
-        ]
-    );
+                            buttonsStyling:
+                                false,
+                        }
+                    );
+
+                if (
+                    !result.isConfirmed
+                ) {
+                    return;
+                }
+
+                try {
+                    setDeletingId(
+                        id
+                    );
+
+                    Swal.fire({
+                        title:
+                            "Deleting Unit...",
+
+                        html: `
+                            <div class="flex flex-col items-center justify-center py-3">
+                                <div
+                                    class="w-10 h-10 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin"
+                                ></div>
+
+                                <p class="mt-4 text-sm text-gray-500">
+                                    Please wait while the unit is being deleted.
+                                </p>
+                            </div>
+                        `,
+
+                        allowOutsideClick:
+                            false,
+
+                        allowEscapeKey:
+                            false,
+
+                        showConfirmButton:
+                            false,
+
+                        customClass: {
+                            popup:
+                                "rounded-3xl",
+                        },
+                    });
+
+                    await removeUnit(
+                        id
+                    );
+
+                    Swal.close();
+
+                    dispatch(
+                        addNotification(
+                            {
+                                type: "success",
+                                message:
+                                    "Unit deleted successfully.",
+                            }
+                        )
+                    );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Refresh list from database
+                    |--------------------------------------------------------------------------
+                    */
+
+                    await getUnits({
+                        with_relations:
+                            true,
+                        _t:
+                            Date.now(),
+                    });
+                } catch (err) {
+                    console.error(
+                        "DELETE UNIT FAILED:",
+                        err
+                    );
+
+                    Swal.close();
+
+                    dispatch(
+                        addNotification(
+                            {
+                                type: "error",
+                                message:
+                                    getErrorMessage(
+                                        err
+                                    ),
+                            }
+                        )
+                    );
+                } finally {
+                    setDeletingId(
+                        null
+                    );
+                }
+            },
+            [
+                units,
+                getUnitName,
+                removeUnit,
+                getUnits,
+                dispatch,
+                getErrorMessage,
+            ]
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -515,17 +790,27 @@ const UnitList = () => {
                         ).toLowerCase();
 
                     const propertyName =
-                        normalize(
+                        getPropertyName(
                             unit
-                                ?.property
-                                ?.name
                         ).toLowerCase();
 
                     const apartmentName =
+                        getApartmentName(
+                            unit
+                        ).toLowerCase();
+
+                    const propertyCode =
+                        normalize(
+                            unit
+                                ?.property
+                                ?.property_code
+                        ).toLowerCase();
+
+                    const apartmentBlock =
                         normalize(
                             unit
                                 ?.apartment
-                                ?.name
+                                ?.block
                         ).toLowerCase();
 
                     return (
@@ -541,7 +826,13 @@ const UnitList = () => {
                         propertyName.includes(
                             query
                         ) ||
+                        propertyCode.includes(
+                            query
+                        ) ||
                         apartmentName.includes(
+                            query
+                        ) ||
+                        apartmentBlock.includes(
                             query
                         )
                     );
@@ -553,94 +844,105 @@ const UnitList = () => {
             normalize,
             getUnitName,
             getUnitType,
+            getPropertyName,
+            getApartmentName,
         ]);
 
     /*
     |--------------------------------------------------------------------------
     | STATISTICS
     |--------------------------------------------------------------------------
-    |
-    | Prefer statistics calculated by the hook.
-    | Fallback calculation is kept for safety.
-    |
     */
 
-    const stats = useMemo(() => {
-        if (
-            hookStats &&
-            typeof hookStats ===
-                "object" &&
-            typeof hookStats.total ===
-                "number"
-        ) {
-            return hookStats;
-        }
-
-        return units.reduce(
-            (acc, unit) => {
-                acc.total += 1;
-
-                const status =
-                    getStatus(
-                        unit
-                    );
-
-                if (
-                    status ===
-                    "vacant"
-                ) {
-                    acc.vacant +=
-                        1;
-                }
-
-                if (
-                    status ===
-                    "occupied"
-                ) {
-                    acc.occupied +=
-                        1;
-                }
-
-                if (
-                    status ===
-                    "maintenance"
-                ) {
-                    acc.maintenance +=
-                        1;
-                }
-
-                if (
-                    status ===
-                    "reserved"
-                ) {
-                    acc.reserved +=
-                        1;
-                }
-
-                if (
-                    status ===
-                    "inactive"
-                ) {
-                    acc.inactive +=
-                        1;
-                }
-
-                return acc;
-            },
-            {
-                total: 0,
-                vacant: 0,
-                occupied: 0,
-                maintenance: 0,
-                reserved: 0,
-                inactive: 0,
+    const stats =
+        useMemo(() => {
+            if (
+                hookStats &&
+                typeof hookStats ===
+                    "object" &&
+                typeof hookStats.total ===
+                    "number"
+            ) {
+                return hookStats;
             }
-        );
-    }, [
-        hookStats,
-        units,
-        getStatus,
-    ]);
+
+            return units.reduce(
+                (
+                    acc,
+                    unit
+                ) => {
+                    acc.total +=
+                        1;
+
+                    const status =
+                        getStatus(
+                            unit
+                        );
+
+                    if (
+                        status ===
+                        "vacant"
+                    ) {
+                        acc.vacant +=
+                            1;
+                    }
+
+                    if (
+                        status ===
+                        "occupied"
+                    ) {
+                        acc.occupied +=
+                            1;
+                    }
+
+                    if (
+                        status ===
+                        "maintenance"
+                    ) {
+                        acc.maintenance +=
+                            1;
+                    }
+
+                    if (
+                        status ===
+                        "reserved"
+                    ) {
+                        acc.reserved +=
+                            1;
+                    }
+
+                    if (
+                        status ===
+                        "inactive"
+                    ) {
+                        acc.inactive +=
+                            1;
+                    }
+
+                    if (
+                        status ===
+                        "available"
+                    ) {
+                        acc.vacant +=
+                            1;
+                    }
+
+                    return acc;
+                },
+                {
+                    total: 0,
+                    vacant: 0,
+                    occupied: 0,
+                    maintenance: 0,
+                    reserved: 0,
+                    inactive: 0,
+                }
+            );
+        }, [
+            hookStats,
+            units,
+            getStatus,
+        ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -665,7 +967,8 @@ const UnitList = () => {
                 </p>
 
                 <p className="mt-1 text-xs text-gray-400">
-                    Please wait while we load the
+                    Please wait while
+                    we load the
                     units.
                 </p>
             </div>
@@ -689,16 +992,21 @@ const UnitList = () => {
                     </h1>
 
                     <p className="mt-1 text-gray-500">
-                        Manage apartment, office,
-                        shop and rental units.
+                        Manage apartment,
+                        office, shop and
+                        rental units.
                     </p>
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* REFRESH */}
+
                     <button
                         type="button"
                         onClick={() =>
-                            fetchUnits(true)
+                            fetchUnits(
+                                true
+                            )
                         }
                         disabled={
                             refreshing ||
@@ -720,6 +1028,8 @@ const UnitList = () => {
                             : "Refresh"}
                     </button>
 
+                    {/* CREATE */}
+
                     <button
                         type="button"
                         onClick={() =>
@@ -729,7 +1039,9 @@ const UnitList = () => {
                         }
                         className="flex h-11 items-center gap-2 rounded-2xl bg-blue-600 px-5 font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700"
                     >
-                        <Plus size={18} />
+                        <Plus
+                            size={18}
+                        />
 
                         Create Unit
                     </button>
@@ -748,7 +1060,8 @@ const UnitList = () => {
 
                     <div className="min-w-0">
                         <p className="font-semibold">
-                            Unable to load units
+                            Unable to load
+                            units
                         </p>
 
                         <p className="mt-1 text-sm text-red-600">
@@ -760,7 +1073,9 @@ const UnitList = () => {
                         {error?.code && (
                             <p className="mt-1 text-xs text-red-500">
                                 Error code:{" "}
-                                {error.code}
+                                {
+                                    error.code
+                                }
                             </p>
                         )}
                     </div>
@@ -791,7 +1106,9 @@ const UnitList = () => {
             {/* TABLE */}
 
             <UnitTable
-                units={filteredUnits}
+                units={
+                    filteredUnits
+                }
                 search={search}
                 deletingId={
                     deletingId
