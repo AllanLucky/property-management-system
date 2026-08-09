@@ -162,27 +162,6 @@ const SIZE_UNITS = [
 
 /**
  * Normalize Laravel/API collection responses.
- *
- * Supports:
- * []
- *
- * {
- *     data: []
- * }
- *
- * {
- *     data: {
- *         data: []
- *     }
- * }
- *
- * {
- *     results: []
- * }
- *
- * {
- *     items: []
- * }
  */
 const normalizeCollection = (response) => {
     if (!response) {
@@ -240,10 +219,7 @@ const getId = (item) => {
 /**
  * Safely extract a display name.
  */
-const getName = (
-    item,
-    fallback = ""
-) => {
+const getName = (item, fallback = "") => {
     if (!item) {
         return fallback;
     }
@@ -264,12 +240,7 @@ const getName = (
 };
 
 /**
- * Normalize IDs that may arrive as:
- *
- * number
- * string
- * object
- * Laravel resource
+ * Normalize IDs.
  */
 const normalizeId = (value) => {
     if (
@@ -295,15 +266,6 @@ const normalizeId = (value) => {
 
 /**
  * Normalize enum/resource values.
- *
- * Supports:
- *
- * "vacant"
- *
- * {
- *     value: "vacant",
- *     label: "Vacant"
- * }
  */
 const normalizeValue = (
     value,
@@ -329,16 +291,14 @@ const normalizeValue = (
 };
 
 /**
- * Convert API date into HTML date input format.
+ * Convert API date into HTML date format.
  */
 const formatDateForInput = (value) => {
     if (!value) {
         return "";
     }
 
-    if (
-        typeof value === "string"
-    ) {
+    if (typeof value === "string") {
         return value.substring(0, 10);
     }
 
@@ -352,8 +312,7 @@ const formatDateForInput = (value) => {
 };
 
 /**
- * Convert API boolean-ish values into
- * real JavaScript booleans.
+ * Normalize boolean values.
  */
 const normalizeBoolean = (value) => {
     return (
@@ -365,7 +324,7 @@ const normalizeBoolean = (value) => {
 };
 
 /**
- * Safely convert numeric values.
+ * Safely normalize numbers.
  */
 const normalizeNumber = (
     value,
@@ -712,7 +671,6 @@ const UnitForm = ({
 
             setForm((previous) => ({
                 ...previous,
-
                 [name]:
                     type === "checkbox"
                         ? checked
@@ -1278,9 +1236,7 @@ const UnitForm = ({
                                                 property
                                             );
 
-                                        if (
-                                            !id
-                                        ) {
+                                        if (!id) {
                                             return null;
                                         }
 
@@ -1349,9 +1305,7 @@ const UnitForm = ({
                                                 apartment
                                             );
 
-                                        if (
-                                            !id
-                                        ) {
+                                        if (!id) {
                                             return null;
                                         }
 
@@ -2075,7 +2029,7 @@ const SectionHeader = ({
     return (
         <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                <Icon size={20} />
+                <Icon size={19} />
             </div>
 
             <div>
@@ -2213,9 +2167,7 @@ const MoneyField = ({
                     value={value}
                     onChange={onChange}
                     disabled={disabled}
-                    placeholder={
-                        placeholder
-                    }
+                    placeholder={placeholder}
                     className={`
                         w-full
                         rounded-xl
@@ -2249,6 +2201,14 @@ const MoneyField = ({
 |--------------------------------------------------------------------------
 | FEATURE CHECKBOX
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| The old version only rendered a visual <div> and a <label>.
+| There was no actual checkbox input.
+|
+| This version uses a real controlled checkbox input.
+| Clicking anywhere on the card toggles the feature.
+|--------------------------------------------------------------------------
 */
 
 const FeatureCheckbox = ({
@@ -2263,17 +2223,20 @@ const FeatureCheckbox = ({
         <label
             htmlFor={name}
             className={`
+                group
+                relative
                 flex
                 items-start
                 gap-3
                 rounded-xl
                 border
                 p-4
-                transition
+                transition-all
+                duration-200
                 ${
                     checked
-                        ? "border-indigo-200 bg-indigo-50/60"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
+                        ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                 }
                 ${
                     disabled
@@ -2282,15 +2245,19 @@ const FeatureCheckbox = ({
                 }
             `}
         >
+            {/* REAL CHECKBOX */}
+
             <input
                 id={name}
-                type="checkbox"
                 name={name}
-                checked={checked}
+                type="checkbox"
+                checked={Boolean(checked)}
                 onChange={onChange}
                 disabled={disabled}
                 className="sr-only"
             />
+
+            {/* CUSTOM CHECKBOX */}
 
             <div
                 className={`
@@ -2302,31 +2269,56 @@ const FeatureCheckbox = ({
                     justify-center
                     rounded-md
                     border
-                    transition
+                    transition-all
+                    duration-200
                     ${
                         checked
                             ? "border-indigo-600 bg-indigo-600"
-                            : "border-slate-300 bg-white"
+                            : "border-slate-300 bg-white group-hover:border-indigo-400"
                     }
                 `}
+                aria-hidden="true"
             >
                 {checked && (
                     <Check
                         size={14}
+                        strokeWidth={3}
                         className="text-white"
                     />
                 )}
             </div>
 
-            <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800">
+            {/* FEATURE TEXT */}
+
+            <div className="min-w-0 flex-1">
+                <p
+                    className={`
+                        text-sm
+                        font-semibold
+                        ${
+                            checked
+                                ? "text-indigo-900"
+                                : "text-slate-800"
+                        }
+                    `}
+                >
                     {label}
                 </p>
 
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">
                     {description}
                 </p>
             </div>
+
+            {/* ACTIVE INDICATOR */}
+
+            {checked && (
+                <div className="absolute right-3 top-3">
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+                        Active
+                    </span>
+                </div>
+            )}
         </label>
     );
 };
