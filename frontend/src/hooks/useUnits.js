@@ -1,6 +1,8 @@
 import {
     useCallback,
     useEffect,
+    useMemo,
+    useRef,
     useState,
 } from "react";
 
@@ -13,6 +15,12 @@ import {
     updateUnitStatus,
     checkUnitAvailability,
 } from "../services/unit.service";
+
+/*
+|--------------------------------------------------------------------------
+| UNIT HOOK
+|--------------------------------------------------------------------------
+*/
 
 const useUnit = (options = {}) => {
     const {
@@ -30,11 +38,12 @@ const useUnit = (options = {}) => {
     const [unit, setUnit] = useState(null);
 
     const [loading, setLoading] = useState(false);
+    const [loadingUnit, setLoadingUnit] = useState(false);
+
     const [creating, setCreating] = useState(false);
     const [updating, setUpdating] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
-    const [loadingUnit, setLoadingUnit] = useState(false);
     const [checkingAvailability, setCheckingAvailability] =
         useState(false);
 
@@ -51,63 +60,164 @@ const useUnit = (options = {}) => {
 
     /*
     |--------------------------------------------------------------------------
-    | NORMALIZE API RESPONSE
+    | REFS
     |--------------------------------------------------------------------------
     */
 
-    const normalizeUnitsResponse = useCallback(
-        (response) => {
+    const initialParamsRef = useRef(initialParams);
+
+    const mountedRef = useRef(true);
+
+    const requestIdRef = useRef(0);
+
+    const fetchingRef = useRef(false);
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPONENT MOUNT
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+        mountedRef.current = true;
+
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
+
+    /*
+    |--------------------------------------------------------------------------
+    | KEEP INITIAL PARAMS UPDATED
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+        initialParamsRef.current = initialParams;
+    }, [initialParams]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE ERROR
+    |--------------------------------------------------------------------------
+    |
+    | Laravel can return:
+    |
+    | {
+    |     status: false,
+    |     code: 500,
+    |     message: "Failed to fetch units.",
+    |     errors: {...}
+    | }
+    |
+    | Axios can return:
+    |
+    | error.response.data
+    |
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizeError = useCallback(
+        (
+            err,
+            fallback = "Something went wrong."
+        ) => {
             /*
             |--------------------------------------------------------------------------
-            | Laravel pagination:
-            |
-            | {
-            |     status: true,
-            |     data: {
-            |         data: [],
-            |         current_page: 1,
-            |         ...
-            |     }
-            | }
+            | No error
             |--------------------------------------------------------------------------
             */
 
-            const payload = response?.data ?? response;
-
-            if (Array.isArray(payload)) {
+            if (!err) {
                 return {
-                    data: payload,
-                    meta: null,
-                };
-            }
-
-            if (Array.isArray(payload?.data)) {
-                return {
-                    data: payload.data,
-                    meta: payload,
+                    status: false,
+                    code: 500,
+                    message: fallback,
+                    errors: null,
+                    response: null,
                 };
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Non-paginated:
-            |
-            | {
-            |     data: []
-            | }
+            | String error
             |--------------------------------------------------------------------------
             */
 
-            if (Array.isArray(payload?.units)) {
+            if (typeof err === "string") {
                 return {
-                    data: payload.units,
-                    meta: payload,
+                    status: false,
+                    code: 500,
+                    message: err,
+                    errors: null,
+                    response: null,
                 };
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Axios response
+            |--------------------------------------------------------------------------
+            */
+
+            const axiosResponse =
+                err?.response ?? null;
+
+            const responseData =
+                axiosResponse?.data ?? null;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Laravel payload
+            |--------------------------------------------------------------------------
+            */
+
+            const payload =
+                responseData &&
+                typeof responseData === "object"
+                    ? responseData
+                    : err;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Preserve Laravel error
+            |--------------------------------------------------------------------------
+            */
+
+            const status =
+                payload?.status ??
+                false;
+
+            const code =
+                payload?.code ??
+                axiosResponse?.status ??
+                err?.code ??
+                500;
+
+            const message =
+                payload?.message ??
+                err?.message ??
+                fallback;
+
+            const errors =
+                payload?.errors ??
+                null;
 
             return {
-                data: [],
-                meta: payload,
+                status,
+                code,
+                message,
+                errors,
+
+                /*
+                |----------------------------------------------------------------------
+                | Preserve original Axios response for debugging
+                |----------------------------------------------------------------------
+                */
+
+                response:
+                    axiosResponse ??
+                    null,
             };
         },
         []
@@ -115,73 +225,730 @@ const useUnit = (options = {}) => {
 
     /*
     |--------------------------------------------------------------------------
-    | LOAD UNITS
+    | NORMALIZE STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizeStatus = useCallback(
+        (status) => {
+            /*
+            |--------------------------------------------------------------------------
+            | Empty status
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                status === null ||
+                status === undefined ||
+                status === ""
+            ) {
+                return {
+                    value: "unknown",
+                    label: "Unknown",
+                };
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | String status
+            |--------------------------------------------------------------------------
+            */
+
+            if (typeof status === "string") {
+                const value =
+                    status
+                        .trim()
+                        .toLowerCase()
+                        .replace(
+                            /[\s-]+/g,
+                            "_"
+                        );
+
+                const label =
+                    value
+                        .split("_")
+                        .map(
+                            (word) =>
+                                word
+                                    .charAt(0)
+                                    .toUpperCase() +
+                                word.slice(1)
+                        )
+                        .join(" ");
+
+                return {
+                    value,
+                    label,
+                };
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Object status
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                typeof status === "object"
+            ) {
+                const value =
+                    status?.value ??
+                    status?.current ??
+                    status?.status ??
+                    status?.name ??
+                    "unknown";
+
+                const normalizedValue =
+                    String(value)
+                        .trim()
+                        .toLowerCase()
+                        .replace(
+                            /[\s-]+/g,
+                            "_"
+                        );
+
+                const label =
+                    status?.label ??
+                    status?.name ??
+                    normalizedValue
+                        .split("_")
+                        .map(
+                            (word) =>
+                                word
+                                    .charAt(0)
+                                    .toUpperCase() +
+                                word.slice(1)
+                        )
+                        .join(" ");
+
+                return {
+                    ...status,
+                    value: normalizedValue,
+                    label,
+                };
+            }
+
+            return {
+                value: "unknown",
+                label: "Unknown",
+            };
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE UNIT
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizeUnit = useCallback(
+        (item) => {
+            if (
+                !item ||
+                typeof item !== "object"
+            ) {
+                return item;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Property
+            |--------------------------------------------------------------------------
+            */
+
+            const property =
+                item?.property
+                    ? {
+                          ...item.property,
+
+                          name:
+                              item.property.name ??
+                              item.property.title ??
+                              `Property #${item.property.id}`,
+                      }
+                    : null;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Apartment
+            |--------------------------------------------------------------------------
+            */
+
+            const apartment =
+                item?.apartment
+                    ? {
+                          ...item.apartment,
+
+                          name:
+                              item.apartment.name ??
+                              item.apartment.title ??
+                              `Apartment #${item.apartment.id}`,
+                      }
+                    : null;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant
+            |--------------------------------------------------------------------------
+            */
+
+            const tenant =
+                item?.tenant ?? null;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenancy
+            |--------------------------------------------------------------------------
+            */
+
+            const tenancy =
+                item?.tenancy ?? null;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenancy Statistics
+            |--------------------------------------------------------------------------
+            */
+
+            const tenancyStatistics = {
+                total:
+                    item?.tenancy_statistics
+                        ?.total ?? 0,
+
+                active:
+                    item?.tenancy_statistics
+                        ?.active ?? 0,
+
+                pending:
+                    item?.tenancy_statistics
+                        ?.pending ?? 0,
+
+                expired:
+                    item?.tenancy_statistics
+                        ?.expired ?? 0,
+
+                terminated:
+                    item?.tenancy_statistics
+                        ?.terminated ?? 0,
+
+                cancelled:
+                    item?.tenancy_statistics
+                        ?.cancelled ?? 0,
+
+                ...(item?.tenancy_statistics ??
+                    {}),
+            };
+
+            /*
+            |--------------------------------------------------------------------------
+            | Maintenance
+            |--------------------------------------------------------------------------
+            */
+
+            const maintenance = {
+                total:
+                    item?.maintenance
+                        ?.total ?? 0,
+
+                open:
+                    item?.maintenance
+                        ?.open ?? 0,
+
+                pending:
+                    item?.maintenance
+                        ?.pending ?? 0,
+
+                assigned:
+                    item?.maintenance
+                        ?.assigned ?? 0,
+
+                in_progress:
+                    item?.maintenance
+                        ?.in_progress ?? 0,
+
+                on_hold:
+                    item?.maintenance
+                        ?.on_hold ?? 0,
+
+                completed:
+                    item?.maintenance
+                        ?.completed ?? 0,
+
+                cancelled:
+                    item?.maintenance
+                        ?.cancelled ?? 0,
+
+                rejected:
+                    item?.maintenance
+                        ?.rejected ?? 0,
+
+                estimated_cost:
+                    item?.maintenance
+                        ?.estimated_cost ?? 0,
+
+                actual_cost:
+                    item?.maintenance
+                        ?.actual_cost ?? 0,
+
+                ...(item?.maintenance ?? {}),
+            };
+
+            /*
+            |--------------------------------------------------------------------------
+            | Return normalized unit
+            |--------------------------------------------------------------------------
+            */
+
+            return {
+                ...item,
+
+                /*
+                |----------------------------------------------------------------------
+                | Core
+                |----------------------------------------------------------------------
+                */
+
+                id: item.id,
+
+                name:
+                    item.name ??
+                    item.unit_name ??
+                    item.unit_number ??
+                    (item.id
+                        ? `Unit #${item.id}`
+                        : "Unnamed Unit"),
+
+                unit_number:
+                    item.unit_number ??
+                    item.number ??
+                    null,
+
+                /*
+                |----------------------------------------------------------------------
+                | Status
+                |----------------------------------------------------------------------
+                */
+
+                status:
+                    normalizeStatus(
+                        item.status
+                    ),
+
+                /*
+                |----------------------------------------------------------------------
+                | Property
+                |----------------------------------------------------------------------
+                */
+
+                property,
+
+                property_id:
+                    item.property_id ??
+                    property?.id ??
+                    null,
+
+                /*
+                |----------------------------------------------------------------------
+                | Apartment
+                |----------------------------------------------------------------------
+                */
+
+                apartment,
+
+                apartment_id:
+                    item.apartment_id ??
+                    apartment?.id ??
+                    null,
+
+                /*
+                |----------------------------------------------------------------------
+                | Unit Details
+                |----------------------------------------------------------------------
+                */
+
+                details:
+                    item.details ?? {},
+
+                /*
+                |----------------------------------------------------------------------
+                | Pricing
+                |----------------------------------------------------------------------
+                */
+
+                pricing:
+                    item.pricing ?? {},
+
+                /*
+                |----------------------------------------------------------------------
+                | Features
+                |----------------------------------------------------------------------
+                */
+
+                features:
+                    item.features ?? {},
+
+                /*
+                |----------------------------------------------------------------------
+                | Tenant
+                |----------------------------------------------------------------------
+                */
+
+                tenant,
+
+                /*
+                |----------------------------------------------------------------------
+                | Tenancy
+                |----------------------------------------------------------------------
+                */
+
+                tenancy,
+
+                /*
+                |----------------------------------------------------------------------
+                | Tenancy Statistics
+                |----------------------------------------------------------------------
+                */
+
+                tenancy_statistics:
+                    tenancyStatistics,
+
+                /*
+                |----------------------------------------------------------------------
+                | Maintenance
+                |----------------------------------------------------------------------
+                */
+
+                maintenance,
+
+                /*
+                |----------------------------------------------------------------------
+                | Maintenance Summary
+                |----------------------------------------------------------------------
+                */
+
+                maintenance_summary:
+                    item.maintenance_summary ??
+                    {},
+
+                /*
+                |----------------------------------------------------------------------
+                | Insights
+                |----------------------------------------------------------------------
+                */
+
+                insights:
+                    item.insights ?? {},
+
+                /*
+                |----------------------------------------------------------------------
+                | Availability
+                |----------------------------------------------------------------------
+                */
+
+                availability:
+                    item.availability ?? {},
+            };
+        },
+        [normalizeStatus]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE API RESPONSE
+    |--------------------------------------------------------------------------
+    |
+    | Supports:
+    |
+    | 1. []
+    |
+    | 2. { data: [] }
+    |
+    | 3. { data: { data: [] } }
+    |
+    | 4. { units: [] }
+    |
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizeUnitsResponse =
+        useCallback(
+            (response) => {
+                const payload =
+                    response ?? {};
+
+                /*
+                |--------------------------------------------------------------------------
+                | Direct array
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    Array.isArray(
+                        payload
+                    )
+                ) {
+                    return {
+                        data: payload.map(
+                            normalizeUnit
+                        ),
+                        meta: null,
+                    };
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Laravel:
+                |
+                | {
+                |   status: true,
+                |   data: []
+                | }
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    Array.isArray(
+                        payload?.data
+                    )
+                ) {
+                    return {
+                        data:
+                            payload.data.map(
+                                normalizeUnit
+                            ),
+                        meta: payload,
+                    };
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Laravel paginator:
+                |
+                | {
+                |   data: {
+                |      data: [],
+                |      current_page: 1,
+                |      last_page: 5
+                |   }
+                | }
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    Array.isArray(
+                        payload?.data?.data
+                    )
+                ) {
+                    return {
+                        data:
+                            payload.data.data.map(
+                                normalizeUnit
+                            ),
+                        meta:
+                            payload.data,
+                    };
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | {
+                |    units: []
+                | }
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    Array.isArray(
+                        payload?.units
+                    )
+                ) {
+                    return {
+                        data:
+                            payload.units.map(
+                                normalizeUnit
+                            ),
+                        meta: payload,
+                    };
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Empty
+                |--------------------------------------------------------------------------
+                */
+
+                return {
+                    data: [],
+                    meta: payload,
+                };
+            },
+            [normalizeUnit]
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET UNITS
     |--------------------------------------------------------------------------
     */
 
     const getUnits = useCallback(
         async (params = {}) => {
+            /*
+            |--------------------------------------------------------------------------
+            | Prevent duplicate simultaneous requests
+            |--------------------------------------------------------------------------
+            */
+
+            if (fetchingRef.current) {
+                return units;
+            }
+
+            const requestId =
+                ++requestIdRef.current;
+
+            fetchingRef.current = true;
+
             setLoading(true);
             setError(null);
 
             try {
-                const response = await fetchUnits({
-                    ...initialParams,
+                const mergedParams = {
+                    ...initialParamsRef.current,
                     ...params,
-                });
+                };
 
-                const normalized =
-                    normalizeUnitsResponse(response);
+                console.log(
+                    "FETCH UNITS PARAMS:",
+                    mergedParams
+                );
 
-                setUnits(normalized.data);
+                const response =
+                    await fetchUnits(
+                        mergedParams
+                    );
 
                 /*
                 |--------------------------------------------------------------------------
-                | Pagination
+                | Ignore stale request
                 |--------------------------------------------------------------------------
                 */
 
-                if (normalized.meta) {
+                if (
+                    requestId !==
+                    requestIdRef.current
+                ) {
+                    return [];
+                }
+
+                const normalized =
+                    normalizeUnitsResponse(
+                        response
+                    );
+
+                const data =
+                    Array.isArray(
+                        normalized.data
+                    )
+                        ? normalized.data
+                        : [];
+
+                if (
+                    mountedRef.current
+                ) {
+                    setUnits(data);
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Pagination
+                    |--------------------------------------------------------------------------
+                    */
+
+                    const meta =
+                        normalized.meta ??
+                        {};
+
+                    const dataLength =
+                        data.length;
+
                     setPagination({
                         current_page:
-                            normalized.meta.current_page ??
-                            1,
+                            Number(
+                                meta.current_page ??
+                                    1
+                            ),
 
                         last_page:
-                            normalized.meta.last_page ??
-                            1,
+                            Number(
+                                meta.last_page ??
+                                    1
+                            ),
 
                         per_page:
-                            normalized.meta.per_page ??
-                            normalized.data.length,
+                            Number(
+                                meta.per_page ??
+                                    dataLength
+                            ),
 
                         total:
-                            normalized.meta.total ??
-                            normalized.data.length,
+                            Number(
+                                meta.total ??
+                                    dataLength
+                            ),
 
                         from:
-                            normalized.meta.from ??
-                            (normalized.data.length
-                                ? 1
-                                : 0),
+                            Number(
+                                meta.from ??
+                                    (dataLength >
+                                    0
+                                        ? 1
+                                        : 0)
+                            ),
 
                         to:
-                            normalized.meta.to ??
-                            normalized.data.length,
+                            Number(
+                                meta.to ??
+                                    dataLength
+                            ),
                     });
                 }
 
-                return normalized.data;
+                return data;
             } catch (err) {
-                setError(err);
-                throw err;
+                const normalizedError =
+                    normalizeError(
+                        err,
+                        "Failed to fetch units."
+                    );
+
+                console.error(
+                    "FETCH UNITS ERROR:",
+                    normalizedError
+                );
+
+                if (
+                    mountedRef.current
+                ) {
+                    setError(
+                        normalizedError
+                    );
+                }
+
+                throw normalizedError;
             } finally {
-                setLoading(false);
+                fetchingRef.current = false;
+
+                if (
+                    mountedRef.current
+                ) {
+                    setLoading(false);
+                }
             }
         },
         [
-            initialParams,
+            normalizeError,
             normalizeUnitsResponse,
+            units,
         ]
     );
 
@@ -193,6 +960,26 @@ const useUnit = (options = {}) => {
 
     const getUnit = useCallback(
         async (id) => {
+            if (!id) {
+                const validationError =
+                    normalizeError(
+                        {
+                            status: false,
+                            code: 400,
+                            message:
+                                "Unit ID is required.",
+                            errors: null,
+                        },
+                        "Unit ID is required."
+                    );
+
+                setError(
+                    validationError
+                );
+
+                throw validationError;
+            }
+
             setLoadingUnit(true);
             setError(null);
 
@@ -201,23 +988,62 @@ const useUnit = (options = {}) => {
                     await fetchUnit(id);
 
                 const payload =
-                    response?.data ?? response;
+                    response ?? {};
 
                 const result =
                     payload?.unit ??
+                    payload?.data ??
                     payload;
 
-                setUnit(result);
+                const normalizedUnit =
+                    normalizeUnit(
+                        result
+                    );
 
-                return result;
+                if (
+                    mountedRef.current
+                ) {
+                    setUnit(
+                        normalizedUnit
+                    );
+                }
+
+                return normalizedUnit;
             } catch (err) {
-                setError(err);
-                throw err;
+                const normalizedError =
+                    normalizeError(
+                        err,
+                        "Failed to fetch unit."
+                    );
+
+                console.error(
+                    "FETCH UNIT ERROR:",
+                    normalizedError
+                );
+
+                if (
+                    mountedRef.current
+                ) {
+                    setError(
+                        normalizedError
+                    );
+                }
+
+                throw normalizedError;
             } finally {
-                setLoadingUnit(false);
+                if (
+                    mountedRef.current
+                ) {
+                    setLoadingUnit(
+                        false
+                    );
+                }
             }
         },
-        []
+        [
+            normalizeError,
+            normalizeUnit,
+        ]
     );
 
     /*
@@ -227,43 +1053,77 @@ const useUnit = (options = {}) => {
     */
 
     const addUnit = useCallback(
-        async (data) => {
+        async (data = {}) => {
             setCreating(true);
             setError(null);
 
             try {
                 const response =
-                    await createUnit(data);
+                    await createUnit(
+                        data
+                    );
 
                 const payload =
-                    response?.data ?? response;
+                    response ?? {};
 
                 const createdUnit =
                     payload?.unit ??
+                    payload?.data ??
                     payload;
 
-                /*
-                |--------------------------------------------------------------------------
-                | Add new unit to current list
-                |--------------------------------------------------------------------------
-                */
+                const normalizedUnit =
+                    normalizeUnit(
+                        createdUnit
+                    );
 
-                if (createdUnit?.id) {
-                    setUnits((current) => [
-                        createdUnit,
-                        ...current,
-                    ]);
+                if (
+                    normalizedUnit?.id &&
+                    mountedRef.current
+                ) {
+                    setUnits(
+                        (current) => [
+                            normalizedUnit,
+                            ...current,
+                        ]
+                    );
                 }
 
-                return createdUnit;
+                return normalizedUnit;
             } catch (err) {
-                setError(err);
-                throw err;
+                const normalizedError =
+                    normalizeError(
+                        err,
+                        "Failed to create unit."
+                    );
+
+                console.error(
+                    "CREATE UNIT ERROR:",
+                    normalizedError
+                );
+
+                if (
+                    mountedRef.current
+                ) {
+                    setError(
+                        normalizedError
+                    );
+                }
+
+                throw normalizedError;
             } finally {
-                setCreating(false);
+                if (
+                    mountedRef.current
+                ) {
+                    setCreating(
+                        false
+                    );
+                }
             }
         },
-        []
+        [
+            normalizeError,
+            normalizeUnit,
+        ]
     );
 
     /*
@@ -273,7 +1133,30 @@ const useUnit = (options = {}) => {
     */
 
     const editUnit = useCallback(
-        async (id, data) => {
+        async (
+            id,
+            data = {}
+        ) => {
+            if (!id) {
+                const validationError =
+                    normalizeError(
+                        {
+                            status: false,
+                            code: 400,
+                            message:
+                                "Unit ID is required.",
+                            errors: null,
+                        },
+                        "Unit ID is required."
+                    );
+
+                setError(
+                    validationError
+                );
+
+                throw validationError;
+            }
+
             setUpdating(true);
             setError(null);
 
@@ -285,55 +1168,93 @@ const useUnit = (options = {}) => {
                     );
 
                 const payload =
-                    response?.data ?? response;
+                    response ?? {};
 
                 const updatedUnit =
                     payload?.unit ??
+                    payload?.data ??
                     payload;
 
-                /*
-                |--------------------------------------------------------------------------
-                | Update current list
-                |--------------------------------------------------------------------------
-                */
-
-                if (updatedUnit?.id) {
-                    setUnits((current) =>
-                        current.map((item) =>
-                            item.id === updatedUnit.id
-                                ? {
-                                      ...item,
-                                      ...updatedUnit,
-                                  }
-                                : item
-                        )
+                const normalizedUnit =
+                    normalizeUnit(
+                        updatedUnit
                     );
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Update selected unit
-                    |--------------------------------------------------------------------------
-                    */
+                if (
+                    normalizedUnit?.id &&
+                    mountedRef.current
+                ) {
+                    setUnits(
+                        (current) =>
+                            current.map(
+                                (item) =>
+                                    String(
+                                        item.id
+                                    ) ===
+                                    String(
+                                        normalizedUnit.id
+                                    )
+                                        ? {
+                                              ...item,
+                                              ...normalizedUnit,
+                                          }
+                                        : item
+                            )
+                    );
 
-                    setUnit((current) =>
-                        current?.id === updatedUnit.id
-                            ? {
-                                  ...current,
-                                  ...updatedUnit,
-                              }
-                            : current
+                    setUnit(
+                        (current) =>
+                            current &&
+                            String(
+                                current.id
+                            ) ===
+                                String(
+                                    normalizedUnit.id
+                                )
+                                ? {
+                                      ...current,
+                                      ...normalizedUnit,
+                                  }
+                                : current
                     );
                 }
 
-                return updatedUnit;
+                return normalizedUnit;
             } catch (err) {
-                setError(err);
-                throw err;
+                const normalizedError =
+                    normalizeError(
+                        err,
+                        "Failed to update unit."
+                    );
+
+                console.error(
+                    "UPDATE UNIT ERROR:",
+                    normalizedError
+                );
+
+                if (
+                    mountedRef.current
+                ) {
+                    setError(
+                        normalizedError
+                    );
+                }
+
+                throw normalizedError;
             } finally {
-                setUpdating(false);
+                if (
+                    mountedRef.current
+                ) {
+                    setUpdating(
+                        false
+                    );
+                }
             }
         },
-        []
+        [
+            normalizeError,
+            normalizeUnit,
+        ]
     );
 
     /*
@@ -344,58 +1265,154 @@ const useUnit = (options = {}) => {
 
     const removeUnit = useCallback(
         async (id) => {
+            if (!id) {
+                const validationError =
+                    normalizeError(
+                        {
+                            status: false,
+                            code: 400,
+                            message:
+                                "Unit ID is required.",
+                            errors: null,
+                        },
+                        "Unit ID is required."
+                    );
+
+                setError(
+                    validationError
+                );
+
+                throw validationError;
+            }
+
             setDeleting(true);
             setError(null);
 
             try {
                 const response =
-                    await deleteUnit(id);
+                    await deleteUnit(
+                        id
+                    );
 
-                /*
-                |--------------------------------------------------------------------------
-                | Remove from current list
-                |--------------------------------------------------------------------------
-                */
+                if (
+                    mountedRef.current
+                ) {
+                    setUnits(
+                        (current) =>
+                            current.filter(
+                                (item) =>
+                                    String(
+                                        item.id
+                                    ) !==
+                                    String(id)
+                            )
+                    );
 
-                setUnits((current) =>
-                    current.filter(
-                        (item) =>
-                            item.id !== id
-                    )
-                );
-
-                /*
-                |--------------------------------------------------------------------------
-                | Clear selected unit
-                |--------------------------------------------------------------------------
-                */
-
-                setUnit((current) =>
-                    current?.id === id
-                        ? null
-                        : current
-                );
+                    setUnit(
+                        (current) =>
+                            current &&
+                            String(
+                                current.id
+                            ) ===
+                                String(id)
+                                ? null
+                                : current
+                    );
+                }
 
                 return response;
             } catch (err) {
-                setError(err);
-                throw err;
+                const normalizedError =
+                    normalizeError(
+                        err,
+                        "Failed to delete unit."
+                    );
+
+                console.error(
+                    "DELETE UNIT ERROR:",
+                    normalizedError
+                );
+
+                if (
+                    mountedRef.current
+                ) {
+                    setError(
+                        normalizedError
+                    );
+                }
+
+                throw normalizedError;
             } finally {
-                setDeleting(false);
+                if (
+                    mountedRef.current
+                ) {
+                    setDeleting(
+                        false
+                    );
+                }
             }
         },
-        []
+        [normalizeError]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | UPDATE STATUS
+    | UPDATE UNIT STATUS
     |--------------------------------------------------------------------------
     */
 
     const changeUnitStatus =
         useCallback(
-            async (id, status) => {
+            async (
+                id,
+                status
+            ) => {
+                if (!id) {
+                    const validationError =
+                        normalizeError(
+                            {
+                                status: false,
+                                code: 400,
+                                message:
+                                    "Unit ID is required.",
+                                errors: null,
+                            },
+                            "Unit ID is required."
+                        );
+
+                    setError(
+                        validationError
+                    );
+
+                    throw validationError;
+                }
+
+                if (
+                    status ===
+                        null ||
+                    status ===
+                        undefined ||
+                    status === ""
+                ) {
+                    const validationError =
+                        normalizeError(
+                            {
+                                status: false,
+                                code: 400,
+                                message:
+                                    "Unit status is required.",
+                                errors: null,
+                            },
+                            "Unit status is required."
+                        );
+
+                    setError(
+                        validationError
+                    );
+
+                    throw validationError;
+                }
+
                 setError(null);
 
                 try {
@@ -406,92 +1423,230 @@ const useUnit = (options = {}) => {
                         );
 
                     const payload =
-                        response?.data ??
-                        response;
+                        response ?? {};
 
                     const updatedUnit =
                         payload?.unit ??
+                        payload?.data ??
                         payload;
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Update local list
+                    | Backend returned complete unit
                     |--------------------------------------------------------------------------
                     */
 
-                    setUnits((current) =>
-                        current.map((item) =>
-                            item.id === id
-                                ? {
-                                      ...item,
-                                      ...(updatedUnit?.id
-                                          ? updatedUnit
-                                          : {
-                                                status,
-                                            }),
-                                  }
-                                : item
-                        )
-                    );
+                    if (
+                        updatedUnit &&
+                        typeof updatedUnit ===
+                            "object" &&
+                        updatedUnit.id
+                    ) {
+                        const normalizedUnit =
+                            normalizeUnit(
+                                updatedUnit
+                            );
+
+                        if (
+                            mountedRef.current
+                        ) {
+                            setUnits(
+                                (current) =>
+                                    current.map(
+                                        (item) =>
+                                            String(
+                                                item.id
+                                            ) ===
+                                            String(
+                                                id
+                                            )
+                                                ? {
+                                                      ...item,
+                                                      ...normalizedUnit,
+                                                  }
+                                                : item
+                                    )
+                            );
+
+                            setUnit(
+                                (current) =>
+                                    current &&
+                                    String(
+                                        current.id
+                                    ) ===
+                                        String(
+                                            id
+                                        )
+                                        ? {
+                                              ...current,
+                                              ...normalizedUnit,
+                                          }
+                                        : current
+                            );
+                        }
+
+                        return normalizedUnit;
+                    }
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Update selected unit
+                    | Backend returned status only
                     |--------------------------------------------------------------------------
                     */
 
-                    setUnit((current) =>
-                        current?.id === id
-                            ? {
-                                  ...current,
-                                  ...(updatedUnit?.id
-                                      ? updatedUnit
-                                      : {
-                                            status,
-                                        }),
-                              }
-                            : current
+                    const normalizedStatus =
+                        normalizeStatus(
+                            status
+                        );
+
+                    if (
+                        mountedRef.current
+                    ) {
+                        setUnits(
+                            (current) =>
+                                current.map(
+                                    (item) =>
+                                        String(
+                                            item.id
+                                        ) ===
+                                        String(
+                                            id
+                                        )
+                                            ? {
+                                                  ...item,
+                                                  status:
+                                                      normalizedStatus,
+                                              }
+                                            : item
+                                )
+                        );
+
+                        setUnit(
+                            (current) =>
+                                current &&
+                                String(
+                                    current.id
+                                ) ===
+                                    String(
+                                        id
+                                    )
+                                    ? {
+                                          ...current,
+                                          status:
+                                              normalizedStatus,
+                                      }
+                                    : current
+                        );
+                    }
+
+                    return normalizedStatus;
+                } catch (err) {
+                    const normalizedError =
+                        normalizeError(
+                            err,
+                            "Failed to update unit status."
+                        );
+
+                    console.error(
+                        "UPDATE UNIT STATUS ERROR:",
+                        normalizedError
                     );
 
-                    return updatedUnit;
-                } catch (err) {
-                    setError(err);
-                    throw err;
+                    if (
+                        mountedRef.current
+                    ) {
+                        setError(
+                            normalizedError
+                        );
+                    }
+
+                    throw normalizedError;
                 }
             },
-            []
+            [
+                normalizeError,
+                normalizeStatus,
+                normalizeUnit,
+            ]
         );
 
     /*
     |--------------------------------------------------------------------------
-    | CHECK AVAILABILITY
+    | CHECK UNIT AVAILABILITY
     |--------------------------------------------------------------------------
     */
 
     const getUnitAvailability =
-        useCallback(async (id) => {
-            setCheckingAvailability(true);
-            setError(null);
+        useCallback(
+            async (id) => {
+                if (!id) {
+                    const validationError =
+                        normalizeError(
+                            {
+                                status: false,
+                                code: 400,
+                                message:
+                                    "Unit ID is required.",
+                                errors: null,
+                            },
+                            "Unit ID is required."
+                        );
 
-            try {
-                const response =
-                    await checkUnitAvailability(
-                        id
+                    setError(
+                        validationError
                     );
 
-                return (
-                    response?.data ??
-                    response
-                );
-            } catch (err) {
-                setError(err);
-                throw err;
-            } finally {
+                    throw validationError;
+                }
+
                 setCheckingAvailability(
-                    false
+                    true
                 );
-            }
-        }, []);
+
+                setError(null);
+
+                try {
+                    const response =
+                        await checkUnitAvailability(
+                            id
+                        );
+
+                    return (
+                        response ?? {}
+                    );
+                } catch (err) {
+                    const normalizedError =
+                        normalizeError(
+                            err,
+                            "Failed to check unit availability."
+                        );
+
+                    console.error(
+                        "CHECK UNIT AVAILABILITY ERROR:",
+                        normalizedError
+                    );
+
+                    if (
+                        mountedRef.current
+                    ) {
+                        setError(
+                            normalizedError
+                        );
+                    }
+
+                    throw normalizedError;
+                } finally {
+                    if (
+                        mountedRef.current
+                    ) {
+                        setCheckingAvailability(
+                            false
+                        );
+                    }
+                }
+            },
+            [normalizeError]
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -499,50 +1654,173 @@ const useUnit = (options = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    const clearError = useCallback(() => {
-        setError(null);
-    }, []);
+    const clearError =
+        useCallback(() => {
+            setError(null);
+        }, []);
 
     /*
     |--------------------------------------------------------------------------
-    | CLEAR SELECTED UNIT
+    | CLEAR UNIT
     |--------------------------------------------------------------------------
     */
 
-    const clearUnit = useCallback(() => {
-        setUnit(null);
-    }, []);
+    const clearUnit =
+        useCallback(() => {
+            setUnit(null);
+        }, []);
 
     /*
     |--------------------------------------------------------------------------
-    | REFRESH
+    | REFRESH UNITS
     |--------------------------------------------------------------------------
     */
 
-    const refreshUnits = useCallback(
-        async (params = {}) => {
-            return getUnits(params);
-        },
-        [getUnits]
-    );
+    const refreshUnits =
+        useCallback(
+            async (params = {}) => {
+                /*
+                |----------------------------------------------------------------------
+                | Allow refresh even if previous request finished.
+                |----------------------------------------------------------------------
+                */
+
+                fetchingRef.current =
+                    false;
+
+                return getUnits(
+                    params
+                );
+            },
+            [getUnits]
+        );
 
     /*
     |--------------------------------------------------------------------------
     | AUTO FETCH
     |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | UnitList should NOT call getUnits() again on mount when autoFetch=true.
+    |
+    |--------------------------------------------------------------------------
     */
 
     useEffect(() => {
         if (!autoFetch) {
-            return;
+            return undefined;
         }
 
-        getUnits(initialParams);
+        let active = true;
+
+        const loadUnits =
+            async () => {
+                try {
+                    await getUnits(
+                        initialParamsRef.current
+                    );
+                } catch (err) {
+                    if (
+                        active
+                    ) {
+                        console.error(
+                            "AUTO FETCH UNITS ERROR:",
+                            err
+                        );
+                    }
+                }
+            };
+
+        loadUnits();
+
+        return () => {
+            active = false;
+        };
     }, [
         autoFetch,
         getUnits,
-        initialParams,
     ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPUTED STATS
+    |--------------------------------------------------------------------------
+    */
+
+    const stats = useMemo(() => {
+        return units.reduce(
+            (acc, item) => {
+                acc.total += 1;
+
+                const rawStatus =
+                    item?.status?.value ??
+                    item?.status?.current ??
+                    item?.status ??
+                    "unknown";
+
+                const normalizedStatus =
+                    String(
+                        rawStatus
+                    )
+                        .trim()
+                        .toLowerCase()
+                        .replace(
+                            /[\s-]+/g,
+                            "_"
+                        );
+
+                switch (
+                    normalizedStatus
+                ) {
+                    case "vacant":
+                        acc.vacant += 1;
+                        break;
+
+                    case "occupied":
+                        acc.occupied += 1;
+                        break;
+
+                    case "reserved":
+                        acc.reserved += 1;
+                        break;
+
+                    case "maintenance":
+                        acc.maintenance += 1;
+                        break;
+
+                    case "inactive":
+                        acc.inactive += 1;
+                        break;
+
+                    case "available":
+                        acc.available += 1;
+                        break;
+
+                    case "unavailable":
+                        acc.unavailable += 1;
+                        break;
+
+                    default:
+                        acc.unknown += 1;
+                        break;
+                }
+
+                return acc;
+            },
+            {
+                total: 0,
+                vacant: 0,
+                occupied: 0,
+                reserved: 0,
+                maintenance: 0,
+                inactive: 0,
+                available: 0,
+                unavailable: 0,
+                unknown: 0,
+            }
+        );
+    }, [units]);
 
     /*
     |--------------------------------------------------------------------------
@@ -552,14 +1830,21 @@ const useUnit = (options = {}) => {
 
     return {
         /*
+        |--------------------------------------------------------------------------
         | Data
+        |--------------------------------------------------------------------------
         */
+
         units,
         unit,
+        stats,
 
         /*
+        |--------------------------------------------------------------------------
         | Loading
+        |--------------------------------------------------------------------------
         */
+
         loading,
         loadingUnit,
         creating,
@@ -568,18 +1853,27 @@ const useUnit = (options = {}) => {
         checkingAvailability,
 
         /*
+        |--------------------------------------------------------------------------
         | Error
+        |--------------------------------------------------------------------------
         */
+
         error,
 
         /*
+        |--------------------------------------------------------------------------
         | Pagination
+        |--------------------------------------------------------------------------
         */
+
         pagination,
 
         /*
+        |--------------------------------------------------------------------------
         | CRUD
+        |--------------------------------------------------------------------------
         */
+
         getUnits,
         getUnit,
         addUnit,
@@ -587,25 +1881,37 @@ const useUnit = (options = {}) => {
         removeUnit,
 
         /*
+        |--------------------------------------------------------------------------
         | Status
+        |--------------------------------------------------------------------------
         */
+
         changeUnitStatus,
 
         /*
+        |--------------------------------------------------------------------------
         | Availability
+        |--------------------------------------------------------------------------
         */
+
         getUnitAvailability,
 
         /*
+        |--------------------------------------------------------------------------
         | Utilities
+        |--------------------------------------------------------------------------
         */
+
         refreshUnits,
         clearError,
         clearUnit,
 
         /*
-        | Backward-compatible aliases
+        |--------------------------------------------------------------------------
+        | Backward Compatible Aliases
+        |--------------------------------------------------------------------------
         */
+
         createUnit: addUnit,
         updateUnit: editUnit,
         deleteUnit: removeUnit,
