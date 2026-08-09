@@ -30,8 +30,8 @@ const StatCard = memo(
         iconWrapperClassName = "",
         iconClassName = "",
         valueClassName = "text-gray-900",
-        trend,
-        trendLabel,
+        trend = null,
+        trendLabel = "",
     }) => {
         return (
             <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
@@ -125,10 +125,7 @@ StatCard.displayName = "StatCard";
  * }
  */
 const normalizeStatus = (value) => {
-    if (
-        value === null ||
-        value === undefined
-    ) {
+    if (value === null || value === undefined) {
         return "";
     }
 
@@ -137,15 +134,14 @@ const normalizeStatus = (value) => {
             value?.value ??
                 value?.current ??
                 value?.name ??
+                value?.status ??
                 ""
         )
             .trim()
             .toLowerCase();
     }
 
-    return String(value)
-        .trim()
-        .toLowerCase();
+    return String(value).trim().toLowerCase();
 };
 
 /**
@@ -159,9 +155,7 @@ const normalizeStatus = (value) => {
  * { results: [] }
  * { items: [] }
  */
-const normalizeUnitsCollection = (
-    response
-) => {
+const normalizeUnitsCollection = (response) => {
     if (!response) {
         return [];
     }
@@ -174,27 +168,15 @@ const normalizeUnitsCollection = (
         return response.data;
     }
 
-    if (
-        Array.isArray(
-            response?.data?.data
-        )
-    ) {
+    if (Array.isArray(response?.data?.data)) {
         return response.data.data;
     }
 
-    if (
-        Array.isArray(
-            response?.results
-        )
-    ) {
+    if (Array.isArray(response?.results)) {
         return response.results;
     }
 
-    if (
-        Array.isArray(
-            response?.items
-        )
-    ) {
+    if (Array.isArray(response?.items)) {
         return response.items;
     }
 
@@ -215,10 +197,7 @@ const UnitStats = ({ units = [] }) => {
     */
 
     const normalizedUnits = useMemo(
-        () =>
-            normalizeUnitsCollection(
-                units
-            ),
+        () => normalizeUnitsCollection(units),
         [units]
     );
 
@@ -229,43 +208,37 @@ const UnitStats = ({ units = [] }) => {
     */
 
     const stats = useMemo(() => {
-        const total =
-            normalizedUnits.length;
+        const total = normalizedUnits.length;
 
         let vacant = 0;
         let occupied = 0;
         let maintenance = 0;
         let reserved = 0;
 
-        normalizedUnits.forEach(
-            (unit) => {
-                const status =
-                    normalizeStatus(
-                        unit?.status
-                    );
+        normalizedUnits.forEach((unit) => {
+            const status = normalizeStatus(unit?.status);
 
-                switch (status) {
-                    case "vacant":
-                        vacant++;
-                        break;
+            switch (status) {
+                case "vacant":
+                    vacant++;
+                    break;
 
-                    case "occupied":
-                        occupied++;
-                        break;
+                case "occupied":
+                    occupied++;
+                    break;
 
-                    case "maintenance":
-                        maintenance++;
-                        break;
+                case "maintenance":
+                    maintenance++;
+                    break;
 
-                    case "reserved":
-                        reserved++;
-                        break;
+                case "reserved":
+                    reserved++;
+                    break;
 
-                    default:
-                        break;
-                }
+                default:
+                    break;
             }
-        );
+        });
 
         /*
         |--------------------------------------------------------------------------
@@ -280,85 +253,53 @@ const UnitStats = ({ units = [] }) => {
 
         /*
         |--------------------------------------------------------------------------
-        | OCCUPANCY RATE
+        | UNAVAILABLE UNITS
+        |--------------------------------------------------------------------------
+        */
+
+        const unavailable =
+            occupied + reserved + maintenance;
+
+        /*
+        |--------------------------------------------------------------------------
+        | PERCENTAGES
         |--------------------------------------------------------------------------
         */
 
         const occupancyRate =
             total > 0
                 ? Number(
-                      (
-                          (occupied /
-                              total) *
-                          100
-                      ).toFixed(1)
+                      ((occupied / total) * 100).toFixed(1)
                   )
                 : 0;
-
-        /*
-        |--------------------------------------------------------------------------
-        | VACANCY RATE
-        |--------------------------------------------------------------------------
-        */
 
         const vacancyRate =
             total > 0
                 ? Number(
-                      (
-                          (vacant /
-                              total) *
-                          100
-                      ).toFixed(1)
+                      ((vacant / total) * 100).toFixed(1)
                   )
                 : 0;
-
-        /*
-        |--------------------------------------------------------------------------
-        | RESERVED RATE
-        |--------------------------------------------------------------------------
-        */
 
         const reservedRate =
             total > 0
                 ? Number(
-                      (
-                          (reserved /
-                              total) *
-                          100
-                      ).toFixed(1)
+                      ((reserved / total) * 100).toFixed(1)
                   )
                 : 0;
-
-        /*
-        |--------------------------------------------------------------------------
-        | MAINTENANCE RATE
-        |--------------------------------------------------------------------------
-        */
 
         const maintenanceRate =
             total > 0
                 ? Number(
-                      (
-                          (maintenance /
-                              total) *
-                          100
-                      ).toFixed(1)
+                      ((maintenance / total) * 100).toFixed(1)
                   )
                 : 0;
 
-        /*
-        |--------------------------------------------------------------------------
-        | UNAVAILABLE UNITS
-        |--------------------------------------------------------------------------
-        |
-        | Occupied + reserved + maintenance.
-        |
-        */
-
-        const unavailable =
-            occupied +
-            reserved +
-            maintenance;
+        const unavailableRate =
+            total > 0
+                ? Number(
+                      ((unavailable / total) * 100).toFixed(1)
+                  )
+                : 0;
 
         return {
             total,
@@ -372,6 +313,7 @@ const UnitStats = ({ units = [] }) => {
             vacancyRate,
             reservedRate,
             maintenanceRate,
+            unavailableRate,
         };
     }, [normalizedUnits]);
 
@@ -379,41 +321,35 @@ const UnitStats = ({ units = [] }) => {
     |--------------------------------------------------------------------------
     | OCCUPANCY TREND
     |--------------------------------------------------------------------------
-    |
-    | This is a simple interpretation:
-    |
-    | >= 70%  = positive
-    | < 50%   = negative
-    | else    = neutral
-    |
     */
 
-    const occupancyTrend =
-        useMemo(() => {
-            if (
-                stats.occupancyRate >=
-                70
-            ) {
-                return {
-                    type: "up",
-                    label: "Healthy",
-                };
-            }
-
-            if (
-                stats.occupancyRate < 50
-            ) {
-                return {
-                    type: "down",
-                    label: "Low",
-                };
-            }
-
+    const occupancyTrend = useMemo(() => {
+        if (stats.total === 0) {
             return {
                 type: null,
-                label: "Moderate",
+                label: "No data",
             };
-        }, [stats.occupancyRate]);
+        }
+
+        if (stats.occupancyRate >= 70) {
+            return {
+                type: "up",
+                label: "Healthy",
+            };
+        }
+
+        if (stats.occupancyRate < 50) {
+            return {
+                type: "down",
+                label: "Low",
+            };
+        }
+
+        return {
+            type: null,
+            label: "Moderate",
+        };
+    }, [stats.occupancyRate, stats.total]);
 
     /*
     |--------------------------------------------------------------------------
@@ -421,14 +357,10 @@ const UnitStats = ({ units = [] }) => {
     |--------------------------------------------------------------------------
     */
 
-    const occupancyProgress =
-        Math.min(
-            Math.max(
-                stats.occupancyRate,
-                0
-            ),
-            100
-        );
+    const occupancyProgress = Math.min(
+        Math.max(stats.occupancyRate, 0),
+        100
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -438,9 +370,9 @@ const UnitStats = ({ units = [] }) => {
 
     return (
         <div className="space-y-6">
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
             {/* STATISTICS CARDS */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 {/* Total */}
@@ -473,12 +405,8 @@ const UnitStats = ({ units = [] }) => {
                     iconWrapperClassName="bg-indigo-50"
                     iconClassName="text-indigo-600"
                     valueClassName="text-indigo-700"
-                    trend={
-                        occupancyTrend.type
-                    }
-                    trendLabel={
-                        occupancyTrend.label
-                    }
+                    trend={occupancyTrend.type}
+                    trendLabel={occupancyTrend.label}
                 />
 
                 {/* Maintenance */}
@@ -515,9 +443,9 @@ const UnitStats = ({ units = [] }) => {
                 />
             </div>
 
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
             {/* OCCUPANCY OVERVIEW */}
-            {/* ------------------------------------------------------------ */}
+            {/* -------------------------------------------------------- */}
 
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <div className="p-5 sm:p-6">
@@ -530,14 +458,11 @@ const UnitStats = ({ units = [] }) => {
 
                             <div>
                                 <h3 className="text-base font-bold text-gray-900">
-                                    Occupancy
-                                    Overview
+                                    Occupancy Overview
                                 </h3>
 
                                 <p className="mt-0.5 text-sm text-gray-500">
-                                    Current unit
-                                    occupancy
-                                    performance
+                                    Current unit occupancy performance
                                 </p>
                             </div>
                         </div>
@@ -545,33 +470,34 @@ const UnitStats = ({ units = [] }) => {
                         <div className="flex items-center gap-3">
                             <div className="text-right">
                                 <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                                    Occupancy
-                                    Rate
+                                    Occupancy Rate
                                 </p>
 
                                 <div className="mt-0.5 flex items-center justify-end gap-2">
                                     <p className="text-2xl font-bold text-gray-900">
-                                        {
-                                            stats.occupancyRate
-                                        }
-                                        %
+                                        {stats.occupancyRate}%
                                     </p>
 
-                                    {occupancyTrend.type ===
-                                        "up" && (
+                                    {occupancyTrend.type === "up" && (
                                         <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-700">
                                             <TrendingUp className="h-3 w-3" />
                                             Healthy
                                         </span>
                                     )}
 
-                                    {occupancyTrend.type ===
-                                        "down" && (
+                                    {occupancyTrend.type === "down" && (
                                         <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">
                                             <TrendingDown className="h-3 w-3" />
                                             Low
                                         </span>
                                     )}
+
+                                    {!occupancyTrend.type &&
+                                        stats.total > 0 && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-600">
+                                                {occupancyTrend.label}
+                                            </span>
+                                        )}
                                 </div>
                             </div>
                         </div>
@@ -585,13 +511,8 @@ const UnitStats = ({ units = [] }) => {
                             </span>
 
                             <span className="font-semibold text-gray-700">
-                                {
-                                    stats.occupied
-                                }{" "}
-                                of{" "}
-                                {
-                                    stats.total
-                                }
+                                {stats.occupied.toLocaleString()} of{" "}
+                                {stats.total.toLocaleString()}
                             </span>
                         </div>
 
@@ -620,9 +541,7 @@ const UnitStats = ({ units = [] }) => {
                                     </p>
 
                                     <p className="mt-1 text-[11px] text-indigo-600">
-                                        {stats.occupancyRate}
-                                        % of
-                                        total
+                                        {stats.occupancyRate}% of total
                                     </p>
                                 </div>
 
@@ -645,9 +564,7 @@ const UnitStats = ({ units = [] }) => {
                                     </p>
 
                                     <p className="mt-1 text-[11px] text-emerald-600">
-                                        {stats.vacancyRate}
-                                        % of
-                                        total
+                                        {stats.vacancyRate}% of total
                                     </p>
                                 </div>
 
@@ -670,9 +587,7 @@ const UnitStats = ({ units = [] }) => {
                                     </p>
 
                                     <p className="mt-1 text-[11px] text-purple-600">
-                                        {stats.reservedRate}
-                                        % of
-                                        total
+                                        {stats.reservedRate}% of total
                                     </p>
                                 </div>
 
@@ -695,11 +610,7 @@ const UnitStats = ({ units = [] }) => {
                                     </p>
 
                                     <p className="mt-1 text-[11px] text-orange-600">
-                                        {
-                                            stats.maintenanceRate
-                                        }
-                                        % of
-                                        total
+                                        {stats.maintenanceRate}% of total
                                     </p>
                                 </div>
 
@@ -717,10 +628,7 @@ const UnitStats = ({ units = [] }) => {
                                 <span className="h-2 w-2 rounded-full bg-indigo-500" />
 
                                 <span>
-                                    {
-                                        stats.occupied.toLocaleString()
-                                    }{" "}
-                                    occupied
+                                    {stats.occupied.toLocaleString()} occupied
                                 </span>
                             </div>
 
@@ -728,10 +636,7 @@ const UnitStats = ({ units = [] }) => {
                                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
 
                                 <span>
-                                    {
-                                        stats.vacant.toLocaleString()
-                                    }{" "}
-                                    vacant
+                                    {stats.vacant.toLocaleString()} vacant
                                 </span>
                             </div>
 
@@ -739,10 +644,16 @@ const UnitStats = ({ units = [] }) => {
                                 <span className="h-2 w-2 rounded-full bg-orange-500" />
 
                                 <span>
-                                    {
-                                        stats.maintenance.toLocaleString()
-                                    }{" "}
+                                    {stats.maintenance.toLocaleString()}{" "}
                                     maintenance
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 rounded-full bg-purple-500" />
+
+                                <span>
+                                    {stats.reserved.toLocaleString()} reserved
                                 </span>
                             </div>
                         </div>
@@ -751,11 +662,7 @@ const UnitStats = ({ units = [] }) => {
                             <CircleHelp className="h-3.5 w-3.5 text-gray-400" />
 
                             <span>
-                                {
-                                    stats.vacancyRate
-                                }
-                                % vacancy
-                                rate
+                                {stats.vacancyRate}% vacancy rate
                             </span>
                         </div>
                     </div>
@@ -765,4 +672,11 @@ const UnitStats = ({ units = [] }) => {
     );
 };
 
+/*
+|--------------------------------------------------------------------------
+| DEFAULT EXPORT
+|--------------------------------------------------------------------------
+*/
+
+export default UnitStats;
 
