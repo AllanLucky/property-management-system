@@ -10,6 +10,7 @@ import {
     DoorOpen,
     TrendingUp,
     TrendingDown,
+    CircleHelp,
 } from "lucide-react";
 
 /*
@@ -33,9 +34,9 @@ const StatCard = memo(
         trendLabel,
     }) => {
         return (
-            <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md">
+            <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
                 {/* Decorative background */}
-                <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gray-50 opacity-70 transition-transform duration-300 group-hover:scale-125" />
+                <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gray-50 opacity-70" />
 
                 <div className="relative">
                     {/* Header */}
@@ -56,18 +57,22 @@ const StatCard = memo(
                         <div
                             className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${iconWrapperClassName}`}
                         >
-                            <Icon
-                                className={`h-5 w-5 ${iconClassName}`}
-                            />
+                            {Icon && (
+                                <Icon
+                                    className={`h-5 w-5 ${iconClassName}`}
+                                />
+                            )}
                         </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="mt-4 flex items-center justify-between gap-2">
-                        {subtitle && (
+                    <div className="mt-4 flex min-h-[24px] items-center justify-between gap-2">
+                        {subtitle ? (
                             <p className="truncate text-xs font-medium text-gray-500">
                                 {subtitle}
                             </p>
+                        ) : (
+                            <span />
                         )}
 
                         {trend && (
@@ -98,6 +103,106 @@ StatCard.displayName = "StatCard";
 
 /*
 |--------------------------------------------------------------------------
+| HELPERS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Normalize status values returned by Laravel resources.
+ *
+ * Supports:
+ *
+ * "vacant"
+ *
+ * {
+ *     value: "vacant",
+ *     label: "Vacant"
+ * }
+ *
+ * {
+ *     value: "vacant",
+ *     is_active: true
+ * }
+ */
+const normalizeStatus = (value) => {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+    if (typeof value === "object") {
+        return String(
+            value?.value ??
+                value?.current ??
+                value?.name ??
+                ""
+        )
+            .trim()
+            .toLowerCase();
+    }
+
+    return String(value)
+        .trim()
+        .toLowerCase();
+};
+
+/**
+ * Normalize possible API collection responses.
+ *
+ * Supports:
+ *
+ * []
+ * { data: [] }
+ * { data: { data: [] } }
+ * { results: [] }
+ * { items: [] }
+ */
+const normalizeUnitsCollection = (
+    response
+) => {
+    if (!response) {
+        return [];
+    }
+
+    if (Array.isArray(response)) {
+        return response;
+    }
+
+    if (Array.isArray(response?.data)) {
+        return response.data;
+    }
+
+    if (
+        Array.isArray(
+            response?.data?.data
+        )
+    ) {
+        return response.data.data;
+    }
+
+    if (
+        Array.isArray(
+            response?.results
+        )
+    ) {
+        return response.results;
+    }
+
+    if (
+        Array.isArray(
+            response?.items
+        )
+    ) {
+        return response.items;
+    }
+
+    return [];
+};
+
+/*
+|--------------------------------------------------------------------------
 | UNIT STATS
 |--------------------------------------------------------------------------
 */
@@ -105,83 +210,155 @@ StatCard.displayName = "StatCard";
 const UnitStats = ({ units = [] }) => {
     /*
     |--------------------------------------------------------------------------
-    | Normalize Units
+    | NORMALIZE UNITS
     |--------------------------------------------------------------------------
     */
 
-    const normalizedUnits = useMemo(() => {
-        return Array.isArray(units) ? units : [];
-    }, [units]);
+    const normalizedUnits = useMemo(
+        () =>
+            normalizeUnitsCollection(
+                units
+            ),
+        [units]
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | Calculate Statistics
+    | CALCULATE STATISTICS
     |--------------------------------------------------------------------------
     */
 
     const stats = useMemo(() => {
-        const total = normalizedUnits.length;
+        const total =
+            normalizedUnits.length;
 
         let vacant = 0;
         let occupied = 0;
         let maintenance = 0;
         let reserved = 0;
 
-        normalizedUnits.forEach((unit) => {
-            const rawStatus =
-                typeof unit?.status === "object"
-                    ? unit?.status?.value ??
-                      unit?.status?.current ??
-                      unit?.status?.name
-                    : unit?.status;
+        normalizedUnits.forEach(
+            (unit) => {
+                const status =
+                    normalizeStatus(
+                        unit?.status
+                    );
 
-            const status = String(
-                rawStatus || ""
-            ).toLowerCase();
+                switch (status) {
+                    case "vacant":
+                        vacant++;
+                        break;
 
-            switch (status) {
-                case "vacant":
-                    vacant++;
-                    break;
+                    case "occupied":
+                        occupied++;
+                        break;
 
-                case "occupied":
-                    occupied++;
-                    break;
+                    case "maintenance":
+                        maintenance++;
+                        break;
 
-                case "maintenance":
-                    maintenance++;
-                    break;
+                    case "reserved":
+                        reserved++;
+                        break;
 
-                case "reserved":
-                    reserved++;
-                    break;
-
-                default:
-                    break;
+                    default:
+                        break;
+                }
             }
-        });
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE UNITS
+        |--------------------------------------------------------------------------
+        |
+        | A unit is considered available when its status is vacant.
+        |
+        */
 
         const available = vacant;
+
+        /*
+        |--------------------------------------------------------------------------
+        | OCCUPANCY RATE
+        |--------------------------------------------------------------------------
+        */
 
         const occupancyRate =
             total > 0
                 ? Number(
                       (
-                          (occupied / total) *
+                          (occupied /
+                              total) *
                           100
                       ).toFixed(1)
                   )
                 : 0;
 
+        /*
+        |--------------------------------------------------------------------------
+        | VACANCY RATE
+        |--------------------------------------------------------------------------
+        */
+
         const vacancyRate =
             total > 0
                 ? Number(
                       (
-                          (vacant / total) *
+                          (vacant /
+                              total) *
                           100
                       ).toFixed(1)
                   )
                 : 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESERVED RATE
+        |--------------------------------------------------------------------------
+        */
+
+        const reservedRate =
+            total > 0
+                ? Number(
+                      (
+                          (reserved /
+                              total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE RATE
+        |--------------------------------------------------------------------------
+        */
+
+        const maintenanceRate =
+            total > 0
+                ? Number(
+                      (
+                          (maintenance /
+                              total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | UNAVAILABLE UNITS
+        |--------------------------------------------------------------------------
+        |
+        | Occupied + reserved + maintenance.
+        |
+        */
+
+        const unavailable =
+            occupied +
+            reserved +
+            maintenance;
 
         return {
             total,
@@ -190,21 +367,79 @@ const UnitStats = ({ units = [] }) => {
             maintenance,
             reserved,
             available,
+            unavailable,
             occupancyRate,
             vacancyRate,
+            reservedRate,
+            maintenanceRate,
         };
     }, [normalizedUnits]);
 
     /*
     |--------------------------------------------------------------------------
-    | Render
+    | OCCUPANCY TREND
+    |--------------------------------------------------------------------------
+    |
+    | This is a simple interpretation:
+    |
+    | >= 70%  = positive
+    | < 50%   = negative
+    | else    = neutral
+    |
+    */
+
+    const occupancyTrend =
+        useMemo(() => {
+            if (
+                stats.occupancyRate >=
+                70
+            ) {
+                return {
+                    type: "up",
+                    label: "Healthy",
+                };
+            }
+
+            if (
+                stats.occupancyRate < 50
+            ) {
+                return {
+                    type: "down",
+                    label: "Low",
+                };
+            }
+
+            return {
+                type: null,
+                label: "Moderate",
+            };
+        }, [stats.occupancyRate]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROGRESS WIDTH
+    |--------------------------------------------------------------------------
+    */
+
+    const occupancyProgress =
+        Math.min(
+            Math.max(
+                stats.occupancyRate,
+                0
+            ),
+            100
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | RENDER
     |--------------------------------------------------------------------------
     */
 
     return (
         <div className="space-y-6">
             {/* ------------------------------------------------------------ */}
-            {/* Statistics Cards */}
+            {/* STATISTICS CARDS */}
             {/* ------------------------------------------------------------ */}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -238,6 +473,12 @@ const UnitStats = ({ units = [] }) => {
                     iconWrapperClassName="bg-indigo-50"
                     iconClassName="text-indigo-600"
                     valueClassName="text-indigo-700"
+                    trend={
+                        occupancyTrend.type
+                    }
+                    trendLabel={
+                        occupancyTrend.label
+                    }
                 />
 
                 {/* Maintenance */}
@@ -275,7 +516,7 @@ const UnitStats = ({ units = [] }) => {
             </div>
 
             {/* ------------------------------------------------------------ */}
-            {/* Occupancy Overview */}
+            {/* OCCUPANCY OVERVIEW */}
             {/* ------------------------------------------------------------ */}
 
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -283,17 +524,20 @@ const UnitStats = ({ units = [] }) => {
                     {/* Header */}
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
                                 <TrendingUp className="h-5 w-5 text-indigo-600" />
                             </div>
 
                             <div>
                                 <h3 className="text-base font-bold text-gray-900">
-                                    Occupancy Overview
+                                    Occupancy
+                                    Overview
                                 </h3>
 
                                 <p className="mt-0.5 text-sm text-gray-500">
-                                    Current unit occupancy performance
+                                    Current unit
+                                    occupancy
+                                    performance
                                 </p>
                             </div>
                         </div>
@@ -301,33 +545,68 @@ const UnitStats = ({ units = [] }) => {
                         <div className="flex items-center gap-3">
                             <div className="text-right">
                                 <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                                    Occupancy Rate
+                                    Occupancy
+                                    Rate
                                 </p>
 
-                                <p className="mt-0.5 text-2xl font-bold text-gray-900">
-                                    {stats.occupancyRate}%
-                                </p>
+                                <div className="mt-0.5 flex items-center justify-end gap-2">
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {
+                                            stats.occupancyRate
+                                        }
+                                        %
+                                    </p>
+
+                                    {occupancyTrend.type ===
+                                        "up" && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-700">
+                                            <TrendingUp className="h-3 w-3" />
+                                            Healthy
+                                        </span>
+                                    )}
+
+                                    {occupancyTrend.type ===
+                                        "down" && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">
+                                            <TrendingDown className="h-3 w-3" />
+                                            Low
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     {/* Progress */}
                     <div className="mt-6">
-                        <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+                        <div className="flex items-center justify-between text-xs">
+                            <span className="font-medium text-gray-500">
+                                Occupied
+                            </span>
+
+                            <span className="font-semibold text-gray-700">
+                                {
+                                    stats.occupied
+                                }{" "}
+                                of{" "}
+                                {
+                                    stats.total
+                                }
+                            </span>
+                        </div>
+
+                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-gray-100">
                             <div
                                 className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-blue-600 transition-all duration-700 ease-out"
                                 style={{
-                                    width: `${Math.min(
-                                        stats.occupancyRate,
-                                        100
-                                    )}%`,
+                                    width: `${occupancyProgress}%`,
                                 }}
                             />
                         </div>
                     </div>
 
                     {/* Breakdown */}
-                    <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         {/* Occupied */}
                         <div className="rounded-xl bg-indigo-50/70 p-4">
                             <div className="flex items-center justify-between">
@@ -338,6 +617,12 @@ const UnitStats = ({ units = [] }) => {
 
                                     <p className="mt-1 text-xl font-bold text-indigo-900">
                                         {stats.occupied.toLocaleString()}
+                                    </p>
+
+                                    <p className="mt-1 text-[11px] text-indigo-600">
+                                        {stats.occupancyRate}
+                                        % of
+                                        total
                                     </p>
                                 </div>
 
@@ -358,10 +643,41 @@ const UnitStats = ({ units = [] }) => {
                                     <p className="mt-1 text-xl font-bold text-emerald-900">
                                         {stats.vacant.toLocaleString()}
                                     </p>
+
+                                    <p className="mt-1 text-[11px] text-emerald-600">
+                                        {stats.vacancyRate}
+                                        % of
+                                        total
+                                    </p>
                                 </div>
 
                                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">
                                     <Home className="h-4 w-4 text-emerald-600" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Reserved */}
+                        <div className="rounded-xl bg-purple-50/70 p-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-medium text-purple-600">
+                                        Reserved
+                                    </p>
+
+                                    <p className="mt-1 text-xl font-bold text-purple-900">
+                                        {stats.reserved.toLocaleString()}
+                                    </p>
+
+                                    <p className="mt-1 text-[11px] text-purple-600">
+                                        {stats.reservedRate}
+                                        % of
+                                        total
+                                    </p>
+                                </div>
+
+                                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">
+                                    <CalendarClock className="h-4 w-4 text-purple-600" />
                                 </div>
                             </div>
                         </div>
@@ -377,6 +693,14 @@ const UnitStats = ({ units = [] }) => {
                                     <p className="mt-1 text-xl font-bold text-orange-900">
                                         {stats.maintenance.toLocaleString()}
                                     </p>
+
+                                    <p className="mt-1 text-[11px] text-orange-600">
+                                        {
+                                            stats.maintenanceRate
+                                        }
+                                        % of
+                                        total
+                                    </p>
                                 </div>
 
                                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">
@@ -387,18 +711,52 @@ const UnitStats = ({ units = [] }) => {
                     </div>
 
                     {/* Footer */}
-                    <div className="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 text-xs sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-2 text-gray-500">
-                            <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                    <div className="mt-5 flex flex-col gap-3 border-t border-gray-100 pt-4 text-xs sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-500">
+                            <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 rounded-full bg-indigo-500" />
 
-                            <span>
-                                {stats.occupied.toLocaleString()} of{" "}
-                                {stats.total.toLocaleString()} units occupied
-                            </span>
+                                <span>
+                                    {
+                                        stats.occupied.toLocaleString()
+                                    }{" "}
+                                    occupied
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+
+                                <span>
+                                    {
+                                        stats.vacant.toLocaleString()
+                                    }{" "}
+                                    vacant
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 rounded-full bg-orange-500" />
+
+                                <span>
+                                    {
+                                        stats.maintenance.toLocaleString()
+                                    }{" "}
+                                    maintenance
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="font-medium text-gray-600">
-                            {stats.vacancyRate}% vacancy rate
+                        <div className="flex items-center gap-2 font-medium text-gray-600">
+                            <CircleHelp className="h-3.5 w-3.5 text-gray-400" />
+
+                            <span>
+                                {
+                                    stats.vacancyRate
+                                }
+                                % vacancy
+                                rate
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -407,5 +765,4 @@ const UnitStats = ({ units = [] }) => {
     );
 };
 
-export default UnitStats;
 
