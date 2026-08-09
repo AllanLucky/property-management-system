@@ -30,6 +30,12 @@ import {
     UnitStats,
 } from "./";
 
+/*
+|--------------------------------------------------------------------------
+| UNIT LIST
+|--------------------------------------------------------------------------
+*/
+
 const UnitList = () => {
     const navigate = useNavigate();
     const dispatch = useDispatch();
@@ -39,8 +45,7 @@ const UnitList = () => {
     | UNIT HOOK
     |--------------------------------------------------------------------------
     |
-    | Automatic fetching is disabled because this page explicitly controls
-    | when units are loaded.
+    | The page explicitly controls fetching.
     |
     */
 
@@ -83,13 +88,13 @@ const UnitList = () => {
         }
 
         if (typeof value === "object") {
-            return (
+            return String(
                 value?.name ??
-                value?.title ??
-                value?.label ??
-                value?.value ??
-                value?.current ??
-                "-"
+                    value?.title ??
+                    value?.label ??
+                    value?.value ??
+                    value?.current ??
+                    "-"
             );
         }
 
@@ -113,7 +118,7 @@ const UnitList = () => {
 
         /*
         |--------------------------------------------------------------------------
-        | Laravel error
+        | Laravel normalized error
         |--------------------------------------------------------------------------
         */
 
@@ -161,7 +166,9 @@ const UnitList = () => {
         |--------------------------------------------------------------------------
         */
 
-        if (typeof err?.message === "string") {
+        if (
+            typeof err?.message === "string"
+        ) {
             return err.message;
         }
 
@@ -176,13 +183,17 @@ const UnitList = () => {
 
     const getUnitName = useCallback(
         (unit) => {
-            const name = normalize(unit?.unit_name);
+            const name = normalize(
+                unit?.unit_name
+            );
 
             if (name !== "-") {
                 return name;
             }
 
-            const nameFallback = normalize(unit?.name);
+            const nameFallback = normalize(
+                unit?.name
+            );
 
             if (nameFallback !== "-") {
                 return nameFallback;
@@ -205,17 +216,6 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     | UNIT TYPE
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | Your API returns:
-    |
-    | "details": {
-    |     "type": "bedsitter"
-    | }
-    |
-    | Therefore details.type must be checked first.
-    |
     */
 
     const getUnitType = useCallback(
@@ -237,11 +237,13 @@ const UnitList = () => {
 
             /*
             |--------------------------------------------------------------------------
-            | Handle object type
+            | Object type
             |--------------------------------------------------------------------------
             */
 
-            if (typeof type === "object") {
+            if (
+                typeof type === "object"
+            ) {
                 const objectType =
                     type?.label ??
                     type?.name ??
@@ -253,29 +255,34 @@ const UnitList = () => {
                 }
 
                 return String(objectType)
-                    .replace(/_/g, " ")
-                    .replace(/\b\w/g, (char) =>
-                        char.toUpperCase()
+                    .trim()
+                    .replace(
+                        /[_-]+/g,
+                        " "
+                    )
+                    .replace(
+                        /\b\w/g,
+                        (char) =>
+                            char.toUpperCase()
                     );
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Format database enum/string
+            | String type
             |--------------------------------------------------------------------------
-            |
-            | bedsitter      -> Bedsitter
-            | one_bedroom    -> One Bedroom
-            | two_bedroom    -> Two Bedroom
-            | three_bedroom  -> Three Bedroom
-            |
             */
 
             return String(type)
                 .trim()
-                .replace(/[_-]+/g, " ")
-                .replace(/\b\w/g, (char) =>
-                    char.toUpperCase()
+                .replace(
+                    /[_-]+/g,
+                    " "
+                )
+                .replace(
+                    /\b\w/g,
+                    (char) =>
+                        char.toUpperCase()
                 );
         },
         []
@@ -289,7 +296,8 @@ const UnitList = () => {
 
     const getApartmentName = useCallback(
         (unit) => {
-            const apartment = unit?.apartment;
+            const apartment =
+                unit?.apartment;
 
             if (apartment) {
                 return (
@@ -321,7 +329,8 @@ const UnitList = () => {
 
     const getPropertyName = useCallback(
         (unit) => {
-            const property = unit?.property;
+            const property =
+                unit?.property;
 
             if (property) {
                 return (
@@ -349,36 +358,18 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     | PRICE
     |--------------------------------------------------------------------------
-    |
-    | We keep the database field "price".
-    |
-    | The unit can later be configured as:
-    |
-    | - Rental
-    | - Sale
-    | - Rent + Sale
-    |
-    | API currently returns:
-    |
-    | pricing.price
-    |
     */
 
     const getPrice = useCallback(
         (unit) => {
             const price =
                 unit?.pricing?.price ??
+                unit?.pricing?.rent ??
                 unit?.price ??
                 unit?.rent_amount ??
                 unit?.rent ??
                 unit?.rent_price ??
                 0;
-
-            /*
-            |--------------------------------------------------------------------------
-            | Handle nested price object
-            |--------------------------------------------------------------------------
-            */
 
             if (
                 typeof price === "object" &&
@@ -431,11 +422,6 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     | RENT
     |--------------------------------------------------------------------------
-    |
-    | Backward-compatible helper.
-    |
-    | If UnitTable still expects getRent(), keep it.
-    |
     */
 
     const getRent = useCallback(
@@ -537,11 +523,26 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     | STATUS
     |--------------------------------------------------------------------------
+    |
+    | Handles:
+    |
+    | "occupied"
+    |
+    | {
+    |     value: "occupied",
+    |     label: "Occupied"
+    | }
+    |
+    | {
+    |     current: "occupied"
+    | }
+    |
     */
 
     const getStatus = useCallback(
         (unit) => {
-            const status = unit?.status;
+            const status =
+                unit?.status;
 
             if (
                 status &&
@@ -550,6 +551,7 @@ const UnitList = () => {
                 return String(
                     status?.value ??
                         status?.current ??
+                        status?.status ??
                         status?.name ??
                         status?.label ??
                         "unknown"
@@ -590,24 +592,15 @@ const UnitList = () => {
 
                 /*
                 |--------------------------------------------------------------------------
-                | Fetch relations
+                | IMPORTANT
                 |--------------------------------------------------------------------------
-                |
-                | with_relations=true ensures:
-                |
-                | property
-                | apartment
-                | details
-                | pricing
-                | status
-                |
-                | are available in the response.
-                |
+                | Do not pass _t unless necessary.
+                | with_relations gives UnitStats all unit data it needs.
+                |--------------------------------------------------------------------------
                 */
 
                 await getUnits({
                     with_relations: true,
-                    _t: Date.now(),
                 });
 
                 if (isRefresh) {
@@ -672,9 +665,12 @@ const UnitList = () => {
                         String(id)
                 );
 
-            const unitName = selectedUnit
-                ? getUnitName(selectedUnit)
-                : `Unit #${id}`;
+            const unitName =
+                selectedUnit
+                    ? getUnitName(
+                          selectedUnit
+                      )
+                    : `Unit #${id}`;
 
             const result =
                 await Swal.fire({
@@ -766,15 +762,8 @@ const UnitList = () => {
                     })
                 );
 
-                /*
-                |--------------------------------------------------------------------------
-                | Refresh database data
-                |--------------------------------------------------------------------------
-                */
-
                 await getUnits({
                     with_relations: true,
-                    _t: Date.now(),
                 });
             } catch (err) {
                 console.error(
@@ -875,72 +864,341 @@ const UnitList = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | STATISTICS
+    | NORMALIZE HOOK STATS
     |--------------------------------------------------------------------------
     */
 
-    const stats = useMemo(() => {
+    const normalizedHookStats = useMemo(() => {
         if (
-            hookStats &&
-            typeof hookStats === "object" &&
-            typeof hookStats.total === "number"
+            !hookStats ||
+            typeof hookStats !== "object"
         ) {
-            return hookStats;
+            return null;
         }
 
-        return units.reduce(
-            (acc, unit) => {
-                acc.total += 1;
+        return {
+            total: Number(
+                hookStats.total ?? 0
+            ),
 
-                const status =
-                    getStatus(unit);
+            vacant: Number(
+                hookStats.vacant ?? 0
+            ),
 
-                if (
-                    status === "vacant" ||
-                    status === "available"
-                ) {
-                    acc.vacant += 1;
-                }
+            occupied: Number(
+                hookStats.occupied ?? 0
+            ),
 
-                if (
-                    status === "occupied"
-                ) {
-                    acc.occupied += 1;
-                }
+            maintenance: Number(
+                hookStats.maintenance ?? 0
+            ),
 
-                if (
-                    status === "maintenance"
-                ) {
-                    acc.maintenance += 1;
-                }
+            reserved: Number(
+                hookStats.reserved ?? 0
+            ),
 
-                if (
-                    status === "reserved"
-                ) {
-                    acc.reserved += 1;
-                }
+            inactive: Number(
+                hookStats.inactive ?? 0
+            ),
 
-                if (
-                    status === "inactive"
-                ) {
-                    acc.inactive += 1;
-                }
+            available: Number(
+                hookStats.available ??
+                    hookStats.vacant ??
+                    0
+            ),
 
-                return acc;
-            },
-            {
-                total: 0,
-                vacant: 0,
-                occupied: 0,
-                maintenance: 0,
-                reserved: 0,
-                inactive: 0,
+            unavailable: Number(
+                hookStats.unavailable ??
+                    0
+            ),
+        };
+    }, [hookStats]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | FALLBACK STATISTICS
+    |--------------------------------------------------------------------------
+    |
+    | Calculate directly from the loaded units.
+    |
+    | This protects the UI even if the hook stats structure changes.
+    |
+    */
+
+    const calculatedStats = useMemo(() => {
+        const result = {
+            total: units.length,
+            vacant: 0,
+            occupied: 0,
+            maintenance: 0,
+            reserved: 0,
+            inactive: 0,
+            available: 0,
+            unavailable: 0,
+            unknown: 0,
+        };
+
+        units.forEach((unit) => {
+            const status =
+                getStatus(unit);
+
+            switch (status) {
+                case "vacant":
+                    result.vacant += 1;
+                    result.available += 1;
+                    break;
+
+                case "available":
+                    result.vacant += 1;
+                    result.available += 1;
+                    break;
+
+                case "occupied":
+                    result.occupied += 1;
+                    break;
+
+                case "maintenance":
+                    result.maintenance += 1;
+                    break;
+
+                case "reserved":
+                    result.reserved += 1;
+                    break;
+
+                case "inactive":
+                    result.inactive += 1;
+                    break;
+
+                default:
+                    result.unknown += 1;
+                    break;
             }
-        );
+        });
+
+        result.unavailable =
+            result.occupied +
+            result.reserved +
+            result.maintenance;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Rates
+        |--------------------------------------------------------------------------
+        */
+
+        result.occupancyRate =
+            result.total > 0
+                ? Number(
+                      (
+                          (result.occupied /
+                              result.total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        result.vacancyRate =
+            result.total > 0
+                ? Number(
+                      (
+                          (result.vacant /
+                              result.total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        result.reservedRate =
+            result.total > 0
+                ? Number(
+                      (
+                          (result.reserved /
+                              result.total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        result.maintenanceRate =
+            result.total > 0
+                ? Number(
+                      (
+                          (result.maintenance /
+                              result.total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        result.unavailableRate =
+            result.total > 0
+                ? Number(
+                      (
+                          (result.unavailable /
+                              result.total) *
+                          100
+                      ).toFixed(1)
+                  )
+                : 0;
+
+        return result;
     }, [
-        hookStats,
         units,
         getStatus,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | FINAL STATISTICS
+    |--------------------------------------------------------------------------
+    |
+    | Prefer calculated statistics because they are guaranteed to correspond
+    | to the actual units currently displayed.
+    |
+    */
+
+    const stats = useMemo(() => {
+        /*
+        |--------------------------------------------------------------------------
+        | If units have loaded, calculate from them.
+        |--------------------------------------------------------------------------
+        */
+
+        if (units.length > 0) {
+            return calculatedStats;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | If there are no units but hook has valid server stats,
+        | preserve those values.
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            normalizedHookStats &&
+            normalizedHookStats.total > 0
+        ) {
+            const total =
+                normalizedHookStats.total;
+
+            const occupied =
+                normalizedHookStats.occupied;
+
+            const vacant =
+                normalizedHookStats.vacant;
+
+            const reserved =
+                normalizedHookStats.reserved;
+
+            const maintenance =
+                normalizedHookStats.maintenance;
+
+            const unavailable =
+                occupied +
+                reserved +
+                maintenance;
+
+            return {
+                ...normalizedHookStats,
+
+                total,
+
+                occupancyRate:
+                    total > 0
+                        ? Number(
+                              (
+                                  (occupied /
+                                      total) *
+                                  100
+                              ).toFixed(1)
+                          )
+                        : 0,
+
+                vacancyRate:
+                    total > 0
+                        ? Number(
+                              (
+                                  (vacant /
+                                      total) *
+                                  100
+                              ).toFixed(1)
+                          )
+                        : 0,
+
+                reservedRate:
+                    total > 0
+                        ? Number(
+                              (
+                                  (reserved /
+                                      total) *
+                                  100
+                              ).toFixed(1)
+                          )
+                        : 0,
+
+                maintenanceRate:
+                    total > 0
+                        ? Number(
+                              (
+                                  (maintenance /
+                                      total) *
+                                  100
+                              ).toFixed(1)
+                          )
+                        : 0,
+
+                unavailable,
+            };
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Empty state
+        |--------------------------------------------------------------------------
+        */
+
+        return calculatedStats;
+    }, [
+        units.length,
+        calculatedStats,
+        normalizedHookStats,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEBUG STATISTICS
+    |--------------------------------------------------------------------------
+    |
+    | Keep this temporarily while testing.
+    |
+    */
+
+    useEffect(() => {
+        console.log(
+            "UNIT LIST - UNITS:",
+            units
+        );
+
+        console.log(
+            "UNIT LIST - HOOK STATS:",
+            hookStats
+        );
+
+        console.log(
+            "UNIT LIST - CALCULATED STATS:",
+            calculatedStats
+        );
+
+        console.log(
+            "UNIT LIST - FINAL STATS:",
+            stats
+        );
+    }, [
+        units,
+        hookStats,
+        calculatedStats,
+        stats,
     ]);
 
     /*
@@ -982,7 +1240,9 @@ const UnitList = () => {
     return (
         <div className="mx-auto w-full max-w-7xl space-y-6">
 
+            {/* ------------------------------------------------------------ */}
             {/* HEADER */}
+            {/* ------------------------------------------------------------ */}
 
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -1044,12 +1304,16 @@ const UnitList = () => {
                 </div>
             </div>
 
+            {/* ------------------------------------------------------------ */}
             {/* ERROR */}
+            {/* ------------------------------------------------------------ */}
 
             {error && (
                 <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700">
                     <div className="mt-0.5 shrink-0">
-                        <AlertTriangle size={19} />
+                        <AlertTriangle
+                            size={19}
+                        />
                     </div>
 
                     <div className="min-w-0">
@@ -1073,11 +1337,21 @@ const UnitList = () => {
                 </div>
             )}
 
+            {/* ------------------------------------------------------------ */}
             {/* STATS */}
+            {/* ------------------------------------------------------------ */}
+            {/*
+                IMPORTANT:
+                UnitStats expects `units`, not `stats`.
+            */}
 
-            <UnitStats stats={stats} />
+            <UnitStats
+                units={units}
+            />
 
+            {/* ------------------------------------------------------------ */}
             {/* FILTERS */}
+            {/* ------------------------------------------------------------ */}
 
             <UnitFilters
                 search={search}
@@ -1088,7 +1362,9 @@ const UnitList = () => {
                 refreshing={refreshing}
             />
 
+            {/* ------------------------------------------------------------ */}
             {/* TABLE */}
+            {/* ------------------------------------------------------------ */}
 
             <UnitTable
                 units={filteredUnits}
