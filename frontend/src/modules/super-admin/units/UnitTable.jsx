@@ -1,409 +1,762 @@
 
 import {
-  Building2,
-  DollarSign,
-  Edit,
-  Eye,
-  Hash,
-  Loader2,
-  Trash2,
+    Building2,
+    DollarSign,
+    Edit,
+    Eye,
+    Hash,
+    Loader2,
+    Trash2,
 } from "lucide-react";
 
 const UnitTable = ({
-  units = [],
-  deletingId = null,
-  onView,
-  onEdit,
-  onDelete,
+    units = [],
+    deletingId = null,
+    onView,
+    onEdit,
+    onDelete,
 }) => {
-  /*
-  |--------------------------------------------------------------------------
-  | NORMALIZE VALUE
-  |--------------------------------------------------------------------------
-  */
-  const normalize = (value) => {
-    if (
-      value === null ||
-      value === undefined ||
-      value === ""
-    ) {
-      return "-";
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE VALUE
+    |--------------------------------------------------------------------------
+    */
 
-    if (typeof value === "object") {
-      return (
-        value?.name ||
-        value?.title ||
-        value?.label ||
-        value?.value ||
-        "-"
-      );
-    }
+    const normalize = (value) => {
+        if (
+            value === null ||
+            value === undefined ||
+            value === ""
+        ) {
+            return "-";
+        }
 
-    return String(value);
-  };
+        if (typeof value === "object") {
+            return (
+                value?.name ??
+                value?.title ??
+                value?.label ??
+                value?.value ??
+                value?.current ??
+                "-"
+            );
+        }
 
-  /*
-  |--------------------------------------------------------------------------
-  | UNIT NAME
-  |--------------------------------------------------------------------------
-  */
-  const getUnitName = (unit) => {
-    return (
-      unit?.name ||
-      unit?.unit_number ||
-      `Unit #${unit?.id ?? "-"}`
-    );
-  };
+        return String(value);
+    };
 
-  /*
-  |--------------------------------------------------------------------------
-  | UNIT TYPE
-  |--------------------------------------------------------------------------
-  */
-  const getUnitType = (unit) => {
-    return (
-      unit?.type ||
-      unit?.unit_type ||
-      unit?.category ||
-      "-"
-    );
-  };
+    /*
+    |--------------------------------------------------------------------------
+    | FORMAT TEXT
+    |--------------------------------------------------------------------------
+    */
 
-  /*
-  |--------------------------------------------------------------------------
-  | RENT
-  |--------------------------------------------------------------------------
-  */
-  const getRent = (unit) => {
-    return (
-      unit?.rent_amount ??
-      unit?.pricing?.rent_amount ??
-      unit?.rent ??
-      unit?.rent_price ??
-      0
-    );
-  };
+    const formatText = (value) => {
+        const text = normalize(value);
 
-  /*
-  |--------------------------------------------------------------------------
-  | STATUS
-  |--------------------------------------------------------------------------
-  */
-  const getStatus = (unit) => {
-    const status =
-      unit?.status?.current ??
-      unit?.status?.value ??
-      unit?.status ??
-      "unknown";
+        if (text === "-") {
+            return "-";
+        }
 
-    return String(status).toLowerCase();
-  };
+        return text
+            .replace(/[_-]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .replace(/\b\w/g, (char) =>
+                char.toUpperCase()
+            );
+    };
 
-  /*
-  |--------------------------------------------------------------------------
-  | STATUS FORMAT
-  |--------------------------------------------------------------------------
-  */
-  const formatStatus = (unit) => {
-    const status = getStatus(unit);
+    /*
+    |--------------------------------------------------------------------------
+    | UNIT NAME
+    |--------------------------------------------------------------------------
+    */
 
-    switch (status) {
-      case "occupied":
-        return {
-          label: "Occupied",
-          className:
-            "bg-red-100 text-red-700 border border-red-200",
-        };
+    const getUnitName = (unit) => {
+        const name = normalize(
+            unit?.unit_name ??
+                unit?.name
+        );
 
-      case "vacant":
-        return {
-          label: "Vacant",
-          className:
-            "bg-green-100 text-green-700 border border-green-200",
-        };
+        if (name !== "-") {
+            return name;
+        }
 
-      case "reserved":
-        return {
-          label: "Reserved",
-          className:
-            "bg-purple-100 text-purple-700 border border-purple-200",
-        };
+        const unitNumber = normalize(
+            unit?.unit_number
+        );
 
-      case "maintenance":
-        return {
-          label: "Maintenance",
-          className:
-            "bg-yellow-100 text-yellow-700 border border-yellow-200",
-        };
+        if (unitNumber !== "-") {
+            return unitNumber;
+        }
 
-      case "inactive":
-        return {
-          label: "Inactive",
-          className:
-            "bg-gray-100 text-gray-700 border border-gray-200",
-        };
+        return `Unit #${unit?.id ?? "-"}`;
+    };
 
-      default:
-        return {
-          label: normalize(
-            unit?.status?.label ||
-              unit?.status ||
-              "Unknown"
-          ),
-          className:
-            "bg-slate-100 text-slate-700 border border-slate-200",
-        };
-    }
-  };
+    /*
+    |--------------------------------------------------------------------------
+    | UNIT TYPE
+    |--------------------------------------------------------------------------
+    |
+    | API response:
+    |
+    | "details": {
+    |     "type": "bedsitter"
+    | }
+    |
+    | Therefore details.type must be checked first.
+    |
+    */
 
-  /*
-  |--------------------------------------------------------------------------
-  | EMPTY STATE
-  |--------------------------------------------------------------------------
-  */
-  if (!units.length) {
-    return (
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm">
-        <div className="py-20 px-6 text-center">
-          <div className="flex flex-col items-center justify-center text-gray-400">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-              <Building2 size={30} />
-            </div>
+    const getUnitType = (unit) => {
+        const type =
+            unit?.details?.type ??
+            unit?.type ??
+            unit?.unit_type ??
+            unit?.category ??
+            unit?.unit_category ??
+            unit?.details?.unit_type ??
+            null;
 
-            <p className="text-lg font-semibold text-gray-700">
-              No units found
-            </p>
+        if (
+            type === null ||
+            type === undefined ||
+            type === ""
+        ) {
+            return "-";
+        }
 
-            <p className="text-sm mt-1 text-gray-500">
-              There are no units matching your current filters.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+        return formatText(type);
+    };
 
-  /*
-  |--------------------------------------------------------------------------
-  | TABLE
-  |--------------------------------------------------------------------------
-  */
-  return (
-    <div className="overflow-hidden bg-white rounded-3xl border border-gray-100 shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[950px]">
-          {/* HEADER */}
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                Unit
-              </th>
+    /*
+    |--------------------------------------------------------------------------
+    | APARTMENT NAME
+    |--------------------------------------------------------------------------
+    */
 
-              <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                Type
-              </th>
+    const getApartmentName = (unit) => {
+        const apartment =
+            unit?.apartment;
 
-              <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                Apartment
-              </th>
+        if (apartment) {
+            return (
+                apartment?.name ??
+                apartment?.title ??
+                apartment?.block ??
+                `Apartment #${
+                    apartment?.id ??
+                    unit?.apartment_id ??
+                    "-"
+                }`
+            );
+        }
 
-              <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                Property
-              </th>
+        if (unit?.apartment_id) {
+            return `Apartment #${unit.apartment_id}`;
+        }
 
-              <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                Rent
-              </th>
+        return "-";
+    };
 
-              <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
-                Status
-              </th>
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY NAME
+    |--------------------------------------------------------------------------
+    */
 
-              <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
-                Actions
-              </th>
-            </tr>
-          </thead>
+    const getPropertyName = (unit) => {
+        const property =
+            unit?.property;
 
-          {/* BODY */}
-          <tbody className="divide-y divide-gray-100">
-            {units.map((unit) => {
-              const status = formatStatus(unit);
-              const isDeleting =
-                deletingId === unit.id;
+        if (property) {
+            return (
+                property?.title ??
+                property?.name ??
+                property?.property_name ??
+                `Property #${
+                    property?.id ??
+                    unit?.property_id ??
+                    "-"
+                }`
+            );
+        }
 
-              const apartmentName =
-                unit?.apartment?.name ||
-                unit?.apartment?.title ||
-                (unit?.apartment_id
-                  ? `Apartment #${unit.apartment_id}`
-                  : "-");
+        if (unit?.property_id) {
+            return `Property #${unit.property_id}`;
+        }
 
-              const propertyName =
-                unit?.property?.name ||
-                unit?.property?.title ||
-                (unit?.property_id
-                  ? `Property #${unit.property_id}`
-                  : "-");
+        return "-";
+    };
 
-              return (
-                <tr
-                  key={unit.id}
-                  className={`transition ${
-                    isDeleting
-                      ? "bg-red-50 opacity-60"
-                      : "hover:bg-gray-50"
-                  }`}
-                >
-                  {/* UNIT */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-start gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
+    /*
+    |--------------------------------------------------------------------------
+    | PRICE
+    |--------------------------------------------------------------------------
+    |
+    | The database field remains "price".
+    |
+    | A unit can represent:
+    |
+    | - rental price
+    | - sale price
+    | - another listing price
+    |
+    | We therefore use "Price" instead of "Rent".
+    |
+    | API:
+    |
+    | pricing.price
+    |
+    */
+
+    const getPrice = (unit) => {
+        const price =
+            unit?.price ??
+            unit?.pricing?.price ??
+            unit?.sale_price ??
+            unit?.rent_amount ??
+            unit?.rent ??
+            unit?.rent_price ??
+            unit?.pricing?.rent_amount ??
+            unit?.pricing?.monthly_rent ??
+            0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Handle nested price object
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            typeof price === "object" &&
+            price !== null
+        ) {
+            return (
+                price?.amount ??
+                price?.value ??
+                price?.price ??
+                price?.sale_price ??
+                price?.monthly_rent ??
+                0
+            );
+        }
+
+        return price;
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORMAT PRICE
+    |--------------------------------------------------------------------------
+    */
+
+    const formatPrice = (unit) => {
+        const price = Number(
+            getPrice(unit)
+        );
+
+        if (
+            Number.isNaN(price) ||
+            price <= 0
+        ) {
+            return "KES 0";
+        }
+
+        return `KES ${price.toLocaleString(
+            "en-KE",
+            {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+            }
+        )}`;
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | PRICE TYPE
+    |--------------------------------------------------------------------------
+    |
+    | If your API later provides:
+    |
+    | listing_type: "rent"
+    | listing_type: "sale"
+    | listing_type: "rent_and_sale"
+    |
+    | this will display it automatically.
+    |
+    */
+
+    const getPriceType = (unit) => {
+        const type =
+            unit?.listing_type ??
+            unit?.price_type ??
+            unit?.transaction_type ??
+            unit?.availability?.listing_type ??
+            null;
+
+        if (!type) {
+            return null;
+        }
+
+        return formatText(type);
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    const getStatus = (unit) => {
+        const status =
+            unit?.status;
+
+        if (
+            status &&
+            typeof status === "object"
+        ) {
+            return String(
+                status?.value ??
+                    status?.current ??
+                    status?.name ??
+                    status?.label ??
+                    "unknown"
+            )
+                .toLowerCase()
+                .trim()
+                .replace(
+                    /[\s-]+/g,
+                    "_"
+                );
+        }
+
+        return String(
+            status ?? "unknown"
+        )
+            .toLowerCase()
+            .trim()
+            .replace(
+                /[\s-]+/g,
+                "_"
+            );
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATUS FORMAT
+    |--------------------------------------------------------------------------
+    */
+
+    const formatStatus = (unit) => {
+        const status =
+            getStatus(unit);
+
+        switch (status) {
+            case "occupied":
+                return {
+                    label: "Occupied",
+                    className:
+                        "bg-red-50 text-red-700 border border-red-200",
+                };
+
+            case "vacant":
+                return {
+                    label: "Vacant",
+                    className:
+                        "bg-green-50 text-green-700 border border-green-200",
+                };
+
+            case "reserved":
+                return {
+                    label: "Reserved",
+                    className:
+                        "bg-purple-50 text-purple-700 border border-purple-200",
+                };
+
+            case "maintenance":
+                return {
+                    label: "Maintenance",
+                    className:
+                        "bg-yellow-50 text-yellow-700 border border-yellow-200",
+                };
+
+            case "inactive":
+                return {
+                    label: "Inactive",
+                    className:
+                        "bg-gray-100 text-gray-700 border border-gray-200",
+                };
+
+            case "available":
+                return {
+                    label: "Available",
+                    className:
+                        "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                };
+
+            default: {
+                const rawLabel =
+                    unit?.status?.label ??
+                    unit?.status?.name ??
+                    unit?.status?.value ??
+                    unit?.status ??
+                    "Unknown";
+
+                const label =
+                    normalize(
+                        rawLabel
+                    );
+
+                return {
+                    label:
+                        label === "-"
+                            ? "Unknown"
+                            : formatText(
+                                  label
+                              ),
+                    className:
+                        "bg-slate-50 text-slate-700 border border-slate-200",
+                };
+            }
+        }
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | EMPTY STATE
+    |--------------------------------------------------------------------------
+    */
+
+    if (!units.length) {
+        return (
+            <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+                <div className="flex min-h-[360px] flex-col items-center justify-center px-6 py-20 text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
                         <Building2
-                          size={18}
-                          className="text-blue-600"
+                            size={30}
+                            className="text-gray-400"
                         />
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 truncate">
-                          {getUnitName(unit)}
-                        </p>
-
-                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                          <Hash size={12} />
-
-                          {normalize(
-                            unit?.unit_number
-                          )}
-                        </p>
-                      </div>
                     </div>
-                  </td>
 
-                  {/* TYPE */}
-                  <td className="px-6 py-5">
-                    <span className="text-gray-700 capitalize">
-                      {normalize(
-                        getUnitType(unit)
-                      )}
-                    </span>
-                  </td>
+                    <p className="mt-4 text-lg font-semibold text-gray-700">
+                        No units found
+                    </p>
 
-                  {/* APARTMENT */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <Building2
-                        size={16}
-                        className="text-gray-400"
-                      />
+                    <p className="mt-1 max-w-md text-sm text-gray-500">
+                        There are no units
+                        matching your
+                        current filters.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
-                      <span>
-                        {apartmentName}
-                      </span>
-                    </div>
-                  </td>
+    /*
+    |--------------------------------------------------------------------------
+    | TABLE
+    |--------------------------------------------------------------------------
+    */
 
-                  {/* PROPERTY */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <Building2
-                        size={16}
-                        className="text-gray-400"
-                      />
+    return (
+        <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[1150px]">
+                    {/* HEADER */}
 
-                      <span>
-                        {propertyName}
-                      </span>
-                    </div>
-                  </td>
+                    <thead className="border-b border-gray-100 bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Unit
+                            </th>
 
-                  {/* RENT */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-1 font-semibold text-gray-900 whitespace-nowrap">
-                      <DollarSign size={15} />
+                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Type
+                            </th>
 
-                      <span>
-                        KES{" "}
-                        {Number(
-                          getRent(unit)
-                        ).toLocaleString()}
-                      </span>
-                    </div>
-                  </td>
+                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Apartment
+                            </th>
 
-                  {/* STATUS */}
-                  <td className="px-6 py-5">
-                    <span
-                      className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap ${status.className}`}
-                    >
-                      {status.label}
-                    </span>
-                  </td>
+                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Property
+                            </th>
 
-                  {/* ACTIONS */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-center justify-end gap-2">
-                      {/* VIEW */}
-                      <button
-                        type="button"
-                        disabled={deletingId !== null}
-                        onClick={() =>
-                          onView?.(unit)
-                        }
-                        className="w-10 h-10 rounded-xl bg-green-100 hover:bg-green-200 text-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition"
-                        title="View Unit"
-                      >
-                        <Eye size={16} />
-                      </button>
+                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Price
+                            </th>
 
-                      {/* EDIT */}
-                      <button
-                        type="button"
-                        disabled={deletingId !== null}
-                        onClick={() =>
-                          onEdit?.(unit)
-                        }
-                        className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition"
-                        title="Edit Unit"
-                      >
-                        <Edit size={16} />
-                      </button>
+                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Status
+                            </th>
 
-                      {/* DELETE */}
-                      <button
-                        type="button"
-                        disabled={
-                          deletingId !== null
-                        }
-                        onClick={() =>
-                          onDelete?.(unit)
-                        }
-                        className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 text-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition"
-                        title="Delete Unit"
-                      >
-                        {isDeleting ? (
-                          <Loader2
-                            size={17}
-                            className="animate-spin"
-                          />
-                        ) : (
-                          <Trash2
-                            size={16}
-                          />
+                            <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
+                                Actions
+                            </th>
+                        </tr>
+                    </thead>
+
+                    {/* BODY */}
+
+                    <tbody className="divide-y divide-gray-100">
+                        {units.map(
+                            (unit) => {
+                                const status =
+                                    formatStatus(
+                                        unit
+                                    );
+
+                                const priceType =
+                                    getPriceType(
+                                        unit
+                                    );
+
+                                const isDeleting =
+                                    String(
+                                        deletingId
+                                    ) ===
+                                    String(
+                                        unit?.id
+                                    );
+
+                                return (
+                                    <tr
+                                        key={
+                                            unit?.id
+                                        }
+                                        className={`transition-colors ${
+                                            isDeleting
+                                                ? "bg-red-50 opacity-60"
+                                                : "hover:bg-gray-50"
+                                        }`}
+                                    >
+                                        {/* UNIT */}
+
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-start gap-3">
+                                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-100">
+                                                    <Building2
+                                                        size={
+                                                            18
+                                                        }
+                                                        className="text-blue-600"
+                                                    />
+                                                </div>
+
+                                                <div className="min-w-0">
+                                                    <p className="max-w-[180px] truncate font-semibold text-gray-900">
+                                                        {getUnitName(
+                                                            unit
+                                                        )}
+                                                    </p>
+
+                                                    <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                                                        <Hash
+                                                            size={
+                                                                12
+                                                            }
+                                                        />
+
+                                                        {normalize(
+                                                            unit?.unit_number
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* TYPE */}
+
+                                        <td className="px-6 py-5">
+                                            <span className="inline-flex rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-semibold capitalize text-blue-700">
+                                                {getUnitType(
+                                                    unit
+                                                )}
+                                            </span>
+                                        </td>
+
+                                        {/* APARTMENT */}
+
+                                        <td className="px-6 py-5">
+                                            <div className="flex max-w-[220px] items-center gap-2 text-gray-700">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+                                                    <Building2
+                                                        size={
+                                                            15
+                                                        }
+                                                        className="text-indigo-500"
+                                                    />
+                                                </div>
+
+                                                <span className="truncate text-sm font-medium">
+                                                    {getApartmentName(
+                                                        unit
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </td>
+
+                                        {/* PROPERTY */}
+
+                                        <td className="px-6 py-5">
+                                            <div className="flex max-w-[220px] items-center gap-2 text-gray-700">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+                                                    <Building2
+                                                        size={
+                                                            15
+                                                        }
+                                                        className="text-gray-500"
+                                                    />
+                                                </div>
+
+                                                <span className="truncate text-sm font-medium">
+                                                    {getPropertyName(
+                                                        unit
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </td>
+
+                                        {/* PRICE */}
+
+                                        <td className="px-6 py-5">
+                                            <div className="flex flex-col">
+                                                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                                    <DollarSign
+                                                        size={
+                                                            15
+                                                        }
+                                                        className="text-gray-400"
+                                                    />
+
+                                                    <span className="font-semibold text-gray-900">
+                                                        {formatPrice(
+                                                            unit
+                                                        )}
+                                                    </span>
+                                                </div>
+
+                                                {priceType && (
+                                                    <span className="mt-1 text-xs text-gray-400">
+                                                        {
+                                                            priceType
+                                                        }
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+
+                                        {/* STATUS */}
+
+                                        <td className="px-6 py-5">
+                                            <span
+                                                className={`inline-flex items-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${status.className}`}
+                                            >
+                                                <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+
+                                                {
+                                                    status.label
+                                                }
+                                            </span>
+                                        </td>
+
+                                        {/* ACTIONS */}
+
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center justify-end gap-2">
+                                                {/* VIEW */}
+
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        deletingId !==
+                                                        null
+                                                    }
+                                                    onClick={() =>
+                                                        onView?.(
+                                                            unit?.id
+                                                        )
+                                                    }
+                                                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-green-600 transition hover:bg-green-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    title="View Unit"
+                                                    aria-label="View Unit"
+                                                >
+                                                    <Eye
+                                                        size={
+                                                            16
+                                                        }
+                                                    />
+                                                </button>
+
+                                                {/* EDIT */}
+
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        deletingId !==
+                                                        null
+                                                    }
+                                                    onClick={() =>
+                                                        onEdit?.(
+                                                            unit?.id
+                                                        )
+                                                    }
+                                                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600 transition hover:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    title="Edit Unit"
+                                                    aria-label="Edit Unit"
+                                                >
+                                                    <Edit
+                                                        size={
+                                                            16
+                                                        }
+                                                    />
+                                                </button>
+
+                                                {/* DELETE */}
+
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        deletingId !==
+                                                        null
+                                                    }
+                                                    onClick={() =>
+                                                        onDelete?.(
+                                                            unit?.id
+                                                        )
+                                                    }
+                                                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-600 transition hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    title="Delete Unit"
+                                                    aria-label="Delete Unit"
+                                                >
+                                                    {isDeleting ? (
+                                                        <Loader2
+                                                            size={
+                                                                17
+                                                            }
+                                                            className="animate-spin"
+                                                        />
+                                                    ) : (
+                                                        <Trash2
+                                                            size={
+                                                                16
+                                                            }
+                                                        />
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            }
                         )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
 };
 
 export default UnitTable;

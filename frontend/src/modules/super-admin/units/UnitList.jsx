@@ -1,4 +1,3 @@
-
 import {
     useCallback,
     useEffect,
@@ -6,13 +5,9 @@ import {
     useState,
 } from "react";
 
-import {
-    useNavigate,
-} from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-import {
-    useDispatch,
-} from "react-redux";
+import { useDispatch } from "react-redux";
 
 import Swal from "sweetalert2";
 
@@ -20,7 +15,6 @@ import {
     Plus,
     Loader2,
     RefreshCcw,
-    Building2,
     AlertTriangle,
 } from "lucide-react";
 
@@ -36,7 +30,6 @@ import {
     UnitStats,
 } from "./";
 
-
 const UnitList = () => {
     const navigate = useNavigate();
     const dispatch = useDispatch();
@@ -46,8 +39,8 @@ const UnitList = () => {
     | UNIT HOOK
     |--------------------------------------------------------------------------
     |
-    | Disable automatic fetching here because this page explicitly controls
-    | the initial fetch. This prevents duplicate GET /units requests.
+    | Automatic fetching is disabled because this page explicitly controls
+    | when units are loaded.
     |
     */
 
@@ -69,7 +62,9 @@ const UnitList = () => {
     */
 
     const [refreshing, setRefreshing] = useState(false);
+
     const [search, setSearch] = useState("");
+
     const [deletingId, setDeletingId] = useState(null);
 
     /*
@@ -93,6 +88,7 @@ const UnitList = () => {
                 value?.title ??
                 value?.label ??
                 value?.value ??
+                value?.current ??
                 "-"
             );
         }
@@ -117,27 +113,25 @@ const UnitList = () => {
 
         /*
         |--------------------------------------------------------------------------
-        | Laravel validation / backend error
+        | Laravel error
         |--------------------------------------------------------------------------
         */
 
         if (
-            typeof err?.errors?.error ===
-            "string"
+            typeof err?.errors?.error === "string"
         ) {
             return err.errors.error;
         }
 
         if (
-            typeof err?.errors?.message ===
-            "string"
+            typeof err?.errors?.message === "string"
         ) {
             return err.errors.message;
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Axios response error
+        | Axios response
         |--------------------------------------------------------------------------
         */
 
@@ -150,14 +144,24 @@ const UnitList = () => {
 
         /*
         |--------------------------------------------------------------------------
-        | Standard error message
+        | Axios validation/server error
         |--------------------------------------------------------------------------
         */
 
         if (
-            typeof err?.message ===
+            typeof err?.response?.data?.errors?.error ===
             "string"
         ) {
+            return err.response.data.errors.error;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Standard Error
+        |--------------------------------------------------------------------------
+        */
+
+        if (typeof err?.message === "string") {
             return err.message;
         }
 
@@ -172,18 +176,21 @@ const UnitList = () => {
 
     const getUnitName = useCallback(
         (unit) => {
-            const name = normalize(
-                unit?.name
-            );
+            const name = normalize(unit?.unit_name);
 
             if (name !== "-") {
                 return name;
             }
 
-            const unitNumber =
-                normalize(
-                    unit?.unit_number
-                );
+            const nameFallback = normalize(unit?.name);
+
+            if (nameFallback !== "-") {
+                return nameFallback;
+            }
+
+            const unitNumber = normalize(
+                unit?.unit_number
+            );
 
             if (unitNumber !== "-") {
                 return unitNumber;
@@ -198,35 +205,330 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     | UNIT TYPE
     |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | Your API returns:
+    |
+    | "details": {
+    |     "type": "bedsitter"
+    | }
+    |
+    | Therefore details.type must be checked first.
+    |
     */
 
     const getUnitType = useCallback(
         (unit) => {
-            return normalize(
+            const type =
+                unit?.details?.type ??
                 unit?.type ??
                 unit?.unit_type ??
-                unit?.category
-            );
+                unit?.category ??
+                unit?.unit_category;
+
+            if (
+                type === null ||
+                type === undefined ||
+                type === ""
+            ) {
+                return "-";
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Handle object type
+            |--------------------------------------------------------------------------
+            */
+
+            if (typeof type === "object") {
+                const objectType =
+                    type?.label ??
+                    type?.name ??
+                    type?.value ??
+                    type?.title;
+
+                if (!objectType) {
+                    return "-";
+                }
+
+                return String(objectType)
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (char) =>
+                        char.toUpperCase()
+                    );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Format database enum/string
+            |--------------------------------------------------------------------------
+            |
+            | bedsitter      -> Bedsitter
+            | one_bedroom    -> One Bedroom
+            | two_bedroom    -> Two Bedroom
+            | three_bedroom  -> Three Bedroom
+            |
+            */
+
+            return String(type)
+                .trim()
+                .replace(/[_-]+/g, " ")
+                .replace(/\b\w/g, (char) =>
+                    char.toUpperCase()
+                );
         },
-        [normalize]
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | APARTMENT NAME
+    |--------------------------------------------------------------------------
+    */
+
+    const getApartmentName = useCallback(
+        (unit) => {
+            const apartment = unit?.apartment;
+
+            if (apartment) {
+                return (
+                    apartment?.name ??
+                    apartment?.title ??
+                    apartment?.block ??
+                    `Apartment #${
+                        apartment?.id ??
+                        unit?.apartment_id ??
+                        "-"
+                    }`
+                );
+            }
+
+            if (unit?.apartment_id) {
+                return `Apartment #${unit.apartment_id}`;
+            }
+
+            return "-";
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY NAME
+    |--------------------------------------------------------------------------
+    */
+
+    const getPropertyName = useCallback(
+        (unit) => {
+            const property = unit?.property;
+
+            if (property) {
+                return (
+                    property?.title ??
+                    property?.name ??
+                    property?.property_name ??
+                    `Property #${
+                        property?.id ??
+                        unit?.property_id ??
+                        "-"
+                    }`
+                );
+            }
+
+            if (unit?.property_id) {
+                return `Property #${unit.property_id}`;
+            }
+
+            return "-";
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PRICE
+    |--------------------------------------------------------------------------
+    |
+    | We keep the database field "price".
+    |
+    | The unit can later be configured as:
+    |
+    | - Rental
+    | - Sale
+    | - Rent + Sale
+    |
+    | API currently returns:
+    |
+    | pricing.price
+    |
+    */
+
+    const getPrice = useCallback(
+        (unit) => {
+            const price =
+                unit?.pricing?.price ??
+                unit?.price ??
+                unit?.rent_amount ??
+                unit?.rent ??
+                unit?.rent_price ??
+                0;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Handle nested price object
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                typeof price === "object" &&
+                price !== null
+            ) {
+                return (
+                    price?.amount ??
+                    price?.value ??
+                    price?.price ??
+                    0
+                );
+            }
+
+            return price;
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORMAT PRICE
+    |--------------------------------------------------------------------------
+    */
+
+    const formatPrice = useCallback(
+        (unit) => {
+            const price = Number(
+                getPrice(unit)
+            );
+
+            if (
+                Number.isNaN(price) ||
+                price <= 0
+            ) {
+                return "KES 0";
+            }
+
+            return `KES ${price.toLocaleString(
+                "en-KE",
+                {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                }
+            )}`;
+        },
+        [getPrice]
     );
 
     /*
     |--------------------------------------------------------------------------
     | RENT
     |--------------------------------------------------------------------------
+    |
+    | Backward-compatible helper.
+    |
+    | If UnitTable still expects getRent(), keep it.
+    |
     */
 
     const getRent = useCallback(
         (unit) => {
-            return (
-                unit?.rent_amount ??
-                unit?.pricing?.rent_amount ??
-                unit?.rent ??
-                unit?.rent_price ??
-                unit?.price ??
-                0
-            );
+            return getPrice(unit);
+        },
+        [getPrice]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEPOSIT
+    |--------------------------------------------------------------------------
+    */
+
+    const getDeposit = useCallback(
+        (unit) => {
+            const deposit =
+                unit?.pricing?.deposit ??
+                unit?.deposit ??
+                0;
+
+            if (
+                typeof deposit === "object" &&
+                deposit !== null
+            ) {
+                return (
+                    deposit?.amount ??
+                    deposit?.value ??
+                    deposit?.price ??
+                    0
+                );
+            }
+
+            return deposit;
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | SERVICE CHARGE
+    |--------------------------------------------------------------------------
+    */
+
+    const getServiceCharge = useCallback(
+        (unit) => {
+            const serviceCharge =
+                unit?.pricing?.service_charge ??
+                unit?.service_charge ??
+                0;
+
+            if (
+                typeof serviceCharge === "object" &&
+                serviceCharge !== null
+            ) {
+                return (
+                    serviceCharge?.amount ??
+                    serviceCharge?.value ??
+                    serviceCharge?.price ??
+                    0
+                );
+            }
+
+            return serviceCharge;
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORMAT MONEY
+    |--------------------------------------------------------------------------
+    */
+
+    const formatMoney = useCallback(
+        (value) => {
+            const amount = Number(value);
+
+            if (
+                Number.isNaN(amount) ||
+                amount <= 0
+            ) {
+                return "KES 0";
+            }
+
+            return `KES ${amount.toLocaleString(
+                "en-KE",
+                {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                }
+            )}`;
         },
         []
     );
@@ -239,21 +541,21 @@ const UnitList = () => {
 
     const getStatus = useCallback(
         (unit) => {
-            const status =
-                unit?.status;
+            const status = unit?.status;
 
             if (
-                typeof status ===
-                "object"
+                status &&
+                typeof status === "object"
             ) {
                 return String(
                     status?.value ??
-                    status?.current ??
-                    status?.name ??
-                    status?.label ??
-                    "unknown"
+                        status?.current ??
+                        status?.name ??
+                        status?.label ??
+                        "unknown"
                 )
                     .toLowerCase()
+                    .trim()
                     .replace(
                         /[\s-]+/g,
                         "_"
@@ -261,10 +563,10 @@ const UnitList = () => {
             }
 
             return String(
-                status ??
-                "unknown"
+                status ?? "unknown"
             )
                 .toLowerCase()
+                .trim()
                 .replace(
                     /[\s-]+/g,
                     "_"
@@ -286,7 +588,27 @@ const UnitList = () => {
                     setRefreshing(true);
                 }
 
-                await getUnits();
+                /*
+                |--------------------------------------------------------------------------
+                | Fetch relations
+                |--------------------------------------------------------------------------
+                |
+                | with_relations=true ensures:
+                |
+                | property
+                | apartment
+                | details
+                | pricing
+                | status
+                |
+                | are available in the response.
+                |
+                */
+
+                await getUnits({
+                    with_relations: true,
+                    _t: Date.now(),
+                });
 
                 if (isRefresh) {
                     dispatch(
@@ -307,9 +629,7 @@ const UnitList = () => {
                     addNotification({
                         type: "error",
                         message:
-                            getErrorMessage(
-                                err
-                            ),
+                            getErrorMessage(err),
                     })
                 );
             } finally {
@@ -348,22 +668,18 @@ const UnitList = () => {
             const selectedUnit =
                 units.find(
                     (item) =>
-                        String(
-                            item.id
-                        ) ===
+                        String(item?.id) ===
                         String(id)
                 );
 
-            const unitName =
-                selectedUnit
-                    ? getUnitName(
-                          selectedUnit
-                      )
-                    : `Unit #${id}`;
+            const unitName = selectedUnit
+                ? getUnitName(selectedUnit)
+                : `Unit #${id}`;
 
             const result =
                 await Swal.fire({
                     title: "Delete Unit?",
+
                     html: `
                         <p class="text-gray-600">
                             You are about to delete
@@ -374,28 +690,36 @@ const UnitList = () => {
                             This action cannot be undone.
                         </p>
                     `,
+
                     icon: "warning",
+
                     showCancelButton: true,
+
                     confirmButtonText:
                         "Yes, delete it",
+
                     cancelButtonText:
                         "Cancel",
+
                     reverseButtons: true,
+
                     focusCancel: true,
+
                     customClass: {
                         popup:
                             "rounded-3xl",
+
                         confirmButton:
                             "px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold ml-2",
+
                         cancelButton:
                             "px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-semibold",
                     },
+
                     buttonsStyling: false,
                 });
 
-            if (
-                !result.isConfirmed
-            ) {
+            if (!result.isConfirmed) {
                 return;
             }
 
@@ -405,6 +729,7 @@ const UnitList = () => {
                 Swal.fire({
                     title:
                         "Deleting Unit...",
+
                     html: `
                         <div class="flex flex-col items-center justify-center py-3">
                             <div
@@ -416,12 +741,13 @@ const UnitList = () => {
                             </p>
                         </div>
                     `,
-                    allowOutsideClick:
-                        false,
-                    allowEscapeKey:
-                        false,
-                    showConfirmButton:
-                        false,
+
+                    allowOutsideClick: false,
+
+                    allowEscapeKey: false,
+
+                    showConfirmButton: false,
+
                     customClass: {
                         popup:
                             "rounded-3xl",
@@ -442,11 +768,14 @@ const UnitList = () => {
 
                 /*
                 |--------------------------------------------------------------------------
-                | Refresh list from database
+                | Refresh database data
                 |--------------------------------------------------------------------------
                 */
 
-                await getUnits();
+                await getUnits({
+                    with_relations: true,
+                    _t: Date.now(),
+                });
             } catch (err) {
                 console.error(
                     "DELETE UNIT FAILED:",
@@ -459,15 +788,11 @@ const UnitList = () => {
                     addNotification({
                         type: "error",
                         message:
-                            getErrorMessage(
-                                err
-                            ),
+                            getErrorMessage(err),
                     })
                 );
             } finally {
-                setDeletingId(
-                    null
-                );
+                setDeletingId(null);
             }
         },
         [
@@ -486,92 +811,79 @@ const UnitList = () => {
     |--------------------------------------------------------------------------
     */
 
-    const filteredUnits =
-        useMemo(() => {
-            const query =
-                search
-                    .trim()
+    const filteredUnits = useMemo(() => {
+        const query = search
+            .trim()
+            .toLowerCase();
+
+        if (!query) {
+            return units;
+        }
+
+        return units.filter((unit) => {
+            const unitName =
+                getUnitName(unit)
                     .toLowerCase();
 
-            if (!query) {
-                return units;
-            }
+            const unitNumber =
+                normalize(
+                    unit?.unit_number
+                ).toLowerCase();
 
-            return units.filter(
-                (unit) => {
-                    const unitName =
-                        getUnitName(
-                            unit
-                        ).toLowerCase();
+            const unitType =
+                getUnitType(unit)
+                    .toLowerCase();
 
-                    const unitNumber =
-                        normalize(
-                            unit?.unit_number
-                        ).toLowerCase();
+            const propertyName =
+                getPropertyName(unit)
+                    .toLowerCase();
 
-                    const unitType =
-                        getUnitType(
-                            unit
-                        ).toLowerCase();
+            const apartmentName =
+                getApartmentName(unit)
+                    .toLowerCase();
 
-                    const propertyName =
-                        normalize(
-                            unit
-                                ?.property
-                                ?.name
-                        ).toLowerCase();
+            const propertyCode =
+                normalize(
+                    unit?.property
+                        ?.property_code
+                ).toLowerCase();
 
-                    const apartmentName =
-                        normalize(
-                            unit
-                                ?.apartment
-                                ?.name
-                        ).toLowerCase();
+            const apartmentBlock =
+                normalize(
+                    unit?.apartment?.block
+                ).toLowerCase();
 
-                    return (
-                        unitName.includes(
-                            query
-                        ) ||
-                        unitNumber.includes(
-                            query
-                        ) ||
-                        unitType.includes(
-                            query
-                        ) ||
-                        propertyName.includes(
-                            query
-                        ) ||
-                        apartmentName.includes(
-                            query
-                        )
-                    );
-                }
+            return (
+                unitName.includes(query) ||
+                unitNumber.includes(query) ||
+                unitType.includes(query) ||
+                propertyName.includes(query) ||
+                propertyCode.includes(query) ||
+                apartmentName.includes(query) ||
+                apartmentBlock.includes(query)
             );
-        }, [
-            units,
-            search,
-            normalize,
-            getUnitName,
-            getUnitType,
-        ]);
+        });
+    }, [
+        units,
+        search,
+        normalize,
+        getUnitName,
+        getUnitType,
+        getPropertyName,
+        getApartmentName,
+    ]);
 
     /*
     |--------------------------------------------------------------------------
     | STATISTICS
     |--------------------------------------------------------------------------
-    |
-    | Prefer statistics calculated by the hook.
-    | Fallback calculation is kept for safety.
-    |
     */
 
     const stats = useMemo(() => {
         if (
             hookStats &&
-            typeof hookStats ===
-                "object" &&
-            typeof hookStats.total ===
-                "number"
+            typeof hookStats === "object" &&
+            typeof hookStats.total === "number"
         ) {
             return hookStats;
         }
@@ -581,48 +893,37 @@ const UnitList = () => {
                 acc.total += 1;
 
                 const status =
-                    getStatus(
-                        unit
-                    );
+                    getStatus(unit);
 
                 if (
-                    status ===
-                    "vacant"
+                    status === "vacant" ||
+                    status === "available"
                 ) {
-                    acc.vacant +=
-                        1;
+                    acc.vacant += 1;
                 }
 
                 if (
-                    status ===
-                    "occupied"
+                    status === "occupied"
                 ) {
-                    acc.occupied +=
-                        1;
+                    acc.occupied += 1;
                 }
 
                 if (
-                    status ===
-                    "maintenance"
+                    status === "maintenance"
                 ) {
-                    acc.maintenance +=
-                        1;
+                    acc.maintenance += 1;
                 }
 
                 if (
-                    status ===
-                    "reserved"
+                    status === "reserved"
                 ) {
-                    acc.reserved +=
-                        1;
+                    acc.reserved += 1;
                 }
 
                 if (
-                    status ===
-                    "inactive"
+                    status === "inactive"
                 ) {
-                    acc.inactive +=
-                        1;
+                    acc.inactive += 1;
                 }
 
                 return acc;
@@ -665,8 +966,8 @@ const UnitList = () => {
                 </p>
 
                 <p className="mt-1 text-xs text-gray-400">
-                    Please wait while we load the
-                    units.
+                    Please wait while we
+                    load the units.
                 </p>
             </div>
         );
@@ -680,6 +981,7 @@ const UnitList = () => {
 
     return (
         <div className="mx-auto w-full max-w-7xl space-y-6">
+
             {/* HEADER */}
 
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -689,12 +991,16 @@ const UnitList = () => {
                     </h1>
 
                     <p className="mt-1 text-gray-500">
-                        Manage apartment, office,
-                        shop and rental units.
+                        Manage apartment,
+                        office, shop and
+                        rental units.
                     </p>
                 </div>
 
                 <div className="flex items-center gap-3">
+
+                    {/* REFRESH */}
+
                     <button
                         type="button"
                         onClick={() =>
@@ -720,6 +1026,8 @@ const UnitList = () => {
                             : "Refresh"}
                     </button>
 
+                    {/* CREATE */}
+
                     <button
                         type="button"
                         onClick={() =>
@@ -741,9 +1049,7 @@ const UnitList = () => {
             {error && (
                 <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700">
                     <div className="mt-0.5 shrink-0">
-                        <AlertTriangle
-                            size={19}
-                        />
+                        <AlertTriangle size={19} />
                     </div>
 
                     <div className="min-w-0">
@@ -769,23 +1075,17 @@ const UnitList = () => {
 
             {/* STATS */}
 
-            <UnitStats
-                stats={stats}
-            />
+            <UnitStats stats={stats} />
 
             {/* FILTERS */}
 
             <UnitFilters
                 search={search}
-                onSearchChange={
-                    setSearch
-                }
+                onSearchChange={setSearch}
                 onRefresh={() =>
                     fetchUnits(true)
                 }
-                refreshing={
-                    refreshing
-                }
+                refreshing={refreshing}
             />
 
             {/* TABLE */}
@@ -793,9 +1093,7 @@ const UnitList = () => {
             <UnitTable
                 units={filteredUnits}
                 search={search}
-                deletingId={
-                    deletingId
-                }
+                deletingId={deletingId}
                 onView={(id) =>
                     navigate(
                         `/super-admin/units/${id}`
@@ -806,22 +1104,19 @@ const UnitList = () => {
                         `/super-admin/units/edit/${id}`
                     )
                 }
-                onDelete={
-                    handleDelete
-                }
-                getUnitName={
-                    getUnitName
-                }
-                getUnitType={
-                    getUnitType
-                }
+                onDelete={handleDelete}
+                getUnitName={getUnitName}
+                getUnitType={getUnitType}
                 getRent={getRent}
-                getStatus={
-                    getStatus
+                getPrice={getPrice}
+                formatPrice={formatPrice}
+                getDeposit={getDeposit}
+                getServiceCharge={
+                    getServiceCharge
                 }
-                normalize={
-                    normalize
-                }
+                formatMoney={formatMoney}
+                getStatus={getStatus}
+                normalize={normalize}
                 onCreate={() =>
                     navigate(
                         "/super-admin/units/create"
@@ -833,4 +1128,3 @@ const UnitList = () => {
 };
 
 export default UnitList;
-
