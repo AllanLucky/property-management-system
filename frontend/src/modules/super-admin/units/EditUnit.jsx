@@ -1,20 +1,28 @@
 import {
     useCallback,
     useEffect,
+    useRef,
     useState,
 } from "react";
 
 import {
     AlertTriangle,
     ArrowLeft,
+    Building2,
     Loader2,
     RefreshCcw,
 } from "lucide-react";
 
-import { useNavigate, useParams } from "react-router-dom";
+import {
+    useNavigate,
+    useParams,
+} from "react-router-dom";
+
 import { useDispatch } from "react-redux";
 
-import { addNotification } from "../../../store/uiSlice";
+import {
+    addNotification,
+} from "../../../store/uiSlice";
 
 import UnitForm from "./unitForm";
 
@@ -37,6 +45,10 @@ const EditUnit = () => {
     |--------------------------------------------------------------------------
     | UNIT HOOK
     |--------------------------------------------------------------------------
+    |
+    | Disable automatic fetching because this page controls
+    | the initial loading process.
+    |
     */
 
     const {
@@ -45,7 +57,9 @@ const EditUnit = () => {
         error: unitError,
         getUnit,
         updateUnit,
-    } = useUnit();
+    } = useUnit({
+        autoFetch: false,
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -58,7 +72,9 @@ const EditUnit = () => {
         loading: propertiesLoading,
         error: propertiesError,
         getProperties,
-    } = useProperty();
+    } = useProperty({
+        autoFetch: false,
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -71,7 +87,9 @@ const EditUnit = () => {
         loading: apartmentsLoading,
         error: apartmentsError,
         getApartments,
-    } = useApartment();
+    } = useApartment({
+        autoFetch: false,
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -90,130 +108,403 @@ const EditUnit = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | LOAD EDIT FORM DATA
+    | REQUEST CONTROL
+    |--------------------------------------------------------------------------
+    |
+    | Prevents an old request from replacing newer data.
+    |
+    */
+
+    const requestIdRef = useRef(0);
+
+    /*
+    |--------------------------------------------------------------------------
+    | ERROR MESSAGE HELPER
+    |--------------------------------------------------------------------------
+    */
+
+    const getErrorMessage = useCallback(
+        (error) => {
+            if (!error) {
+                return null;
+            }
+
+            if (typeof error === "string") {
+                return error;
+            }
+
+            /*
+            | Laravel / Axios errors
+            */
+
+            const responseData =
+                error?.response?.data;
+
+            /*
+            | Validation error object
+            */
+
+            const validationErrors =
+                responseData?.errors ??
+                error?.errors;
+
+            if (
+                validationErrors &&
+                typeof validationErrors ===
+                    "object"
+            ) {
+                /*
+                | Laravel often returns:
+                |
+                | errors: {
+                |   property_id: ["The property..."],
+                |   unit_number: ["The unit..."]
+                | }
+                */
+
+                const firstError =
+                    Object.values(
+                        validationErrors
+                    ).find(Boolean);
+
+                if (Array.isArray(firstError)) {
+                    return firstError[0];
+                }
+
+                if (
+                    typeof firstError ===
+                    "string"
+                ) {
+                    return firstError;
+                }
+
+                /*
+                | Some APIs return:
+                |
+                | errors: {
+                |   error: "..."
+                | }
+                */
+
+                if (
+                    typeof validationErrors.error ===
+                    "string"
+                ) {
+                    return validationErrors.error;
+                }
+
+                if (
+                    typeof validationErrors.message ===
+                    "string"
+                ) {
+                    return validationErrors.message;
+                }
+            }
+
+            return (
+                responseData?.message ||
+                responseData?.error ||
+                error?.message ||
+                error?.error ||
+                "Unable to load the unit data."
+            );
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | RESOLVE SINGLE RESOURCE
+    |--------------------------------------------------------------------------
+    |
+    | Supports:
+    |
+    | { data: {...} }
+    |
+    | { data: { data: {...} } }
+    |
+    | { result: {...} }
+    |
+    | { unit: {...} }
+    |
+    | Direct object
+    |
+    */
+
+    const resolveUnitResponse =
+        useCallback((response) => {
+            if (!response) {
+                return null;
+            }
+
+            let result = response;
+
+            /*
+            | Axios response:
+            |
+            | {
+            |   data: {
+            |      ...
+            |   }
+            | }
+            |
+            */
+
+            if (
+                result?.data &&
+                typeof result.data ===
+                    "object" &&
+                !Array.isArray(result.data)
+            ) {
+                result = result.data;
+            }
+
+            /*
+            | Laravel resource:
+            |
+            | {
+            |   data: {
+            |      id: 1,
+            |      ...
+            |   }
+            | }
+            |
+            */
+
+            if (
+                result?.data &&
+                typeof result.data ===
+                    "object" &&
+                !Array.isArray(result.data)
+            ) {
+                result = result.data;
+            }
+
+            /*
+            | Some APIs:
+            |
+            | {
+            |   unit: {...}
+            | }
+            */
+
+            if (
+                result?.unit &&
+                typeof result.unit ===
+                    "object" &&
+                !Array.isArray(result.unit)
+            ) {
+                result = result.unit;
+            }
+
+            /*
+            | Some APIs:
+            |
+            | {
+            |   result: {...}
+            | }
+            */
+
+            if (
+                result?.result &&
+                typeof result.result ===
+                    "object" &&
+                !Array.isArray(result.result)
+            ) {
+                result = result.result;
+            }
+
+            if (
+                !result ||
+                typeof result !==
+                    "object" ||
+                Array.isArray(result)
+            ) {
+                return null;
+            }
+
+            return result;
+        }, []);
+
+    /*
+    |--------------------------------------------------------------------------
+    | LOAD FORM DATA
     |--------------------------------------------------------------------------
     */
 
     const loadFormData = useCallback(
         async () => {
             if (!id) {
+                setFetching(false);
+                setCurrentUnit(null);
                 return;
             }
+
+            const requestId =
+                ++requestIdRef.current;
 
             setFetching(true);
 
             try {
-                const [
-                    unitResponse,
-                ] = await Promise.all([
-                    typeof getUnit ===
-                    "function"
-                        ? getUnit(id)
-                        : Promise.resolve(null),
-
-                    typeof getProperties ===
-                    "function"
-                        ? getProperties({
-                              with_relations:
-                                  true,
-                          })
-                        : Promise.resolve(null),
-
-                    typeof getApartments ===
-                    "function"
-                        ? getApartments({
-                              with_relations:
-                                  true,
-                          })
-                        : Promise.resolve(null),
-                ]);
-
                 /*
                 |--------------------------------------------------------------------------
-                | Resolve Unit Response
+                | Load all required resources in parallel
                 |--------------------------------------------------------------------------
                 */
 
-                let loadedUnit =
-                    unitResponse;
+                const results =
+                    await Promise.allSettled([
+                        getUnit(id),
+
+                        getProperties({
+                            with_relations: true,
+                            _t: Date.now(),
+                        }),
+
+                        getApartments({
+                            with_relations: true,
+                            _t: Date.now(),
+                        }),
+                    ]);
 
                 /*
                 |--------------------------------------------------------------------------
-                | Some hooks return:
-                |
-                | {
-                |     data: {...}
-                | }
-                |
-                | or:
-                |
-                | {
-                |     data: {
-                |         data: {...}
-                |     }
-                | }
-                |
+                | Ignore stale requests
                 |--------------------------------------------------------------------------
                 */
 
                 if (
-                    loadedUnit?.data
+                    requestId !==
+                    requestIdRef.current
                 ) {
-                    loadedUnit =
-                        loadedUnit.data;
-                }
-
-                if (
-                    loadedUnit?.data
-                ) {
-                    loadedUnit =
-                        loadedUnit.data;
+                    return;
                 }
 
                 /*
                 |--------------------------------------------------------------------------
-                | If getUnit does not return the
-                | object, use hook state.
+                | UNIT RESULT
+                |--------------------------------------------------------------------------
+                */
+
+                const unitResult =
+                    results[0];
+
+                let loadedUnit = null;
+
+                if (
+                    unitResult?.status ===
+                    "fulfilled"
+                ) {
+                    loadedUnit =
+                        resolveUnitResponse(
+                            unitResult.value
+                        );
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | FALLBACK TO HOOK UNIT STATE
                 |--------------------------------------------------------------------------
                 */
 
                 if (
-                    !loadedUnit ||
-                    typeof loadedUnit !==
-                        "object" ||
-                    Array.isArray(
-                        loadedUnit
-                    )
+                    !loadedUnit &&
+                    unit &&
+                    typeof unit ===
+                        "object" &&
+                    !Array.isArray(unit)
                 ) {
                     loadedUnit = unit;
                 }
 
-                if (
-                    loadedUnit
-                ) {
+                /*
+                |--------------------------------------------------------------------------
+                | SAVE CURRENT UNIT
+                |--------------------------------------------------------------------------
+                */
+
+                if (loadedUnit) {
                     setCurrentUnit(
                         loadedUnit
                     );
+                } else {
+                    setCurrentUnit(null);
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | CHECK FAILED REQUESTS
+                |--------------------------------------------------------------------------
+                */
+
+                const failedResults =
+                    results.filter(
+                        (result) =>
+                            result.status ===
+                            "rejected"
+                    );
+
+                if (
+                    failedResults.length >
+                    0
+                ) {
+                    console.error(
+                        "Some edit unit requests failed:",
+                        failedResults
+                    );
+
+                    /*
+                    | Unit is critical.
+                    |
+                    | If unit failed, show the
+                    | complete error screen.
+                    */
+
+                    if (
+                        unitResult?.status ===
+                        "rejected"
+                    ) {
+                        throw unitResult.reason;
+                    }
+
+                    /*
+                    | Properties/apartments can
+                    | still be handled by their
+                    | hook errors.
+                    */
                 }
             } catch (error) {
+                if (
+                    requestId !==
+                    requestIdRef.current
+                ) {
+                    return;
+                }
+
                 console.error(
                     "FAILED TO LOAD UNIT EDIT DATA:",
                     error
                 );
 
+                setCurrentUnit(null);
+
                 dispatch(
                     addNotification({
                         type: "error",
                         message:
-                            error?.response
-                                ?.data
-                                ?.message ||
-                            error?.message ||
+                            getErrorMessage(
+                                error
+                            ) ||
                             "Failed to load unit data.",
                     })
                 );
             } finally {
-                setFetching(false);
+                if (
+                    requestId ===
+                    requestIdRef.current
+                ) {
+                    setFetching(false);
+                }
             }
         },
         [
@@ -221,8 +512,10 @@ const EditUnit = () => {
             getUnit,
             getProperties,
             getApartments,
+            resolveUnitResponse,
             unit,
             dispatch,
+            getErrorMessage,
         ]
     );
 
@@ -230,28 +523,46 @@ const EditUnit = () => {
     |--------------------------------------------------------------------------
     | INITIAL LOAD
     |--------------------------------------------------------------------------
+    |
+    | Run whenever the route ID changes.
+    |
     */
 
     useEffect(() => {
+        let mounted = true;
+
+        if (!mounted) {
+            return;
+        }
+
         loadFormData();
-    }, [loadFormData]);
+
+        return () => {
+            mounted = false;
+            requestIdRef.current += 1;
+        };
+    }, [id]);
 
     /*
     |--------------------------------------------------------------------------
     | KEEP LOCAL UNIT IN SYNC
     |--------------------------------------------------------------------------
+    |
+    | If the hook receives the unit independently, use it only
+    | when we don't already have a locally loaded unit.
+    |
     */
 
     useEffect(() => {
         if (
+            !currentUnit &&
             unit &&
-            typeof unit ===
-                "object" &&
+            typeof unit === "object" &&
             !Array.isArray(unit)
         ) {
             setCurrentUnit(unit);
         }
-    }, [unit]);
+    }, [unit, currentUnit]);
 
     /*
     |--------------------------------------------------------------------------
@@ -287,20 +598,12 @@ const EditUnit = () => {
                         addNotification({
                             type: "success",
                             message:
-                                response
-                                    ?.message ||
-                                response
-                                    ?.data
+                                response?.message ||
+                                response?.data
                                     ?.message ||
                                 "Unit updated successfully.",
                         })
                     );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Redirect
-                    |--------------------------------------------------------------------------
-                    */
 
                     navigate(
                         "/super-admin/units"
@@ -312,11 +615,9 @@ const EditUnit = () => {
                     );
 
                     const message =
-                        error
-                            ?.response
-                            ?.data
-                            ?.message ||
-                        error?.message ||
+                        getErrorMessage(
+                            error
+                        ) ||
                         "Failed to update unit.";
 
                     dispatch(
@@ -327,16 +628,14 @@ const EditUnit = () => {
                     );
 
                     /*
-                    |--------------------------------------------------------------------------
-                    | Let UnitForm handle submission
-                    |--------------------------------------------------------------------------
+                    | Important:
+                    | Re-throw so UnitForm can also
+                    | handle the failed submission.
                     */
 
                     throw error;
                 } finally {
-                    setSubmitting(
-                        false
-                    );
+                    setSubmitting(false);
                 }
             },
             [
@@ -345,6 +644,7 @@ const EditUnit = () => {
                 updateUnit,
                 dispatch,
                 navigate,
+                getErrorMessage,
             ]
         );
 
@@ -369,6 +669,7 @@ const EditUnit = () => {
 
     const handleRetry =
         useCallback(() => {
+            setCurrentUnit(null);
             loadFormData();
         }, [loadFormData]);
 
@@ -379,53 +680,70 @@ const EditUnit = () => {
     */
 
     const formDataError =
+        unitError ||
         propertiesError ||
-        apartmentsError ||
-        unitError;
-
-    const getErrorMessage =
-        useCallback((error) => {
-            if (!error) {
-                return null;
-            }
-
-            if (
-                typeof error ===
-                "string"
-            ) {
-                return error;
-            }
-
-            return (
-                error?.response
-                    ?.data
-                    ?.message ||
-                error?.message ||
-                error?.error ||
-                "Unable to load the unit data."
-            );
-        }, []);
+        apartmentsError;
 
     /*
     |--------------------------------------------------------------------------
-    | LOADING
+    | FORM DATA LOADING
     |--------------------------------------------------------------------------
     */
 
-    const loading =
-        fetching ||
+    const formDataLoading =
         unitLoading ||
         propertiesLoading ||
         apartmentsLoading;
 
     /*
     |--------------------------------------------------------------------------
-    | INITIAL LOADING SCREEN
+    | NORMALIZE PROPERTIES
+    |--------------------------------------------------------------------------
+    |
+    | The hook may return an array directly or a nested response.
+    |
+    */
+
+    const normalizedProperties =
+        Array.isArray(properties)
+            ? properties
+            : Array.isArray(
+                  properties?.data
+              )
+            ? properties.data
+            : Array.isArray(
+                  properties?.data?.data
+              )
+            ? properties.data.data
+            : [];
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE APARTMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizedApartments =
+        Array.isArray(apartments)
+            ? apartments
+            : Array.isArray(
+                  apartments?.data
+              )
+            ? apartments.data
+            : Array.isArray(
+                  apartments?.data?.data
+              )
+            ? apartments.data.data
+            : [];
+
+    /*
+    |--------------------------------------------------------------------------
+    | INITIAL PAGE LOADING
     |--------------------------------------------------------------------------
     */
 
     if (
-        fetching ||
+        fetching &&
         !currentUnit
     ) {
         return (
@@ -452,6 +770,14 @@ const EditUnit = () => {
                         <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-100">
                             <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-500" />
                         </div>
+
+                        <div className="mt-5 flex items-center justify-center gap-2 text-xs text-slate-400">
+                            <Loader2
+                                size={14}
+                                className="animate-spin"
+                            />
+                            Please wait...
+                        </div>
                     </div>
                 </div>
             </div>
@@ -462,13 +788,21 @@ const EditUnit = () => {
     |--------------------------------------------------------------------------
     | ERROR SCREEN
     |--------------------------------------------------------------------------
+    |
+    | Only show the full-page error if the unit itself could not
+    | be loaded.
+    |
     */
 
-    if (formDataError) {
-        const message =
-            getErrorMessage(
-                formDataError
-            );
+    if (
+        !currentUnit &&
+        (formDataError || !id)
+    ) {
+        const message = !id
+            ? "No unit ID was provided."
+            : getErrorMessage(
+                  formDataError
+              );
 
         return (
             <div className="min-h-full bg-slate-50 p-4 sm:p-6 lg:p-8">
@@ -489,85 +823,77 @@ const EditUnit = () => {
                         </button>
                     </div>
 
-                    <div className="rounded-2xl border border-red-200 bg-white shadow-sm">
-                        <div className="p-6 sm:p-8">
-                            <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-red-50">
+                    <div className="overflow-hidden rounded-2xl border border-red-200 bg-white shadow-sm">
+                        <div className="border-b border-red-100 bg-red-50/50 px-6 py-5 sm:px-8">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-100">
                                     <AlertTriangle
-                                        size={
-                                            26
-                                        }
+                                        size={24}
                                         className="text-red-600"
                                     />
                                 </div>
 
-                                <div className="flex-1">
-                                    <h1 className="text-xl font-bold text-slate-900">
-                                        Unable to Load
-                                        Unit
+                                <div>
+                                    <h1 className="text-lg font-bold text-slate-900">
+                                        Unable to
+                                        Load Unit
                                     </h1>
 
-                                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                                        We could not
-                                        load the
-                                        unit
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        The unit
                                         information
-                                        required
-                                        for editing.
+                                        could not
+                                        be loaded.
                                     </p>
-
-                                    {message && (
-                                        <div className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
-                                            <p className="text-sm font-medium leading-6 text-red-700">
-                                                {
-                                                    message
-                                                }
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    <div className="mt-6 flex flex-wrap gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={
-                                                handleRetry
-                                            }
-                                            disabled={
-                                                fetching
-                                            }
-                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            <RefreshCcw
-                                                size={
-                                                    17
-                                                }
-                                                className={
-                                                    fetching
-                                                        ? "animate-spin"
-                                                        : ""
-                                                }
-                                            />
-
-                                            Try Again
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={
-                                                handleCancel
-                                            }
-                                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                                        >
-                                            <ArrowLeft
-                                                size={
-                                                    17
-                                                }
-                                            />
-
-                                            Back to Units
-                                        </button>
-                                    </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 sm:p-8">
+                            {message && (
+                                <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+                                    <p className="text-sm font-medium leading-6 text-red-700">
+                                        {message}
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="mt-6 flex flex-wrap gap-3">
+                                <button
+                                    type="button"
+                                    onClick={
+                                        handleRetry
+                                    }
+                                    disabled={
+                                        fetching
+                                    }
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <RefreshCcw
+                                        size={17}
+                                        className={
+                                            fetching
+                                                ? "animate-spin"
+                                                : ""
+                                        }
+                                    />
+
+                                    Try Again
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        handleCancel
+                                    }
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                                >
+                                    <ArrowLeft
+                                        size={17}
+                                    />
+
+                                    Back to Units
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -585,9 +911,7 @@ const EditUnit = () => {
     return (
         <div className="min-h-full bg-slate-50 p-4 sm:p-6 lg:p-8">
             <div className="mx-auto max-w-7xl">
-                {/* ---------------------------------------------------------- */}
                 {/* PAGE HEADER */}
-                {/* ---------------------------------------------------------- */}
 
                 <div className="mb-6">
                     <button
@@ -595,7 +919,10 @@ const EditUnit = () => {
                         onClick={
                             handleCancel
                         }
-                        className="mb-4 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-white hover:text-slate-900"
+                        disabled={
+                            submitting
+                        }
+                        className="mb-4 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         <ArrowLeft
                             size={18}
@@ -606,10 +933,10 @@ const EditUnit = () => {
 
                     <div className="flex items-start gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
-                            <Building2Icon />
+                            <Building2 className="h-5 w-5 text-indigo-600" />
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                                 Edit Unit
                             </h1>
@@ -630,56 +957,73 @@ const EditUnit = () => {
                     </div>
                 </div>
 
-                {/* ---------------------------------------------------------- */}
-                {/* BACKGROUND LOADING */}
-                {/* ---------------------------------------------------------- */}
+                {/* BACKGROUND REFRESH */}
 
-                {loading &&
-                    !submitting && (
+                {fetching &&
+                    currentUnit && (
                         <div className="mb-5 flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700">
                             <Loader2
                                 size={18}
                                 className="animate-spin"
                             />
 
-                            Loading unit
+                            Refreshing unit
                             information...
                         </div>
                     )}
 
-                {/* ---------------------------------------------------------- */}
+                {/* RESOURCE WARNING */}
+
+                {!fetching &&
+                    currentUnit &&
+                    formDataError && (
+                        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            <AlertTriangle
+                                size={18}
+                                className="mt-0.5 shrink-0"
+                            />
+
+                            <div>
+                                <p className="font-semibold">
+                                    Some form data
+                                    could not be
+                                    loaded.
+                                </p>
+
+                                <p className="mt-1">
+                                    You can still
+                                    review the
+                                    unit, but
+                                    property or
+                                    apartment
+                                    options may
+                                    be incomplete.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                 {/* FORM */}
-                {/* ---------------------------------------------------------- */}
 
                 <UnitForm
-                    unit={
-                        currentUnit
-                    }
+                    unit={currentUnit}
                     properties={
-                        Array.isArray(
-                            properties
-                        )
-                            ? properties
-                            : []
+                        normalizedProperties
                     }
                     apartments={
-                        Array.isArray(
-                            apartments
-                        )
-                            ? apartments
-                            : []
+                        normalizedApartments
                     }
                     loading={
-                        unitLoading ||
-                        propertiesLoading ||
-                        apartmentsLoading
+                        fetching ||
+                        formDataLoading
                     }
                     submitting={
-                        submitting ||
-                        unitLoading
+                        submitting
                     }
                     error={
-                        unitError
+                        unitError ||
+                        propertiesError ||
+                        apartmentsError
                     }
                     onSubmit={
                         handleSubmit
@@ -701,9 +1045,7 @@ const EditUnit = () => {
 |--------------------------------------------------------------------------
 */
 
-const getUnitNumber = (
-    unit
-) => {
+const getUnitNumber = (unit) => {
     if (!unit) {
         return "Unit";
     }
@@ -711,35 +1053,18 @@ const getUnitNumber = (
     return (
         unit?.unit_number ??
         unit?.number ??
+        unit?.unit_name ??
         unit?.name ??
-        `#${unit?.id ?? ""}`
+        (unit?.id
+            ? `#${unit.id}`
+            : "Unit")
     );
 };
 
 /*
 |--------------------------------------------------------------------------
-| HEADER ICON
+| DEFAULT EXPORT
 |--------------------------------------------------------------------------
 */
-
-const Building2Icon = () => (
-    <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-5 w-5 text-indigo-600"
-        aria-hidden="true"
-    >
-        <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
-        <path d="M6 12H4a2 2 0 0 0-2 2v8h20v-8a2 2 0 0 0-2-2h-2" />
-        <path d="M10 6h4" />
-        <path d="M10 10h4" />
-        <path d="M10 14h4" />
-        <path d="M10 18h4" />
-    </svg>
-);
 
 export default EditUnit;
