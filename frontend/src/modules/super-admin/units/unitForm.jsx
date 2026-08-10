@@ -48,6 +48,8 @@ const DEFAULT_FORM = {
     size: "",
     size_unit: "sqm",
 
+    // Laravel/backend may call this rent or price.
+    // We submit both where appropriate.
     price: "",
     deposit: "",
     service_charge: "",
@@ -162,27 +164,6 @@ const SIZE_UNITS = [
 
 /**
  * Normalize Laravel/API collection responses.
- *
- * Supports:
- * []
- *
- * {
- *     data: []
- * }
- *
- * {
- *     data: {
- *         data: []
- *     }
- * }
- *
- * {
- *     results: []
- * }
- *
- * {
- *     items: []
- * }
  */
 const normalizeCollection = (response) => {
     if (!response) {
@@ -207,6 +188,10 @@ const normalizeCollection = (response) => {
 
     if (Array.isArray(response.items)) {
         return response.items;
+    }
+
+    if (Array.isArray(response.records)) {
+        return response.records;
     }
 
     return [];
@@ -240,10 +225,7 @@ const getId = (item) => {
 /**
  * Safely extract a display name.
  */
-const getName = (
-    item,
-    fallback = ""
-) => {
+const getName = (item, fallback = "") => {
     if (!item) {
         return fallback;
     }
@@ -259,17 +241,13 @@ const getName = (
         item.property_name ??
         item.apartment_name ??
         item.display_name ??
+        item.full_name ??
         fallback
     );
 };
 
 /**
- * Normalize IDs that may arrive as:
- *
- * number
- * string
- * object
- * Laravel resource
+ * Normalize IDs to strings.
  */
 const normalizeId = (value) => {
     if (
@@ -296,10 +274,10 @@ const normalizeId = (value) => {
 /**
  * Normalize enum/resource values.
  *
- * Supports:
- *
+ * Handles:
  * "vacant"
  *
+ * and:
  * {
  *     value: "vacant",
  *     label: "Vacant"
@@ -329,16 +307,14 @@ const normalizeValue = (
 };
 
 /**
- * Convert API date into HTML date input format.
+ * Convert API date into HTML date format.
  */
 const formatDateForInput = (value) => {
     if (!value) {
         return "";
     }
 
-    if (
-        typeof value === "string"
-    ) {
+    if (typeof value === "string") {
         return value.substring(0, 10);
     }
 
@@ -352,8 +328,7 @@ const formatDateForInput = (value) => {
 };
 
 /**
- * Convert API boolean-ish values into
- * real JavaScript booleans.
+ * Normalize boolean values.
  */
 const normalizeBoolean = (value) => {
     return (
@@ -365,7 +340,7 @@ const normalizeBoolean = (value) => {
 };
 
 /**
- * Safely convert numeric values.
+ * Safely normalize numbers.
  */
 const normalizeNumber = (
     value,
@@ -434,13 +409,9 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const propertyOptions = useMemo(
-        () =>
-            normalizeCollection(
-                properties
-            ),
-        [properties]
-    );
+    const propertyOptions = useMemo(() => {
+        return normalizeCollection(properties);
+    }, [properties]);
 
     /*
     |--------------------------------------------------------------------------
@@ -448,13 +419,9 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const apartmentOptions = useMemo(
-        () =>
-            normalizeCollection(
-                apartments
-            ),
-        [apartments]
-    );
+    const apartmentOptions = useMemo(() => {
+        return normalizeCollection(apartments);
+    }, [apartments]);
 
     /*
     |--------------------------------------------------------------------------
@@ -462,34 +429,34 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const filteredApartments =
-        useMemo(() => {
-            if (!form.property_id) {
-                return [];
+    const filteredApartments = useMemo(() => {
+        if (!form.property_id) {
+            return [];
+        }
+
+        const selectedPropertyId =
+            normalizeId(form.property_id);
+
+        return apartmentOptions.filter(
+            (apartment) => {
+                const apartmentPropertyId =
+                    apartment?.property_id ??
+                    apartment?.property?.id ??
+                    apartment?.property?.value ??
+                    apartment?.property?.property_id ??
+                    apartment?.property?.data?.id;
+
+                return (
+                    normalizeId(
+                        apartmentPropertyId
+                    ) === selectedPropertyId
+                );
             }
-
-            return apartmentOptions.filter(
-                (apartment) => {
-                    const apartmentPropertyId =
-                        apartment?.property_id ??
-                        apartment?.property?.id ??
-                        apartment?.property?.value ??
-                        apartment?.property?.property_id;
-
-                    return (
-                        normalizeId(
-                            apartmentPropertyId
-                        ) ===
-                        normalizeId(
-                            form.property_id
-                        )
-                    );
-                }
-            );
-        }, [
-            apartmentOptions,
-            form.property_id,
-        ]);
+        );
+    }, [
+        apartmentOptions,
+        form.property_id,
+    ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -514,6 +481,7 @@ const UnitForm = ({
             unit.property?.id ??
             unit.property?.value ??
             unit.property?.property_id ??
+            unit.property?.data?.id ??
             "";
 
         const apartmentId =
@@ -521,6 +489,7 @@ const UnitForm = ({
             unit.apartment?.id ??
             unit.apartment?.value ??
             unit.apartment?.apartment_id ??
+            unit.apartment?.data?.id ??
             "";
 
         const thumbnail =
@@ -528,6 +497,13 @@ const UnitForm = ({
             unit.thumbnail ??
             unit.image_url ??
             unit.image ??
+            "";
+
+        const rent =
+            unit.rent ??
+            unit.price ??
+            unit.rent_amount ??
+            unit.monthly_rent ??
             "";
 
         setForm({
@@ -592,7 +568,8 @@ const UnitForm = ({
             size:
                 normalizeNumber(
                     unit.size ??
-                        unit.area,
+                        unit.area ??
+                        unit.square_meters,
                     ""
                 ),
 
@@ -604,21 +581,21 @@ const UnitForm = ({
 
             price:
                 normalizeNumber(
-                    unit.price ??
-                        unit.rent ??
-                        unit.rent_amount,
+                    rent,
                     ""
                 ),
 
             deposit:
                 normalizeNumber(
-                    unit.deposit,
+                    unit.deposit ??
+                        unit.security_deposit,
                     ""
                 ),
 
             service_charge:
                 normalizeNumber(
-                    unit.service_charge,
+                    unit.service_charge ??
+                        unit.serviceCharge,
                     ""
                 ),
 
@@ -629,26 +606,31 @@ const UnitForm = ({
 
             has_wifi:
                 normalizeBoolean(
-                    unit.has_wifi
+                    unit.has_wifi ??
+                        unit.has_wifi_internet
                 ),
 
             has_furnished:
                 normalizeBoolean(
-                    unit.has_furnished
+                    unit.has_furnished ??
+                        unit.is_furnished
                 ),
 
             has_air_conditioning:
                 normalizeBoolean(
-                    unit.has_air_conditioning
+                    unit.has_air_conditioning ??
+                        unit.has_ac
                 ),
 
             thumbnail:
                 unit.thumbnail ??
+                unit.thumbnail_url ??
                 "",
 
             available_from:
                 formatDateForInput(
-                    unit.available_from
+                    unit.available_from ??
+                        unit.available_date
                 ),
 
             notes:
@@ -657,9 +639,7 @@ const UnitForm = ({
         });
 
         setErrors({});
-        setThumbnailPreview(
-            thumbnail
-        );
+        setThumbnailPreview(thumbnail);
     }, [unit]);
 
     /*
@@ -701,8 +681,8 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleChange =
-        useCallback((event) => {
+    const handleChange = useCallback(
+        (event) => {
             const {
                 name,
                 value,
@@ -712,7 +692,6 @@ const UnitForm = ({
 
             setForm((previous) => ({
                 ...previous,
-
                 [name]:
                     type === "checkbox"
                         ? checked
@@ -732,7 +711,9 @@ const UnitForm = ({
 
                 return next;
             });
-        }, []);
+        },
+        []
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -803,131 +784,145 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const validate =
-        useCallback(() => {
-            const validationErrors =
-                {};
+    const validate = useCallback(() => {
+        const validationErrors = {};
 
-            if (!form.property_id) {
-                validationErrors.property_id =
-                    "Please select a property.";
-            }
+        if (!form.property_id) {
+            validationErrors.property_id =
+                "Please select a property.";
+        }
 
-            if (
-                !form.unit_number?.trim()
-            ) {
-                validationErrors.unit_number =
-                    "Unit number is required.";
-            }
+        if (!form.unit_number?.trim()) {
+            validationErrors.unit_number =
+                "Unit number is required.";
+        }
 
-            if (!form.type) {
-                validationErrors.type =
-                    "Please select the unit type.";
-            }
+        if (!form.type) {
+            validationErrors.type =
+                "Please select the unit type.";
+        }
 
-            if (!form.status) {
-                validationErrors.status =
-                    "Please select the unit status.";
-            }
+        if (!form.status) {
+            validationErrors.status =
+                "Please select the unit status.";
+        }
 
-            if (
-                form.price !== "" &&
-                (
-                    !Number.isFinite(
-                        Number(form.price)
-                    ) ||
-                    Number(form.price) < 0
-                )
-            ) {
-                validationErrors.price =
-                    "Enter a valid non-negative rent amount.";
-            }
+        if (
+            form.price !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.price)
+                ) ||
+                Number(form.price) < 0
+            )
+        ) {
+            validationErrors.price =
+                "Enter a valid non-negative rent amount.";
+        }
 
-            if (
-                form.deposit !== "" &&
-                (
-                    !Number.isFinite(
-                        Number(form.deposit)
-                    ) ||
-                    Number(form.deposit) < 0
-                )
-            ) {
-                validationErrors.deposit =
-                    "Enter a valid non-negative deposit.";
-            }
+        if (
+            form.deposit !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.deposit)
+                ) ||
+                Number(form.deposit) < 0
+            )
+        ) {
+            validationErrors.deposit =
+                "Enter a valid non-negative deposit.";
+        }
 
-            if (
-                form.service_charge !== "" &&
-                (
-                    !Number.isFinite(
-                        Number(
-                            form.service_charge
-                        )
-                    ) ||
+        if (
+            form.service_charge !== "" &&
+            (
+                !Number.isFinite(
                     Number(
                         form.service_charge
-                    ) < 0
-                )
-            ) {
-                validationErrors.service_charge =
-                    "Enter a valid non-negative service charge.";
-            }
+                    )
+                ) ||
+                Number(
+                    form.service_charge
+                ) < 0
+            )
+        ) {
+            validationErrors.service_charge =
+                "Enter a valid non-negative service charge.";
+        }
 
-            if (
-                form.size !== "" &&
-                (
-                    !Number.isFinite(
-                        Number(form.size)
-                    ) ||
-                    Number(form.size) < 0
-                )
-            ) {
-                validationErrors.size =
-                    "Enter a valid non-negative size.";
-            }
+        if (
+            form.size !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.size)
+                ) ||
+                Number(form.size) < 0
+            )
+        ) {
+            validationErrors.size =
+                "Enter a valid non-negative size.";
+        }
 
-            if (
-                form.bedrooms !== "" &&
+        if (
+            form.bedrooms !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.bedrooms)
+                ) ||
                 Number(form.bedrooms) < 0
-            ) {
-                validationErrors.bedrooms =
-                    "Bedrooms cannot be negative.";
-            }
+            )
+        ) {
+            validationErrors.bedrooms =
+                "Bedrooms cannot be negative.";
+        }
 
-            if (
-                form.bathrooms !== "" &&
+        if (
+            form.bathrooms !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.bathrooms)
+                ) ||
                 Number(form.bathrooms) < 0
-            ) {
-                validationErrors.bathrooms =
-                    "Bathrooms cannot be negative.";
-            }
+            )
+        ) {
+            validationErrors.bathrooms =
+                "Bathrooms cannot be negative.";
+        }
 
-            if (
-                form.toilets !== "" &&
+        if (
+            form.toilets !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.toilets)
+                ) ||
                 Number(form.toilets) < 0
-            ) {
-                validationErrors.toilets =
-                    "Toilets cannot be negative.";
-            }
+            )
+        ) {
+            validationErrors.toilets =
+                "Toilets cannot be negative.";
+        }
 
-            if (
-                form.floor !== "" &&
+        if (
+            form.floor !== "" &&
+            (
+                !Number.isFinite(
+                    Number(form.floor)
+                ) ||
                 Number(form.floor) < 0
-            ) {
-                validationErrors.floor =
-                    "Floor cannot be negative.";
-            }
+            )
+        ) {
+            validationErrors.floor =
+                "Floor cannot be negative.";
+        }
 
-            setErrors(
+        setErrors(validationErrors);
+
+        return (
+            Object.keys(
                 validationErrors
-            );
-
-            return (
-                Object.keys(
-                    validationErrors
-                ).length === 0
-            );
-        }, [form]);
+            ).length === 0
+        );
+    }, [form]);
 
     /*
     |--------------------------------------------------------------------------
@@ -956,6 +951,11 @@ const UnitForm = ({
 
             return;
         }
+
+        const rent =
+            form.price === ""
+                ? null
+                : Number(form.price);
 
         const payload = {
             property_id:
@@ -1034,12 +1034,17 @@ const UnitForm = ({
                 form.size_unit ||
                 "sqm",
 
-            price:
-                form.price === ""
-                    ? null
-                    : Number(
-                          form.price
-                      ),
+            /*
+             * Send price because that is the
+             * frontend form field.
+             */
+            price: rent,
+
+            /*
+             * Also send rent for APIs/models
+             * using rent instead of price.
+             */
+            rent: rent,
 
             deposit:
                 form.deposit === ""
@@ -1215,6 +1220,13 @@ const UnitForm = ({
                         </p>
                     </div>
                 </div>
+
+                {isEditing && (
+                    <span className="inline-flex w-fit items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                        <Check size={14} />
+                        Editing Unit
+                    </span>
+                )}
             </div>
 
             {/* SERVER ERROR */}
@@ -1278,9 +1290,7 @@ const UnitForm = ({
                                                 property
                                             );
 
-                                        if (
-                                            !id
-                                        ) {
+                                        if (!id) {
                                             return null;
                                         }
 
@@ -1308,6 +1318,14 @@ const UnitForm = ({
                                 className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
                             />
                         </div>
+
+                        {loading &&
+                            propertyOptions.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Loading properties...
+                                </p>
+                            )}
                     </Field>
 
                     <Field
@@ -1349,9 +1367,7 @@ const UnitForm = ({
                                                 apartment
                                             );
 
-                                        if (
-                                            !id
-                                        ) {
+                                        if (!id) {
                                             return null;
                                         }
 
@@ -1734,7 +1750,7 @@ const UnitForm = ({
 
                 <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-3">
                     <MoneyField
-                        label="Rent Amount"
+                        label="Monthly Rent"
                         name="price"
                         value={
                             form.price
@@ -2074,11 +2090,11 @@ const SectionHeader = ({
 }) => {
     return (
         <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                <Icon size={20} />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                {Icon && <Icon size={19} />}
             </div>
 
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-base font-bold text-slate-900">
                     {title}
                 </h3>
@@ -2104,7 +2120,7 @@ const Field = ({
     children,
 }) => {
     return (
-        <div>
+        <div className="min-w-0">
             <label className="mb-2 block text-sm font-semibold text-slate-700">
                 {label}
 
@@ -2201,7 +2217,7 @@ const MoneyField = ({
             error={error}
         >
             <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-xs font-bold text-slate-500">
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-sm font-bold text-slate-500">
                     KES
                 </span>
 
@@ -2249,6 +2265,9 @@ const MoneyField = ({
 |--------------------------------------------------------------------------
 | FEATURE CHECKBOX
 |--------------------------------------------------------------------------
+|
+| Uses a real controlled checkbox input.
+|--------------------------------------------------------------------------
 */
 
 const FeatureCheckbox = ({
@@ -2263,17 +2282,20 @@ const FeatureCheckbox = ({
         <label
             htmlFor={name}
             className={`
+                group
+                relative
                 flex
                 items-start
                 gap-3
                 rounded-xl
                 border
                 p-4
-                transition
+                transition-all
+                duration-200
                 ${
                     checked
-                        ? "border-indigo-200 bg-indigo-50/60"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
+                        ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                 }
                 ${
                     disabled
@@ -2282,15 +2304,21 @@ const FeatureCheckbox = ({
                 }
             `}
         >
+            {/* REAL CHECKBOX */}
+
             <input
                 id={name}
-                type="checkbox"
                 name={name}
-                checked={checked}
+                type="checkbox"
+                checked={Boolean(
+                    checked
+                )}
                 onChange={onChange}
                 disabled={disabled}
                 className="sr-only"
             />
+
+            {/* CUSTOM CHECKBOX */}
 
             <div
                 className={`
@@ -2302,31 +2330,56 @@ const FeatureCheckbox = ({
                     justify-center
                     rounded-md
                     border
-                    transition
+                    transition-all
+                    duration-200
                     ${
                         checked
                             ? "border-indigo-600 bg-indigo-600"
-                            : "border-slate-300 bg-white"
+                            : "border-slate-300 bg-white group-hover:border-indigo-400"
                     }
                 `}
+                aria-hidden="true"
             >
                 {checked && (
                     <Check
                         size={14}
+                        strokeWidth={3}
                         className="text-white"
                     />
                 )}
             </div>
 
-            <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800">
+            {/* FEATURE TEXT */}
+
+            <div className="min-w-0 flex-1">
+                <p
+                    className={`
+                        text-sm
+                        font-semibold
+                        ${
+                            checked
+                                ? "text-indigo-900"
+                                : "text-slate-800"
+                        }
+                    `}
+                >
                     {label}
                 </p>
 
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">
                     {description}
                 </p>
             </div>
+
+            {/* ACTIVE INDICATOR */}
+
+            {checked && (
+                <div className="absolute right-3 top-3">
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+                        Active
+                    </span>
+                </div>
+            )}
         </label>
     );
 };
