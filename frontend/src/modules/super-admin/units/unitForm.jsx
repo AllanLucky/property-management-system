@@ -1,4 +1,3 @@
-
 import {
     useCallback,
     useEffect,
@@ -48,8 +47,6 @@ const DEFAULT_FORM = {
     size: "",
     size_unit: "sqm",
 
-    // Laravel/backend may call this rent or price.
-    // We submit both where appropriate.
     price: "",
     deposit: "",
     service_charge: "",
@@ -198,7 +195,7 @@ const normalizeCollection = (response) => {
 };
 
 /**
- * Safely extract an ID.
+ * Safely extract an ID from an object/value.
  */
 const getId = (item) => {
     if (
@@ -215,6 +212,7 @@ const getId = (item) => {
             item.value ??
             item.property_id ??
             item.apartment_id ??
+            item.unit_id ??
             ""
         );
     }
@@ -225,7 +223,10 @@ const getId = (item) => {
 /**
  * Safely extract a display name.
  */
-const getName = (item, fallback = "") => {
+const getName = (
+    item,
+    fallback = ""
+) => {
     if (!item) {
         return fallback;
     }
@@ -242,6 +243,7 @@ const getName = (item, fallback = "") => {
         item.apartment_name ??
         item.display_name ??
         item.full_name ??
+        item.unit_name ??
         fallback
     );
 };
@@ -261,10 +263,10 @@ const normalizeId = (value) => {
     if (typeof value === "object") {
         return String(
             value.id ??
-                value.value ??
-                value.property_id ??
-                value.apartment_id ??
-                ""
+            value.value ??
+            value.property_id ??
+            value.apartment_id ??
+            ""
         );
     }
 
@@ -275,12 +277,12 @@ const normalizeId = (value) => {
  * Normalize enum/resource values.
  *
  * Handles:
+ *
  * "vacant"
  *
- * and:
  * {
- *     value: "vacant",
- *     label: "Vacant"
+ *   value: "vacant",
+ *   label: "Vacant"
  * }
  */
 const normalizeValue = (
@@ -298,8 +300,8 @@ const normalizeValue = (
     if (typeof value === "object") {
         return String(
             value.value ??
-                value.id ??
-                fallback
+            value.id ??
+            fallback
         );
     }
 
@@ -307,7 +309,7 @@ const normalizeValue = (
 };
 
 /**
- * Convert API date into HTML date format.
+ * Normalize dates for HTML date input.
  */
 const formatDateForInput = (value) => {
     if (!value) {
@@ -328,7 +330,7 @@ const formatDateForInput = (value) => {
 };
 
 /**
- * Normalize boolean values.
+ * Normalize booleans.
  */
 const normalizeBoolean = (value) => {
     return (
@@ -359,6 +361,45 @@ const normalizeNumber = (
     return Number.isFinite(number)
         ? number
         : fallback;
+};
+
+/**
+ * Extract property ID from an apartment.
+ */
+const getApartmentPropertyId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment.property_id ??
+        apartment.property?.id ??
+        apartment.property?.value ??
+        apartment.property?.property_id ??
+        apartment.property?.data?.id ??
+        apartment.property?.data?.value ??
+        ""
+    );
+};
+
+/**
+ * Extract apartment ID from an object.
+ */
+const getApartmentId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment.id ??
+        apartment.value ??
+        apartment.apartment_id ??
+        ""
+    );
 };
 
 /*
@@ -410,8 +451,58 @@ const UnitForm = ({
     */
 
     const propertyOptions = useMemo(() => {
-        return normalizeCollection(properties);
-    }, [properties]);
+        const options = [
+            ...normalizeCollection(properties),
+        ];
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT PROPERTY
+        |--------------------------------------------------------------------------
+        |
+        | When editing, the current property must remain
+        | available even if the property list has not
+        | loaded it yet.
+        |
+        */
+
+        const currentProperty =
+            unit?.property;
+
+        const currentPropertyId =
+            unit?.property_id ??
+            currentProperty?.id ??
+            currentProperty?.value ??
+            currentProperty?.property_id ??
+            currentProperty?.data?.id;
+
+        if (currentPropertyId) {
+            const exists = options.some(
+                (property) =>
+                    normalizeId(
+                        getId(property)
+                    ) ===
+                    normalizeId(
+                        currentPropertyId
+                    )
+            );
+
+            if (
+                !exists &&
+                currentProperty
+            ) {
+                options.push({
+                    ...currentProperty,
+                    id: currentPropertyId,
+                });
+            }
+        }
+
+        return options;
+    }, [
+        properties,
+        unit,
+    ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -420,8 +511,63 @@ const UnitForm = ({
     */
 
     const apartmentOptions = useMemo(() => {
-        return normalizeCollection(apartments);
-    }, [apartments]);
+        const options = [
+            ...normalizeCollection(apartments),
+        ];
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT APARTMENT
+        |--------------------------------------------------------------------------
+        */
+
+        const currentApartment =
+            unit?.apartment;
+
+        const currentApartmentId =
+            unit?.apartment_id ??
+            currentApartment?.id ??
+            currentApartment?.value ??
+            currentApartment?.apartment_id ??
+            currentApartment?.data?.id;
+
+        if (currentApartmentId) {
+            const exists = options.some(
+                (apartment) =>
+                    normalizeId(
+                        getApartmentId(
+                            apartment
+                        )
+                    ) ===
+                    normalizeId(
+                        currentApartmentId
+                    )
+            );
+
+            if (
+                !exists &&
+                currentApartment
+            ) {
+                options.push({
+                    ...currentApartment,
+
+                    id:
+                        currentApartmentId,
+
+                    property_id:
+                        currentApartment.property_id ??
+                        unit?.property_id ??
+                        unit?.property?.id ??
+                        "",
+                });
+            }
+        }
+
+        return options;
+    }, [
+        apartments,
+        unit,
+    ]);
 
     /*
     |--------------------------------------------------------------------------
@@ -435,32 +581,132 @@ const UnitForm = ({
         }
 
         const selectedPropertyId =
-            normalizeId(form.property_id);
+            normalizeId(
+                form.property_id
+            );
 
-        return apartmentOptions.filter(
-            (apartment) => {
-                const apartmentPropertyId =
-                    apartment?.property_id ??
-                    apartment?.property?.id ??
-                    apartment?.property?.value ??
-                    apartment?.property?.property_id ??
-                    apartment?.property?.data?.id;
+        const filtered =
+            apartmentOptions.filter(
+                (apartment) => {
+                    const apartmentPropertyId =
+                        getApartmentPropertyId(
+                            apartment
+                        );
 
-                return (
-                    normalizeId(
-                        apartmentPropertyId
-                    ) === selectedPropertyId
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Normal apartment response
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (
+                        apartmentPropertyId !==
+                            undefined &&
+                        apartmentPropertyId !==
+                            null &&
+                        apartmentPropertyId !==
+                            ""
+                    ) {
+                        return (
+                            normalizeId(
+                                apartmentPropertyId
+                            ) ===
+                            selectedPropertyId
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Editing fallback
+                    |--------------------------------------------------------------------------
+                    */
+
+                    const currentApartmentId =
+                        unit?.apartment_id ??
+                        unit?.apartment?.id;
+
+                    if (
+                        currentApartmentId &&
+                        normalizeId(
+                            getApartmentId(
+                                apartment
+                            )
+                        ) ===
+                        normalizeId(
+                            currentApartmentId
+                        )
+                    ) {
+                        return true;
+                    }
+
+                    return false;
+                }
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | GUARANTEE CURRENT APARTMENT
+        |--------------------------------------------------------------------------
+        |
+        | If editing and the API apartment does not expose
+        | property_id, make sure the current apartment
+        | still appears.
+        |
+        */
+
+        if (
+            isEditing &&
+            unit?.apartment &&
+            normalizeId(
+                unit?.property_id ??
+                unit?.property?.id
+            ) ===
+            selectedPropertyId
+        ) {
+            const currentApartmentId =
+                unit?.apartment_id ??
+                unit?.apartment?.id;
+
+            const alreadyExists =
+                filtered.some(
+                    (apartment) =>
+                        normalizeId(
+                            getApartmentId(
+                                apartment
+                            )
+                        ) ===
+                        normalizeId(
+                            currentApartmentId
+                        )
                 );
+
+            if (
+                !alreadyExists &&
+                currentApartmentId
+            ) {
+                filtered.push({
+                    ...unit.apartment,
+
+                    id:
+                        currentApartmentId,
+
+                    property_id:
+                        selectedPropertyId,
+                });
             }
-        );
+        }
+
+        return filtered;
     }, [
         apartmentOptions,
         form.property_id,
+        unit,
+        isEditing,
     ]);
 
     /*
     |--------------------------------------------------------------------------
-    | POPULATE FORM
+    | POPULATE FORM FROM API
     |--------------------------------------------------------------------------
     */
 
@@ -476,6 +722,12 @@ const UnitForm = ({
             return;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | PROPERTY
+        |--------------------------------------------------------------------------
+        */
+
         const propertyId =
             unit.property_id ??
             unit.property?.id ??
@@ -483,6 +735,12 @@ const UnitForm = ({
             unit.property?.property_id ??
             unit.property?.data?.id ??
             "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | APARTMENT
+        |--------------------------------------------------------------------------
+        */
 
         const apartmentId =
             unit.apartment_id ??
@@ -492,26 +750,161 @@ const UnitForm = ({
             unit.apartment?.data?.id ??
             "";
 
-        const thumbnail =
-            unit.thumbnail_url ??
-            unit.thumbnail ??
-            unit.image_url ??
-            unit.image ??
+        /*
+        |--------------------------------------------------------------------------
+        | DETAILS
+        |--------------------------------------------------------------------------
+        */
+
+        const details =
+            unit.details ?? {};
+
+        const unitType =
+            details.type ??
+            unit.type ??
+            unit.unit_type ??
+            "apartment";
+
+        const bedrooms =
+            details.bedrooms ??
+            unit.bedrooms ??
+            1;
+
+        const bathrooms =
+            details.bathrooms ??
+            unit.bathrooms ??
+            1;
+
+        const toilets =
+            details.toilets ??
+            unit.toilets ??
+            1;
+
+        const floor =
+            details.floor ??
+            unit.floor ??
+            unit.floor_number ??
+            1;
+
+        const size =
+            details.size ??
+            unit.size ??
+            unit.area ??
+            unit.square_meters ??
             "";
 
+        const sizeUnit =
+            details.size_unit ??
+            unit.size_unit ??
+            "sqm";
+
+        /*
+        |--------------------------------------------------------------------------
+        | PRICING
+        |--------------------------------------------------------------------------
+        |
+        | Expected API:
+        |
+        | pricing: {
+        |     price: 17192,
+        |     formatted_price: "KES 17,192.00",
+        |     deposit: 17192,
+        |     service_charge: 2042,
+        |     currency: "KES"
+        | }
+        |
+        */
+
+        const pricing =
+            unit.pricing ?? {};
+
         const rent =
+            pricing.price ??
+            pricing.rent ??
             unit.rent ??
             unit.price ??
             unit.rent_amount ??
             unit.monthly_rent ??
             "";
 
+        const deposit =
+            pricing.deposit ??
+            unit.deposit ??
+            unit.security_deposit ??
+            "";
+
+        const serviceCharge =
+            pricing.service_charge ??
+            pricing.serviceCharge ??
+            unit.service_charge ??
+            unit.serviceCharge ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | FEATURES
+        |--------------------------------------------------------------------------
+        */
+
+        const features =
+            unit.features ?? {};
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        const status =
+            unit.status?.value ??
+            unit.status?.id ??
+            unit.status ??
+            "vacant";
+
+        /*
+        |--------------------------------------------------------------------------
+        | MEDIA
+        |--------------------------------------------------------------------------
+        */
+
+        const thumbnail =
+            unit.media?.thumbnail_url ??
+            unit.media?.thumbnail ??
+            unit.thumbnail_url ??
+            unit.thumbnail ??
+            unit.image_url ??
+            unit.image ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABILITY
+        |--------------------------------------------------------------------------
+        */
+
+        const availableFrom =
+            unit.availability?.available_from ??
+            unit.availability?.available_date ??
+            unit.available_from ??
+            unit.available_date ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | SET FORM
+        |--------------------------------------------------------------------------
+        */
+
         setForm({
             property_id:
-                normalizeId(propertyId),
+                normalizeId(
+                    propertyId
+                ),
 
             apartment_id:
-                normalizeId(apartmentId),
+                normalizeId(
+                    apartmentId
+                ),
 
             unit_number:
                 unit.unit_number ??
@@ -529,55 +922,57 @@ const UnitForm = ({
 
             status:
                 normalizeValue(
-                    unit.status,
+                    status,
                     "vacant"
                 ),
 
             type:
                 normalizeValue(
-                    unit.type ??
-                        unit.unit_type,
+                    unitType,
                     "apartment"
                 ),
 
             bedrooms:
                 normalizeNumber(
-                    unit.bedrooms,
+                    bedrooms,
                     1
                 ),
 
             bathrooms:
                 normalizeNumber(
-                    unit.bathrooms,
+                    bathrooms,
                     1
                 ),
 
             toilets:
                 normalizeNumber(
-                    unit.toilets,
+                    toilets,
                     1
                 ),
 
             floor:
                 normalizeNumber(
-                    unit.floor ??
-                        unit.floor_number,
+                    floor,
                     1
                 ),
 
             size:
                 normalizeNumber(
-                    unit.size ??
-                        unit.area ??
-                        unit.square_meters,
+                    size,
                     ""
                 ),
 
             size_unit:
                 normalizeValue(
-                    unit.size_unit,
+                    sizeUnit,
                     "sqm"
                 ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRICING
+            |--------------------------------------------------------------------------
+            */
 
             price:
                 normalizeNumber(
@@ -587,50 +982,66 @@ const UnitForm = ({
 
             deposit:
                 normalizeNumber(
-                    unit.deposit ??
-                        unit.security_deposit,
+                    deposit,
                     ""
                 ),
 
             service_charge:
                 normalizeNumber(
-                    unit.service_charge ??
-                        unit.serviceCharge,
+                    serviceCharge,
                     ""
                 ),
 
+            /*
+            |--------------------------------------------------------------------------
+            | FEATURES
+            |--------------------------------------------------------------------------
+            */
+
             has_balcony:
                 normalizeBoolean(
+                    features.has_balcony ??
                     unit.has_balcony
                 ),
 
             has_wifi:
                 normalizeBoolean(
+                    features.has_wifi ??
                     unit.has_wifi ??
-                        unit.has_wifi_internet
+                    unit.has_wifi_internet
                 ),
 
             has_furnished:
                 normalizeBoolean(
+                    features.has_furnished ??
                     unit.has_furnished ??
-                        unit.is_furnished
+                    unit.is_furnished
                 ),
 
             has_air_conditioning:
                 normalizeBoolean(
+                    features.has_air_conditioning ??
                     unit.has_air_conditioning ??
-                        unit.has_ac
+                    unit.has_ac
                 ),
 
-            thumbnail:
-                unit.thumbnail ??
-                unit.thumbnail_url ??
-                "",
+            /*
+            |--------------------------------------------------------------------------
+            | MEDIA
+            |--------------------------------------------------------------------------
+            */
+
+            thumbnail,
+
+            /*
+            |--------------------------------------------------------------------------
+            | AVAILABILITY
+            |--------------------------------------------------------------------------
+            */
 
             available_from:
                 formatDateForInput(
-                    unit.available_from ??
-                        unit.available_date
+                    availableFrom
                 ),
 
             notes:
@@ -639,7 +1050,10 @@ const UnitForm = ({
         });
 
         setErrors({});
-        setThumbnailPreview(thumbnail);
+
+        setThumbnailPreview(
+            thumbnail
+        );
     }, [unit]);
 
     /*
@@ -657,22 +1071,67 @@ const UnitForm = ({
             filteredApartments.some(
                 (apartment) =>
                     normalizeId(
-                        getId(apartment)
+                        getApartmentId(
+                            apartment
+                        )
                     ) ===
                     normalizeId(
                         form.apartment_id
                     )
             );
 
-        if (!exists) {
-            setForm((previous) => ({
-                ...previous,
-                apartment_id: "",
-            }));
+        if (exists) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT UNIT APARTMENT
+        |--------------------------------------------------------------------------
+        */
+
+        const isCurrentUnitApartment =
+            (
+                unit?.apartment?.id ||
+                unit?.apartment_id
+            ) &&
+            normalizeId(
+                unit?.apartment?.id ??
+                unit?.apartment_id
+            ) ===
+            normalizeId(
+                form.apartment_id
+            );
+
+        if (
+            isCurrentUnitApartment
+        ) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | DO NOT CLEAR DURING INITIAL LOAD
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            !loading &&
+            apartmentOptions.length > 0
+        ) {
+            setForm(
+                (previous) => ({
+                    ...previous,
+                    apartment_id: "",
+                })
+            );
         }
     }, [
         filteredApartments,
         form.apartment_id,
+        unit,
+        loading,
+        apartmentOptions.length,
     ]);
 
     /*
@@ -681,39 +1140,48 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleChange = useCallback(
-        (event) => {
-            const {
-                name,
-                value,
-                type,
-                checked,
-            } = event.target;
+    const handleChange =
+        useCallback(
+            (event) => {
+                const {
+                    name,
+                    value,
+                    type,
+                    checked,
+                } = event.target;
 
-            setForm((previous) => ({
-                ...previous,
-                [name]:
-                    type === "checkbox"
-                        ? checked
-                        : value,
-            }));
+                setForm(
+                    (previous) => ({
+                        ...previous,
 
-            setErrors((previous) => {
-                if (!previous[name]) {
-                    return previous;
-                }
+                        [name]:
+                            type ===
+                            "checkbox"
+                                ? checked
+                                : value,
+                    })
+                );
 
-                const next = {
-                    ...previous,
-                };
+                setErrors(
+                    (previous) => {
+                        if (
+                            !previous[name]
+                        ) {
+                            return previous;
+                        }
 
-                delete next[name];
+                        const next = {
+                            ...previous,
+                        };
 
-                return next;
-            });
-        },
-        []
-    );
+                        delete next[name];
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -722,28 +1190,41 @@ const UnitForm = ({
     */
 
     const handlePropertyChange =
-        useCallback((event) => {
-            const propertyId =
-                event.target.value;
+        useCallback(
+            (event) => {
+                const propertyId =
+                    event.target.value;
 
-            setForm((previous) => ({
-                ...previous,
-                property_id:
-                    propertyId,
-                apartment_id: "",
-            }));
+                setForm(
+                    (previous) => ({
+                        ...previous,
 
-            setErrors((previous) => {
-                const next = {
-                    ...previous,
-                };
+                        property_id:
+                            propertyId,
 
-                delete next.property_id;
-                delete next.apartment_id;
+                        /*
+                         * Changing property must
+                         * reset apartment.
+                         */
+                        apartment_id: "",
+                    })
+                );
 
-                return next;
-            });
-        }, []);
+                setErrors(
+                    (previous) => {
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next.property_id;
+                        delete next.apartment_id;
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -752,31 +1233,42 @@ const UnitForm = ({
     */
 
     const handleThumbnailChange =
-        useCallback((event) => {
-            const value =
-                event.target.value;
+        useCallback(
+            (event) => {
+                const value =
+                    event.target.value;
 
-            setForm((previous) => ({
-                ...previous,
-                thumbnail: value,
-            }));
+                setForm(
+                    (previous) => ({
+                        ...previous,
+                        thumbnail: value,
+                    })
+                );
 
-            setThumbnailPreview(value);
+                setThumbnailPreview(
+                    value
+                );
 
-            setErrors((previous) => {
-                if (!previous.thumbnail) {
-                    return previous;
-                }
+                setErrors(
+                    (previous) => {
+                        if (
+                            !previous.thumbnail
+                        ) {
+                            return previous;
+                        }
 
-                const next = {
-                    ...previous,
-                };
+                        const next = {
+                            ...previous,
+                        };
 
-                delete next.thumbnail;
+                        delete next.thumbnail;
 
-                return next;
-            });
-        }, []);
+                        return next;
+                    }
+                );
+            },
+            []
+        );
 
     /*
     |--------------------------------------------------------------------------
@@ -784,145 +1276,214 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const validate = useCallback(() => {
-        const validationErrors = {};
+    const validate =
+        useCallback(() => {
+            const validationErrors =
+                {};
 
-        if (!form.property_id) {
-            validationErrors.property_id =
-                "Please select a property.";
-        }
+            /*
+            |--------------------------------------------------------------------------
+            | RELATIONSHIPS
+            |--------------------------------------------------------------------------
+            */
 
-        if (!form.unit_number?.trim()) {
-            validationErrors.unit_number =
-                "Unit number is required.";
-        }
+            if (!form.property_id) {
+                validationErrors.property_id =
+                    "Please select a property.";
+            }
 
-        if (!form.type) {
-            validationErrors.type =
-                "Please select the unit type.";
-        }
+            if (!form.apartment_id) {
+                validationErrors.apartment_id =
+                    "Please select an apartment.";
+            }
 
-        if (!form.status) {
-            validationErrors.status =
-                "Please select the unit status.";
-        }
+            /*
+            |--------------------------------------------------------------------------
+            | BASIC INFORMATION
+            |--------------------------------------------------------------------------
+            */
 
-        if (
-            form.price !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.price)
-                ) ||
-                Number(form.price) < 0
-            )
-        ) {
-            validationErrors.price =
-                "Enter a valid non-negative rent amount.";
-        }
+            if (
+                !form.unit_number?.trim()
+            ) {
+                validationErrors.unit_number =
+                    "Unit number is required.";
+            }
 
-        if (
-            form.deposit !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.deposit)
-                ) ||
-                Number(form.deposit) < 0
-            )
-        ) {
-            validationErrors.deposit =
-                "Enter a valid non-negative deposit.";
-        }
+            if (!form.type) {
+                validationErrors.type =
+                    "Please select the unit type.";
+            }
 
-        if (
-            form.service_charge !== "" &&
-            (
-                !Number.isFinite(
+            if (!form.status) {
+                validationErrors.status =
+                    "Please select the unit status.";
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRICING
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                form.price !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.price
+                        )
+                    ) ||
+                    Number(
+                        form.price
+                    ) < 0
+                )
+            ) {
+                validationErrors.price =
+                    "Enter a valid non-negative rent amount.";
+            }
+
+            if (
+                form.deposit !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.deposit
+                        )
+                    ) ||
+                    Number(
+                        form.deposit
+                    ) < 0
+                )
+            ) {
+                validationErrors.deposit =
+                    "Enter a valid non-negative deposit.";
+            }
+
+            if (
+                form.service_charge !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.service_charge
+                        )
+                    ) ||
                     Number(
                         form.service_charge
-                    )
-                ) ||
-                Number(
-                    form.service_charge
-                ) < 0
-            )
-        ) {
-            validationErrors.service_charge =
-                "Enter a valid non-negative service charge.";
-        }
+                    ) < 0
+                )
+            ) {
+                validationErrors.service_charge =
+                    "Enter a valid non-negative service charge.";
+            }
 
-        if (
-            form.size !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.size)
-                ) ||
-                Number(form.size) < 0
-            )
-        ) {
-            validationErrors.size =
-                "Enter a valid non-negative size.";
-        }
+            /*
+            |--------------------------------------------------------------------------
+            | SIZE
+            |--------------------------------------------------------------------------
+            */
 
-        if (
-            form.bedrooms !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.bedrooms)
-                ) ||
-                Number(form.bedrooms) < 0
-            )
-        ) {
-            validationErrors.bedrooms =
-                "Bedrooms cannot be negative.";
-        }
+            if (
+                form.size !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.size
+                        )
+                    ) ||
+                    Number(
+                        form.size
+                    ) < 0
+                )
+            ) {
+                validationErrors.size =
+                    "Enter a valid non-negative size.";
+            }
 
-        if (
-            form.bathrooms !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.bathrooms)
-                ) ||
-                Number(form.bathrooms) < 0
-            )
-        ) {
-            validationErrors.bathrooms =
-                "Bathrooms cannot be negative.";
-        }
+            /*
+            |--------------------------------------------------------------------------
+            | ROOMS
+            |--------------------------------------------------------------------------
+            */
 
-        if (
-            form.toilets !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.toilets)
-                ) ||
-                Number(form.toilets) < 0
-            )
-        ) {
-            validationErrors.toilets =
-                "Toilets cannot be negative.";
-        }
+            if (
+                form.bedrooms !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.bedrooms
+                        )
+                    ) ||
+                    Number(
+                        form.bedrooms
+                    ) < 0
+                )
+            ) {
+                validationErrors.bedrooms =
+                    "Bedrooms cannot be negative.";
+            }
 
-        if (
-            form.floor !== "" &&
-            (
-                !Number.isFinite(
-                    Number(form.floor)
-                ) ||
-                Number(form.floor) < 0
-            )
-        ) {
-            validationErrors.floor =
-                "Floor cannot be negative.";
-        }
+            if (
+                form.bathrooms !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.bathrooms
+                        )
+                    ) ||
+                    Number(
+                        form.bathrooms
+                    ) < 0
+                )
+            ) {
+                validationErrors.bathrooms =
+                    "Bathrooms cannot be negative.";
+            }
 
-        setErrors(validationErrors);
+            if (
+                form.toilets !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.toilets
+                        )
+                    ) ||
+                    Number(
+                        form.toilets
+                    ) < 0
+                )
+            ) {
+                validationErrors.toilets =
+                    "Toilets cannot be negative.";
+            }
 
-        return (
-            Object.keys(
+            if (
+                form.floor !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.floor
+                        )
+                    ) ||
+                    Number(
+                        form.floor
+                    ) < 0
+                )
+            ) {
+                validationErrors.floor =
+                    "Floor cannot be negative.";
+            }
+
+            setErrors(
                 validationErrors
-            ).length === 0
-        );
-    }, [form]);
+            );
+
+            return (
+                Object.keys(
+                    validationErrors
+                ).length === 0
+            );
+        }, [form]);
 
     /*
     |--------------------------------------------------------------------------
@@ -930,178 +1491,256 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const handleSubmit = async (
-        event
-    ) => {
-        event.preventDefault();
+    const handleSubmit =
+        async (event) => {
+            event.preventDefault();
 
-        if (submitting) {
-            return;
-        }
+            if (submitting) {
+                return;
+            }
 
-        if (!validate()) {
-            await Swal.fire({
-                icon: "warning",
-                title: "Check the form",
-                text:
-                    "Please correct the highlighted fields.",
-                confirmButtonText:
-                    "Okay",
-            });
+            if (!validate()) {
+                await Swal.fire({
+                    icon: "warning",
+                    title: "Check the form",
+                    text:
+                        "Please correct the highlighted fields.",
+                    confirmButtonText:
+                        "Okay",
+                });
 
-            return;
-        }
+                return;
+            }
 
-        const rent =
-            form.price === ""
-                ? null
-                : Number(form.price);
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE PRICING
+            |--------------------------------------------------------------------------
+            */
 
-        const payload = {
-            property_id:
-                form.property_id
-                    ? Number(
-                          form.property_id
-                      )
-                    : null,
-
-            apartment_id:
-                form.apartment_id
-                    ? Number(
-                          form.apartment_id
-                      )
-                    : null,
-
-            unit_number:
-                form.unit_number.trim(),
-
-            unit_name:
-                form.unit_name?.trim() ||
-                null,
-
-            description:
-                form.description?.trim() ||
-                null,
-
-            status:
-                normalizeValue(
-                    form.status,
-                    "vacant"
-                ),
-
-            type:
-                normalizeValue(
-                    form.type,
-                    "apartment"
-                ),
-
-            bedrooms:
-                form.bedrooms === ""
-                    ? 0
-                    : Number(
-                          form.bedrooms
-                      ),
-
-            bathrooms:
-                form.bathrooms === ""
-                    ? 0
-                    : Number(
-                          form.bathrooms
-                      ),
-
-            toilets:
-                form.toilets === ""
-                    ? 0
-                    : Number(
-                          form.toilets
-                      ),
-
-            floor:
-                form.floor === ""
-                    ? 0
-                    : Number(
-                          form.floor
-                      ),
-
-            size:
-                form.size === ""
+            const rent =
+                form.price === ""
                     ? null
                     : Number(
-                          form.size
-                      ),
+                        form.price
+                    );
 
-            size_unit:
-                form.size_unit ||
-                "sqm",
-
-            /*
-             * Send price because that is the
-             * frontend form field.
-             */
-            price: rent,
-
-            /*
-             * Also send rent for APIs/models
-             * using rent instead of price.
-             */
-            rent: rent,
-
-            deposit:
+            const deposit =
                 form.deposit === ""
                     ? null
                     : Number(
-                          form.deposit
-                      ),
+                        form.deposit
+                    );
 
-            service_charge:
+            const serviceCharge =
                 form.service_charge === ""
                     ? null
                     : Number(
-                          form.service_charge
-                      ),
+                        form.service_charge
+                    );
 
-            has_balcony:
-                Boolean(
-                    form.has_balcony
-                ),
+            /*
+            |--------------------------------------------------------------------------
+            | PAYLOAD
+            |--------------------------------------------------------------------------
+            */
 
-            has_wifi:
-                Boolean(
-                    form.has_wifi
-                ),
+            const payload = {
+                /*
+                |--------------------------------------------------------------------------
+                | RELATIONSHIPS
+                |--------------------------------------------------------------------------
+                */
 
-            has_furnished:
-                Boolean(
-                    form.has_furnished
-                ),
+                property_id:
+                    form.property_id
+                        ? Number(
+                            form.property_id
+                        )
+                        : null,
 
-            has_air_conditioning:
-                Boolean(
-                    form.has_air_conditioning
-                ),
+                apartment_id:
+                    form.apartment_id
+                        ? Number(
+                            form.apartment_id
+                        )
+                        : null,
 
-            thumbnail:
-                form.thumbnail?.trim() ||
-                null,
+                /*
+                |--------------------------------------------------------------------------
+                | BASIC
+                |--------------------------------------------------------------------------
+                */
 
-            available_from:
-                form.available_from ||
-                null,
+                unit_number:
+                    form.unit_number
+                        .trim(),
 
-            notes:
-                form.notes?.trim() ||
-                null,
-        };
+                unit_name:
+                    form.unit_name?.trim() ||
+                    null,
 
-        try {
-            await onSubmit?.(payload);
-        } catch (submitError) {
-            console.error(
-                "Unit form submission failed:",
-                submitError
+                description:
+                    form.description?.trim() ||
+                    null,
+
+                status:
+                    normalizeValue(
+                        form.status,
+                        "vacant"
+                    ),
+
+                type:
+                    normalizeValue(
+                        form.type,
+                        "apartment"
+                    ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | ROOMS
+                |--------------------------------------------------------------------------
+                */
+
+                bedrooms:
+                    form.bedrooms === ""
+                        ? 0
+                        : Number(
+                            form.bedrooms
+                        ),
+
+                bathrooms:
+                    form.bathrooms === ""
+                        ? 0
+                        : Number(
+                            form.bathrooms
+                        ),
+
+                toilets:
+                    form.toilets === ""
+                        ? 0
+                        : Number(
+                            form.toilets
+                        ),
+
+                floor:
+                    form.floor === ""
+                        ? 0
+                        : Number(
+                            form.floor
+                        ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | SIZE
+                |--------------------------------------------------------------------------
+                */
+
+                size:
+                    form.size === ""
+                        ? null
+                        : Number(
+                            form.size
+                        ),
+
+                size_unit:
+                    form.size_unit ||
+                    "sqm",
+
+                /*
+                |--------------------------------------------------------------------------
+                | PRICING
+                |--------------------------------------------------------------------------
+                */
+
+                price: rent,
+
+                /*
+                 * Keep rent for Laravel/backend
+                 * compatibility.
+                 */
+                rent: rent,
+
+                deposit: deposit,
+
+                service_charge:
+                    serviceCharge,
+
+                /*
+                |--------------------------------------------------------------------------
+                | FEATURES
+                |--------------------------------------------------------------------------
+                */
+
+                has_balcony:
+                    Boolean(
+                        form.has_balcony
+                    ),
+
+                has_wifi:
+                    Boolean(
+                        form.has_wifi
+                    ),
+
+                has_furnished:
+                    Boolean(
+                        form.has_furnished
+                    ),
+
+                has_air_conditioning:
+                    Boolean(
+                        form.has_air_conditioning
+                    ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | MEDIA
+                |--------------------------------------------------------------------------
+                */
+
+                thumbnail:
+                    form.thumbnail?.trim() ||
+                    null,
+
+                /*
+                |--------------------------------------------------------------------------
+                | AVAILABILITY
+                |--------------------------------------------------------------------------
+                */
+
+                available_from:
+                    form.available_from ||
+                    null,
+
+                /*
+                |--------------------------------------------------------------------------
+                | NOTES
+                |--------------------------------------------------------------------------
+                */
+
+                notes:
+                    form.notes?.trim() ||
+                    null,
+            };
+
+            console.log(
+                "Unit payload:",
+                payload
             );
-        }
-    };
+
+            try {
+                await onSubmit?.(
+                    payload
+                );
+            } catch (
+                submitError
+            ) {
+                console.error(
+                    "Unit form submission failed:",
+                    submitError
+                );
+            }
+        };
 
     /*
     |--------------------------------------------------------------------------
@@ -1112,9 +1751,21 @@ const UnitForm = ({
     const getFieldError = (
         field
     ) => {
+        /*
+        |--------------------------------------------------------------------------
+        | CLIENT ERROR
+        |--------------------------------------------------------------------------
+        */
+
         if (errors[field]) {
             return errors[field];
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | LARAVEL VALIDATION ERROR
+        |--------------------------------------------------------------------------
+        */
 
         if (
             error?.errors &&
@@ -1162,7 +1813,9 @@ const UnitForm = ({
     |--------------------------------------------------------------------------
     */
 
-    const inputClass = (field) => `
+    const inputClass = (
+        field
+    ) => `
         w-full
         rounded-xl
         border
@@ -1193,7 +1846,9 @@ const UnitForm = ({
 
     return (
         <form
-            onSubmit={handleSubmit}
+            onSubmit={
+                handleSubmit
+            }
             className="space-y-6"
             noValidate
         >
@@ -1215,7 +1870,7 @@ const UnitForm = ({
 
                         <p className="mt-1 text-sm text-slate-500">
                             {isEditing
-                                ? "Update unit information and availability."
+                                ? "Update unit information, pricing and availability."
                                 : "Add a new unit to your property."}
                         </p>
                     </div>
@@ -1326,10 +1981,19 @@ const UnitForm = ({
                                     Loading properties...
                                 </p>
                             )}
+
+                        {!loading &&
+                            propertyOptions.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-amber-600">
+                                    No properties found.
+                                </p>
+                            )}
                     </Field>
 
                     <Field
                         label="Apartment"
+                        required
                         error={getFieldError(
                             "apartment_id"
                         )}
@@ -1363,7 +2027,7 @@ const UnitForm = ({
                                         apartment
                                     ) => {
                                         const id =
-                                            getId(
+                                            getApartmentId(
                                                 apartment
                                             );
 
@@ -1382,7 +2046,9 @@ const UnitForm = ({
                                             >
                                                 {getName(
                                                     apartment,
-                                                    `Apartment #${id}`
+                                                    apartment.block
+                                                        ? `${apartment.block} - Apartment #${id}`
+                                                        : `Apartment #${id}`
                                                 )}
                                             </option>
                                         );
@@ -1396,7 +2062,17 @@ const UnitForm = ({
                             />
                         </div>
 
-                        {form.property_id &&
+                        {loading &&
+                            form.property_id &&
+                            filteredApartments.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Loading apartments...
+                                </p>
+                            )}
+
+                        {!loading &&
+                            form.property_id &&
                             filteredApartments.length ===
                                 0 && (
                                 <p className="mt-2 text-xs text-amber-600">
@@ -2090,9 +2766,11 @@ const SectionHeader = ({
 }) => {
     return (
         <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                {Icon && <Icon size={19} />}
-            </div>
+            {Icon && (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                    <Icon size={19} />
+                </div>
+            )}
 
             <div className="min-w-0">
                 <h3 className="text-base font-bold text-slate-900">
@@ -2217,7 +2895,7 @@ const MoneyField = ({
             error={error}
         >
             <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-sm font-bold text-slate-500">
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-xs font-bold text-slate-500">
                     KES
                 </span>
 
@@ -2265,9 +2943,6 @@ const MoneyField = ({
 |--------------------------------------------------------------------------
 | FEATURE CHECKBOX
 |--------------------------------------------------------------------------
-|
-| Uses a real controlled checkbox input.
-|--------------------------------------------------------------------------
 */
 
 const FeatureCheckbox = ({
@@ -2304,8 +2979,6 @@ const FeatureCheckbox = ({
                 }
             `}
         >
-            {/* REAL CHECKBOX */}
-
             <input
                 id={name}
                 name={name}
@@ -2317,8 +2990,6 @@ const FeatureCheckbox = ({
                 disabled={disabled}
                 className="sr-only"
             />
-
-            {/* CUSTOM CHECKBOX */}
 
             <div
                 className={`
@@ -2349,8 +3020,6 @@ const FeatureCheckbox = ({
                 )}
             </div>
 
-            {/* FEATURE TEXT */}
-
             <div className="min-w-0 flex-1">
                 <p
                     className={`
@@ -2371,8 +3040,6 @@ const FeatureCheckbox = ({
                 </p>
             </div>
 
-            {/* ACTIVE INDICATOR */}
-
             {checked && (
                 <div className="absolute right-3 top-3">
                     <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
@@ -2385,4 +3052,3 @@ const FeatureCheckbox = ({
 };
 
 export default UnitForm;
-

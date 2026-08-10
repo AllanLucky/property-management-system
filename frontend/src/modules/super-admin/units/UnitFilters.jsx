@@ -19,13 +19,45 @@ import {
 |--------------------------------------------------------------------------
 |
 | Supports:
-| - Laravel API resources
+|
+| - Direct arrays
 | - { data: [] }
 | - { data: { data: [] } }
-| - Direct arrays
-| - Nested property/apartment resources
-| - Status objects such as:
-|   { value: "vacant", label: "Vacant" }
+| - { results: [] }
+| - { items: [] }
+| - Laravel API resources
+| - Nested property resources
+| - Nested apartment resources
+| - Unit API structure:
+|
+|   property: {
+|       id,
+|       title,
+|       property_code
+|   }
+|
+|   apartment: {
+|       id,
+|       name,
+|       block,
+|       total_floors,
+|       total_units
+|   }
+|
+|   details: {
+|       type,
+|       floor
+|   }
+|
+|   pricing: {
+|       price,
+|       formatted_price
+|   }
+|
+|   status: {
+|       value,
+|       label
+|   }
 |
 |--------------------------------------------------------------------------
 */
@@ -45,11 +77,24 @@ const UnitFilters = ({
     */
 
     const search = filters?.search ?? "";
-    const status = normalizeValue(filters?.status);
-    const propertyId = normalizeId(filters?.property_id);
-    const apartmentId = normalizeId(filters?.apartment_id);
+
+    const status = normalizeValue(
+        filters?.status
+    );
+
+    const propertyId = normalizeId(
+        filters?.property_id
+    );
+
+    const apartmentId = normalizeId(
+        filters?.apartment_id
+    );
+
     const floor = filters?.floor ?? "";
-    const type = normalizeValue(filters?.type);
+
+    const type = normalizeValue(
+        filters?.type
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -68,7 +113,21 @@ const UnitFilters = ({
     );
 
     const normalizedUnitTypes = useMemo(
-        () => normalizeCollection(unitTypes),
+        () => {
+            const collection =
+                normalizeCollection(unitTypes);
+
+            /*
+            |--------------------------------------------------------------------------
+            | If unitTypes was not supplied, derive types from units if possible.
+            |--------------------------------------------------------------------------
+            |
+            | This keeps the filter flexible if the parent later passes units.
+            |--------------------------------------------------------------------------
+            */
+
+            return collection;
+        },
         [unitTypes]
     );
 
@@ -108,6 +167,30 @@ const UnitFilters = ({
     |--------------------------------------------------------------------------
     | APARTMENTS FOR SELECTED PROPERTY
     |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | Your API apartment object may look like:
+    |
+    | {
+    |     id: 80,
+    |     name: "Vista Grande Apartments Block E",
+    |     block: "Block E"
+    | }
+    |
+    | But the property relationship may be:
+    |
+    | apartment.property_id
+    |
+    | OR
+    |
+    | apartment.property.id
+    |
+    | OR
+    |
+    | apartment.property.data.id
+    |
+    |--------------------------------------------------------------------------
     */
 
     const availableApartments = useMemo(() => {
@@ -115,20 +198,23 @@ const UnitFilters = ({
             return normalizedApartments;
         }
 
-        return normalizedApartments.filter((apartment) => {
-            const apartmentPropertyId =
-                apartment?.property_id ??
-                apartment?.property?.id ??
-                apartment?.property?.value ??
-                apartment?.property?.data?.id ??
-                apartment?.property?.data?.value ??
-                "";
+        return normalizedApartments.filter(
+            (apartment) => {
+                const apartmentPropertyId =
+                    getApartmentPropertyId(
+                        apartment
+                    );
 
-            return (
-                normalizeId(apartmentPropertyId) ===
-                normalizeId(propertyId)
-            );
-        });
+                return (
+                    normalizeId(
+                        apartmentPropertyId
+                    ) ===
+                    normalizeId(
+                        propertyId
+                    )
+                );
+            }
+        );
     }, [
         normalizedApartments,
         propertyId,
@@ -148,8 +234,12 @@ const UnitFilters = ({
         return (
             normalizedProperties.find(
                 (property) =>
-                    normalizeId(getId(property)) ===
-                    normalizeId(propertyId)
+                    normalizeId(
+                        getId(property)
+                    ) ===
+                    normalizeId(
+                        propertyId
+                    )
             ) ?? null
         );
     }, [
@@ -171,8 +261,12 @@ const UnitFilters = ({
         return (
             normalizedApartments.find(
                 (apartment) =>
-                    normalizeId(getId(apartment)) ===
-                    normalizeId(apartmentId)
+                    normalizeId(
+                        getId(apartment)
+                    ) ===
+                    normalizeId(
+                        apartmentId
+                    )
             ) ?? null
         );
     }, [
@@ -190,8 +284,9 @@ const UnitFilters = ({
         () =>
             statusOptions.find(
                 (option) =>
-                    option.value === status
-            ),
+                    option.value ===
+                    status
+            ) ?? null,
         [
             status,
             statusOptions,
@@ -214,7 +309,8 @@ const UnitFilters = ({
                 (item) =>
                     normalizeValue(
                         getTypeValue(item)
-                    ) === type
+                    ) ===
+                    normalizeValue(type)
             ) ?? null
         );
     }, [
@@ -243,9 +339,14 @@ const UnitFilters = ({
             );
 
             /*
-            |--------------------------------------------------------------
-            | When property changes, always clear apartment.
-            |--------------------------------------------------------------
+            |--------------------------------------------------------------------------
+            | PROPERTY CHANGED
+            |--------------------------------------------------------------------------
+            |
+            | Apartment belongs to property.
+            | Therefore clear apartment whenever
+            | the property changes.
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -280,6 +381,22 @@ const UnitFilters = ({
                 field,
                 ""
             );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Removing property also removes apartment.
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                field ===
+                "property_id"
+            ) {
+                onFilterChange(
+                    "apartment_id",
+                    ""
+                );
+            }
         },
         [onFilterChange]
     );
@@ -318,7 +435,8 @@ const UnitFilters = ({
                 (value) =>
                     value !== "" &&
                     value !== null &&
-                    value !== undefined
+                    value !==
+                        undefined
             ).length,
         [
             search,
@@ -350,19 +468,21 @@ const UnitFilters = ({
 
     return (
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            {/* ------------------------------------------------------------ */}
+
             {/* HEADER */}
-            {/* ------------------------------------------------------------ */}
 
             <div className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white px-5 py-4 sm:px-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
                     <div className="flex items-center gap-3">
+
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50">
                             <SlidersHorizontal className="h-5 w-5 text-blue-600" />
                         </div>
 
                         <div>
                             <div className="flex items-center gap-2">
+
                                 <h3 className="text-base font-bold text-gray-900">
                                     Unit Filters
                                 </h3>
@@ -401,23 +521,23 @@ const UnitFilters = ({
                 </div>
             </div>
 
-            {/* ------------------------------------------------------------ */}
             {/* FILTER BODY */}
-            {/* ------------------------------------------------------------ */}
 
             <div className="p-5 sm:p-6">
+
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                    {/* -------------------------------------------------- */}
+
                     {/* SEARCH */}
-                    {/* -------------------------------------------------- */}
 
                     <div className="xl:col-span-2">
+
                         <FilterLabel
                             icon={Search}
                             label="Search Units"
                         />
 
                         <div className="relative">
+
                             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
 
                             <input
@@ -449,6 +569,7 @@ const UnitFilters = ({
                                     }
                                     className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
                                     title="Clear search"
+                                    aria-label="Clear search"
                                 >
                                     <X className="h-3.5 w-3.5" />
                                 </button>
@@ -456,11 +577,10 @@ const UnitFilters = ({
                         </div>
                     </div>
 
-                    {/* -------------------------------------------------- */}
                     {/* PROPERTY */}
-                    {/* -------------------------------------------------- */}
 
                     <div>
+
                         <FilterLabel
                             icon={
                                 Building2
@@ -469,6 +589,7 @@ const UnitFilters = ({
                         />
 
                         <SelectWrapper>
+
                             <select
                                 value={
                                     propertyId
@@ -487,6 +608,7 @@ const UnitFilters = ({
                                     selectClass
                                 }
                             >
+
                                 <option value="">
                                     All Properties
                                 </option>
@@ -507,6 +629,12 @@ const UnitFilters = ({
                                             return null;
                                         }
 
+                                        const title =
+                                            getPropertyName(
+                                                property,
+                                                `Property #${id}`
+                                            );
+
                                         return (
                                             <option
                                                 key={`${id}-${index}`}
@@ -514,10 +642,9 @@ const UnitFilters = ({
                                                     id
                                                 }
                                             >
-                                                {getName(
-                                                    property,
-                                                    `Property #${id}`
-                                                )}
+                                                {
+                                                    title
+                                                }
                                             </option>
                                         );
                                     }
@@ -525,20 +652,23 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
                         </SelectWrapper>
                     </div>
 
-                    {/* -------------------------------------------------- */}
                     {/* APARTMENT */}
-                    {/* -------------------------------------------------- */}
 
                     <div>
+
                         <FilterLabel
-                            icon={Home}
+                            icon={
+                                Home
+                            }
                             label="Apartment"
                         />
 
                         <SelectWrapper>
+
                             <select
                                 value={
                                     apartmentId
@@ -554,21 +684,27 @@ const UnitFilters = ({
                                     )
                                 }
                                 disabled={
-                                    !propertyId &&
-                                    normalizedApartments.length ===
-                                        0
+                                    propertyId
+                                        ? availableApartments.length ===
+                                          0
+                                        : normalizedApartments.length ===
+                                          0
                                 }
                                 className={
                                     selectClass
                                 }
                             >
+
                                 <option value="">
                                     {propertyId
                                         ? availableApartments.length >
                                           0
                                             ? "All Apartments"
                                             : "No apartments found"
-                                        : "All Apartments"}
+                                        : normalizedApartments.length >
+                                            0
+                                          ? "All Apartments"
+                                          : "No apartments found"}
                                 </option>
 
                                 {availableApartments.map(
@@ -587,6 +723,12 @@ const UnitFilters = ({
                                             return null;
                                         }
 
+                                        const label =
+                                            getApartmentName(
+                                                apartment,
+                                                `Apartment #${id}`
+                                            );
+
                                         return (
                                             <option
                                                 key={`${id}-${index}`}
@@ -594,10 +736,9 @@ const UnitFilters = ({
                                                     id
                                                 }
                                             >
-                                                {getName(
-                                                    apartment,
-                                                    `Apartment #${id}`
-                                                )}
+                                                {
+                                                    label
+                                                }
                                             </option>
                                         );
                                     }
@@ -605,6 +746,7 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
                         </SelectWrapper>
 
                         {propertyId &&
@@ -616,11 +758,10 @@ const UnitFilters = ({
                             )}
                     </div>
 
-                    {/* -------------------------------------------------- */}
                     {/* STATUS */}
-                    {/* -------------------------------------------------- */}
 
                     <div>
+
                         <FilterLabel
                             label="Status"
                             customIcon={
@@ -629,6 +770,7 @@ const UnitFilters = ({
                         />
 
                         <SelectWrapper>
+
                             <select
                                 value={
                                     status
@@ -669,14 +811,14 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
                         </SelectWrapper>
                     </div>
 
-                    {/* -------------------------------------------------- */}
                     {/* FLOOR */}
-                    {/* -------------------------------------------------- */}
 
                     <div>
+
                         <FilterLabel
                             icon={
                                 Layers3
@@ -685,6 +827,7 @@ const UnitFilters = ({
                         />
 
                         <div className="relative">
+
                             <input
                                 type="number"
                                 min="0"
@@ -708,20 +851,23 @@ const UnitFilters = ({
                             />
 
                             <Hash className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+
                         </div>
                     </div>
 
-                    {/* -------------------------------------------------- */}
                     {/* UNIT TYPE */}
-                    {/* -------------------------------------------------- */}
 
                     <div>
+
                         <FilterLabel
-                            icon={Home}
+                            icon={
+                                Home
+                            }
                             label="Unit Type"
                         />
 
                         <SelectWrapper>
+
                             <select
                                 value={
                                     type
@@ -740,6 +886,7 @@ const UnitFilters = ({
                                     selectClass
                                 }
                             >
+
                                 <option value="">
                                     All Types
                                 </option>
@@ -783,17 +930,19 @@ const UnitFilters = ({
                             </select>
 
                             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
                         </SelectWrapper>
                     </div>
                 </div>
 
-                {/* ------------------------------------------------------ */}
                 {/* ACTIVE FILTERS */}
-                {/* ------------------------------------------------------ */}
 
                 <div className="mt-6 border-t border-gray-100 pt-5">
+
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+
                         <div className="flex shrink-0 items-center gap-2 pt-1">
+
                             <span className="text-xs font-bold uppercase tracking-wide text-gray-400">
                                 Active Filters
                             </span>
@@ -809,6 +958,7 @@ const UnitFilters = ({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
+
                             {/* SEARCH */}
 
                             {search && (
@@ -826,7 +976,7 @@ const UnitFilters = ({
 
                             {propertyId && (
                                 <FilterBadge
-                                    label={`Property: ${getName(
+                                    label={`Property: ${getPropertyName(
                                         selectedProperty,
                                         `#${propertyId}`
                                     )}`}
@@ -843,7 +993,7 @@ const UnitFilters = ({
 
                             {apartmentId && (
                                 <FilterBadge
-                                    label={`Apartment: ${getName(
+                                    label={`Apartment: ${getApartmentName(
                                         selectedApartment,
                                         `#${apartmentId}`
                                     )}`}
@@ -948,13 +1098,13 @@ const FilterLabel = ({
     label,
 }) => {
     return (
-        <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
+        <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-500">
             {customIcon ??
                 (Icon && (
-                    <Icon className="h-3.5 w-3.5" />
+                    <Icon className="h-3.5 w-3.5 text-gray-400" />
                 ))}
 
-            {label}
+            <span>{label}</span>
         </label>
     );
 };
@@ -1105,10 +1255,10 @@ const getId = (item) => {
     return (
         item?.id ??
         item?.value ??
-        item?.property_id ??
-        item?.apartment_id ??
         item?.data?.id ??
         item?.data?.value ??
+        item?.property_id ??
+        item?.apartment_id ??
         ""
     );
 };
@@ -1148,11 +1298,20 @@ const normalizeId = (
 
 /*
 |--------------------------------------------------------------------------
-| GET NAME
+| GET PROPERTY NAME
+|--------------------------------------------------------------------------
+|
+| Supports:
+|
+| property.title
+| property.name
+| property.label
+| property.display_name
+|
 |--------------------------------------------------------------------------
 */
 
-const getName = (
+const getPropertyName = (
     item,
     fallback = ""
 ) => {
@@ -1168,16 +1327,99 @@ const getName = (
     }
 
     return (
+        item?.title ??
+        item?.name ??
+        item?.label ??
+        item?.display_name ??
+        item?.property_name ??
+        item?.data?.title ??
+        item?.data?.name ??
+        item?.data?.label ??
+        fallback
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET APARTMENT NAME
+|--------------------------------------------------------------------------
+|
+| Your API returns:
+|
+| "name": "Vista Grande Apartments Block E"
+|
+| "block": "Block E"
+|
+|--------------------------------------------------------------------------
+*/
+
+const getApartmentName = (
+    item,
+    fallback = ""
+) => {
+    if (!item) {
+        return fallback;
+    }
+
+    if (
+        typeof item !==
+        "object"
+    ) {
+        return String(item);
+    }
+
+    const name =
         item?.name ??
         item?.title ??
         item?.label ??
         item?.display_name ??
-        item?.property_name ??
         item?.apartment_name ??
         item?.data?.name ??
         item?.data?.title ??
-        item?.data?.label ??
-        fallback
+        item?.data?.label;
+
+    if (name) {
+        return String(name);
+    }
+
+    if (item?.block) {
+        return `Block ${String(
+            item.block
+        ).replace(
+            /^Block\s+/i,
+            ""
+        )}`;
+    }
+
+    return fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET APARTMENT PROPERTY ID
+|--------------------------------------------------------------------------
+|
+| Handles all common Laravel relationship shapes.
+|--------------------------------------------------------------------------
+*/
+
+const getApartmentPropertyId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment?.property_id ??
+        apartment?.property?.id ??
+        apartment?.property?.value ??
+        apartment?.property?.data?.id ??
+        apartment?.property?.data?.value ??
+        apartment?.data?.property_id ??
+        apartment?.data?.property?.id ??
+        apartment?.data?.property?.value ??
+        ""
     );
 };
 
@@ -1219,6 +1461,21 @@ const normalizeValue = (
 |--------------------------------------------------------------------------
 | TYPE VALUE
 |--------------------------------------------------------------------------
+|
+| Supports:
+|
+| "bedsitter"
+|
+| {
+|     value: "bedsitter",
+|     label: "Bedsitter"
+| }
+|
+| {
+|     type: "bedsitter"
+| }
+|
+|--------------------------------------------------------------------------
 */
 
 const getTypeValue = (
@@ -1244,6 +1501,7 @@ const getTypeValue = (
             item?.type ??
             item?.data?.value ??
             item?.data?.id ??
+            item?.data?.type ??
             ""
     );
 };
@@ -1277,11 +1535,14 @@ const getTypeLabel = (
         item?.label ??
         item?.name ??
         item?.title ??
+        item?.type_label ??
         item?.data?.label ??
         item?.data?.name ??
         item?.data?.title ??
         formatLabel(
-            getTypeValue(item) ||
+            getTypeValue(
+                item
+            ) ||
                 fallback
         )
     );
