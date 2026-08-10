@@ -195,7 +195,7 @@ const normalizeCollection = (response) => {
 };
 
 /**
- * Safely extract an ID.
+ * Safely extract an ID from an object/value.
  */
 const getId = (item) => {
     if (
@@ -212,6 +212,7 @@ const getId = (item) => {
             item.value ??
             item.property_id ??
             item.apartment_id ??
+            item.unit_id ??
             ""
         );
     }
@@ -220,7 +221,7 @@ const getId = (item) => {
 };
 
 /**
- * Safely extract display name.
+ * Safely extract a display name.
  */
 const getName = (
     item,
@@ -242,6 +243,7 @@ const getName = (
         item.apartment_name ??
         item.display_name ??
         item.full_name ??
+        item.unit_name ??
         fallback
     );
 };
@@ -273,6 +275,15 @@ const normalizeId = (value) => {
 
 /**
  * Normalize enum/resource values.
+ *
+ * Handles:
+ *
+ * "vacant"
+ *
+ * {
+ *   value: "vacant",
+ *   label: "Vacant"
+ * }
  */
 const normalizeValue = (
     value,
@@ -319,7 +330,7 @@ const formatDateForInput = (value) => {
 };
 
 /**
- * Normalize boolean values.
+ * Normalize booleans.
  */
 const normalizeBoolean = (value) => {
     return (
@@ -350,6 +361,45 @@ const normalizeNumber = (
     return Number.isFinite(number)
         ? number
         : fallback;
+};
+
+/**
+ * Extract property ID from an apartment.
+ */
+const getApartmentPropertyId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment.property_id ??
+        apartment.property?.id ??
+        apartment.property?.value ??
+        apartment.property?.property_id ??
+        apartment.property?.data?.id ??
+        apartment.property?.data?.value ??
+        ""
+    );
+};
+
+/**
+ * Extract apartment ID from an object.
+ */
+const getApartmentId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment.id ??
+        apartment.value ??
+        apartment.apartment_id ??
+        ""
+    );
 };
 
 /*
@@ -406,16 +456,25 @@ const UnitForm = ({
         ];
 
         /*
-         * When editing a unit, make sure the property
-         * returned by the unit API is available in the
-         * property select.
-         */
+        |--------------------------------------------------------------------------
+        | CURRENT PROPERTY
+        |--------------------------------------------------------------------------
+        |
+        | When editing, the current property must remain
+        | available even if the property list has not
+        | loaded it yet.
+        |
+        */
+
         const currentProperty =
             unit?.property;
 
         const currentPropertyId =
             unit?.property_id ??
-            currentProperty?.id;
+            currentProperty?.id ??
+            currentProperty?.value ??
+            currentProperty?.property_id ??
+            currentProperty?.data?.id;
 
         if (currentPropertyId) {
             const exists = options.some(
@@ -457,33 +516,28 @@ const UnitForm = ({
         ];
 
         /*
-         * IMPORTANT:
-         *
-         * Your unit API returns:
-         *
-         * apartment: {
-         *     id: 80,
-         *     name: "Vista Grande Apartments Block E",
-         *     block: "Block E",
-         *     total_floors: 12,
-         *     total_units: 68
-         * }
-         *
-         * Add this apartment to the options if it is
-         * missing from the apartments collection.
-         */
+        |--------------------------------------------------------------------------
+        | CURRENT APARTMENT
+        |--------------------------------------------------------------------------
+        */
+
         const currentApartment =
             unit?.apartment;
 
         const currentApartmentId =
             unit?.apartment_id ??
-            currentApartment?.id;
+            currentApartment?.id ??
+            currentApartment?.value ??
+            currentApartment?.apartment_id ??
+            currentApartment?.data?.id;
 
         if (currentApartmentId) {
             const exists = options.some(
                 (apartment) =>
                     normalizeId(
-                        getId(apartment)
+                        getApartmentId(
+                            apartment
+                        )
                     ) ===
                     normalizeId(
                         currentApartmentId
@@ -497,13 +551,9 @@ const UnitForm = ({
                 options.push({
                     ...currentApartment,
 
-                    id: currentApartmentId,
+                    id:
+                        currentApartmentId,
 
-                    /*
-                     * The API unit response may not
-                     * include property_id directly
-                     * inside apartment.
-                     */
                     property_id:
                         currentApartment.property_id ??
                         unit?.property_id ??
@@ -535,60 +585,123 @@ const UnitForm = ({
                 form.property_id
             );
 
-        return apartmentOptions.filter(
-            (apartment) => {
-                const apartmentPropertyId =
-                    apartment?.property_id ??
-                    apartment?.property?.id ??
-                    apartment?.property?.value ??
-                    apartment?.property?.property_id ??
-                    apartment?.property?.data?.id;
+        const filtered =
+            apartmentOptions.filter(
+                (apartment) => {
+                    const apartmentPropertyId =
+                        getApartmentPropertyId(
+                            apartment
+                        );
 
-                /*
-                 * Normal apartment response.
-                 */
-                if (
-                    apartmentPropertyId !==
-                    undefined &&
-                    apartmentPropertyId !==
-                    null &&
-                    apartmentPropertyId !== ""
-                ) {
-                    return (
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Normal apartment response
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (
+                        apartmentPropertyId !==
+                            undefined &&
+                        apartmentPropertyId !==
+                            null &&
+                        apartmentPropertyId !==
+                            ""
+                    ) {
+                        return (
+                            normalizeId(
+                                apartmentPropertyId
+                            ) ===
+                            selectedPropertyId
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Editing fallback
+                    |--------------------------------------------------------------------------
+                    */
+
+                    const currentApartmentId =
+                        unit?.apartment_id ??
+                        unit?.apartment?.id;
+
+                    if (
+                        currentApartmentId &&
                         normalizeId(
-                            apartmentPropertyId
+                            getApartmentId(
+                                apartment
+                            )
                         ) ===
-                        selectedPropertyId
-                    );
-                }
+                        normalizeId(
+                            currentApartmentId
+                        )
+                    ) {
+                        return true;
+                    }
 
-                /*
-                 * Editing fallback.
-                 *
-                 * The current unit's apartment
-                 * should still appear even if the
-                 * apartment response does not expose
-                 * property_id.
-                 */
-                if (
-                    unit?.apartment?.id &&
-                    normalizeId(
-                        apartment.id
-                    ) ===
-                    normalizeId(
-                        unit.apartment.id
-                    )
-                ) {
-                    return true;
+                    return false;
                 }
+            );
 
-                return false;
+        /*
+        |--------------------------------------------------------------------------
+        | GUARANTEE CURRENT APARTMENT
+        |--------------------------------------------------------------------------
+        |
+        | If editing and the API apartment does not expose
+        | property_id, make sure the current apartment
+        | still appears.
+        |
+        */
+
+        if (
+            isEditing &&
+            unit?.apartment &&
+            normalizeId(
+                unit?.property_id ??
+                unit?.property?.id
+            ) ===
+            selectedPropertyId
+        ) {
+            const currentApartmentId =
+                unit?.apartment_id ??
+                unit?.apartment?.id;
+
+            const alreadyExists =
+                filtered.some(
+                    (apartment) =>
+                        normalizeId(
+                            getApartmentId(
+                                apartment
+                            )
+                        ) ===
+                        normalizeId(
+                            currentApartmentId
+                        )
+                );
+
+            if (
+                !alreadyExists &&
+                currentApartmentId
+            ) {
+                filtered.push({
+                    ...unit.apartment,
+
+                    id:
+                        currentApartmentId,
+
+                    property_id:
+                        selectedPropertyId,
+                });
             }
-        );
+        }
+
+        return filtered;
     }, [
         apartmentOptions,
         form.property_id,
         unit,
+        isEditing,
     ]);
 
     /*
@@ -641,18 +754,6 @@ const UnitForm = ({
         |--------------------------------------------------------------------------
         | DETAILS
         |--------------------------------------------------------------------------
-        *
-        * API:
-        *
-        * details: {
-        *     type: "bedsitter",
-        *     floor: 12,
-        *     bedrooms: 0,
-        *     bathrooms: 1,
-        *     toilets: 1,
-        *     size: 32,
-        *     size_unit: "sqm"
-        * }
         */
 
         const details =
@@ -701,16 +802,17 @@ const UnitForm = ({
         |--------------------------------------------------------------------------
         | PRICING
         |--------------------------------------------------------------------------
-        *
-        * API:
-        *
-        * pricing: {
-        *     price: 17192,
-        *     formatted_price: "KES 17,192.00",
-        *     deposit: 17192,
-        *     service_charge: 2042,
-        *     currency: "KES"
-        * }
+        |
+        | Expected API:
+        |
+        | pricing: {
+        |     price: 17192,
+        |     formatted_price: "KES 17,192.00",
+        |     deposit: 17192,
+        |     service_charge: 2042,
+        |     currency: "KES"
+        | }
+        |
         */
 
         const pricing =
@@ -718,6 +820,7 @@ const UnitForm = ({
 
         const rent =
             pricing.price ??
+            pricing.rent ??
             unit.rent ??
             unit.price ??
             unit.rent_amount ??
@@ -732,6 +835,7 @@ const UnitForm = ({
 
         const serviceCharge =
             pricing.service_charge ??
+            pricing.serviceCharge ??
             unit.service_charge ??
             unit.serviceCharge ??
             "";
@@ -740,15 +844,6 @@ const UnitForm = ({
         |--------------------------------------------------------------------------
         | FEATURES
         |--------------------------------------------------------------------------
-        *
-        * API:
-        *
-        * features: {
-        *     has_balcony: false,
-        *     has_wifi: true,
-        *     has_furnished: true,
-        *     has_air_conditioning: false
-        * }
         */
 
         const features =
@@ -762,6 +857,7 @@ const UnitForm = ({
 
         const status =
             unit.status?.value ??
+            unit.status?.id ??
             unit.status ??
             "vacant";
 
@@ -788,6 +884,7 @@ const UnitForm = ({
 
         const availableFrom =
             unit.availability?.available_from ??
+            unit.availability?.available_date ??
             unit.available_from ??
             unit.available_date ??
             "";
@@ -872,8 +969,10 @@ const UnitForm = ({
                 ),
 
             /*
-             * PRICING
-             */
+            |--------------------------------------------------------------------------
+            | PRICING
+            |--------------------------------------------------------------------------
+            */
 
             price:
                 normalizeNumber(
@@ -894,8 +993,10 @@ const UnitForm = ({
                 ),
 
             /*
-             * FEATURES
-             */
+            |--------------------------------------------------------------------------
+            | FEATURES
+            |--------------------------------------------------------------------------
+            */
 
             has_balcony:
                 normalizeBoolean(
@@ -925,15 +1026,18 @@ const UnitForm = ({
                 ),
 
             /*
-             * MEDIA
-             */
+            |--------------------------------------------------------------------------
+            | MEDIA
+            |--------------------------------------------------------------------------
+            */
 
-            thumbnail:
-                thumbnail,
+            thumbnail,
 
             /*
-             * AVAILABILITY
-             */
+            |--------------------------------------------------------------------------
+            | AVAILABILITY
+            |--------------------------------------------------------------------------
+            */
 
             available_from:
                 formatDateForInput(
@@ -946,6 +1050,7 @@ const UnitForm = ({
         });
 
         setErrors({});
+
         setThumbnailPreview(
             thumbnail
         );
@@ -966,53 +1071,60 @@ const UnitForm = ({
             filteredApartments.some(
                 (apartment) =>
                     normalizeId(
-                        getId(apartment)
+                        getApartmentId(
+                            apartment
+                        )
                     ) ===
                     normalizeId(
                         form.apartment_id
                     )
             );
 
-        if (!exists) {
-            /*
-             * During the initial edit render, the
-             * apartment list may still be loading.
-             *
-             * Do NOT immediately clear the selected
-             * apartment if the current unit already
-             * contains that apartment.
-             */
-            const isCurrentUnitApartment =
-                unit?.apartment?.id &&
-                normalizeId(
-                    unit.apartment.id
-                ) ===
-                normalizeId(
-                    form.apartment_id
-                );
+        if (exists) {
+            return;
+        }
 
-            if (
-                isCurrentUnitApartment
-            ) {
-                return;
-            }
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT UNIT APARTMENT
+        |--------------------------------------------------------------------------
+        */
 
-            /*
-             * Only clear if apartment data has
-             * actually loaded and the apartment
-             * does not exist.
-             */
-            if (
-                !loading &&
-                apartmentOptions.length > 0
-            ) {
-                setForm(
-                    (previous) => ({
-                        ...previous,
-                        apartment_id: "",
-                    })
-                );
-            }
+        const isCurrentUnitApartment =
+            (
+                unit?.apartment?.id ||
+                unit?.apartment_id
+            ) &&
+            normalizeId(
+                unit?.apartment?.id ??
+                unit?.apartment_id
+            ) ===
+            normalizeId(
+                form.apartment_id
+            );
+
+        if (
+            isCurrentUnitApartment
+        ) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | DO NOT CLEAR DURING INITIAL LOAD
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            !loading &&
+            apartmentOptions.length > 0
+        ) {
+            setForm(
+                (previous) => ({
+                    ...previous,
+                    apartment_id: "",
+                })
+            );
         }
     }, [
         filteredApartments,
@@ -1041,9 +1153,10 @@ const UnitForm = ({
                 setForm(
                     (previous) => ({
                         ...previous,
+
                         [name]:
                             type ===
-                                "checkbox"
+                            "checkbox"
                                 ? checked
                                 : value,
                     })
@@ -1090,8 +1203,8 @@ const UnitForm = ({
                             propertyId,
 
                         /*
-                         * Reset apartment when
-                         * property changes.
+                         * Changing property must
+                         * reset apartment.
                          */
                         apartment_id: "",
                     })
@@ -1168,17 +1281,27 @@ const UnitForm = ({
             const validationErrors =
                 {};
 
+            /*
+            |--------------------------------------------------------------------------
+            | RELATIONSHIPS
+            |--------------------------------------------------------------------------
+            */
+
             if (!form.property_id) {
                 validationErrors.property_id =
                     "Please select a property.";
             }
 
-            if (
-                !form.apartment_id
-            ) {
+            if (!form.apartment_id) {
                 validationErrors.apartment_id =
                     "Please select an apartment.";
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | BASIC INFORMATION
+            |--------------------------------------------------------------------------
+            */
 
             if (
                 !form.unit_number?.trim()
@@ -1197,13 +1320,23 @@ const UnitForm = ({
                     "Please select the unit status.";
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | PRICING
+            |--------------------------------------------------------------------------
+            */
+
             if (
                 form.price !== "" &&
                 (
                     !Number.isFinite(
-                        Number(form.price)
+                        Number(
+                            form.price
+                        )
                     ) ||
-                    Number(form.price) < 0
+                    Number(
+                        form.price
+                    ) < 0
                 )
             ) {
                 validationErrors.price =
@@ -1214,9 +1347,13 @@ const UnitForm = ({
                 form.deposit !== "" &&
                 (
                     !Number.isFinite(
-                        Number(form.deposit)
+                        Number(
+                            form.deposit
+                        )
                     ) ||
-                    Number(form.deposit) < 0
+                    Number(
+                        form.deposit
+                    ) < 0
                 )
             ) {
                 validationErrors.deposit =
@@ -1240,18 +1377,34 @@ const UnitForm = ({
                     "Enter a valid non-negative service charge.";
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | SIZE
+            |--------------------------------------------------------------------------
+            */
+
             if (
                 form.size !== "" &&
                 (
                     !Number.isFinite(
-                        Number(form.size)
+                        Number(
+                            form.size
+                        )
                     ) ||
-                    Number(form.size) < 0
+                    Number(
+                        form.size
+                    ) < 0
                 )
             ) {
                 validationErrors.size =
                     "Enter a valid non-negative size.";
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | ROOMS
+            |--------------------------------------------------------------------------
+            */
 
             if (
                 form.bedrooms !== "" &&
@@ -1291,9 +1444,13 @@ const UnitForm = ({
                 form.toilets !== "" &&
                 (
                     !Number.isFinite(
-                        Number(form.toilets)
+                        Number(
+                            form.toilets
+                        )
                     ) ||
-                    Number(form.toilets) < 0
+                    Number(
+                        form.toilets
+                    ) < 0
                 )
             ) {
                 validationErrors.toilets =
@@ -1304,9 +1461,13 @@ const UnitForm = ({
                 form.floor !== "" &&
                 (
                     !Number.isFinite(
-                        Number(form.floor)
+                        Number(
+                            form.floor
+                        )
                     ) ||
-                    Number(form.floor) < 0
+                    Number(
+                        form.floor
+                    ) < 0
                 )
             ) {
                 validationErrors.floor =
@@ -1351,6 +1512,12 @@ const UnitForm = ({
                 return;
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE PRICING
+            |--------------------------------------------------------------------------
+            */
+
             const rent =
                 form.price === ""
                     ? null
@@ -1372,7 +1539,19 @@ const UnitForm = ({
                         form.service_charge
                     );
 
+            /*
+            |--------------------------------------------------------------------------
+            | PAYLOAD
+            |--------------------------------------------------------------------------
+            */
+
             const payload = {
+                /*
+                |--------------------------------------------------------------------------
+                | RELATIONSHIPS
+                |--------------------------------------------------------------------------
+                */
+
                 property_id:
                     form.property_id
                         ? Number(
@@ -1387,8 +1566,15 @@ const UnitForm = ({
                         )
                         : null,
 
+                /*
+                |--------------------------------------------------------------------------
+                | BASIC
+                |--------------------------------------------------------------------------
+                */
+
                 unit_number:
-                    form.unit_number.trim(),
+                    form.unit_number
+                        .trim(),
 
                 unit_name:
                     form.unit_name?.trim() ||
@@ -1409,6 +1595,12 @@ const UnitForm = ({
                         form.type,
                         "apartment"
                     ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | ROOMS
+                |--------------------------------------------------------------------------
+                */
 
                 bedrooms:
                     form.bedrooms === ""
@@ -1438,6 +1630,12 @@ const UnitForm = ({
                             form.floor
                         ),
 
+                /*
+                |--------------------------------------------------------------------------
+                | SIZE
+                |--------------------------------------------------------------------------
+                */
+
                 size:
                     form.size === ""
                         ? null
@@ -1450,14 +1648,16 @@ const UnitForm = ({
                     "sqm",
 
                 /*
-                 * Pricing
-                 */
+                |--------------------------------------------------------------------------
+                | PRICING
+                |--------------------------------------------------------------------------
+                */
 
                 price: rent,
 
                 /*
-                 * Keep rent as well for
-                 * backend compatibility.
+                 * Keep rent for Laravel/backend
+                 * compatibility.
                  */
                 rent: rent,
 
@@ -1467,8 +1667,10 @@ const UnitForm = ({
                     serviceCharge,
 
                 /*
-                 * Features
-                 */
+                |--------------------------------------------------------------------------
+                | FEATURES
+                |--------------------------------------------------------------------------
+                */
 
                 has_balcony:
                     Boolean(
@@ -1491,32 +1693,47 @@ const UnitForm = ({
                     ),
 
                 /*
-                 * Media
-                 */
+                |--------------------------------------------------------------------------
+                | MEDIA
+                |--------------------------------------------------------------------------
+                */
 
                 thumbnail:
                     form.thumbnail?.trim() ||
                     null,
 
                 /*
-                 * Availability
-                 */
+                |--------------------------------------------------------------------------
+                | AVAILABILITY
+                |--------------------------------------------------------------------------
+                */
 
                 available_from:
                     form.available_from ||
                     null,
+
+                /*
+                |--------------------------------------------------------------------------
+                | NOTES
+                |--------------------------------------------------------------------------
+                */
 
                 notes:
                     form.notes?.trim() ||
                     null,
             };
 
+            console.log(
+                "Unit payload:",
+                payload
+            );
+
             try {
                 await onSubmit?.(
                     payload
                 );
             } catch (
-            submitError
+                submitError
             ) {
                 console.error(
                     "Unit form submission failed:",
@@ -1534,14 +1751,26 @@ const UnitForm = ({
     const getFieldError = (
         field
     ) => {
+        /*
+        |--------------------------------------------------------------------------
+        | CLIENT ERROR
+        |--------------------------------------------------------------------------
+        */
+
         if (errors[field]) {
             return errors[field];
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | LARAVEL VALIDATION ERROR
+        |--------------------------------------------------------------------------
+        */
+
         if (
             error?.errors &&
             typeof error.errors ===
-            "object"
+                "object"
         ) {
             const serverError =
                 error.errors[field];
@@ -1575,8 +1804,8 @@ const UnitForm = ({
         typeof error === "string"
             ? error
             : error?.message ??
-            error?.error ??
-            "Unable to save the unit. Please try again.";
+              error?.error ??
+              "Unable to save the unit. Please try again.";
 
     /*
     |--------------------------------------------------------------------------
@@ -1590,9 +1819,10 @@ const UnitForm = ({
         w-full
         rounded-xl
         border
-        ${getFieldError(field)
-            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
-            : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+        ${
+            getFieldError(field)
+                ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
         }
         bg-white
         px-4
@@ -1627,9 +1857,7 @@ const UnitForm = ({
             <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                        <Home
-                            size={22}
-                        />
+                        <Home size={22} />
                     </div>
 
                     <div>
@@ -1642,7 +1870,7 @@ const UnitForm = ({
 
                         <p className="mt-1 text-sm text-slate-500">
                             {isEditing
-                                ? "Update unit information and availability."
+                                ? "Update unit information, pricing and availability."
                                 : "Add a new unit to your property."}
                         </p>
                     </div>
@@ -1650,9 +1878,7 @@ const UnitForm = ({
 
                 {isEditing && (
                     <span className="inline-flex w-fit items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
-                        <Check
-                            size={14}
-                        />
+                        <Check size={14} />
                         Editing Unit
                     </span>
                 )}
@@ -1667,9 +1893,7 @@ const UnitForm = ({
                     </p>
 
                     <p className="mt-1">
-                        {
-                            serverErrorMessage
-                        }
+                        {serverErrorMessage}
                     </p>
                 </div>
             )}
@@ -1752,9 +1976,17 @@ const UnitForm = ({
 
                         {loading &&
                             propertyOptions.length ===
-                            0 && (
+                                0 && (
                                 <p className="mt-2 text-xs text-slate-500">
                                     Loading properties...
+                                </p>
+                            )}
+
+                        {!loading &&
+                            propertyOptions.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-amber-600">
+                                    No properties found.
                                 </p>
                             )}
                     </Field>
@@ -1795,7 +2027,7 @@ const UnitForm = ({
                                         apartment
                                     ) => {
                                         const id =
-                                            getId(
+                                            getApartmentId(
                                                 apartment
                                             );
 
@@ -1814,7 +2046,9 @@ const UnitForm = ({
                                             >
                                                 {getName(
                                                     apartment,
-                                                    `Apartment #${id}`
+                                                    apartment.block
+                                                        ? `${apartment.block} - Apartment #${id}`
+                                                        : `Apartment #${id}`
                                                 )}
                                             </option>
                                         );
@@ -1828,9 +2062,19 @@ const UnitForm = ({
                             />
                         </div>
 
-                        {form.property_id &&
+                        {loading &&
+                            form.property_id &&
                             filteredApartments.length ===
-                            0 && (
+                                0 && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Loading apartments...
+                                </p>
+                            )}
+
+                        {!loading &&
+                            form.property_id &&
+                            filteredApartments.length ===
+                                0 && (
                                 <p className="mt-2 text-xs text-amber-600">
                                     No apartments are available for this property.
                                 </p>
@@ -2482,6 +2726,7 @@ const UnitForm = ({
                                 size={18}
                                 className="animate-spin"
                             />
+
                             Saving...
                         </>
                     ) : (
@@ -2521,11 +2766,11 @@ const SectionHeader = ({
 }) => {
     return (
         <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                {Icon && (
+            {Icon && (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                     <Icon size={19} />
-                )}
-            </div>
+                </div>
+            )}
 
             <div className="min-w-0">
                 <h3 className="text-base font-bold text-slate-900">
@@ -2606,9 +2851,10 @@ const NumberField = ({
                     w-full
                     rounded-xl
                     border
-                    ${error
-                        ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
-                        : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                    ${
+                        error
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                            : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
                     }
                     bg-white
                     px-4
@@ -2649,7 +2895,7 @@ const MoneyField = ({
             error={error}
         >
             <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-sm font-bold text-slate-500">
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-xs font-bold text-slate-500">
                     KES
                 </span>
 
@@ -2668,9 +2914,10 @@ const MoneyField = ({
                         w-full
                         rounded-xl
                         border
-                        ${error
-                            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
-                            : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                        ${
+                            error
+                                ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                                : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
                         }
                         bg-white
                         py-3
@@ -2720,13 +2967,15 @@ const FeatureCheckbox = ({
                 p-4
                 transition-all
                 duration-200
-                ${checked
-                    ? "border-indigo-300 bg-indigo-50 shadow-sm"
-                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                ${
+                    checked
+                        ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                 }
-                ${disabled
-                    ? "cursor-not-allowed opacity-60"
-                    : "cursor-pointer"
+                ${
+                    disabled
+                        ? "cursor-not-allowed opacity-60"
+                        : "cursor-pointer"
                 }
             `}
         >
@@ -2754,9 +3003,10 @@ const FeatureCheckbox = ({
                     border
                     transition-all
                     duration-200
-                    ${checked
-                        ? "border-indigo-600 bg-indigo-600"
-                        : "border-slate-300 bg-white group-hover:border-indigo-400"
+                    ${
+                        checked
+                            ? "border-indigo-600 bg-indigo-600"
+                            : "border-slate-300 bg-white group-hover:border-indigo-400"
                     }
                 `}
                 aria-hidden="true"
@@ -2775,9 +3025,10 @@ const FeatureCheckbox = ({
                     className={`
                         text-sm
                         font-semibold
-                        ${checked
-                            ? "text-indigo-900"
-                            : "text-slate-800"
+                        ${
+                            checked
+                                ? "text-indigo-900"
+                                : "text-slate-800"
                         }
                     `}
                 >
