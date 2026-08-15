@@ -1,15 +1,16 @@
-import api from "../api/axios"
+import api from "../api/axios";
 
 /*
 |--------------------------------------------------------------------------
 | DASHBOARD SERVICE
 |--------------------------------------------------------------------------
 |
-| Backend:
+| Backend endpoint:
 |
 | GET /api/dashboard
 |
 | The authenticated Laravel user determines:
+|
 | - Dashboard configuration
 | - Role
 | - Permissions
@@ -21,20 +22,10 @@ import api from "../api/axios"
 
 /*
 |--------------------------------------------------------------------------
-| SAFE PARAMS
+| NORMALIZE PARAMETERS
 |--------------------------------------------------------------------------
 */
 
-/**
- * Remove undefined/null/empty-string parameters.
- *
- * This prevents requests such as:
- *
- * /dashboard?property_id=&period=
- *
- * @param {Object} params
- * @returns {Object}
- */
 const normalizeParams = (params = {}) => {
   if (
     !params ||
@@ -46,10 +37,17 @@ const normalizeParams = (params = {}) => {
 
   return Object.fromEntries(
     Object.entries(params).filter(
-      ([, value]) =>
-        value !== undefined &&
-        value !== null &&
-        value !== ""
+      ([, value]) => {
+        if (
+          value === undefined ||
+          value === null ||
+          value === ""
+        ) {
+          return false;
+        }
+
+        return true;
+      }
     )
   );
 };
@@ -60,23 +58,6 @@ const normalizeParams = (params = {}) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Fetch the authenticated user's dashboard.
- *
- * Example:
- *
- * fetchDashboard();
- *
- * With filters:
- *
- * fetchDashboard({
- *   property_id: 20,
- *   period: "month",
- * });
- *
- * @param {Object} params
- * @returns {Promise<Object>}
- */
 export const fetchDashboard = async (
   params = {}
 ) => {
@@ -90,36 +71,39 @@ export const fetchDashboard = async (
     }
   );
 
-  return response?.data ?? response;
+  /*
+  |--------------------------------------------------------------------------
+  | Return Axios response data.
+  |
+  | Example:
+  |
+  | {
+  |   status: true,
+  |   code: 200,
+  |   message: "...",
+  |   data: {...}
+  | }
+  |--------------------------------------------------------------------------
+  */
+
+  return (
+    response?.data ??
+    response
+  );
 };
 
 /*
 |--------------------------------------------------------------------------
 | REFRESH DASHBOARD
 |--------------------------------------------------------------------------
+|
+| Dashboard statistics are calculated from the
+| current database state, so refresh uses the
+| same endpoint with cache prevention headers.
+|
+|--------------------------------------------------------------------------
 */
 
-/**
- * Refresh the authenticated user's dashboard.
- *
- * The dashboard endpoint calculates statistics
- * from the current database state, therefore
- * refresh uses the same endpoint.
- *
- * Example:
- *
- * refreshDashboard();
- *
- * With filters:
- *
- * refreshDashboard({
- *   property_id: 20,
- *   period: "month",
- * });
- *
- * @param {Object} params
- * @returns {Promise<Object>}
- */
 export const refreshDashboard = async (
   params = {}
 ) => {
@@ -130,17 +114,21 @@ export const refreshDashboard = async (
     "/dashboard",
     {
       params: normalizedParams,
-      /*
-       * Prevent browser/proxy caching where
-       * supported by the Axios adapter.
-       */
+
       headers: {
-        "Cache-Control": "no-cache",
+        "Cache-Control":
+          "no-cache",
+
+        Pragma:
+          "no-cache",
       },
     }
   );
 
-  return response?.data ?? response;
+  return (
+    response?.data ??
+    response
+  );
 };
 
 /*
@@ -149,7 +137,9 @@ export const refreshDashboard = async (
 |--------------------------------------------------------------------------
 */
 
-export default {
+const dashboardService = {
   fetchDashboard,
   refreshDashboard,
 };
+
+export default dashboardService;
