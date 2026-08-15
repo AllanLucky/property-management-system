@@ -7,15 +7,9 @@ import {
 } from "react";
 
 import {
-  fetchDashboard,
-  refreshDashboard,
+  fetchDashboard as fetchDashboardService,
+  refreshDashboard as refreshDashboardService,
 } from "../services/dashboard.service";
-
-/*
-|--------------------------------------------------------------------------
-| TYPES / DEFAULT DATA
-|--------------------------------------------------------------------------
-*/
 
 /*
 |--------------------------------------------------------------------------
@@ -33,11 +27,18 @@ const DEFAULT_DASHBOARD = {
   layout: {
     columns: 12,
     responsive: true,
+
     cards: {
       small: 3,
       medium: 4,
       large: 6,
       full: 12,
+    },
+
+    breakpoints: {
+      mobile: 1,
+      tablet: 6,
+      desktop: 12,
     },
   },
 
@@ -47,6 +48,13 @@ const DEFAULT_DASHBOARD = {
   is_default: false,
   is_active: true,
   sort_order: 0,
+
+  meta: {
+    is_system: false,
+    is_user_dashboard: false,
+    widget_count: 0,
+    filter_count: 0,
+  },
 };
 
 /*
@@ -62,6 +70,7 @@ const DEFAULT_USER = {
   last_name: null,
   email: null,
   roles: [],
+  primary_role: null,
 };
 
 /*
@@ -95,8 +104,10 @@ const DEFAULT_OVERVIEW = {
 const DEFAULT_PROPERTIES = {
   total: 0,
   active: 0,
+  inactive: 0,
   featured: 0,
   verified: 0,
+  verification_rate: 0,
 };
 
 /*
@@ -108,6 +119,8 @@ const DEFAULT_PROPERTIES = {
 const DEFAULT_APARTMENTS = {
   total: 0,
   active: 0,
+  inactive: 0,
+  active_rate: 0,
 };
 
 /*
@@ -122,6 +135,14 @@ const DEFAULT_UNITS = {
   occupied: 0,
   maintenance: 0,
   reserved: 0,
+  available: 0,
+
+  occupied_rate: 0,
+  vacant_rate: 0,
+  maintenance_rate: 0,
+  reserved_rate: 0,
+
+  status_breakdown: [],
 };
 
 /*
@@ -136,7 +157,11 @@ const DEFAULT_OCCUPANCY = {
   vacant: 0,
   maintenance: 0,
   reserved: 0,
+
   rate: 0,
+  available_rate: 0,
+
+  status_breakdown: [],
 };
 
 /*
@@ -151,6 +176,11 @@ const DEFAULT_TENANCIES = {
   pending: 0,
   expired: 0,
   terminated: 0,
+  cancelled: 0,
+
+  active_rate: 0,
+
+  status_breakdown: [],
 };
 
 /*
@@ -165,6 +195,13 @@ const DEFAULT_BOOKINGS = {
   confirmed: 0,
   completed: 0,
   cancelled: 0,
+
+  pending_rate: 0,
+  confirmed_rate: 0,
+  completed_rate: 0,
+  cancelled_rate: 0,
+
+  status_breakdown: [],
 };
 
 /*
@@ -179,6 +216,10 @@ const DEFAULT_FINANCIALS = {
   outstanding: 0,
   expenses: 0,
   net_income: 0,
+
+  collection_rate: 0,
+  expense_rate: 0,
+  net_margin: 0,
 };
 
 /*
@@ -193,6 +234,33 @@ const DEFAULT_MAINTENANCE = {
   in_progress: 0,
   completed: 0,
   cancelled: 0,
+  open: 0,
+
+  completion_rate: 0,
+
+  status_breakdown: [],
+};
+
+/*
+|--------------------------------------------------------------------------
+| DEFAULT META
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_META = {
+  generated_at: null,
+  currency: "KES",
+  timezone: "Africa/Nairobi",
+
+  has_properties: false,
+  has_apartments: false,
+  has_units: false,
+  has_occupancy: false,
+  has_tenancies: false,
+  has_bookings: false,
+  has_financials: false,
+  has_maintenance: false,
+  has_activity: false,
 };
 
 /*
@@ -207,6 +275,39 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(number)
     ? number
     : fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE BOOLEAN
+|--------------------------------------------------------------------------
+*/
+
+const toBoolean = (
+  value,
+  fallback = false
+) => {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (value === 1 || value === "1") {
+    return true;
+  }
+
+  if (value === 0 || value === "0") {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.toLowerCase() === "true";
+  }
+
+  return Boolean(value);
 };
 
 /*
@@ -244,6 +345,121 @@ const toObject = (
 
 /*
 |--------------------------------------------------------------------------
+| NORMALIZE STATUS BREAKDOWN
+|--------------------------------------------------------------------------
+*/
+
+const normalizeStatusBreakdown = (
+  value
+) => {
+  return toArray(value).map(
+    (item) => {
+      const statusItem =
+        toObject(item);
+
+      return {
+        ...statusItem,
+
+        status:
+          statusItem.status ??
+          null,
+
+        label:
+          statusItem.label ??
+          statusItem.status ??
+          "",
+
+        count:
+          toNumber(
+            statusItem.count
+          ),
+
+        percentage:
+          toNumber(
+            statusItem.percentage
+          ),
+      };
+    }
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE WIDGET
+|--------------------------------------------------------------------------
+*/
+
+const normalizeWidget = (
+  widget
+) => {
+  const value =
+    toObject(widget);
+
+  return {
+    ...value,
+
+    key:
+      value.key ??
+      null,
+
+    type:
+      value.type ??
+      "stat",
+
+    title:
+      value.title ??
+      "",
+
+    enabled:
+      toBoolean(
+        value.enabled,
+        true
+      ),
+
+    order:
+      toNumber(
+        value.order
+      ),
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE DASHBOARD META
+|--------------------------------------------------------------------------
+*/
+
+const normalizeDashboardMeta = (
+  meta
+) => {
+  const value =
+    toObject(meta);
+
+  return {
+    is_system:
+      toBoolean(
+        value.is_system
+      ),
+
+    is_user_dashboard:
+      toBoolean(
+        value.is_user_dashboard
+      ),
+
+    widget_count:
+      toNumber(
+        value.widget_count
+      ),
+
+    filter_count:
+      toNumber(
+        value.filter_count
+      ),
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
 | NORMALIZE DASHBOARD
 |--------------------------------------------------------------------------
 */
@@ -251,27 +467,18 @@ const toObject = (
 const normalizeDashboard = (
   dashboard
 ) => {
-  /*
-  |--------------------------------------------------------------------------
-  | IMPORTANT
-  |--------------------------------------------------------------------------
-  |
-  | The API is allowed to return:
-  |
-  | "dashboard": null
-  |
-  | In that case we preserve null.
-  |
-  */
-
-  if (dashboard === null || dashboard === undefined) {
+  if (
+    dashboard === null ||
+    dashboard === undefined
+  ) {
     return null;
   }
 
-  const value = toObject(
-    dashboard,
-    DEFAULT_DASHBOARD
-  );
+  const value =
+    toObject(
+      dashboard,
+      DEFAULT_DASHBOARD
+    );
 
   return {
     ...DEFAULT_DASHBOARD,
@@ -305,32 +512,112 @@ const normalizeDashboard = (
         value.layout
       ),
 
+      columns:
+        toNumber(
+          value.layout?.columns,
+          12
+        ),
+
+      responsive:
+        toBoolean(
+          value.layout?.responsive,
+          true
+        ),
+
       cards: {
         ...DEFAULT_DASHBOARD.layout.cards,
 
         ...toObject(
           value.layout?.cards
         ),
+
+        small:
+          toNumber(
+            value.layout?.cards?.small,
+            3
+          ),
+
+        medium:
+          toNumber(
+            value.layout?.cards?.medium,
+            4
+          ),
+
+        large:
+          toNumber(
+            value.layout?.cards?.large,
+            6
+          ),
+
+        full:
+          toNumber(
+            value.layout?.cards?.full,
+            12
+          ),
+      },
+
+      breakpoints: {
+        ...DEFAULT_DASHBOARD.layout.breakpoints,
+
+        ...toObject(
+          value.layout?.breakpoints
+        ),
+
+        mobile:
+          toNumber(
+            value.layout?.breakpoints?.mobile,
+            1
+          ),
+
+        tablet:
+          toNumber(
+            value.layout?.breakpoints?.tablet,
+            6
+          ),
+
+        desktop:
+          toNumber(
+            value.layout?.breakpoints?.desktop,
+            12
+          ),
       },
     },
 
     widgets:
-      toArray(value.widgets),
+      toArray(
+        value.widgets
+      )
+        .map(normalizeWidget)
+        .sort(
+          (a, b) =>
+            a.order - b.order
+        ),
 
     filters:
-      toArray(value.filters),
+      toArray(
+        value.filters
+      ),
 
     is_default:
-      Boolean(value.is_default),
+      toBoolean(
+        value.is_default,
+        false
+      ),
 
     is_active:
-      value.is_active === undefined
-        ? true
-        : Boolean(value.is_active),
+      toBoolean(
+        value.is_active,
+        true
+      ),
 
     sort_order:
       toNumber(
         value.sort_order
+      ),
+
+    meta:
+      normalizeDashboardMeta(
+        value.meta
       ),
   };
 };
@@ -344,10 +631,11 @@ const normalizeDashboard = (
 const normalizeUser = (
   user
 ) => {
-  const value = toObject(
-    user,
-    DEFAULT_USER
-  );
+  const value =
+    toObject(
+      user,
+      DEFAULT_USER
+    );
 
   const fullName = [
     value.first_name,
@@ -385,7 +673,14 @@ const normalizeUser = (
       null,
 
     roles:
-      toArray(value.roles),
+      toArray(
+        value.roles
+      ),
+
+    primary_role:
+      value.primary_role ??
+      value.roles?.[0] ??
+      null,
   };
 };
 
@@ -398,22 +693,29 @@ const normalizeUser = (
 const normalizeOverview = (
   overview
 ) => {
-  const value = toObject(
-    overview,
-    DEFAULT_OVERVIEW
-  );
+  const value =
+    toObject(
+      overview,
+      DEFAULT_OVERVIEW
+    );
 
   return {
     ...DEFAULT_OVERVIEW,
 
     properties:
-      toNumber(value.properties),
+      toNumber(
+        value.properties
+      ),
 
     apartments:
-      toNumber(value.apartments),
+      toNumber(
+        value.apartments
+      ),
 
     units:
-      toNumber(value.units),
+      toNumber(
+        value.units
+      ),
 
     occupied_units:
       toNumber(
@@ -436,7 +738,9 @@ const normalizeOverview = (
       ),
 
     bookings:
-      toNumber(value.bookings),
+      toNumber(
+        value.bookings
+      ),
 
     rent_collected:
       toNumber(
@@ -449,10 +753,14 @@ const normalizeOverview = (
       ),
 
     expenses:
-      toNumber(value.expenses),
+      toNumber(
+        value.expenses
+      ),
 
     net_income:
-      toNumber(value.net_income),
+      toNumber(
+        value.net_income
+      ),
 
     maintenance_requests:
       toNumber(
@@ -471,22 +779,42 @@ const normalizeProperties = (
   properties
 ) => {
   const value =
-    toObject(properties);
+    toObject(
+      properties
+    );
 
   return {
     ...DEFAULT_PROPERTIES,
 
     total:
-      toNumber(value.total),
+      toNumber(
+        value.total
+      ),
 
     active:
-      toNumber(value.active),
+      toNumber(
+        value.active
+      ),
+
+    inactive:
+      toNumber(
+        value.inactive
+      ),
 
     featured:
-      toNumber(value.featured),
+      toNumber(
+        value.featured
+      ),
 
     verified:
-      toNumber(value.verified),
+      toNumber(
+        value.verified
+      ),
+
+    verification_rate:
+      toNumber(
+        value.verification_rate
+      ),
   };
 };
 
@@ -500,16 +828,32 @@ const normalizeApartments = (
   apartments
 ) => {
   const value =
-    toObject(apartments);
+    toObject(
+      apartments
+    );
 
   return {
     ...DEFAULT_APARTMENTS,
 
     total:
-      toNumber(value.total),
+      toNumber(
+        value.total
+      ),
 
     active:
-      toNumber(value.active),
+      toNumber(
+        value.active
+      ),
+
+    inactive:
+      toNumber(
+        value.inactive
+      ),
+
+    active_rate:
+      toNumber(
+        value.active_rate
+      ),
   };
 };
 
@@ -523,25 +867,67 @@ const normalizeUnits = (
   units
 ) => {
   const value =
-    toObject(units);
+    toObject(
+      units
+    );
 
   return {
     ...DEFAULT_UNITS,
 
     total:
-      toNumber(value.total),
+      toNumber(
+        value.total
+      ),
 
     vacant:
-      toNumber(value.vacant),
+      toNumber(
+        value.vacant
+      ),
 
     occupied:
-      toNumber(value.occupied),
+      toNumber(
+        value.occupied
+      ),
 
     maintenance:
-      toNumber(value.maintenance),
+      toNumber(
+        value.maintenance
+      ),
 
     reserved:
-      toNumber(value.reserved),
+      toNumber(
+        value.reserved
+      ),
+
+    available:
+      toNumber(
+        value.available
+      ),
+
+    occupied_rate:
+      toNumber(
+        value.occupied_rate
+      ),
+
+    vacant_rate:
+      toNumber(
+        value.vacant_rate
+      ),
+
+    maintenance_rate:
+      toNumber(
+        value.maintenance_rate
+      ),
+
+    reserved_rate:
+      toNumber(
+        value.reserved_rate
+      ),
+
+    status_breakdown:
+      normalizeStatusBreakdown(
+        value.status_breakdown
+      ),
   };
 };
 
@@ -555,7 +941,9 @@ const normalizeOccupancy = (
   occupancy
 ) => {
   const value =
-    toObject(occupancy);
+    toObject(
+      occupancy
+    );
 
   return {
     ...DEFAULT_OCCUPANCY,
@@ -566,10 +954,14 @@ const normalizeOccupancy = (
       ),
 
     occupied:
-      toNumber(value.occupied),
+      toNumber(
+        value.occupied
+      ),
 
     vacant:
-      toNumber(value.vacant),
+      toNumber(
+        value.vacant
+      ),
 
     maintenance:
       toNumber(
@@ -577,10 +969,24 @@ const normalizeOccupancy = (
       ),
 
     reserved:
-      toNumber(value.reserved),
+      toNumber(
+        value.reserved
+      ),
 
     rate:
-      toNumber(value.rate),
+      toNumber(
+        value.rate
+      ),
+
+    available_rate:
+      toNumber(
+        value.available_rate
+      ),
+
+    status_breakdown:
+      normalizeStatusBreakdown(
+        value.status_breakdown
+      ),
   };
 };
 
@@ -594,25 +1000,52 @@ const normalizeTenancies = (
   tenancies
 ) => {
   const value =
-    toObject(tenancies);
+    toObject(
+      tenancies
+    );
 
   return {
     ...DEFAULT_TENANCIES,
 
     total:
-      toNumber(value.total),
+      toNumber(
+        value.total
+      ),
 
     active:
-      toNumber(value.active),
+      toNumber(
+        value.active
+      ),
 
     pending:
-      toNumber(value.pending),
+      toNumber(
+        value.pending
+      ),
 
     expired:
-      toNumber(value.expired),
+      toNumber(
+        value.expired
+      ),
 
     terminated:
-      toNumber(value.terminated),
+      toNumber(
+        value.terminated
+      ),
+
+    cancelled:
+      toNumber(
+        value.cancelled
+      ),
+
+    active_rate:
+      toNumber(
+        value.active_rate
+      ),
+
+    status_breakdown:
+      normalizeStatusBreakdown(
+        value.status_breakdown
+      ),
   };
 };
 
@@ -626,25 +1059,62 @@ const normalizeBookings = (
   bookings
 ) => {
   const value =
-    toObject(bookings);
+    toObject(
+      bookings
+    );
 
   return {
     ...DEFAULT_BOOKINGS,
 
     total:
-      toNumber(value.total),
+      toNumber(
+        value.total
+      ),
 
     pending:
-      toNumber(value.pending),
+      toNumber(
+        value.pending
+      ),
 
     confirmed:
-      toNumber(value.confirmed),
+      toNumber(
+        value.confirmed
+      ),
 
     completed:
-      toNumber(value.completed),
+      toNumber(
+        value.completed
+      ),
 
     cancelled:
-      toNumber(value.cancelled),
+      toNumber(
+        value.cancelled
+      ),
+
+    pending_rate:
+      toNumber(
+        value.pending_rate
+      ),
+
+    confirmed_rate:
+      toNumber(
+        value.confirmed_rate
+      ),
+
+    completed_rate:
+      toNumber(
+        value.completed_rate
+      ),
+
+    cancelled_rate:
+      toNumber(
+        value.cancelled_rate
+      ),
+
+    status_breakdown:
+      normalizeStatusBreakdown(
+        value.status_breakdown
+      ),
   };
 };
 
@@ -658,13 +1128,17 @@ const normalizeFinancials = (
   financials
 ) => {
   const value =
-    toObject(financials);
+    toObject(
+      financials
+    );
 
   return {
     ...DEFAULT_FINANCIALS,
 
     rent_due:
-      toNumber(value.rent_due),
+      toNumber(
+        value.rent_due
+      ),
 
     rent_collected:
       toNumber(
@@ -677,10 +1151,29 @@ const normalizeFinancials = (
       ),
 
     expenses:
-      toNumber(value.expenses),
+      toNumber(
+        value.expenses
+      ),
 
     net_income:
-      toNumber(value.net_income),
+      toNumber(
+        value.net_income
+      ),
+
+    collection_rate:
+      toNumber(
+        value.collection_rate
+      ),
+
+    expense_rate:
+      toNumber(
+        value.expense_rate
+      ),
+
+    net_margin:
+      toNumber(
+        value.net_margin
+      ),
   };
 };
 
@@ -694,16 +1187,22 @@ const normalizeMaintenance = (
   maintenance
 ) => {
   const value =
-    toObject(maintenance);
+    toObject(
+      maintenance
+    );
 
   return {
     ...DEFAULT_MAINTENANCE,
 
     total:
-      toNumber(value.total),
+      toNumber(
+        value.total
+      ),
 
     pending:
-      toNumber(value.pending),
+      toNumber(
+        value.pending
+      ),
 
     in_progress:
       toNumber(
@@ -711,10 +1210,105 @@ const normalizeMaintenance = (
       ),
 
     completed:
-      toNumber(value.completed),
+      toNumber(
+        value.completed
+      ),
 
     cancelled:
-      toNumber(value.cancelled),
+      toNumber(
+        value.cancelled
+      ),
+
+    open:
+      toNumber(
+        value.open
+      ),
+
+    completion_rate:
+      toNumber(
+        value.completion_rate
+      ),
+
+    status_breakdown:
+      normalizeStatusBreakdown(
+        value.status_breakdown
+      ),
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE META
+|--------------------------------------------------------------------------
+*/
+
+const normalizeMeta = (
+  meta
+) => {
+  const value =
+    toObject(
+      meta
+    );
+
+  return {
+    ...DEFAULT_META,
+
+    generated_at:
+      value.generated_at ??
+      null,
+
+    currency:
+      value.currency ||
+      DEFAULT_META.currency,
+
+    timezone:
+      value.timezone ||
+      DEFAULT_META.timezone,
+
+    has_properties:
+      toBoolean(
+        value.has_properties
+      ),
+
+    has_apartments:
+      toBoolean(
+        value.has_apartments
+      ),
+
+    has_units:
+      toBoolean(
+        value.has_units
+      ),
+
+    has_occupancy:
+      toBoolean(
+        value.has_occupancy
+      ),
+
+    has_tenancies:
+      toBoolean(
+        value.has_tenancies
+      ),
+
+    has_bookings:
+      toBoolean(
+        value.has_bookings
+      ),
+
+    has_financials:
+      toBoolean(
+        value.has_financials
+      ),
+
+    has_maintenance:
+      toBoolean(
+        value.has_maintenance
+      ),
+
+    has_activity:
+      toBoolean(
+        value.has_activity
+      ),
   };
 };
 
@@ -729,14 +1323,14 @@ const normalizeDashboardResponse = (
 ) => {
   /*
   |--------------------------------------------------------------------------
-  | Supported structures
+  | Supported API structures
   |--------------------------------------------------------------------------
   |
-  | Axios:
+  | Axios response:
   |
   | response.data.data
   |
-  | Direct:
+  | Axios response already unwrapped:
   |
   | response.data
   |
@@ -772,57 +1366,57 @@ const normalizeDashboardResponse = (
       payload.properties === null
         ? null
         : normalizeProperties(
-          payload.properties
-        ),
+            payload.properties
+          ),
 
     apartments:
       payload.apartments === null
         ? null
         : normalizeApartments(
-          payload.apartments
-        ),
+            payload.apartments
+          ),
 
     units:
       payload.units === null
         ? null
         : normalizeUnits(
-          payload.units
-        ),
+            payload.units
+          ),
 
     occupancy:
       payload.occupancy === null
         ? null
         : normalizeOccupancy(
-          payload.occupancy
-        ),
+            payload.occupancy
+          ),
 
     tenancies:
       payload.tenancies === null
         ? null
         : normalizeTenancies(
-          payload.tenancies
-        ),
+            payload.tenancies
+          ),
 
     bookings:
       payload.bookings === null
         ? null
         : normalizeBookings(
-          payload.bookings
-        ),
+            payload.bookings
+          ),
 
     financials:
       payload.financials === null
         ? null
         : normalizeFinancials(
-          payload.financials
-        ),
+            payload.financials
+          ),
 
     maintenance:
       payload.maintenance === null
         ? null
         : normalizeMaintenance(
-          payload.maintenance
-        ),
+            payload.maintenance
+          ),
 
     activity:
       toArray(
@@ -830,8 +1424,9 @@ const normalizeDashboardResponse = (
       ),
 
     meta:
-      payload.meta ??
-      null,
+      normalizeMeta(
+        payload.meta
+      ),
 
     links:
       payload.links ??
@@ -991,22 +1586,22 @@ const useDashboard = (
         try {
           /*
           |--------------------------------------------------------------------------
-          | API
+          | API Request
           |--------------------------------------------------------------------------
           */
 
           const response =
             refresh
-              ? await refreshDashboard(
-                nextParams
-              )
-              : await fetchDashboard(
-                nextParams
-              );
+              ? await refreshDashboardService(
+                  nextParams
+                )
+              : await fetchDashboardService(
+                  nextParams
+                );
 
           /*
           |--------------------------------------------------------------------------
-          | Normalize
+          | Normalize Response
           |--------------------------------------------------------------------------
           */
 
@@ -1017,21 +1612,21 @@ const useDashboard = (
 
           /*
           |--------------------------------------------------------------------------
-          | Ignore stale request
+          | Ignore Stale Request
           |--------------------------------------------------------------------------
           */
 
           if (
             !mountedRef.current ||
             requestId !==
-            requestRef.current
+              requestRef.current
           ) {
             return normalized;
           }
 
           /*
           |--------------------------------------------------------------------------
-          | Store dashboard
+          | Store Dashboard
           |--------------------------------------------------------------------------
           */
 
@@ -1045,7 +1640,7 @@ const useDashboard = (
 
           /*
           |--------------------------------------------------------------------------
-          | Success
+          | Success Callback
           |--------------------------------------------------------------------------
           */
 
@@ -1066,14 +1661,14 @@ const useDashboard = (
 
           /*
           |--------------------------------------------------------------------------
-          | Store error
+          | Store Error
           |--------------------------------------------------------------------------
           */
 
           if (
             mountedRef.current &&
             requestId ===
-            requestRef.current
+              requestRef.current
           ) {
             setError(
               normalizedError
@@ -1094,14 +1689,14 @@ const useDashboard = (
         } finally {
           /*
           |--------------------------------------------------------------------------
-          | Reset loading
+          | Reset Loading
           |--------------------------------------------------------------------------
           */
 
           if (
             mountedRef.current &&
             requestId ===
-            requestRef.current
+              requestRef.current
           ) {
             setLoading(false);
             setRefreshing(false);
@@ -1127,9 +1722,9 @@ const useDashboard = (
 
     getDashboard(
       initialParams
-    ).catch(() => { });
+    ).catch(() => {});
 
-    // Fetch only on initial mount.
+    // Intentionally fetch only on initial mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFetch]);
 
@@ -1225,26 +1820,116 @@ const useDashboard = (
   |--------------------------------------------------------------------------
   | Widget Helper
   |--------------------------------------------------------------------------
+  |
+  | API widgets are objects:
+  |
+  | {
+  |   key: "properties",
+  |   type: "stat",
+  |   title: "Properties",
+  |   enabled: true,
+  |   order: 1
+  | }
+  |
   */
 
   const hasWidget =
     useCallback(
-      (widgetName) => {
-        if (!widgetName) {
+      (widgetKey) => {
+        if (!widgetKey) {
           return false;
         }
 
-        return (
+        const widgets =
           dashboard
             ?.dashboard
-            ?.widgets
-            ?.includes(
-              widgetName
-            ) ?? false
+            ?.widgets ?? [];
+
+        return widgets.some(
+          (widget) => {
+            if (
+              typeof widget ===
+              "string"
+            ) {
+              return (
+                widget ===
+                widgetKey
+              );
+            }
+
+            return (
+              widget?.key ===
+                widgetKey &&
+              widget?.enabled !==
+                false
+            );
+          }
         );
       },
       [dashboard]
     );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Get Widget
+  |--------------------------------------------------------------------------
+  */
+
+  const getWidget =
+    useCallback(
+      (widgetKey) => {
+        if (!widgetKey) {
+          return null;
+        }
+
+        const widgets =
+          dashboard
+            ?.dashboard
+            ?.widgets ?? [];
+
+        return (
+          widgets.find(
+            (widget) => {
+              if (
+                typeof widget ===
+                "string"
+              ) {
+                return (
+                  widget ===
+                  widgetKey
+                );
+              }
+
+              return (
+                widget?.key ===
+                widgetKey
+              );
+            }
+          ) ?? null
+        );
+      },
+      [dashboard]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Get Enabled Widgets
+  |--------------------------------------------------------------------------
+  */
+
+  const enabledWidgets =
+    useMemo(() => {
+      return (
+        dashboard
+          ?.dashboard
+          ?.widgets
+          ?.filter(
+            (widget) =>
+              widget?.enabled !==
+              false
+          ) ?? []
+      );
+    }, [dashboard]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1310,6 +1995,20 @@ const useDashboard = (
         dashboard?.dashboard ??
         null,
       [dashboard]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Dashboard Layout
+  |--------------------------------------------------------------------------
+  */
+
+  const layout =
+    useMemo(
+      () =>
+        dashboardConfig?.layout ??
+        DEFAULT_DASHBOARD.layout,
+      [dashboardConfig]
     );
 
   /*
@@ -1454,6 +2153,51 @@ const useDashboard = (
 
   /*
   |--------------------------------------------------------------------------
+  | Meta
+  |--------------------------------------------------------------------------
+  */
+
+  const meta =
+    useMemo(
+      () =>
+        dashboard?.meta ??
+        DEFAULT_META,
+      [dashboard]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Currency
+  |--------------------------------------------------------------------------
+  */
+
+  const currency =
+    meta?.currency ??
+    "KES";
+
+  /*
+  |--------------------------------------------------------------------------
+  | Timezone
+  |--------------------------------------------------------------------------
+  */
+
+  const timezone =
+    meta?.timezone ??
+    "Africa/Nairobi";
+
+  /*
+  |--------------------------------------------------------------------------
+  | Primary Role
+  |--------------------------------------------------------------------------
+  */
+
+  const primaryRole =
+    user?.primary_role ??
+    user?.roles?.[0] ??
+    null;
+
+  /*
+  |--------------------------------------------------------------------------
   | Return
   |--------------------------------------------------------------------------
   */
@@ -1469,7 +2213,15 @@ const useDashboard = (
 
     dashboardConfig,
 
+    layout,
+
+    enabledWidgets,
+
+    getWidget,
+
     user,
+
+    primaryRole,
 
     overview,
 
@@ -1490,6 +2242,12 @@ const useDashboard = (
     maintenance,
 
     activity,
+
+    meta,
+
+    currency,
+
+    timezone,
 
     /*
     |--------------------------------------------------------------------------
@@ -1540,11 +2298,12 @@ const useDashboard = (
     |--------------------------------------------------------------------------
     | Status
     |--------------------------------------------------------------------------
-
     */
 
     hasDashboard:
-      Boolean(dashboard),
+      Boolean(
+        dashboard
+      ),
 
     hasDashboardConfig:
       Boolean(
