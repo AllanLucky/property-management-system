@@ -1,0 +1,3054 @@
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+
+import {
+    Building2,
+    CalendarDays,
+    Check,
+    ChevronDown,
+    DollarSign,
+    FileText,
+    Home,
+    Loader2,
+    Save,
+    Sparkles,
+    SquareStack,
+    X,
+} from "lucide-react";
+
+import Swal from "sweetalert2";
+
+/*
+|--------------------------------------------------------------------------
+| DEFAULT FORM
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_FORM = {
+    property_id: "",
+    apartment_id: "",
+
+    unit_number: "",
+    unit_name: "",
+    description: "",
+
+    status: "vacant",
+    type: "apartment",
+
+    bedrooms: 1,
+    bathrooms: 1,
+    toilets: 1,
+    floor: 1,
+
+    size: "",
+    size_unit: "sqm",
+
+    price: "",
+    deposit: "",
+    service_charge: "",
+
+    has_balcony: false,
+    has_wifi: false,
+    has_furnished: false,
+    has_air_conditioning: false,
+
+    thumbnail: "",
+    available_from: "",
+
+    notes: "",
+};
+
+/*
+|--------------------------------------------------------------------------
+| STATUS OPTIONS
+|--------------------------------------------------------------------------
+*/
+
+const STATUS_OPTIONS = [
+    {
+        value: "vacant",
+        label: "Vacant",
+    },
+    {
+        value: "occupied",
+        label: "Occupied",
+    },
+    {
+        value: "reserved",
+        label: "Reserved",
+    },
+    {
+        value: "maintenance",
+        label: "Maintenance",
+    },
+];
+
+/*
+|--------------------------------------------------------------------------
+| TYPE OPTIONS
+|--------------------------------------------------------------------------
+*/
+
+const TYPE_OPTIONS = [
+    {
+        value: "bedsitter",
+        label: "Bedsitter",
+    },
+    {
+        value: "studio",
+        label: "Studio",
+    },
+    {
+        value: "apartment",
+        label: "Apartment",
+    },
+    {
+        value: "one_bedroom",
+        label: "1 Bedroom",
+    },
+    {
+        value: "two_bedroom",
+        label: "2 Bedroom",
+    },
+    {
+        value: "three_bedroom",
+        label: "3 Bedroom",
+    },
+    {
+        value: "four_bedroom",
+        label: "4 Bedroom",
+    },
+    {
+        value: "penthouse",
+        label: "Penthouse",
+    },
+    {
+        value: "shop",
+        label: "Shop",
+    },
+    {
+        value: "office",
+        label: "Office",
+    },
+];
+
+/*
+|--------------------------------------------------------------------------
+| SIZE UNITS
+|--------------------------------------------------------------------------
+*/
+
+const SIZE_UNITS = [
+    {
+        value: "sqm",
+        label: "Square Metres (m²)",
+    },
+    {
+        value: "sqft",
+        label: "Square Feet (ft²)",
+    },
+];
+
+/*
+|--------------------------------------------------------------------------
+| HELPERS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Normalize Laravel/API collection responses.
+ */
+const normalizeCollection = (response) => {
+    if (!response) {
+        return [];
+    }
+
+    if (Array.isArray(response)) {
+        return response;
+    }
+
+    if (Array.isArray(response.data)) {
+        return response.data;
+    }
+
+    if (Array.isArray(response.data?.data)) {
+        return response.data.data;
+    }
+
+    if (Array.isArray(response.results)) {
+        return response.results;
+    }
+
+    if (Array.isArray(response.items)) {
+        return response.items;
+    }
+
+    if (Array.isArray(response.records)) {
+        return response.records;
+    }
+
+    return [];
+};
+
+/**
+ * Safely extract an ID from an object/value.
+ */
+const getId = (item) => {
+    if (
+        item === null ||
+        item === undefined ||
+        item === ""
+    ) {
+        return "";
+    }
+
+    if (typeof item === "object") {
+        return (
+            item.id ??
+            item.value ??
+            item.property_id ??
+            item.apartment_id ??
+            item.unit_id ??
+            ""
+        );
+    }
+
+    return item;
+};
+
+/**
+ * Safely extract a display name.
+ */
+const getName = (
+    item,
+    fallback = ""
+) => {
+    if (!item) {
+        return fallback;
+    }
+
+    if (typeof item === "string") {
+        return item;
+    }
+
+    return (
+        item.name ??
+        item.title ??
+        item.label ??
+        item.property_name ??
+        item.apartment_name ??
+        item.display_name ??
+        item.full_name ??
+        item.unit_name ??
+        fallback
+    );
+};
+
+/**
+ * Normalize IDs to strings.
+ */
+const normalizeId = (value) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return "";
+    }
+
+    if (typeof value === "object") {
+        return String(
+            value.id ??
+            value.value ??
+            value.property_id ??
+            value.apartment_id ??
+            ""
+        );
+    }
+
+    return String(value);
+};
+
+/**
+ * Normalize enum/resource values.
+ *
+ * Handles:
+ *
+ * "vacant"
+ *
+ * {
+ *   value: "vacant",
+ *   label: "Vacant"
+ * }
+ */
+const normalizeValue = (
+    value,
+    fallback = ""
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return fallback;
+    }
+
+    if (typeof value === "object") {
+        return String(
+            value.value ??
+            value.id ??
+            fallback
+        );
+    }
+
+    return String(value);
+};
+
+/**
+ * Normalize dates for HTML date input.
+ */
+const formatDateForInput = (value) => {
+    if (!value) {
+        return "";
+    }
+
+    if (typeof value === "string") {
+        return value.substring(0, 10);
+    }
+
+    try {
+        return new Date(value)
+            .toISOString()
+            .substring(0, 10);
+    } catch {
+        return "";
+    }
+};
+
+/**
+ * Normalize booleans.
+ */
+const normalizeBoolean = (value) => {
+    return (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "true"
+    );
+};
+
+/**
+ * Safely normalize numbers.
+ */
+const normalizeNumber = (
+    value,
+    fallback = ""
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return fallback;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number)
+        ? number
+        : fallback;
+};
+
+/**
+ * Extract property ID from an apartment.
+ */
+const getApartmentPropertyId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment.property_id ??
+        apartment.property?.id ??
+        apartment.property?.value ??
+        apartment.property?.property_id ??
+        apartment.property?.data?.id ??
+        apartment.property?.data?.value ??
+        ""
+    );
+};
+
+/**
+ * Extract apartment ID from an object.
+ */
+const getApartmentId = (
+    apartment
+) => {
+    if (!apartment) {
+        return "";
+    }
+
+    return (
+        apartment.id ??
+        apartment.value ??
+        apartment.apartment_id ??
+        ""
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| COMPONENT
+|--------------------------------------------------------------------------
+*/
+
+const UnitForm = ({
+    unit = null,
+
+    properties = [],
+    apartments = [],
+
+    loading = false,
+    submitting = false,
+
+    error = null,
+
+    onSubmit,
+    onCancel,
+
+    title,
+    submitLabel,
+}) => {
+    const isEditing = Boolean(unit?.id);
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATE
+    |--------------------------------------------------------------------------
+    */
+
+    const [form, setForm] = useState({
+        ...DEFAULT_FORM,
+    });
+
+    const [errors, setErrors] = useState({});
+
+    const [
+        thumbnailPreview,
+        setThumbnailPreview,
+    ] = useState("");
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE PROPERTIES
+    |--------------------------------------------------------------------------
+    */
+
+    const propertyOptions = useMemo(() => {
+        const options = [
+            ...normalizeCollection(properties),
+        ];
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT PROPERTY
+        |--------------------------------------------------------------------------
+        |
+        | When editing, the current property must remain
+        | available even if the property list has not
+        | loaded it yet.
+        |
+        */
+
+        const currentProperty =
+            unit?.property;
+
+        const currentPropertyId =
+            unit?.property_id ??
+            currentProperty?.id ??
+            currentProperty?.value ??
+            currentProperty?.property_id ??
+            currentProperty?.data?.id;
+
+        if (currentPropertyId) {
+            const exists = options.some(
+                (property) =>
+                    normalizeId(
+                        getId(property)
+                    ) ===
+                    normalizeId(
+                        currentPropertyId
+                    )
+            );
+
+            if (
+                !exists &&
+                currentProperty
+            ) {
+                options.push({
+                    ...currentProperty,
+                    id: currentPropertyId,
+                });
+            }
+        }
+
+        return options;
+    }, [
+        properties,
+        unit,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE APARTMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    const apartmentOptions = useMemo(() => {
+        const options = [
+            ...normalizeCollection(apartments),
+        ];
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT APARTMENT
+        |--------------------------------------------------------------------------
+        */
+
+        const currentApartment =
+            unit?.apartment;
+
+        const currentApartmentId =
+            unit?.apartment_id ??
+            currentApartment?.id ??
+            currentApartment?.value ??
+            currentApartment?.apartment_id ??
+            currentApartment?.data?.id;
+
+        if (currentApartmentId) {
+            const exists = options.some(
+                (apartment) =>
+                    normalizeId(
+                        getApartmentId(
+                            apartment
+                        )
+                    ) ===
+                    normalizeId(
+                        currentApartmentId
+                    )
+            );
+
+            if (
+                !exists &&
+                currentApartment
+            ) {
+                options.push({
+                    ...currentApartment,
+
+                    id:
+                        currentApartmentId,
+
+                    property_id:
+                        currentApartment.property_id ??
+                        unit?.property_id ??
+                        unit?.property?.id ??
+                        "",
+                });
+            }
+        }
+
+        return options;
+    }, [
+        apartments,
+        unit,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | FILTER APARTMENTS BY PROPERTY
+    |--------------------------------------------------------------------------
+    */
+
+    const filteredApartments = useMemo(() => {
+        if (!form.property_id) {
+            return [];
+        }
+
+        const selectedPropertyId =
+            normalizeId(
+                form.property_id
+            );
+
+        const filtered =
+            apartmentOptions.filter(
+                (apartment) => {
+                    const apartmentPropertyId =
+                        getApartmentPropertyId(
+                            apartment
+                        );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Normal apartment response
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (
+                        apartmentPropertyId !==
+                            undefined &&
+                        apartmentPropertyId !==
+                            null &&
+                        apartmentPropertyId !==
+                            ""
+                    ) {
+                        return (
+                            normalizeId(
+                                apartmentPropertyId
+                            ) ===
+                            selectedPropertyId
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Editing fallback
+                    |--------------------------------------------------------------------------
+                    */
+
+                    const currentApartmentId =
+                        unit?.apartment_id ??
+                        unit?.apartment?.id;
+
+                    if (
+                        currentApartmentId &&
+                        normalizeId(
+                            getApartmentId(
+                                apartment
+                            )
+                        ) ===
+                        normalizeId(
+                            currentApartmentId
+                        )
+                    ) {
+                        return true;
+                    }
+
+                    return false;
+                }
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | GUARANTEE CURRENT APARTMENT
+        |--------------------------------------------------------------------------
+        |
+        | If editing and the API apartment does not expose
+        | property_id, make sure the current apartment
+        | still appears.
+        |
+        */
+
+        if (
+            isEditing &&
+            unit?.apartment &&
+            normalizeId(
+                unit?.property_id ??
+                unit?.property?.id
+            ) ===
+            selectedPropertyId
+        ) {
+            const currentApartmentId =
+                unit?.apartment_id ??
+                unit?.apartment?.id;
+
+            const alreadyExists =
+                filtered.some(
+                    (apartment) =>
+                        normalizeId(
+                            getApartmentId(
+                                apartment
+                            )
+                        ) ===
+                        normalizeId(
+                            currentApartmentId
+                        )
+                );
+
+            if (
+                !alreadyExists &&
+                currentApartmentId
+            ) {
+                filtered.push({
+                    ...unit.apartment,
+
+                    id:
+                        currentApartmentId,
+
+                    property_id:
+                        selectedPropertyId,
+                });
+            }
+        }
+
+        return filtered;
+    }, [
+        apartmentOptions,
+        form.property_id,
+        unit,
+        isEditing,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | POPULATE FORM FROM API
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+        if (!unit) {
+            setForm({
+                ...DEFAULT_FORM,
+            });
+
+            setErrors({});
+            setThumbnailPreview("");
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | PROPERTY
+        |--------------------------------------------------------------------------
+        */
+
+        const propertyId =
+            unit.property_id ??
+            unit.property?.id ??
+            unit.property?.value ??
+            unit.property?.property_id ??
+            unit.property?.data?.id ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | APARTMENT
+        |--------------------------------------------------------------------------
+        */
+
+        const apartmentId =
+            unit.apartment_id ??
+            unit.apartment?.id ??
+            unit.apartment?.value ??
+            unit.apartment?.apartment_id ??
+            unit.apartment?.data?.id ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | DETAILS
+        |--------------------------------------------------------------------------
+        */
+
+        const details =
+            unit.details ?? {};
+
+        const unitType =
+            details.type ??
+            unit.type ??
+            unit.unit_type ??
+            "apartment";
+
+        const bedrooms =
+            details.bedrooms ??
+            unit.bedrooms ??
+            1;
+
+        const bathrooms =
+            details.bathrooms ??
+            unit.bathrooms ??
+            1;
+
+        const toilets =
+            details.toilets ??
+            unit.toilets ??
+            1;
+
+        const floor =
+            details.floor ??
+            unit.floor ??
+            unit.floor_number ??
+            1;
+
+        const size =
+            details.size ??
+            unit.size ??
+            unit.area ??
+            unit.square_meters ??
+            "";
+
+        const sizeUnit =
+            details.size_unit ??
+            unit.size_unit ??
+            "sqm";
+
+        /*
+        |--------------------------------------------------------------------------
+        | PRICING
+        |--------------------------------------------------------------------------
+        |
+        | Expected API:
+        |
+        | pricing: {
+        |     price: 17192,
+        |     formatted_price: "KES 17,192.00",
+        |     deposit: 17192,
+        |     service_charge: 2042,
+        |     currency: "KES"
+        | }
+        |
+        */
+
+        const pricing =
+            unit.pricing ?? {};
+
+        const rent =
+            pricing.price ??
+            pricing.rent ??
+            unit.rent ??
+            unit.price ??
+            unit.rent_amount ??
+            unit.monthly_rent ??
+            "";
+
+        const deposit =
+            pricing.deposit ??
+            unit.deposit ??
+            unit.security_deposit ??
+            "";
+
+        const serviceCharge =
+            pricing.service_charge ??
+            pricing.serviceCharge ??
+            unit.service_charge ??
+            unit.serviceCharge ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | FEATURES
+        |--------------------------------------------------------------------------
+        */
+
+        const features =
+            unit.features ?? {};
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        const status =
+            unit.status?.value ??
+            unit.status?.id ??
+            unit.status ??
+            "vacant";
+
+        /*
+        |--------------------------------------------------------------------------
+        | MEDIA
+        |--------------------------------------------------------------------------
+        */
+
+        const thumbnail =
+            unit.media?.thumbnail_url ??
+            unit.media?.thumbnail ??
+            unit.thumbnail_url ??
+            unit.thumbnail ??
+            unit.image_url ??
+            unit.image ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABILITY
+        |--------------------------------------------------------------------------
+        */
+
+        const availableFrom =
+            unit.availability?.available_from ??
+            unit.availability?.available_date ??
+            unit.available_from ??
+            unit.available_date ??
+            "";
+
+        /*
+        |--------------------------------------------------------------------------
+        | SET FORM
+        |--------------------------------------------------------------------------
+        */
+
+        setForm({
+            property_id:
+                normalizeId(
+                    propertyId
+                ),
+
+            apartment_id:
+                normalizeId(
+                    apartmentId
+                ),
+
+            unit_number:
+                unit.unit_number ??
+                unit.number ??
+                "",
+
+            unit_name:
+                unit.unit_name ??
+                unit.name ??
+                "",
+
+            description:
+                unit.description ??
+                "",
+
+            status:
+                normalizeValue(
+                    status,
+                    "vacant"
+                ),
+
+            type:
+                normalizeValue(
+                    unitType,
+                    "apartment"
+                ),
+
+            bedrooms:
+                normalizeNumber(
+                    bedrooms,
+                    1
+                ),
+
+            bathrooms:
+                normalizeNumber(
+                    bathrooms,
+                    1
+                ),
+
+            toilets:
+                normalizeNumber(
+                    toilets,
+                    1
+                ),
+
+            floor:
+                normalizeNumber(
+                    floor,
+                    1
+                ),
+
+            size:
+                normalizeNumber(
+                    size,
+                    ""
+                ),
+
+            size_unit:
+                normalizeValue(
+                    sizeUnit,
+                    "sqm"
+                ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRICING
+            |--------------------------------------------------------------------------
+            */
+
+            price:
+                normalizeNumber(
+                    rent,
+                    ""
+                ),
+
+            deposit:
+                normalizeNumber(
+                    deposit,
+                    ""
+                ),
+
+            service_charge:
+                normalizeNumber(
+                    serviceCharge,
+                    ""
+                ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | FEATURES
+            |--------------------------------------------------------------------------
+            */
+
+            has_balcony:
+                normalizeBoolean(
+                    features.has_balcony ??
+                    unit.has_balcony
+                ),
+
+            has_wifi:
+                normalizeBoolean(
+                    features.has_wifi ??
+                    unit.has_wifi ??
+                    unit.has_wifi_internet
+                ),
+
+            has_furnished:
+                normalizeBoolean(
+                    features.has_furnished ??
+                    unit.has_furnished ??
+                    unit.is_furnished
+                ),
+
+            has_air_conditioning:
+                normalizeBoolean(
+                    features.has_air_conditioning ??
+                    unit.has_air_conditioning ??
+                    unit.has_ac
+                ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | MEDIA
+            |--------------------------------------------------------------------------
+            */
+
+            thumbnail,
+
+            /*
+            |--------------------------------------------------------------------------
+            | AVAILABILITY
+            |--------------------------------------------------------------------------
+            */
+
+            available_from:
+                formatDateForInput(
+                    availableFrom
+                ),
+
+            notes:
+                unit.notes ??
+                "",
+        });
+
+        setErrors({});
+
+        setThumbnailPreview(
+            thumbnail
+        );
+    }, [unit]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | KEEP APARTMENT VALID
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+        if (!form.apartment_id) {
+            return;
+        }
+
+        const exists =
+            filteredApartments.some(
+                (apartment) =>
+                    normalizeId(
+                        getApartmentId(
+                            apartment
+                        )
+                    ) ===
+                    normalizeId(
+                        form.apartment_id
+                    )
+            );
+
+        if (exists) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENT UNIT APARTMENT
+        |--------------------------------------------------------------------------
+        */
+
+        const isCurrentUnitApartment =
+            (
+                unit?.apartment?.id ||
+                unit?.apartment_id
+            ) &&
+            normalizeId(
+                unit?.apartment?.id ??
+                unit?.apartment_id
+            ) ===
+            normalizeId(
+                form.apartment_id
+            );
+
+        if (
+            isCurrentUnitApartment
+        ) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | DO NOT CLEAR DURING INITIAL LOAD
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            !loading &&
+            apartmentOptions.length > 0
+        ) {
+            setForm(
+                (previous) => ({
+                    ...previous,
+                    apartment_id: "",
+                })
+            );
+        }
+    }, [
+        filteredApartments,
+        form.apartment_id,
+        unit,
+        loading,
+        apartmentOptions.length,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | INPUT CHANGE
+    |--------------------------------------------------------------------------
+    */
+
+    const handleChange =
+        useCallback(
+            (event) => {
+                const {
+                    name,
+                    value,
+                    type,
+                    checked,
+                } = event.target;
+
+                setForm(
+                    (previous) => ({
+                        ...previous,
+
+                        [name]:
+                            type ===
+                            "checkbox"
+                                ? checked
+                                : value,
+                    })
+                );
+
+                setErrors(
+                    (previous) => {
+                        if (
+                            !previous[name]
+                        ) {
+                            return previous;
+                        }
+
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next[name];
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY CHANGE
+    |--------------------------------------------------------------------------
+    */
+
+    const handlePropertyChange =
+        useCallback(
+            (event) => {
+                const propertyId =
+                    event.target.value;
+
+                setForm(
+                    (previous) => ({
+                        ...previous,
+
+                        property_id:
+                            propertyId,
+
+                        /*
+                         * Changing property must
+                         * reset apartment.
+                         */
+                        apartment_id: "",
+                    })
+                );
+
+                setErrors(
+                    (previous) => {
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next.property_id;
+                        delete next.apartment_id;
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | THUMBNAIL CHANGE
+    |--------------------------------------------------------------------------
+    */
+
+    const handleThumbnailChange =
+        useCallback(
+            (event) => {
+                const value =
+                    event.target.value;
+
+                setForm(
+                    (previous) => ({
+                        ...previous,
+                        thumbnail: value,
+                    })
+                );
+
+                setThumbnailPreview(
+                    value
+                );
+
+                setErrors(
+                    (previous) => {
+                        if (
+                            !previous.thumbnail
+                        ) {
+                            return previous;
+                        }
+
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next.thumbnail;
+
+                        return next;
+                    }
+                );
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    const validate =
+        useCallback(() => {
+            const validationErrors =
+                {};
+
+            /*
+            |--------------------------------------------------------------------------
+            | RELATIONSHIPS
+            |--------------------------------------------------------------------------
+            */
+
+            if (!form.property_id) {
+                validationErrors.property_id =
+                    "Please select a property.";
+            }
+
+            if (!form.apartment_id) {
+                validationErrors.apartment_id =
+                    "Please select an apartment.";
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | BASIC INFORMATION
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                !form.unit_number?.trim()
+            ) {
+                validationErrors.unit_number =
+                    "Unit number is required.";
+            }
+
+            if (!form.type) {
+                validationErrors.type =
+                    "Please select the unit type.";
+            }
+
+            if (!form.status) {
+                validationErrors.status =
+                    "Please select the unit status.";
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRICING
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                form.price !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.price
+                        )
+                    ) ||
+                    Number(
+                        form.price
+                    ) < 0
+                )
+            ) {
+                validationErrors.price =
+                    "Enter a valid non-negative rent amount.";
+            }
+
+            if (
+                form.deposit !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.deposit
+                        )
+                    ) ||
+                    Number(
+                        form.deposit
+                    ) < 0
+                )
+            ) {
+                validationErrors.deposit =
+                    "Enter a valid non-negative deposit.";
+            }
+
+            if (
+                form.service_charge !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.service_charge
+                        )
+                    ) ||
+                    Number(
+                        form.service_charge
+                    ) < 0
+                )
+            ) {
+                validationErrors.service_charge =
+                    "Enter a valid non-negative service charge.";
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | SIZE
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                form.size !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.size
+                        )
+                    ) ||
+                    Number(
+                        form.size
+                    ) < 0
+                )
+            ) {
+                validationErrors.size =
+                    "Enter a valid non-negative size.";
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | ROOMS
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                form.bedrooms !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.bedrooms
+                        )
+                    ) ||
+                    Number(
+                        form.bedrooms
+                    ) < 0
+                )
+            ) {
+                validationErrors.bedrooms =
+                    "Bedrooms cannot be negative.";
+            }
+
+            if (
+                form.bathrooms !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.bathrooms
+                        )
+                    ) ||
+                    Number(
+                        form.bathrooms
+                    ) < 0
+                )
+            ) {
+                validationErrors.bathrooms =
+                    "Bathrooms cannot be negative.";
+            }
+
+            if (
+                form.toilets !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.toilets
+                        )
+                    ) ||
+                    Number(
+                        form.toilets
+                    ) < 0
+                )
+            ) {
+                validationErrors.toilets =
+                    "Toilets cannot be negative.";
+            }
+
+            if (
+                form.floor !== "" &&
+                (
+                    !Number.isFinite(
+                        Number(
+                            form.floor
+                        )
+                    ) ||
+                    Number(
+                        form.floor
+                    ) < 0
+                )
+            ) {
+                validationErrors.floor =
+                    "Floor cannot be negative.";
+            }
+
+            setErrors(
+                validationErrors
+            );
+
+            return (
+                Object.keys(
+                    validationErrors
+                ).length === 0
+            );
+        }, [form]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUBMIT
+    |--------------------------------------------------------------------------
+    */
+
+    const handleSubmit =
+        async (event) => {
+            event.preventDefault();
+
+            if (submitting) {
+                return;
+            }
+
+            if (!validate()) {
+                await Swal.fire({
+                    icon: "warning",
+                    title: "Check the form",
+                    text:
+                        "Please correct the highlighted fields.",
+                    confirmButtonText:
+                        "Okay",
+                });
+
+                return;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE PRICING
+            |--------------------------------------------------------------------------
+            */
+
+            const rent =
+                form.price === ""
+                    ? null
+                    : Number(
+                        form.price
+                    );
+
+            const deposit =
+                form.deposit === ""
+                    ? null
+                    : Number(
+                        form.deposit
+                    );
+
+            const serviceCharge =
+                form.service_charge === ""
+                    ? null
+                    : Number(
+                        form.service_charge
+                    );
+
+            /*
+            |--------------------------------------------------------------------------
+            | PAYLOAD
+            |--------------------------------------------------------------------------
+            */
+
+            const payload = {
+                /*
+                |--------------------------------------------------------------------------
+                | RELATIONSHIPS
+                |--------------------------------------------------------------------------
+                */
+
+                property_id:
+                    form.property_id
+                        ? Number(
+                            form.property_id
+                        )
+                        : null,
+
+                apartment_id:
+                    form.apartment_id
+                        ? Number(
+                            form.apartment_id
+                        )
+                        : null,
+
+                /*
+                |--------------------------------------------------------------------------
+                | BASIC
+                |--------------------------------------------------------------------------
+                */
+
+                unit_number:
+                    form.unit_number
+                        .trim(),
+
+                unit_name:
+                    form.unit_name?.trim() ||
+                    null,
+
+                description:
+                    form.description?.trim() ||
+                    null,
+
+                status:
+                    normalizeValue(
+                        form.status,
+                        "vacant"
+                    ),
+
+                type:
+                    normalizeValue(
+                        form.type,
+                        "apartment"
+                    ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | ROOMS
+                |--------------------------------------------------------------------------
+                */
+
+                bedrooms:
+                    form.bedrooms === ""
+                        ? 0
+                        : Number(
+                            form.bedrooms
+                        ),
+
+                bathrooms:
+                    form.bathrooms === ""
+                        ? 0
+                        : Number(
+                            form.bathrooms
+                        ),
+
+                toilets:
+                    form.toilets === ""
+                        ? 0
+                        : Number(
+                            form.toilets
+                        ),
+
+                floor:
+                    form.floor === ""
+                        ? 0
+                        : Number(
+                            form.floor
+                        ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | SIZE
+                |--------------------------------------------------------------------------
+                */
+
+                size:
+                    form.size === ""
+                        ? null
+                        : Number(
+                            form.size
+                        ),
+
+                size_unit:
+                    form.size_unit ||
+                    "sqm",
+
+                /*
+                |--------------------------------------------------------------------------
+                | PRICING
+                |--------------------------------------------------------------------------
+                */
+
+                price: rent,
+
+                /*
+                 * Keep rent for Laravel/backend
+                 * compatibility.
+                 */
+                rent: rent,
+
+                deposit: deposit,
+
+                service_charge:
+                    serviceCharge,
+
+                /*
+                |--------------------------------------------------------------------------
+                | FEATURES
+                |--------------------------------------------------------------------------
+                */
+
+                has_balcony:
+                    Boolean(
+                        form.has_balcony
+                    ),
+
+                has_wifi:
+                    Boolean(
+                        form.has_wifi
+                    ),
+
+                has_furnished:
+                    Boolean(
+                        form.has_furnished
+                    ),
+
+                has_air_conditioning:
+                    Boolean(
+                        form.has_air_conditioning
+                    ),
+
+                /*
+                |--------------------------------------------------------------------------
+                | MEDIA
+                |--------------------------------------------------------------------------
+                */
+
+                thumbnail:
+                    form.thumbnail?.trim() ||
+                    null,
+
+                /*
+                |--------------------------------------------------------------------------
+                | AVAILABILITY
+                |--------------------------------------------------------------------------
+                */
+
+                available_from:
+                    form.available_from ||
+                    null,
+
+                /*
+                |--------------------------------------------------------------------------
+                | NOTES
+                |--------------------------------------------------------------------------
+                */
+
+                notes:
+                    form.notes?.trim() ||
+                    null,
+            };
+
+            console.log(
+                "Unit payload:",
+                payload
+            );
+
+            try {
+                await onSubmit?.(
+                    payload
+                );
+            } catch (
+                submitError
+            ) {
+                console.error(
+                    "Unit form submission failed:",
+                    submitError
+                );
+            }
+        };
+
+    /*
+    |--------------------------------------------------------------------------
+    | FIELD ERROR
+    |--------------------------------------------------------------------------
+    */
+
+    const getFieldError = (
+        field
+    ) => {
+        /*
+        |--------------------------------------------------------------------------
+        | CLIENT ERROR
+        |--------------------------------------------------------------------------
+        */
+
+        if (errors[field]) {
+            return errors[field];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | LARAVEL VALIDATION ERROR
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            error?.errors &&
+            typeof error.errors ===
+                "object"
+        ) {
+            const serverError =
+                error.errors[field];
+
+            if (
+                Array.isArray(
+                    serverError
+                )
+            ) {
+                return serverError[0];
+            }
+
+            if (
+                typeof serverError ===
+                "string"
+            ) {
+                return serverError;
+            }
+        }
+
+        return null;
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | SERVER ERROR MESSAGE
+    |--------------------------------------------------------------------------
+    */
+
+    const serverErrorMessage =
+        typeof error === "string"
+            ? error
+            : error?.message ??
+              error?.error ??
+              "Unable to save the unit. Please try again.";
+
+    /*
+    |--------------------------------------------------------------------------
+    | SHARED INPUT CLASS
+    |--------------------------------------------------------------------------
+    */
+
+    const inputClass = (
+        field
+    ) => `
+        w-full
+        rounded-xl
+        border
+        ${
+            getFieldError(field)
+                ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+        }
+        bg-white
+        px-4
+        py-3
+        text-sm
+        text-slate-900
+        outline-none
+        transition
+        placeholder:text-slate-400
+        focus:ring-4
+        disabled:cursor-not-allowed
+        disabled:bg-slate-50
+        disabled:text-slate-500
+    `;
+
+    /*
+    |--------------------------------------------------------------------------
+    | RENDER
+    |--------------------------------------------------------------------------
+    */
+
+    return (
+        <form
+            onSubmit={
+                handleSubmit
+            }
+            className="space-y-6"
+            noValidate
+        >
+            {/* HEADER */}
+
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <Home size={22} />
+                    </div>
+
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900">
+                            {title ??
+                                (isEditing
+                                    ? "Edit Unit"
+                                    : "Create Unit")}
+                        </h2>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                            {isEditing
+                                ? "Update unit information, pricing and availability."
+                                : "Add a new unit to your property."}
+                        </p>
+                    </div>
+                </div>
+
+                {isEditing && (
+                    <span className="inline-flex w-fit items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                        <Check size={14} />
+                        Editing Unit
+                    </span>
+                )}
+            </div>
+
+            {/* SERVER ERROR */}
+
+            {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <p className="font-semibold">
+                        Unable to save unit
+                    </p>
+
+                    <p className="mt-1">
+                        {serverErrorMessage}
+                    </p>
+                </div>
+            )}
+
+            {/* PROPERTY & APARTMENT */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={Building2}
+                    title="Property & Location"
+                    description="Select the property and apartment where this unit belongs."
+                />
+
+                <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+                    <Field
+                        label="Property"
+                        required
+                        error={getFieldError(
+                            "property_id"
+                        )}
+                    >
+                        <div className="relative">
+                            <select
+                                name="property_id"
+                                value={
+                                    form.property_id
+                                }
+                                onChange={
+                                    handlePropertyChange
+                                }
+                                disabled={
+                                    loading ||
+                                    submitting
+                                }
+                                className={`${inputClass(
+                                    "property_id"
+                                )} appearance-none pr-10`}
+                            >
+                                <option value="">
+                                    Select property
+                                </option>
+
+                                {propertyOptions.map(
+                                    (
+                                        property
+                                    ) => {
+                                        const id =
+                                            getId(
+                                                property
+                                            );
+
+                                        if (!id) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <option
+                                                key={String(
+                                                    id
+                                                )}
+                                                value={String(
+                                                    id
+                                                )}
+                                            >
+                                                {getName(
+                                                    property,
+                                                    `Property #${id}`
+                                                )}
+                                            </option>
+                                        );
+                                    }
+                                )}
+                            </select>
+
+                            <ChevronDown
+                                size={18}
+                                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+                        </div>
+
+                        {loading &&
+                            propertyOptions.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Loading properties...
+                                </p>
+                            )}
+
+                        {!loading &&
+                            propertyOptions.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-amber-600">
+                                    No properties found.
+                                </p>
+                            )}
+                    </Field>
+
+                    <Field
+                        label="Apartment"
+                        required
+                        error={getFieldError(
+                            "apartment_id"
+                        )}
+                    >
+                        <div className="relative">
+                            <select
+                                name="apartment_id"
+                                value={
+                                    form.apartment_id
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={
+                                    loading ||
+                                    submitting ||
+                                    !form.property_id
+                                }
+                                className={`${inputClass(
+                                    "apartment_id"
+                                )} appearance-none pr-10`}
+                            >
+                                <option value="">
+                                    {form.property_id
+                                        ? "Select apartment"
+                                        : "Select property first"}
+                                </option>
+
+                                {filteredApartments.map(
+                                    (
+                                        apartment
+                                    ) => {
+                                        const id =
+                                            getApartmentId(
+                                                apartment
+                                            );
+
+                                        if (!id) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <option
+                                                key={String(
+                                                    id
+                                                )}
+                                                value={String(
+                                                    id
+                                                )}
+                                            >
+                                                {getName(
+                                                    apartment,
+                                                    apartment.block
+                                                        ? `${apartment.block} - Apartment #${id}`
+                                                        : `Apartment #${id}`
+                                                )}
+                                            </option>
+                                        );
+                                    }
+                                )}
+                            </select>
+
+                            <ChevronDown
+                                size={18}
+                                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+                        </div>
+
+                        {loading &&
+                            form.property_id &&
+                            filteredApartments.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Loading apartments...
+                                </p>
+                            )}
+
+                        {!loading &&
+                            form.property_id &&
+                            filteredApartments.length ===
+                                0 && (
+                                <p className="mt-2 text-xs text-amber-600">
+                                    No apartments are available for this property.
+                                </p>
+                            )}
+                    </Field>
+                </div>
+            </section>
+
+            {/* BASIC INFORMATION */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={SquareStack}
+                    title="Unit Information"
+                    description="Enter the basic identification and classification details."
+                />
+
+                <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                    <Field
+                        label="Unit Number"
+                        required
+                        error={getFieldError(
+                            "unit_number"
+                        )}
+                    >
+                        <input
+                            type="text"
+                            name="unit_number"
+                            value={
+                                form.unit_number
+                            }
+                            onChange={
+                                handleChange
+                            }
+                            placeholder="e.g. A101"
+                            disabled={
+                                submitting
+                            }
+                            className={inputClass(
+                                "unit_number"
+                            )}
+                        />
+                    </Field>
+
+                    <Field
+                        label="Unit Name"
+                        error={getFieldError(
+                            "unit_name"
+                        )}
+                    >
+                        <input
+                            type="text"
+                            name="unit_name"
+                            value={
+                                form.unit_name
+                            }
+                            onChange={
+                                handleChange
+                            }
+                            placeholder="e.g. Grand Royale A101"
+                            disabled={
+                                submitting
+                            }
+                            className={inputClass(
+                                "unit_name"
+                            )}
+                        />
+                    </Field>
+
+                    <Field
+                        label="Unit Type"
+                        required
+                        error={getFieldError(
+                            "type"
+                        )}
+                    >
+                        <div className="relative">
+                            <select
+                                name="type"
+                                value={
+                                    form.type
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={
+                                    submitting
+                                }
+                                className={`${inputClass(
+                                    "type"
+                                )} appearance-none pr-10`}
+                            >
+                                {TYPE_OPTIONS.map(
+                                    (
+                                        option
+                                    ) => (
+                                        <option
+                                            key={
+                                                option.value
+                                            }
+                                            value={
+                                                option.value
+                                            }
+                                        >
+                                            {
+                                                option.label
+                                            }
+                                        </option>
+                                    )
+                                )}
+                            </select>
+
+                            <ChevronDown
+                                size={18}
+                                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+                        </div>
+                    </Field>
+
+                    <Field
+                        label="Status"
+                        required
+                        error={getFieldError(
+                            "status"
+                        )}
+                    >
+                        <div className="relative">
+                            <select
+                                name="status"
+                                value={
+                                    form.status
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={
+                                    submitting
+                                }
+                                className={`${inputClass(
+                                    "status"
+                                )} appearance-none pr-10`}
+                            >
+                                {STATUS_OPTIONS.map(
+                                    (
+                                        option
+                                    ) => (
+                                        <option
+                                            key={
+                                                option.value
+                                            }
+                                            value={
+                                                option.value
+                                            }
+                                        >
+                                            {
+                                                option.label
+                                            }
+                                        </option>
+                                    )
+                                )}
+                            </select>
+
+                            <ChevronDown
+                                size={18}
+                                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+                        </div>
+                    </Field>
+
+                    <NumberField
+                        label="Floor"
+                        name="floor"
+                        value={
+                            form.floor
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "floor"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                    />
+                </div>
+
+                <div className="mt-5">
+                    <Field
+                        label="Description"
+                        error={getFieldError(
+                            "description"
+                        )}
+                    >
+                        <textarea
+                            name="description"
+                            rows={4}
+                            value={
+                                form.description
+                            }
+                            onChange={
+                                handleChange
+                            }
+                            placeholder="Describe the unit, layout, finishes, location and other useful details..."
+                            disabled={
+                                submitting
+                            }
+                            className={`${inputClass(
+                                "description"
+                            )} resize-none`}
+                        />
+                    </Field>
+                </div>
+            </section>
+
+            {/* ROOMS & SIZE */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={SquareStack}
+                    title="Rooms & Size"
+                    description="Specify the room configuration and unit size."
+                />
+
+                <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                    <NumberField
+                        label="Bedrooms"
+                        name="bedrooms"
+                        value={
+                            form.bedrooms
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "bedrooms"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                    />
+
+                    <NumberField
+                        label="Bathrooms"
+                        name="bathrooms"
+                        value={
+                            form.bathrooms
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "bathrooms"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                    />
+
+                    <NumberField
+                        label="Toilets"
+                        name="toilets"
+                        value={
+                            form.toilets
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "toilets"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                    />
+
+                    <Field
+                        label="Size"
+                        error={getFieldError(
+                            "size"
+                        )}
+                    >
+                        <div className="flex">
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                name="size"
+                                value={
+                                    form.size
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                placeholder="0.00"
+                                disabled={
+                                    submitting
+                                }
+                                className={`${inputClass(
+                                    "size"
+                                )} rounded-r-none`}
+                            />
+
+                            <select
+                                name="size_unit"
+                                value={
+                                    form.size_unit
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={
+                                    submitting
+                                }
+                                className="rounded-r-xl border border-l-0 border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none"
+                            >
+                                {SIZE_UNITS.map(
+                                    (
+                                        option
+                                    ) => (
+                                        <option
+                                            key={
+                                                option.value
+                                            }
+                                            value={
+                                                option.value
+                                            }
+                                        >
+                                            {
+                                                option.value
+                                            }
+                                        </option>
+                                    )
+                                )}
+                            </select>
+                        </div>
+                    </Field>
+                </div>
+            </section>
+
+            {/* PRICING */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={DollarSign}
+                    title="Pricing"
+                    description="Configure monthly rent, deposit and service charges."
+                />
+
+                <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-3">
+                    <MoneyField
+                        label="Monthly Rent"
+                        name="price"
+                        value={
+                            form.price
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "price"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                        placeholder="e.g. 35000"
+                    />
+
+                    <MoneyField
+                        label="Deposit"
+                        name="deposit"
+                        value={
+                            form.deposit
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "deposit"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                        placeholder="e.g. 35000"
+                    />
+
+                    <MoneyField
+                        label="Service Charge"
+                        name="service_charge"
+                        value={
+                            form.service_charge
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        error={getFieldError(
+                            "service_charge"
+                        )}
+                        disabled={
+                            submitting
+                        }
+                        placeholder="e.g. 5000"
+                    />
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 p-4">
+                    <div>
+                        <p className="text-xs font-medium text-slate-500">
+                            Currency
+                        </p>
+
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                            Kenyan Shilling
+                        </p>
+                    </div>
+
+                    <span className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm">
+                        KES
+                    </span>
+                </div>
+            </section>
+
+            {/* FEATURES */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={Sparkles}
+                    title="Unit Features"
+                    description="Select the facilities and features available in this unit."
+                />
+
+                <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <FeatureCheckbox
+                        name="has_balcony"
+                        label="Balcony"
+                        description="Unit has a balcony"
+                        checked={
+                            form.has_balcony
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        disabled={
+                            submitting
+                        }
+                    />
+
+                    <FeatureCheckbox
+                        name="has_wifi"
+                        label="Wi-Fi"
+                        description="Internet available"
+                        checked={
+                            form.has_wifi
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        disabled={
+                            submitting
+                        }
+                    />
+
+                    <FeatureCheckbox
+                        name="has_furnished"
+                        label="Furnished"
+                        description="Fully or partially furnished"
+                        checked={
+                            form.has_furnished
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        disabled={
+                            submitting
+                        }
+                    />
+
+                    <FeatureCheckbox
+                        name="has_air_conditioning"
+                        label="Air Conditioning"
+                        description="AC available"
+                        checked={
+                            form.has_air_conditioning
+                        }
+                        onChange={
+                            handleChange
+                        }
+                        disabled={
+                            submitting
+                        }
+                    />
+                </div>
+            </section>
+
+            {/* AVAILABILITY & MEDIA */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={CalendarDays}
+                    title="Availability & Media"
+                    description="Set the availability date and unit thumbnail."
+                />
+
+                <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+                    <Field
+                        label="Available From"
+                        error={getFieldError(
+                            "available_from"
+                        )}
+                    >
+                        <div className="relative">
+                            <CalendarDays
+                                size={18}
+                                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+
+                            <input
+                                type="date"
+                                name="available_from"
+                                value={
+                                    form.available_from
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={
+                                    submitting
+                                }
+                                className={`${inputClass(
+                                    "available_from"
+                                )} pl-11`}
+                            />
+                        </div>
+                    </Field>
+
+                    <Field
+                        label="Thumbnail URL"
+                        error={getFieldError(
+                            "thumbnail"
+                        )}
+                    >
+                        <input
+                            type="url"
+                            name="thumbnail"
+                            value={
+                                form.thumbnail
+                            }
+                            onChange={
+                                handleThumbnailChange
+                            }
+                            placeholder="https://example.com/unit.jpg"
+                            disabled={
+                                submitting
+                            }
+                            className={inputClass(
+                                "thumbnail"
+                            )}
+                        />
+                    </Field>
+                </div>
+
+                {thumbnailPreview && (
+                    <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                        <div className="aspect-[16/7] w-full">
+                            <img
+                                src={
+                                    thumbnailPreview
+                                }
+                                alt="Unit preview"
+                                className="h-full w-full object-cover"
+                                onError={() =>
+                                    setThumbnailPreview(
+                                        ""
+                                    )
+                                }
+                            />
+                        </div>
+                    </div>
+                )}
+            </section>
+
+            {/* NOTES */}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeader
+                    icon={FileText}
+                    title="Additional Notes"
+                    description="Add internal notes or additional information about the unit."
+                />
+
+                <div className="mt-6">
+                    <Field
+                        label="Notes"
+                        error={getFieldError(
+                            "notes"
+                        )}
+                    >
+                        <textarea
+                            name="notes"
+                            rows={5}
+                            value={
+                                form.notes
+                            }
+                            onChange={
+                                handleChange
+                            }
+                            placeholder="Add any additional notes..."
+                            disabled={
+                                submitting
+                            }
+                            className={`${inputClass(
+                                "notes"
+                            )} resize-none`}
+                        />
+                    </Field>
+                </div>
+            </section>
+
+            {/* ACTIONS */}
+
+            <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:justify-end">
+                {onCancel && (
+                    <button
+                        type="button"
+                        onClick={
+                            onCancel
+                        }
+                        disabled={
+                            submitting
+                        }
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <X size={18} />
+                        Cancel
+                    </button>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={
+                        submitting ||
+                        loading
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {submitting ? (
+                        <>
+                            <Loader2
+                                size={18}
+                                className="animate-spin"
+                            />
+
+                            Saving...
+                        </>
+                    ) : (
+                        <>
+                            {isEditing ? (
+                                <Check
+                                    size={18}
+                                />
+                            ) : (
+                                <Save
+                                    size={18}
+                                />
+                            )}
+
+                            {submitLabel ??
+                                (isEditing
+                                    ? "Update Unit"
+                                    : "Create Unit")}
+                        </>
+                    )}
+                </button>
+            </div>
+        </form>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| SECTION HEADER
+|--------------------------------------------------------------------------
+*/
+
+const SectionHeader = ({
+    icon: Icon,
+    title,
+    description,
+}) => {
+    return (
+        <div className="flex items-start gap-3">
+            {Icon && (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                    <Icon size={19} />
+                </div>
+            )}
+
+            <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-900">
+                    {title}
+                </h3>
+
+                <p className="mt-1 text-sm text-slate-500">
+                    {description}
+                </p>
+            </div>
+        </div>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| FIELD
+|--------------------------------------------------------------------------
+*/
+
+const Field = ({
+    label,
+    required = false,
+    error,
+    children,
+}) => {
+    return (
+        <div className="min-w-0">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">
+                {label}
+
+                {required && (
+                    <span className="ml-1 text-red-500">
+                        *
+                    </span>
+                )}
+            </label>
+
+            {children}
+
+            {error && (
+                <p className="mt-1.5 text-xs font-medium text-red-600">
+                    {error}
+                </p>
+            )}
+        </div>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| NUMBER FIELD
+|--------------------------------------------------------------------------
+*/
+
+const NumberField = ({
+    label,
+    name,
+    value,
+    onChange,
+    error,
+    disabled,
+}) => {
+    return (
+        <Field
+            label={label}
+            error={error}
+        >
+            <input
+                type="number"
+                min="0"
+                step="1"
+                name={name}
+                value={value}
+                onChange={onChange}
+                disabled={disabled}
+                className={`
+                    w-full
+                    rounded-xl
+                    border
+                    ${
+                        error
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                            : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                    }
+                    bg-white
+                    px-4
+                    py-3
+                    text-sm
+                    text-slate-900
+                    outline-none
+                    transition
+                    placeholder:text-slate-400
+                    focus:ring-4
+                    disabled:cursor-not-allowed
+                    disabled:bg-slate-50
+                    disabled:text-slate-500
+                `}
+            />
+        </Field>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| MONEY FIELD
+|--------------------------------------------------------------------------
+*/
+
+const MoneyField = ({
+    label,
+    name,
+    value,
+    onChange,
+    error,
+    disabled,
+    placeholder,
+}) => {
+    return (
+        <Field
+            label={label}
+            error={error}
+        >
+            <div className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-xs font-bold text-slate-500">
+                    KES
+                </span>
+
+                <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    name={name}
+                    value={value}
+                    onChange={onChange}
+                    disabled={disabled}
+                    placeholder={
+                        placeholder
+                    }
+                    className={`
+                        w-full
+                        rounded-xl
+                        border
+                        ${
+                            error
+                                ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+                                : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                        }
+                        bg-white
+                        py-3
+                        pl-16
+                        pr-4
+                        text-sm
+                        text-slate-900
+                        outline-none
+                        transition
+                        placeholder:text-slate-400
+                        focus:ring-4
+                        disabled:cursor-not-allowed
+                        disabled:bg-slate-50
+                        disabled:text-slate-500
+                    `}
+                />
+            </div>
+        </Field>
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| FEATURE CHECKBOX
+|--------------------------------------------------------------------------
+*/
+
+const FeatureCheckbox = ({
+    name,
+    label,
+    description,
+    checked,
+    onChange,
+    disabled,
+}) => {
+    return (
+        <label
+            htmlFor={name}
+            className={`
+                group
+                relative
+                flex
+                items-start
+                gap-3
+                rounded-xl
+                border
+                p-4
+                transition-all
+                duration-200
+                ${
+                    checked
+                        ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                }
+                ${
+                    disabled
+                        ? "cursor-not-allowed opacity-60"
+                        : "cursor-pointer"
+                }
+            `}
+        >
+            <input
+                id={name}
+                name={name}
+                type="checkbox"
+                checked={Boolean(
+                    checked
+                )}
+                onChange={onChange}
+                disabled={disabled}
+                className="sr-only"
+            />
+
+            <div
+                className={`
+                    flex
+                    h-5
+                    w-5
+                    shrink-0
+                    items-center
+                    justify-center
+                    rounded-md
+                    border
+                    transition-all
+                    duration-200
+                    ${
+                        checked
+                            ? "border-indigo-600 bg-indigo-600"
+                            : "border-slate-300 bg-white group-hover:border-indigo-400"
+                    }
+                `}
+                aria-hidden="true"
+            >
+                {checked && (
+                    <Check
+                        size={14}
+                        strokeWidth={3}
+                        className="text-white"
+                    />
+                )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <p
+                    className={`
+                        text-sm
+                        font-semibold
+                        ${
+                            checked
+                                ? "text-indigo-900"
+                                : "text-slate-800"
+                        }
+                    `}
+                >
+                    {label}
+                </p>
+
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                    {description}
+                </p>
+            </div>
+
+            {checked && (
+                <div className="absolute right-3 top-3">
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+                        Active
+                    </span>
+                </div>
+            )}
+        </label>
+    );
+};
+
+export default UnitForm;

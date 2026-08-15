@@ -1,813 +1,1117 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import api from "../../../api/axios";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 
 import {
-  ArrowLeft,
-  Building2,
-  Home,
-  Loader2,
-  Save,
-  DollarSign,
-  FileText,
-  Hash,
-  CheckCircle2,
-  Layers3,
-  Bath,
-  BedDouble,
-  AlertTriangle,
+    AlertTriangle,
+    ArrowLeft,
+    Building2,
+    CheckCircle2,
+    Loader2,
+    RefreshCcw,
+    Sparkles,
 } from "lucide-react";
 
+import { useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+
+import { addNotification } from "../../../store/uiSlice";
+
+import UnitForm from "./unitForm";
+
+import useUnit from "../../../hooks/useUnits";
+import useProperty from "../../../hooks/useProperties";
+import useApartment from "../../../hooks/useApartment";
+
+/*
+|--------------------------------------------------------------------------
+| CREATE UNIT
+|--------------------------------------------------------------------------
+|
+| Professional create-unit page.
+|
+| Responsibilities:
+|
+| - Load properties
+| - Load apartments
+| - Normalize API responses
+| - Display loading/error states
+| - Submit the unit
+| - Handle navigation
+|
+*/
+
 const CreateUnit = () => {
-  const navigate = useNavigate();
-
-  /*
-  |--------------------------------------------------------------------------
-  | STATE
-  |--------------------------------------------------------------------------
-  */
-  const [properties, setProperties] = useState([]);
-
-  const [loadingProperties, setLoadingProperties] =
-    useState(false);
-
-  const [submitting, setSubmitting] = useState(false);
-
-  const [error, setError] = useState("");
-
-  const [success, setSuccess] = useState("");
-
-  const [validationErrors, setValidationErrors] =
-    useState({});
-
-  /*
-  |--------------------------------------------------------------------------
-  | FORM DATA
-  |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  | Backend Unit model uses "type" not "unit_type"
-  |--------------------------------------------------------------------------
-  */
-  const [formData, setFormData] = useState({
-    property_id: "",
-    unit_number: "",
-    type: "",
-    bedrooms: "",
-    bathrooms: "",
-    floor: "",
-    rent_amount: "",
-    deposit_amount: "",
-    size: "",
-    status: "vacant",
-    description: "",
-  });
-
-  /*
-  |--------------------------------------------------------------------------
-  | FETCH PROPERTIES
-  |--------------------------------------------------------------------------
-  */
-  useEffect(() => {
-    const fetchProperties = async () => {
-      try {
-        setLoadingProperties(true);
-
-        const response = await api.get(
-          "/properties?with_relations=true"
-        );
-
-        console.log(
-          "PROPERTIES RESPONSE:",
-          response?.data
-        );
-
-        const data =
-          response?.data?.data ||
-          response?.data ||
-          [];
-
-        setProperties(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error(
-          "FAILED TO FETCH PROPERTIES:",
-          err
-        );
-
-        setError(
-          err?.response?.data?.message ||
-            "Failed to load properties."
-        );
-      } finally {
-        setLoadingProperties(false);
-      }
-    };
-
-    fetchProperties();
-  }, []);
-
-  /*
-  |--------------------------------------------------------------------------
-  | HANDLE CHANGE
-  |--------------------------------------------------------------------------
-  */
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    const navigate = useNavigate();
+    const dispatch = useDispatch();
 
     /*
     |--------------------------------------------------------------------------
-    | CLEAR FIELD ERROR
+    | REQUEST CONTROL
+    |--------------------------------------------------------------------------
+    |
+    | Prevent state updates after the component has unmounted.
+    |
+    */
+
+    const mountedRef = useRef(true);
+
+    /*
+    |--------------------------------------------------------------------------
+    | UNIT HOOK
     |--------------------------------------------------------------------------
     */
-    if (validationErrors[name]) {
-      setValidationErrors((prev) => ({
-        ...prev,
-        [name]: null,
-      }));
-    }
-  };
 
-  /*
-  |--------------------------------------------------------------------------
-  | SUBMIT
-  |--------------------------------------------------------------------------
-  */
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+    const {
+        createUnit,
+        loading: unitLoading,
+        error: unitError,
+    } = useUnit({
+        autoFetch: false,
+    });
 
-    try {
-      setSubmitting(true);
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY HOOK
+    |--------------------------------------------------------------------------
+    */
 
-      setError("");
-      setSuccess("");
-      setValidationErrors({});
+    const {
+        properties = [],
+        loading: propertiesLoading,
+        error: propertiesError,
+        getProperties,
+    } = useProperty({
+        autoFetch: false,
+    });
 
-      /*
-      |--------------------------------------------------------------------------
-      | CLEAN PAYLOAD
-      |--------------------------------------------------------------------------
-      */
-      const payload = {
-        property_id: Number(formData.property_id),
-        unit_number: formData.unit_number,
-        type: formData.type,
-        bedrooms: formData.bedrooms
-          ? Number(formData.bedrooms)
-          : 0,
-        bathrooms: formData.bathrooms
-          ? Number(formData.bathrooms)
-          : 0,
-        floor: formData.floor
-          ? Number(formData.floor)
-          : null,
-        rent_amount: Number(formData.rent_amount),
-        deposit_amount: formData.deposit_amount
-          ? Number(formData.deposit_amount)
-          : 0,
-        size: formData.size
-          ? Number(formData.size)
-          : null,
-        status: formData.status,
-        description: formData.description,
-      };
+    /*
+    |--------------------------------------------------------------------------
+    | APARTMENT HOOK
+    |--------------------------------------------------------------------------
+    */
 
-      console.log("UNIT PAYLOAD:", payload);
+    const {
+        apartments = [],
+        loading: apartmentsLoading,
+        error: apartmentsError,
+        getApartments,
+    } = useApartment({
+        autoFetch: false,
+    });
 
-      const response = await api.post(
-        "/units",
-        payload
-      );
+    /*
+    |--------------------------------------------------------------------------
+    | LOCAL STATE
+    |--------------------------------------------------------------------------
+    */
 
-      console.log(
-        "CREATE UNIT RESPONSE:",
-        response?.data
-      );
+    const [fetching, setFetching] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
 
-      setSuccess("Unit created successfully.");
+    /*
+    |--------------------------------------------------------------------------
+    | CLEANUP
+    |--------------------------------------------------------------------------
+    */
 
-      /*
-      |--------------------------------------------------------------------------
-      | RESET FORM
-      |--------------------------------------------------------------------------
-      */
-      setFormData({
-        property_id: "",
-        unit_number: "",
-        type: "",
-        bedrooms: "",
-        bathrooms: "",
-        floor: "",
-        rent_amount: "",
-        deposit_amount: "",
-        size: "",
-        status: "vacant",
-        description: "",
-      });
+    useEffect(() => {
+        mountedRef.current = true;
 
-      setTimeout(() => {
-        navigate("/super-admin/units");
-      }, 1500);
-    } catch (err) {
-      console.error(
-        "CREATE UNIT ERROR:",
-        err?.response?.data || err
-      );
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
-      /*
-      |--------------------------------------------------------------------------
-      | VALIDATION ERRORS
-      |--------------------------------------------------------------------------
-      */
-      if (err?.response?.status === 422) {
-        setValidationErrors(
-          err?.response?.data?.errors || {}
+    /*
+    |--------------------------------------------------------------------------
+    | ERROR MESSAGE HELPER
+    |--------------------------------------------------------------------------
+    |
+    | Supports:
+    |
+    | Laravel:
+    | {
+    |     message: "...",
+    |     errors: {
+    |         property_id: ["..."]
+    |     }
+    | }
+    |
+    | Axios:
+    | error.response.data
+    |
+    | Custom API:
+    | {
+    |     error: "...",
+    |     message: "..."
+    | }
+    |
+    */
+
+    const getErrorMessage = useCallback((error) => {
+        if (!error) {
+            return null;
+        }
+
+        if (typeof error === "string") {
+            return error;
+        }
+
+        const responseData =
+            error?.response?.data ?? {};
+
+        const validationErrors =
+            responseData?.errors ??
+            error?.errors;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Laravel validation errors
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            validationErrors &&
+            typeof validationErrors === "object" &&
+            !Array.isArray(validationErrors)
+        ) {
+            /*
+            | Prefer a general error/message first.
+            */
+
+            if (
+                typeof validationErrors.error ===
+                "string"
+            ) {
+                return validationErrors.error;
+            }
+
+            if (
+                typeof validationErrors.message ===
+                "string"
+            ) {
+                return validationErrors.message;
+            }
+
+            /*
+            | Otherwise find the first validation message.
+            */
+
+            const firstValidationError =
+                Object.values(validationErrors).find(
+                    (value) =>
+                        Array.isArray(value)
+                            ? value.length > 0
+                            : Boolean(value)
+                );
+
+            if (Array.isArray(firstValidationError)) {
+                return firstValidationError[0];
+            }
+
+            if (
+                typeof firstValidationError ===
+                "string"
+            ) {
+                return firstValidationError;
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Standard API / Axios errors
+        |--------------------------------------------------------------------------
+        */
+
+        return (
+            responseData?.message ||
+            responseData?.error ||
+            error?.message ||
+            error?.error ||
+            "Unable to load the unit form data."
         );
+    }, []);
 
-        setError(
-          err?.response?.data?.message ||
-            "Validation failed."
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE COLLECTION
+    |--------------------------------------------------------------------------
+    |
+    | Supports:
+    |
+    | []
+    |
+    | { data: [] }
+    |
+    | { data: { data: [] } }
+    |
+    | { properties: [] }
+    |
+    | { apartments: [] }
+    |
+    */
+
+    const normalizeCollection = useCallback(
+        (value, resourceKey = null) => {
+            if (Array.isArray(value)) {
+                return value;
+            }
+
+            if (
+                value?.data &&
+                Array.isArray(value.data)
+            ) {
+                return value.data;
+            }
+
+            if (
+                value?.data?.data &&
+                Array.isArray(value.data.data)
+            ) {
+                return value.data.data;
+            }
+
+            if (
+                resourceKey &&
+                Array.isArray(value?.[resourceKey])
+            ) {
+                return value[resourceKey];
+            }
+
+            if (
+                resourceKey &&
+                Array.isArray(
+                    value?.data?.[resourceKey]
+                )
+            ) {
+                return value.data[resourceKey];
+            }
+
+            return [];
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZED PROPERTIES
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizedProperties = useMemo(() => {
+        return normalizeCollection(
+            properties,
+            "properties"
         );
+    }, [
+        properties,
+        normalizeCollection,
+    ]);
 
-        return;
-      }
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZED APARTMENTS
+    |--------------------------------------------------------------------------
+    */
 
-      /*
-      |--------------------------------------------------------------------------
-      | SERVER ERROR
-      |--------------------------------------------------------------------------
-      */
-      if (err?.response?.status === 500) {
-        setError(
-          err?.response?.data?.message ||
-            "Internal server error. Check Laravel logs."
+    const normalizedApartments = useMemo(() => {
+        return normalizeCollection(
+            apartments,
+            "apartments"
         );
+    }, [
+        apartments,
+        normalizeCollection,
+    ]);
 
-        return;
-      }
+    /*
+    |--------------------------------------------------------------------------
+    | RESOURCE COUNTS
+    |--------------------------------------------------------------------------
+    */
 
-      setError(
-        err?.response?.data?.message ||
-          "Failed to create unit."
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    const propertyCount =
+        normalizedProperties.length;
 
-  /*
-  |--------------------------------------------------------------------------
-  | INPUT ERROR
-  |--------------------------------------------------------------------------
-  */
-  const getInputError = (field) => {
-    return validationErrors?.[field]?.[0];
-  };
+    const apartmentCount =
+        normalizedApartments.length;
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    /*
+    |--------------------------------------------------------------------------
+    | LOAD FORM DATA
+    |--------------------------------------------------------------------------
+    */
 
-      <div className="max-w-5xl mx-auto space-y-6">
+    const loadFormData = useCallback(
+        async () => {
+            if (!mountedRef.current) {
+                return;
+            }
 
-        {/* HEADER */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            setFetching(true);
 
-          <div>
+            try {
+                const requests = [];
 
-            <button
-              onClick={() => navigate(-1)}
-              className="mb-4 flex items-center gap-2 text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft size={18} />
-              Back
-            </button>
+                /*
+                |--------------------------------------------------------------------------
+                | Load properties
+                |--------------------------------------------------------------------------
+                */
 
-            <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
-              Create Unit
-            </h1>
+                if (
+                    typeof getProperties ===
+                    "function"
+                ) {
+                    requests.push(
+                        getProperties({
+                            with_relations: true,
+                            _t: Date.now(),
+                        })
+                    );
+                }
 
-            <p className="text-gray-500 mt-2">
-              Add a new apartment, office,
-              rental or room unit.
-            </p>
+                /*
+                |--------------------------------------------------------------------------
+                | Load apartments
+                |--------------------------------------------------------------------------
+                */
 
-          </div>
+                if (
+                    typeof getApartments ===
+                    "function"
+                ) {
+                    requests.push(
+                        getApartments({
+                            with_relations: true,
+                            _t: Date.now(),
+                        })
+                    );
+                }
 
-        </div>
+                /*
+                |--------------------------------------------------------------------------
+                | Execute requests
+                |--------------------------------------------------------------------------
+                */
 
-        {/* ERROR */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-4 rounded-2xl flex items-start gap-3">
+                await Promise.all(requests);
+            } catch (error) {
+                console.error(
+                    "CREATE UNIT FORM LOAD ERROR:",
+                    error
+                );
 
-            <AlertTriangle
-              size={20}
-              className="mt-0.5"
-            />
+                if (!mountedRef.current) {
+                    return;
+                }
 
-            <div>{error}</div>
+                const message =
+                    getErrorMessage(error) ||
+                    "Failed to load properties and apartments.";
 
-          </div>
-        )}
+                dispatch(
+                    addNotification({
+                        type: "error",
+                        message,
+                    })
+                );
+            } finally {
+                if (mountedRef.current) {
+                    setFetching(false);
+                }
+            }
+        },
+        [
+            getProperties,
+            getApartments,
+            dispatch,
+            getErrorMessage,
+        ]
+    );
 
-        {/* SUCCESS */}
-        {success && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-5 py-4 rounded-2xl flex items-center gap-2">
+    /*
+    |--------------------------------------------------------------------------
+    | INITIAL LOAD
+    |--------------------------------------------------------------------------
+    */
 
-            <CheckCircle2 size={18} />
+    useEffect(() => {
+        loadFormData();
+    }, [loadFormData]);
 
-            {success}
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE UNIT
+    |--------------------------------------------------------------------------
+    */
 
-          </div>
-        )}
+    const handleSubmit = useCallback(
+        async (payload) => {
+            if (
+                submitting ||
+                unitLoading
+            ) {
+                return;
+            }
 
-        {/* FORM */}
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden"
-        >
+            setSubmitting(true);
 
-          {/* TOP */}
-          <div className="border-b border-gray-100 p-6">
+            try {
+                const response =
+                    await createUnit(payload);
 
-            <div className="flex items-center gap-3">
+                console.log(
+                    "CREATE UNIT RESPONSE:",
+                    response
+                );
 
-              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
+                if (!mountedRef.current) {
+                    return;
+                }
 
-                <Building2 className="text-blue-600" />
+                const successMessage =
+                    response?.message ||
+                    response?.data?.message ||
+                    response?.data?.data?.message ||
+                    "Unit created successfully.";
 
-              </div>
+                dispatch(
+                    addNotification({
+                        type: "success",
+                        message: successMessage,
+                    })
+                );
 
-              <div>
+                /*
+                |--------------------------------------------------------------------------
+                | Redirect
+                |--------------------------------------------------------------------------
+                */
 
-                <h2 className="text-xl font-bold text-gray-900">
-                  Unit Information
-                </h2>
+                navigate(
+                    "/super-admin/units"
+                );
+            } catch (error) {
+                console.error(
+                    "CREATE UNIT ERROR:",
+                    error
+                );
 
-                <p className="text-gray-500 text-sm mt-1">
-                  Fill in all required fields
-                  below.
-                </p>
+                if (!mountedRef.current) {
+                    throw error;
+                }
 
-              </div>
+                const message =
+                    getErrorMessage(error) ||
+                    "Failed to create unit.";
 
+                dispatch(
+                    addNotification({
+                        type: "error",
+                        message,
+                    })
+                );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Re-throw
+                |--------------------------------------------------------------------------
+                |
+                | Allows UnitForm to handle its own
+                | submission state/error.
+                |
+                */
+
+                throw error;
+            } finally {
+                if (mountedRef.current) {
+                    setSubmitting(false);
+                }
+            }
+        },
+        [
+            submitting,
+            unitLoading,
+            createUnit,
+            dispatch,
+            navigate,
+            getErrorMessage,
+        ]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | CANCEL
+    |--------------------------------------------------------------------------
+    */
+
+    const handleCancel = useCallback(() => {
+        if (submitting) {
+            return;
+        }
+
+        navigate(
+            "/super-admin/units"
+        );
+    }, [
+        submitting,
+        navigate,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | RETRY
+    |--------------------------------------------------------------------------
+    */
+
+    const handleRetry = useCallback(() => {
+        if (
+            fetching ||
+            submitting
+        ) {
+            return;
+        }
+
+        loadFormData();
+    }, [
+        fetching,
+        submitting,
+        loadFormData,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORM DATA ERROR
+    |--------------------------------------------------------------------------
+    */
+
+    const formDataError =
+        propertiesError ||
+        apartmentsError;
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORM DATA LOADING
+    |--------------------------------------------------------------------------
+    */
+
+    const formLoading =
+        fetching ||
+        propertiesLoading ||
+        apartmentsLoading;
+
+    /*
+    |--------------------------------------------------------------------------
+    | CRITICAL RESOURCE ERROR
+    |--------------------------------------------------------------------------
+    */
+
+    const hasPropertyError =
+        Boolean(propertiesError);
+
+    const hasApartmentError =
+        Boolean(apartmentsError);
+
+    /*
+    |--------------------------------------------------------------------------
+    | INITIAL LOADING SCREEN
+    |--------------------------------------------------------------------------
+    */
+
+    if (fetching) {
+        return (
+            <div className="min-h-full bg-slate-50 p-4 sm:p-6 lg:p-8">
+                <div className="mx-auto flex min-h-[560px] max-w-7xl items-center justify-center">
+                    <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                        {/* TOP ACCENT */}
+
+                        <div className="h-1.5 bg-indigo-600" />
+
+                        <div className="p-8 text-center sm:p-10">
+                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 ring-8 ring-indigo-50/50">
+                                <Loader2
+                                    size={28}
+                                    className="animate-spin text-indigo-600"
+                                />
+                            </div>
+
+                            <div className="mt-6">
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-600">
+                                    Unit Management
+                                </p>
+
+                                <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-900">
+                                    Preparing Unit Form
+                                </h2>
+
+                                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+                                    Loading properties and
+                                    apartments required to
+                                    create your new unit.
+                                </p>
+                            </div>
+
+                            {/* LOADING INDICATOR */}
+
+                            <div className="mt-7">
+                                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                                    <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-600" />
+                                </div>
+                            </div>
+
+                            {/* LOADING STEPS */}
+
+                            <div className="mt-7 grid grid-cols-2 gap-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-left">
+                                    <div className="flex items-center gap-2">
+                                        <Loader2
+                                            size={15}
+                                            className="animate-spin text-indigo-500"
+                                        />
+
+                                        <span className="text-xs font-semibold text-slate-600">
+                                            Properties
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-left">
+                                    <div className="flex items-center gap-2">
+                                        <Loader2
+                                            size={15}
+                                            className="animate-spin text-indigo-500"
+                                        />
+
+                                        <span className="text-xs font-semibold text-slate-600">
+                                            Apartments
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="mt-6 text-xs text-slate-400">
+                                Please wait while we prepare
+                                the form.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
+        );
+    }
 
-          </div>
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETE FORM DATA ERROR
+    |--------------------------------------------------------------------------
+    |
+    | If neither properties nor apartments are available,
+    | the user cannot reasonably create a unit.
+    |
+    */
 
-          {/* BODY */}
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+    if (
+        formDataError &&
+        propertyCount === 0 &&
+        apartmentCount === 0
+    ) {
+        const message =
+            getErrorMessage(formDataError);
 
-            {/* PROPERTY */}
-            <div className="space-y-2">
+        return (
+            <div className="min-h-full bg-slate-50 p-4 sm:p-6 lg:p-8">
+                <div className="mx-auto w-full max-w-3xl">
+                    {/* BACK */}
 
-              <label className="text-sm font-semibold text-gray-700">
-                Property
-              </label>
+                    <div className="mb-6">
+                        <button
+                            type="button"
+                            onClick={
+                                handleCancel
+                            }
+                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-white hover:text-slate-900"
+                        >
+                            <ArrowLeft
+                                size={18}
+                                className="transition-transform group-hover:-translate-x-0.5"
+                            />
 
-              <div className="relative">
+                            Back to Units
+                        </button>
+                    </div>
 
-                <Building2
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
+                    {/* ERROR CARD */}
 
-                <select
-                  name="property_id"
-                  value={formData.property_id}
-                  onChange={handleChange}
-                  required
-                  disabled={loadingProperties}
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                >
-                  <option value="">
-                    {loadingProperties
-                      ? "Loading properties..."
-                      : "Select Property"}
-                  </option>
+                    <div className="overflow-hidden rounded-3xl border border-red-200 bg-white shadow-sm">
+                        <div className="h-1.5 bg-red-500" />
 
-                  {properties.map((property) => (
-                    <option
-                      key={property.id}
-                      value={property.id}
+                        <div className="p-6 sm:p-8 lg:p-10">
+                            <div className="flex flex-col gap-6 sm:flex-row">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-red-50 ring-8 ring-red-50/50">
+                                    <AlertTriangle
+                                        size={26}
+                                        className="text-red-600"
+                                    />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-600">
+                                        Unit Management
+                                    </p>
+
+                                    <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                                        Unable to Load Unit Form
+                                    </h1>
+
+                                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                                        We couldn't load the
+                                        property and apartment
+                                        information required to
+                                        create a unit.
+                                    </p>
+
+                                    {message && (
+                                        <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-4">
+                                            <div className="flex gap-3">
+                                                <AlertTriangle
+                                                    size={17}
+                                                    className="mt-0.5 shrink-0 text-red-500"
+                                                />
+
+                                                <p className="text-sm font-medium leading-6 text-red-700">
+                                                    {message}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                                        <button
+                                            type="button"
+                                            onClick={
+                                                handleRetry
+                                            }
+                                            disabled={
+                                                fetching
+                                            }
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            <RefreshCcw
+                                                size={17}
+                                                className={
+                                                    fetching
+                                                        ? "animate-spin"
+                                                        : ""
+                                                }
+                                            />
+
+                                            Try Again
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={
+                                                handleCancel
+                                            }
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                                        >
+                                            <ArrowLeft
+                                                size={17}
+                                            />
+
+                                            Back to Units
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RENDER
+    |--------------------------------------------------------------------------
+    */
+
+    return (
+        <div className="min-h-full bg-slate-50">
+            <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+                {/* ==========================================================
+                    PAGE HEADER
+                ========================================================== */}
+
+                <div className="mb-7">
+                    {/* BREADCRUMB / BACK */}
+
+                    <button
+                        type="button"
+                        onClick={
+                            handleCancel
+                        }
+                        disabled={
+                            submitting
+                        }
+                        className="group mb-5 inline-flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {property.name}
-                    </option>
-                  ))}
-                </select>
+                        <ArrowLeft
+                            size={17}
+                            className="transition-transform group-hover:-translate-x-0.5"
+                        />
 
-              </div>
+                        Back to Units
+                    </button>
 
-              {getInputError(
-                "property_id"
-              ) && (
-                <p className="text-sm text-red-500">
-                  {
-                    getInputError(
-                      "property_id"
-                    )
-                  }
-                </p>
-              )}
+                    {/* HEADER */}
 
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-start gap-4">
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 shadow-sm shadow-indigo-200">
+                                <Building2
+                                    size={25}
+                                    className="text-white"
+                                />
+                            </div>
+
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                                        Create Unit
+                                    </h1>
+
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                        <Sparkles
+                                            size={12}
+                                        />
+
+                                        New
+                                    </span>
+                                </div>
+
+                                <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
+                                    Add a new property unit with
+                                    its apartment, pricing,
+                                    features and availability
+                                    information.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* RESOURCE SUMMARY */}
+
+                        <div className="flex flex-wrap gap-2">
+                            <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm">
+                                <CheckCircle2
+                                    size={16}
+                                    className="text-emerald-500"
+                                />
+
+                                <span className="text-xs font-semibold text-slate-600">
+                                    {propertyCount}{" "}
+                                    {propertyCount === 1
+                                        ? "Property"
+                                        : "Properties"}
+                                </span>
+                            </div>
+
+                            <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm">
+                                <Building2
+                                    size={16}
+                                    className="text-indigo-500"
+                                />
+
+                                <span className="text-xs font-semibold text-slate-600">
+                                    {apartmentCount}{" "}
+                                    {apartmentCount === 1
+                                        ? "Apartment"
+                                        : "Apartments"}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ==========================================================
+                    RESOURCE WARNING
+                ========================================================== */}
+
+                {formDataError && (
+                    <div className="mb-6 overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+                        <div className="flex items-start gap-3 bg-amber-50 px-4 py-4 sm:px-5">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+                                <AlertTriangle
+                                    size={18}
+                                    className="text-amber-600"
+                                />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-sm font-bold text-amber-900">
+                                            Some form data could not
+                                            be loaded
+                                        </p>
+
+                                        <p className="mt-0.5 text-xs leading-5 text-amber-700">
+                                            {hasPropertyError &&
+                                                "Property options may be unavailable. "}
+
+                                            {hasApartmentError &&
+                                                "Apartment options may be unavailable."}
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            handleRetry
+                                        }
+                                        disabled={
+                                            fetching ||
+                                            submitting
+                                        }
+                                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <RefreshCcw
+                                            size={14}
+                                            className={
+                                                fetching
+                                                    ? "animate-spin"
+                                                    : ""
+                                            }
+                                        />
+
+                                        Retry
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ==========================================================
+                    BACKGROUND LOADING
+                ========================================================== */}
+
+                {formLoading &&
+                    !fetching &&
+                    !submitting && (
+                        <div className="mb-6 flex items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3.5 text-sm font-medium text-indigo-700">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100">
+                                <Loader2
+                                    size={17}
+                                    className="animate-spin text-indigo-600"
+                                />
+                            </div>
+
+                            <div>
+                                <p className="font-semibold">
+                                    Refreshing form data
+                                </p>
+
+                                <p className="text-xs font-normal text-indigo-600">
+                                    Updating properties and
+                                    apartments...
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                {/* ==========================================================
+                    FORM CONTAINER
+                ========================================================== */}
+
+                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                    {/* FORM HEADER */}
+
+                    <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-5 py-5 sm:px-7">
+                        <div className="flex items-center justify-between gap-4">
+                            <div>
+                                <h2 className="text-base font-bold text-slate-900">
+                                    Unit Information
+                                </h2>
+
+                                <p className="mt-1 text-xs leading-5 text-slate-500">
+                                    Complete the details below to
+                                    create the unit.
+                                </p>
+                            </div>
+
+                            <div className="hidden h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 sm:flex">
+                                <Building2
+                                    size={17}
+                                    className="text-indigo-600"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* UNIT FORM */}
+
+                    <div className="p-1 sm:p-2">
+                        <UnitForm
+                            properties={
+                                normalizedProperties
+                            }
+                            apartments={
+                                normalizedApartments
+                            }
+                            loading={
+                                formLoading ||
+                                unitLoading
+                            }
+                            submitting={
+                                submitting ||
+                                unitLoading
+                            }
+                            error={
+                                unitError ||
+                                propertiesError ||
+                                apartmentsError
+                            }
+                            onSubmit={
+                                handleSubmit
+                            }
+                            onCancel={
+                                handleCancel
+                            }
+                            title="Create Unit"
+                            submitLabel="Create Unit"
+                        />
+                    </div>
+                </div>
+
+                {/* ==========================================================
+                    FOOTER NOTE
+                ========================================================== */}
+
+                <div className="mt-5 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+
+                        <span>
+                            All required fields should be
+                            completed before saving.
+                        </span>
+                    </div>
+
+                    <span className="text-xs font-medium text-slate-400">
+                        Unit Management
+                    </span>
+                </div>
             </div>
-
-            {/* UNIT NUMBER */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Unit Number
-              </label>
-
-              <div className="relative">
-
-                <Hash
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="text"
-                  name="unit_number"
-                  value={formData.unit_number}
-                  onChange={handleChange}
-                  placeholder="A-101"
-                  required
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                />
-
-              </div>
-
-              {getInputError(
-                "unit_number"
-              ) && (
-                <p className="text-sm text-red-500">
-                  {
-                    getInputError(
-                      "unit_number"
-                    )
-                  }
-                </p>
-              )}
-
-            </div>
-
-            {/* TYPE */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Unit Type
-              </label>
-
-              <div className="relative">
-
-                <Home
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <select
-                  name="type"
-                  value={formData.type}
-                  onChange={handleChange}
-                  required
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                >
-                  <option value="">
-                    Select Type
-                  </option>
-
-                  <option value="bedsitter">
-                    Bedsitter
-                  </option>
-
-                  <option value="studio">
-                    Studio
-                  </option>
-
-                  <option value="single_room">
-                    Single Room
-                  </option>
-
-                  <option value="double_room">
-                    Double Room
-                  </option>
-
-                  <option value="one_bedroom">
-                    One Bedroom
-                  </option>
-
-                  <option value="two_bedroom">
-                    Two Bedroom
-                  </option>
-
-                  <option value="three_bedroom">
-                    Three Bedroom
-                  </option>
-
-                  <option value="penthouse">
-                    Penthouse
-                  </option>
-
-                  <option value="office">
-                    Office
-                  </option>
-
-                  <option value="shop">
-                    Shop
-                  </option>
-
-                  <option value="warehouse">
-                    Warehouse
-                  </option>
-
-                  <option value="villa">
-                    Villa
-                  </option>
-
-                  <option value="airbnb">
-                    Airbnb
-                  </option>
-
-                </select>
-
-              </div>
-
-              {getInputError("type") && (
-                <p className="text-sm text-red-500">
-                  {getInputError("type")}
-                </p>
-              )}
-
-            </div>
-
-            {/* BEDROOMS */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Bedrooms
-              </label>
-
-              <div className="relative">
-
-                <BedDouble
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="number"
-                  name="bedrooms"
-                  value={formData.bedrooms}
-                  onChange={handleChange}
-                  min="0"
-                  placeholder="2"
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                />
-
-              </div>
-
-            </div>
-
-            {/* BATHROOMS */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Bathrooms
-              </label>
-
-              <div className="relative">
-
-                <Bath
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="number"
-                  name="bathrooms"
-                  value={formData.bathrooms}
-                  onChange={handleChange}
-                  min="0"
-                  placeholder="1"
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                />
-
-              </div>
-
-            </div>
-
-            {/* FLOOR */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Floor
-              </label>
-
-              <div className="relative">
-
-                <Layers3
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="number"
-                  name="floor"
-                  value={formData.floor}
-                  onChange={handleChange}
-                  placeholder="3"
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                />
-
-              </div>
-
-            </div>
-
-            {/* RENT */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Rent Amount
-              </label>
-
-              <div className="relative">
-
-                <DollarSign
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="number"
-                  name="rent_amount"
-                  value={formData.rent_amount}
-                  onChange={handleChange}
-                  placeholder="25000"
-                  required
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                />
-
-              </div>
-
-            </div>
-
-            {/* DEPOSIT */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Deposit Amount
-              </label>
-
-              <div className="relative">
-
-                <DollarSign
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="number"
-                  name="deposit_amount"
-                  value={
-                    formData.deposit_amount
-                  }
-                  onChange={handleChange}
-                  placeholder="25000"
-                  className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-                />
-
-              </div>
-
-            </div>
-
-            {/* SIZE */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Size (sq ft)
-              </label>
-
-              <input
-                type="number"
-                name="size"
-                value={formData.size}
-                onChange={handleChange}
-                placeholder="500"
-                className="w-full h-12 px-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-              />
-
-            </div>
-
-            {/* STATUS */}
-            <div className="space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Status
-              </label>
-
-              <select
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="w-full h-12 px-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none"
-              >
-                <option value="vacant">
-                  Vacant
-                </option>
-
-                <option value="occupied">
-                  Occupied
-                </option>
-
-                <option value="reserved">
-                  Reserved
-                </option>
-
-                <option value="maintenance">
-                  Maintenance
-                </option>
-
-                <option value="inactive">
-                  Inactive
-                </option>
-
-              </select>
-
-            </div>
-
-            {/* DESCRIPTION */}
-            <div className="md:col-span-2 space-y-2">
-
-              <label className="text-sm font-semibold text-gray-700">
-                Description
-              </label>
-
-              <div className="relative">
-
-                <FileText
-                  size={18}
-                  className="absolute left-4 top-4 text-gray-400"
-                />
-
-                <textarea
-                  rows="5"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="Enter unit description..."
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none resize-none"
-                />
-
-              </div>
-
-            </div>
-
-          </div>
-
-          {/* FOOTER */}
-          <div className="border-t border-gray-100 p-6 flex flex-col sm:flex-row justify-end gap-3">
-
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="h-12 px-6 rounded-2xl border border-gray-200 bg-white hover:bg-gray-100 transition"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="h-12 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <Loader2
-                    size={18}
-                    className="animate-spin"
-                  />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Save size={18} />
-                  Create Unit
-                </>
-              )}
-            </button>
-
-          </div>
-
-        </form>
-
-      </div>
-
-    </div>
-  );
+        </div>
+    );
 };
 
 export default CreateUnit;
