@@ -46,6 +46,7 @@ use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
 use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
 use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
+use App\Http\Controllers\Api\Apartment\ApartmentController;
 use App\Http\Controllers\Api\Dashboard\DashboardController;
 
 /*
