@@ -46,7 +46,7 @@ use App\Http\Controllers\Api\PropertyReview\PropertyReviewController;
 use App\Http\Controllers\Api\PropertyVisit\PropertyVisitController;
 use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
 use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
-use App\Http\Controllers\Api\Apartment\ApartmentController;
+use App\Http\Controllers\Api\Dashboard\DashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -88,6 +88,27 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('logout', [AuthController::class, 'logout'])->name('auth.logout');
     Route::post('refresh-token', [AuthController::class, 'refreshToken'])->name('auth.refresh-token');
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | DASHBOARD
+    |-------------------------------------------------------------------------- 
+    */
+      Route::prefix('dashboard')->name('dashboard.')->group(function () {
+            Route::get('/', [ DashboardController::class, 'index',])
+            ->middleware('permission:dashboard.view')->name('index');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DASHBOARD CONFIGURATION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get('/config', [DashboardController::class,'config',])
+                ->middleware('permission:dashboard.view')
+                ->name('config');
+
+        });
     /*
     |--------------------------------------------------------------------------
     | PROFILE
