@@ -116,6 +116,16 @@ use App\Repositories\Interfaces\StreetRepositoryInterface;
 use App\Repositories\Eloquent\AmenityRepository;
 use App\Repositories\Interfaces\AmenityRepositoryInterface;
 
+/*
+|--------------------------------------------------------------------------
+| Dashboard REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\DashboardRepository;
+use App\Repositories\Interfaces\DashboardRepositoryInterface;
+
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -280,6 +290,17 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             AmenityRepositoryInterface::class,
             AmenityRepository::class
+        );
+
+
+         /*
+        |--------------------------------------------------------------------------
+        | DASHBOARD
+        |--------------------------------------------------------------------------
+        */
+        $this->app->bind(
+            DashboardRepositoryInterface::class,
+            DashboardRepository::class
         );
     }
 
