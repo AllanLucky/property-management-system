@@ -3,7 +3,6 @@
 namespace App\Http\Resources;
 
 use App\Helpers\DateHelper;
-use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -20,13 +19,17 @@ class UnitResource extends JsonResource
         |--------------------------------------------------------------------------
         */
 
-        $property = $this->whenLoaded('property');
+        $property = $this->relationLoaded('property')
+            ? $this->property
+            : null;
 
-        $apartment = $this->whenLoaded('apartment');
+        $apartment = $this->relationLoaded('apartment')
+            ? $this->apartment
+            : null;
 
         /*
         |--------------------------------------------------------------------------
-        | TENANCY
+        | ACTIVE TENANCY
         |--------------------------------------------------------------------------
         */
 
@@ -34,11 +37,47 @@ class UnitResource extends JsonResource
         $tenant = null;
 
         if ($this->relationLoaded('tenancies')) {
-
             $activeTenancy = $this->tenancies
                 ->firstWhere('status', 'active');
 
             $tenant = $activeTenancy?->tenant;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANCY STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        $tenancyTotal = 0;
+        $activeTenancyCount = 0;
+        $pendingTenancyCount = 0;
+        $expiredTenancyCount = 0;
+        $terminatedTenancyCount = 0;
+        $cancelledTenancyCount = 0;
+
+        if ($this->relationLoaded('tenancies')) {
+            $tenancyTotal = $this->tenancies->count();
+
+            $activeTenancyCount = $this->tenancies
+                ->where('status', 'active')
+                ->count();
+
+            $pendingTenancyCount = $this->tenancies
+                ->where('status', 'pending')
+                ->count();
+
+            $expiredTenancyCount = $this->tenancies
+                ->where('status', 'expired')
+                ->count();
+
+            $terminatedTenancyCount = $this->tenancies
+                ->where('status', 'terminated')
+                ->count();
+
+            $cancelledTenancyCount = $this->tenancies
+                ->where('status', 'cancelled')
+                ->count();
         }
 
         /*
@@ -49,25 +88,168 @@ class UnitResource extends JsonResource
 
         $maintenanceTotal = 0;
         $maintenancePending = 0;
+        $maintenanceAssigned = 0;
         $maintenanceInProgress = 0;
+        $maintenanceOnHold = 0;
         $maintenanceCompleted = 0;
+        $maintenanceCancelled = 0;
+        $maintenanceRejected = 0;
 
         if ($this->relationLoaded('maintenances')) {
-
             $maintenanceTotal = $this->maintenances->count();
 
             $maintenancePending = $this->maintenances
                 ->where('status', 'pending')
                 ->count();
 
+            $maintenanceAssigned = $this->maintenances
+                ->where('status', 'assigned')
+                ->count();
+
             $maintenanceInProgress = $this->maintenances
                 ->where('status', 'in_progress')
+                ->count();
+
+            $maintenanceOnHold = $this->maintenances
+                ->where('status', 'on_hold')
                 ->count();
 
             $maintenanceCompleted = $this->maintenances
                 ->where('status', 'completed')
                 ->count();
+
+            $maintenanceCancelled = $this->maintenances
+                ->where('status', 'cancelled')
+                ->count();
+
+            $maintenanceRejected = $this->maintenances
+                ->where('status', 'rejected')
+                ->count();
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | OPEN MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        $openMaintenance =
+            $maintenancePending +
+            $maintenanceAssigned +
+            $maintenanceInProgress +
+            $maintenanceOnHold;
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE COSTS
+        |--------------------------------------------------------------------------
+        */
+
+        $maintenanceEstimatedCost = 0;
+        $maintenanceActualCost = 0;
+
+        if ($this->relationLoaded('maintenances')) {
+            $maintenanceEstimatedCost = (float) $this->maintenances
+                ->sum(
+                    fn ($maintenance) =>
+                        (float) ($maintenance->estimated_cost ?? 0)
+                );
+
+            $maintenanceActualCost = (float) $this->maintenances
+                ->sum(
+                    fn ($maintenance) =>
+                        (float) ($maintenance->actual_cost ?? 0)
+                );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS FLAGS
+        |--------------------------------------------------------------------------
+        */
+
+        $isVacant = method_exists($this->resource, 'isVacant')
+            ? $this->isVacant()
+            : $this->status === 'vacant';
+
+        $isOccupied = method_exists($this->resource, 'isOccupied')
+            ? $this->isOccupied()
+            : $this->status === 'occupied';
+
+        $isReserved = method_exists($this->resource, 'isReserved')
+            ? $this->isReserved()
+            : $this->status === 'reserved';
+
+        $isMaintenance = method_exists(
+            $this->resource,
+            'isUnderMaintenance'
+        )
+            ? $this->isUnderMaintenance()
+            : $this->status === 'maintenance';
+
+        $isAvailable = method_exists($this->resource, 'isAvailable')
+            ? $this->isAvailable()
+            : $this->status === 'vacant';
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS LABEL
+        |--------------------------------------------------------------------------
+        */
+
+        $statusLabel = $this->status_label
+            ?? ucwords(
+                str_replace(
+                    '_',
+                    ' ',
+                    $this->status ?? 'unknown'
+                )
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS BADGE
+        |--------------------------------------------------------------------------
+        */
+
+        $statusBadge = $this->status_badge
+            ?? $this->status;
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANT NAME
+        |--------------------------------------------------------------------------
+        */
+
+        $tenantName = null;
+
+        if ($tenant) {
+            $tenantName = trim(
+                ($tenant->first_name ?? '') . ' ' .
+                ($tenant->last_name ?? '') . ' ' .
+                ($tenant->other_names ?? '')
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | UNIT FLOOR
+        |--------------------------------------------------------------------------
+        |
+        | IMPORTANT:
+        | Floor belongs to the UNIT, not the APARTMENT.
+        |
+        */
+
+        $unitFloor = $this->floor !== null
+            ? (int) $this->floor
+            : null;
+
+        /*
+        |--------------------------------------------------------------------------
+        | RETURN RESOURCE
+        |--------------------------------------------------------------------------
+        */
 
         return [
 
@@ -95,39 +277,52 @@ class UnitResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
+            | UNIT FLOOR
+            |--------------------------------------------------------------------------
+            |
+            | Expose floor at the top level so the frontend can simply use:
+            |
+            | unit.floor
+            |
+            */
+
+            'floor' => $unitFloor,
+
+            /*
+            |--------------------------------------------------------------------------
             | PROPERTY
             |--------------------------------------------------------------------------
             */
 
-            'property' => $property ? [
-
-                'id' => $property->id,
-
-                'title' => $property->title,
-
-                'slug' => $property->slug,
-
-                'property_code' => $property->property_code,
-
-            ] : null,
+            'property' => $property
+                ? [
+                    'id' => $property->id,
+                    'title' => $property->title,
+                    'slug' => $property->slug,
+                    'property_code' => $property->property_code,
+                ]
+                : null,
 
             /*
             |--------------------------------------------------------------------------
             | APARTMENT
             |--------------------------------------------------------------------------
+            |
+            | NOTE:
+            | Apartment does NOT contain floor.
+            |
             */
 
-            'apartment' => $apartment ? [
-
-                'id' => $apartment->id,
-
-                'name' => $apartment->name,
-
-                'block' => $apartment->block,
-
-                'total_floors' => $apartment->total_floors,
-
-            ] : null,
+            'apartment' => $apartment
+                ? [
+                    'id' => $apartment->id,
+                    'name' => $apartment->name,
+                    'slug' => $apartment->slug,
+                    'block' => $apartment->block,
+                    'total_floors' => $apartment->total_floors,
+                    'total_units' => $apartment->total_units,
+                ]
+                : null,
 
             /*
             |--------------------------------------------------------------------------
@@ -136,10 +331,9 @@ class UnitResource extends JsonResource
             */
 
             'details' => [
-
                 'type' => $this->type,
 
-                'floor' => (int) ($this->floor ?? 0),
+                'floor' => $unitFloor,
 
                 'bedrooms' => (int) ($this->bedrooms ?? 0),
 
@@ -150,7 +344,6 @@ class UnitResource extends JsonResource
                 'size' => (float) ($this->size ?? 0),
 
                 'size_unit' => $this->size_unit,
-
             ],
 
             /*
@@ -160,15 +353,17 @@ class UnitResource extends JsonResource
             */
 
             'pricing' => [
-
                 'price' => (float) ($this->price ?? 0),
 
                 'formatted_price' => $this->formatted_price,
 
                 'deposit' => (float) ($this->deposit ?? 0),
 
-                'service_charge' => (float) ($this->service_charge ?? 0),
+                'service_charge' => (float) (
+                    $this->service_charge ?? 0
+                ),
 
+                'currency' => $this->currency ?? 'KES',
             ],
 
             /*
@@ -178,15 +373,23 @@ class UnitResource extends JsonResource
             */
 
             'features' => [
-
                 'has_balcony' => (bool) $this->has_balcony,
 
                 'has_wifi' => (bool) $this->has_wifi,
 
                 'has_furnished' => (bool) $this->has_furnished,
 
-                'has_air_conditioning' => (bool) $this->has_air_conditioning,
+                'has_air_conditioning' =>
+                    (bool) $this->has_air_conditioning,
 
+                'has_parking' =>
+                    (bool) ($this->has_parking ?? false),
+
+                'has_security' =>
+                    (bool) ($this->has_security ?? false),
+
+                'has_backup_generator' =>
+                    (bool) ($this->has_backup_generator ?? false),
             ],
 
             /*
@@ -196,23 +399,21 @@ class UnitResource extends JsonResource
             */
 
             'status' => [
-
                 'value' => $this->status,
 
-                'label' => $this->status_label,
+                'label' => $statusLabel,
 
-                'badge' => $this->status_badge,
+                'badge' => $statusBadge,
 
-                'is_vacant' => $this->isVacant(),
+                'is_vacant' => $isVacant,
 
-                'is_occupied' => $this->isOccupied(),
+                'is_occupied' => $isOccupied,
 
-                'is_reserved' => $this->isReserved(),
+                'is_reserved' => $isReserved,
 
-                'is_maintenance' => $this->isUnderMaintenance(),
+                'is_maintenance' => $isMaintenance,
 
-                'is_available' => $this->isAvailable(),
-
+                'is_available' => $isAvailable,
             ],
 
             /*
@@ -222,32 +423,48 @@ class UnitResource extends JsonResource
             */
 
             'media' => [
-
                 'thumbnail' => $this->thumbnail,
 
                 'thumbnail_url' => $this->thumbnail_url,
-
             ],
-                        /*
+
+            /*
             |--------------------------------------------------------------------------
             | TENANT
             |--------------------------------------------------------------------------
             */
 
-            'tenant' => $tenant ? [
+            'tenant' => $tenant
+                ? [
+                    'id' => $tenant->id,
 
-                'id' => $tenant->id,
+                    'tenant_number' =>
+                        $tenant->tenant_number,
 
-                'full_name' => trim(
-                    ($tenant->first_name ?? '') . ' ' .
-                    ($tenant->last_name ?? '')
-                ),
+                    'full_name' => $tenantName,
 
-                'email' => $tenant->email,
+                    'first_name' =>
+                        $tenant->first_name,
 
-                'phone' => $tenant->phone,
+                    'last_name' =>
+                        $tenant->last_name,
 
-            ] : null,
+                    'other_names' =>
+                        $tenant->other_names,
+
+                    'email' =>
+                        $tenant->email,
+
+                    'phone' =>
+                        $tenant->phone,
+
+                    'status' =>
+                        $tenant->status,
+
+                    'is_active' =>
+                        (bool) $tenant->is_active,
+                ]
+                : null,
 
             /*
             |--------------------------------------------------------------------------
@@ -255,21 +472,100 @@ class UnitResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'tenancy' => $activeTenancy ? [
+            'tenancy' => $activeTenancy
+                ? [
+                    'id' => $activeTenancy->id,
 
-                'id' => $activeTenancy->id,
+                    'tenancy_number' =>
+                        $activeTenancy->tenancy_number,
 
-                'status' => $activeTenancy->status,
+                    'status' =>
+                        $activeTenancy->status,
 
-                'start_date' => $activeTenancy->start_date,
+                    'start_date' =>
+                        optional(
+                            $activeTenancy->start_date
+                        )->toDateString(),
 
-                'end_date' => $activeTenancy->end_date,
+                    'end_date' =>
+                        optional(
+                            $activeTenancy->end_date
+                        )->toDateString(),
 
-                'monthly_rent' => (float) (
-                    $activeTenancy->monthly_rent ?? 0
-                ),
+                    'move_in_date' =>
+                        optional(
+                            $activeTenancy->move_in_date
+                        )->toDateString(),
 
-            ] : null,
+                    'move_out_date' =>
+                        optional(
+                            $activeTenancy->move_out_date
+                        )->toDateString(),
+
+                    'rent_amount' => (float) (
+                        $activeTenancy->rent_amount ?? 0
+                    ),
+
+                    'deposit_amount' => (float) (
+                        $activeTenancy->deposit_amount ?? 0
+                    ),
+
+                    'service_charge' => (float) (
+                        $activeTenancy->service_charge ?? 0
+                    ),
+
+                    'late_fee' => (float) (
+                        $activeTenancy->late_fee ?? 0
+                    ),
+
+                    'payment_frequency' =>
+                        $activeTenancy->payment_frequency,
+
+                    'due_day' =>
+                        $activeTenancy->due_day,
+
+                    'is_active' =>
+                        (bool) $activeTenancy->is_active,
+
+                    'is_expired' =>
+                        (bool) $activeTenancy->is_expired,
+
+                    'is_currently_active' =>
+                        (bool) $activeTenancy->is_currently_active,
+
+                    'has_moved_in' =>
+                        (bool) $activeTenancy->has_moved_in,
+
+                    'has_moved_out' =>
+                        (bool) $activeTenancy->has_moved_out,
+                ]
+                : null,
+
+            /*
+            |--------------------------------------------------------------------------
+            | TENANCY STATISTICS
+            |--------------------------------------------------------------------------
+            */
+
+            'tenancy_statistics' => [
+                'total' =>
+                    $tenancyTotal,
+
+                'active' =>
+                    $activeTenancyCount,
+
+                'pending' =>
+                    $pendingTenancyCount,
+
+                'expired' =>
+                    $expiredTenancyCount,
+
+                'terminated' =>
+                    $terminatedTenancyCount,
+
+                'cancelled' =>
+                    $cancelledTenancyCount,
+            ],
 
             /*
             |--------------------------------------------------------------------------
@@ -278,15 +574,66 @@ class UnitResource extends JsonResource
             */
 
             'maintenance' => [
+                'total' =>
+                    $maintenanceTotal,
 
-                'total' => $maintenanceTotal,
+                'open' =>
+                    $openMaintenance,
 
-                'pending' => $maintenancePending,
+                'pending' =>
+                    $maintenancePending,
 
-                'in_progress' => $maintenanceInProgress,
+                'assigned' =>
+                    $maintenanceAssigned,
 
-                'completed' => $maintenanceCompleted,
+                'in_progress' =>
+                    $maintenanceInProgress,
 
+                'on_hold' =>
+                    $maintenanceOnHold,
+
+                'completed' =>
+                    $maintenanceCompleted,
+
+                'cancelled' =>
+                    $maintenanceCancelled,
+
+                'rejected' =>
+                    $maintenanceRejected,
+
+                'estimated_cost' =>
+                    $maintenanceEstimatedCost,
+
+                'actual_cost' =>
+                    $maintenanceActualCost,
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | MAINTENANCE SUMMARY
+            |--------------------------------------------------------------------------
+            */
+
+            'maintenance_summary' => [
+                'has_maintenance' =>
+                    $maintenanceTotal > 0,
+
+                'has_open_maintenance' =>
+                    $openMaintenance > 0,
+
+                'needs_attention' =>
+                    $openMaintenance > 0,
+
+                'completion_rate' =>
+                    $maintenanceTotal > 0
+                        ? round(
+                            (
+                                $maintenanceCompleted /
+                                $maintenanceTotal
+                            ) * 100,
+                            2
+                        )
+                        : 0,
             ],
 
             /*
@@ -296,21 +643,35 @@ class UnitResource extends JsonResource
             */
 
             'insights' => [
+                'has_tenant' =>
+                    $tenant !== null,
 
-                'has_tenant' => $tenant !== null,
+                'has_active_tenancy' =>
+                    $activeTenancy !== null,
 
-                'has_active_tenancy' => $activeTenancy !== null,
+                'is_vacant' =>
+                    $isVacant,
 
-                'is_vacant' => $this->isVacant(),
+                'is_occupied' =>
+                    $isOccupied,
 
-                'is_occupied' => $this->isOccupied(),
+                'is_reserved' =>
+                    $isReserved,
 
-                'is_reserved' => $this->isReserved(),
+                'needs_maintenance' =>
+                    $isMaintenance,
 
-                'needs_maintenance' => $this->isUnderMaintenance(),
+                'has_open_maintenance' =>
+                    $openMaintenance > 0,
 
-                'maintenance_requests' => $maintenanceTotal,
+                'maintenance_requests' =>
+                    $maintenanceTotal,
 
+                'has_rental_income' =>
+                    $activeTenancy !== null &&
+                    (float) (
+                        $activeTenancy->rent_amount ?? 0
+                    ) > 0,
             ],
 
             /*
@@ -320,13 +681,24 @@ class UnitResource extends JsonResource
             */
 
             'availability' => [
-
                 'available_from' => optional(
                     $this->available_from
                 )->toDateString(),
 
-                'status' => $this->status,
+                'status' =>
+                    $this->status,
 
+                'is_available' =>
+                    $isAvailable,
+
+                'is_vacant' =>
+                    $isVacant,
+
+                'is_occupied' =>
+                    $isOccupied,
+
+                'is_reserved' =>
+                    $isReserved,
             ],
 
             /*
@@ -346,7 +718,6 @@ class UnitResource extends JsonResource
             'deleted_at' => DateHelper::format(
                 $this->deleted_at
             ),
-
         ];
     }
 }

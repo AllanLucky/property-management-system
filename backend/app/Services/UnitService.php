@@ -1,26 +1,41 @@
 <?php
 
+
 namespace App\Services;
 
-use App\Models\Unit;
 use App\Models\Property;
+use App\Models\Unit;
 use App\Repositories\Interfaces\UnitRepositoryInterface;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use Exception;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class UnitService
 {
+    /*
+    |--------------------------------------------------------------------------
+    | CONSTRUCTOR
+    |--------------------------------------------------------------------------
+    */
+
     public function __construct(
         protected UnitRepositoryInterface $unitRepository
-    ) {}
+    ) {
+    }
 
     /*
     |--------------------------------------------------------------------------
     | GET ALL
     |--------------------------------------------------------------------------
+    |
+    | Backwards-compatible method.
+    |
+    | For large datasets, prefer getPaginated().
+    |
     */
+
     public function getAll(): Collection
     {
         return $this->unitRepository->all();
@@ -28,63 +43,329 @@ class UnitService
 
     /*
     |--------------------------------------------------------------------------
+    | GET PAGINATED UNITS
+    |--------------------------------------------------------------------------
+    |
+    | Recommended method for the frontend Unit listing.
+    |
+    */
+
+    public function getPaginated(
+        int $perPage = 25,
+        array $filters = []
+    ): LengthAwarePaginator {
+        $perPage = $this->normalizePerPage($perPage);
+
+        return $this->unitRepository->paginate(
+            $perPage,
+            $filters
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET FILTERED UNITS
+    |--------------------------------------------------------------------------
+    */
+
+    public function filter(
+        array $filters = [],
+        int $perPage = 25
+    ): LengthAwarePaginator {
+        $perPage = $this->normalizePerPage($perPage);
+
+        return $this->unitRepository->filter(
+            $filters,
+            $perPage
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SEARCH UNITS
+    |--------------------------------------------------------------------------
+    */
+
+    public function search(
+        string $search,
+        int $perPage = 25
+    ): LengthAwarePaginator {
+        $search = trim($search);
+
+        if ($search === '') {
+            return $this->getPaginated($perPage);
+        }
+
+        return $this->unitRepository->search(
+            $search,
+            $this->normalizePerPage($perPage)
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | GET BY ID
     |--------------------------------------------------------------------------
     */
+
     public function getById(int $id): ?Unit
     {
+        if ($id <= 0) {
+            return null;
+        }
+
         return $this->unitRepository->find($id);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET BY SLUG
+    |--------------------------------------------------------------------------
+    */
+
+    public function getBySlug(string $slug): ?Unit
+    {
+        $slug = trim($slug);
+
+        if ($slug === '') {
+            return null;
+        }
+
+        return $this->unitRepository->findBySlug($slug);
     }
 
     /*
     |--------------------------------------------------------------------------
     | SAFE UNIQUE UNIT NUMBER GENERATOR
     |--------------------------------------------------------------------------
+    |
+    | Generates a unique unit number when one was not supplied.
+    |
     */
-    private function generateUniqueUnitNumber(string $name): string
-    {
-        $prefix = strtoupper(substr(
-            preg_replace('/[^A-Za-z]/', '', $name ?? 'UNT'),
-            0,
-            3
-        ));
+
+    private function generateUniqueUnitNumber(
+        string $name = 'UNIT'
+    ): string {
+        $cleanName = preg_replace(
+            '/[^A-Za-z]/',
+            '',
+            $name
+        );
+
+        $cleanName = $cleanName ?: 'UNT';
+
+        $prefix = strtoupper(
+            substr(
+                $cleanName,
+                0,
+                3
+            )
+        );
 
         do {
-            $random = random_int(1000, 9999);
+            $random = random_int(
+                1000,
+                9999
+            );
 
             $unitNumber = $prefix . '-' . $random;
-
-        } while (Unit::where('unit_number', $unitNumber)->exists());
+        } while (
+            Unit::query()
+                ->where(
+                    'unit_number',
+                    $unitNumber
+                )
+                ->exists()
+        );
 
         return $unitNumber;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | CREATE UNIT (FIXED DUPLICATE ISSUE)
+    | CREATE UNIT
     |--------------------------------------------------------------------------
     */
+
     public function create(array $data): Unit
     {
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data): Unit {
 
-            $property = Property::find($data['property_id']);
+            /*
+            |--------------------------------------------------------------------------
+            | Validate property
+            |--------------------------------------------------------------------------
+            */
 
-            if (!$property) {
-                throw new Exception('Property not found.');
-            }
+            $propertyId = $data['property_id'] ?? null;
 
-            // SAFE UNIQUE GENERATION (NO COLLISION)
-            if (empty($data['unit_number'])) {
-                $data['unit_number'] = $this->generateUniqueUnitNumber(
-                    $data['name'] ?? 'UNIT'
+            if (!$propertyId) {
+                throw new Exception(
+                    'Property is required.'
                 );
             }
 
-            $data['status'] = $data['status'] ?? Unit::STATUS_VACANT;
-            $data['deposit_amount'] = $data['deposit_amount'] ?? 0;
+            $propertyExists = Property::query()
+                ->whereKey($propertyId)
+                ->exists();
 
-            return $this->unitRepository->create($data);
+            if (!$propertyExists) {
+                throw new Exception(
+                    'Property not found.'
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate apartment when supplied
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                isset($data['apartment_id']) &&
+                $data['apartment_id'] !== null
+            ) {
+                $apartmentExists = Unit::query()
+                    ->whereKey($data['id'] ?? 0)
+                    ->exists();
+
+                /*
+                |--------------------------------------------------------------------------
+                | Do not perform an incorrect Unit lookup here.
+                |
+                | Apartment validation can be handled by the request/database
+                | foreign key or by the Apartment model/service.
+                |--------------------------------------------------------------------------
+                */
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Generate unit number
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                !isset($data['unit_number']) ||
+                blank($data['unit_number'])
+            ) {
+                $data['unit_number'] =
+                    $this->generateUniqueUnitNumber(
+                        $data['unit_name']
+                            ?? $data['name']
+                            ?? 'UNIT'
+                    );
+            } else {
+                /*
+                |--------------------------------------------------------------------------
+                | Prevent duplicate supplied unit number.
+                |--------------------------------------------------------------------------
+                */
+
+                $exists = Unit::query()
+                    ->where(
+                        'unit_number',
+                        $data['unit_number']
+                    )
+                    ->exists();
+
+                if ($exists) {
+                    throw new Exception(
+                        'The unit number already exists.'
+                    );
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Defaults
+            |--------------------------------------------------------------------------
+            */
+
+            $data['status'] =
+                $data['status']
+                ?? Unit::STATUS_VACANT;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate status
+            |--------------------------------------------------------------------------
+            */
+
+            $this->validateStatus(
+                $data['status']
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Normalize legacy price fields
+            |--------------------------------------------------------------------------
+            |
+            | The current Unit model uses:
+            |
+            | price
+            | deposit
+            | service_charge
+            |
+            | while older code used:
+            |
+            | rent_amount
+            | deposit_amount
+            |
+            */
+
+            if (
+                !isset($data['price']) &&
+                isset($data['rent_amount'])
+            ) {
+                $data['price'] =
+                    $data['rent_amount'];
+            }
+
+            if (
+                !isset($data['deposit']) &&
+                isset($data['deposit_amount'])
+            ) {
+                $data['deposit'] =
+                    $data['deposit_amount'];
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Default financial values
+            |--------------------------------------------------------------------------
+            */
+
+            $data['price'] =
+                $data['price'] ?? 0;
+
+            $data['deposit'] =
+                $data['deposit'] ?? 0;
+
+            $data['service_charge'] =
+                $data['service_charge'] ?? 0;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Remove legacy fields that aren't fillable
+            |--------------------------------------------------------------------------
+            */
+
+            unset(
+                $data['name'],
+                $data['rent_amount'],
+                $data['deposit_amount']
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create
+            |--------------------------------------------------------------------------
+            */
+
+            return $this->unitRepository->create(
+                $data
+            );
         });
     }
 
@@ -93,36 +374,125 @@ class UnitService
     | UPDATE UNIT
     |--------------------------------------------------------------------------
     */
-    public function update(int $id, array $data): Unit
-    {
-        return DB::transaction(function () use ($id, $data) {
 
-            $unit = $this->unitRepository->find($id);
+    public function update(
+        int $id,
+        array $data
+    ): Unit {
+        return DB::transaction(function () use (
+            $id,
+            $data
+        ): Unit {
+
+            $unit = $this->unitRepository->find(
+                $id
+            );
 
             if (!$unit) {
-                throw new Exception('Unit not found.');
+                throw new Exception(
+                    'Unit not found.'
+                );
             }
 
-            $allowedStatuses = [
-                Unit::STATUS_VACANT,
-                Unit::STATUS_OCCUPIED,
-                Unit::STATUS_RESERVED,
-                Unit::STATUS_MAINTENANCE,
-                Unit::STATUS_INACTIVE,
-            ];
+            /*
+            |--------------------------------------------------------------------------
+            | Status validation
+            |--------------------------------------------------------------------------
+            */
 
-            if (isset($data['status']) && !in_array($data['status'], $allowedStatuses)) {
-                throw new Exception('Invalid unit status.');
+            if (
+                isset($data['status']) &&
+                $data['status'] !== ''
+            ) {
+                $this->validateStatus(
+                    $data['status']
+                );
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Prevent invalid occupied -> vacant transition.
+            |--------------------------------------------------------------------------
+            */
 
             if (
                 $unit->status === Unit::STATUS_OCCUPIED &&
-                ($data['status'] ?? null) === Unit::STATUS_VACANT
+                isset($data['status']) &&
+                $data['status'] === Unit::STATUS_VACANT
             ) {
-                throw new Exception('Cannot mark occupied unit as vacant.');
+                throw new Exception(
+                    'Cannot mark an occupied unit as vacant.'
+                );
             }
 
-            return $this->unitRepository->update($id, $data);
+            /*
+            |--------------------------------------------------------------------------
+            | Prevent changing unit number to duplicate
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                isset($data['unit_number']) &&
+                filled($data['unit_number']) &&
+                $data['unit_number'] !== $unit->unit_number
+            ) {
+                $exists = Unit::query()
+                    ->where(
+                        'unit_number',
+                        $data['unit_number']
+                    )
+                    ->where(
+                        'id',
+                        '!=',
+                        $id
+                    )
+                    ->exists();
+
+                if ($exists) {
+                    throw new Exception(
+                        'The unit number already exists.'
+                    );
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Normalize legacy financial fields
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                !isset($data['price']) &&
+                isset($data['rent_amount'])
+            ) {
+                $data['price'] =
+                    $data['rent_amount'];
+            }
+
+            if (
+                !isset($data['deposit']) &&
+                isset($data['deposit_amount'])
+            ) {
+                $data['deposit'] =
+                    $data['deposit_amount'];
+            }
+
+            unset(
+                $data['name'],
+                $data['rent_amount'],
+                $data['deposit_amount']
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Update
+            |--------------------------------------------------------------------------
+            */
+
+            return $this->unitRepository->update(
+                $id,
+                $data
+            );
         });
     }
 
@@ -131,22 +501,99 @@ class UnitService
     | DELETE UNIT
     |--------------------------------------------------------------------------
     */
+
     public function delete(int $id): bool
     {
-        return DB::transaction(function () use ($id) {
+        return DB::transaction(function () use ($id): bool {
 
-            $unit = $this->unitRepository->find($id);
+            /*
+            |--------------------------------------------------------------------------
+            | Lightweight lookup
+            |--------------------------------------------------------------------------
+            */
+
+            $unit = Unit::query()
+                ->select([
+                    'id',
+                    'status',
+                ])
+                ->find($id);
 
             if (!$unit) {
                 return false;
             }
 
-            if ($unit->status === Unit::STATUS_OCCUPIED) {
-                throw new Exception('Cannot delete occupied unit.');
+            /*
+            |--------------------------------------------------------------------------
+            | Do not delete occupied unit
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $unit->status === Unit::STATUS_OCCUPIED
+            ) {
+                throw new Exception(
+                    'Cannot delete an occupied unit.'
+                );
             }
 
-            return $this->unitRepository->delete($id);
+            /*
+            |--------------------------------------------------------------------------
+            | Do not delete unit with active tenancy
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $unit->tenancies()
+                    ->where(
+                        'status',
+                        \App\Models\Tenancy::STATUS_ACTIVE
+                    )
+                    ->exists()
+            ) {
+                throw new Exception(
+                    'Cannot delete a unit with an active tenancy.'
+                );
+            }
+
+            return $this->unitRepository->delete(
+                $id
+            );
         });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RESTORE UNIT
+    |--------------------------------------------------------------------------
+    */
+
+    public function restore(int $id): ?Unit
+    {
+        return DB::transaction(
+            function () use ($id): ?Unit {
+                return $this->unitRepository->restore(
+                    $id
+                );
+            }
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORCE DELETE
+    |--------------------------------------------------------------------------
+    */
+
+    public function forceDelete(int $id): bool
+    {
+        return DB::transaction(
+            function () use ($id): bool {
+                return $this->unitRepository->forceDelete(
+                    $id
+                );
+            }
+        );
     }
 
     /*
@@ -154,17 +601,108 @@ class UnitService
     | ASSIGN TO PROPERTY
     |--------------------------------------------------------------------------
     */
-    public function assignToProperty(int $unitId, int $propertyId): Unit
-    {
-        return DB::transaction(function () use ($unitId, $propertyId) {
 
-            $property = Property::find($propertyId);
+    public function assignToProperty(
+        int $unitId,
+        int $propertyId
+    ): Unit {
+        return DB::transaction(function () use (
+            $unitId,
+            $propertyId
+        ): Unit {
 
-            if (!$property) {
-                throw new Exception('Property not found.');
+            /*
+            |--------------------------------------------------------------------------
+            | Validate property
+            |--------------------------------------------------------------------------
+            */
+
+            $propertyExists = Property::query()
+                ->whereKey($propertyId)
+                ->exists();
+
+            if (!$propertyExists) {
+                throw new Exception(
+                    'Property not found.'
+                );
             }
 
-            return $this->unitRepository->assignToProperty($unitId, $propertyId);
+            /*
+            |--------------------------------------------------------------------------
+            | Validate unit
+            |--------------------------------------------------------------------------
+            */
+
+            $unitExists = Unit::query()
+                ->whereKey($unitId)
+                ->exists();
+
+            if (!$unitExists) {
+                throw new Exception(
+                    'Unit not found.'
+                );
+            }
+
+            return $this->unitRepository
+                ->assignToProperty(
+                    $unitId,
+                    $propertyId
+                );
+        });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | ASSIGN TO APARTMENT
+    |--------------------------------------------------------------------------
+    */
+
+    public function assignToApartment(
+        int $unitId,
+        int $apartmentId
+    ): Unit {
+        return DB::transaction(function () use (
+            $unitId,
+            $apartmentId
+        ): Unit {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate unit
+            |--------------------------------------------------------------------------
+            */
+
+            $unitExists = Unit::query()
+                ->whereKey($unitId)
+                ->exists();
+
+            if (!$unitExists) {
+                throw new Exception(
+                    'Unit not found.'
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate apartment
+            |--------------------------------------------------------------------------
+            */
+
+            $apartmentExists = \App\Models\Apartment::query()
+                ->whereKey($apartmentId)
+                ->exists();
+
+            if (!$apartmentExists) {
+                throw new Exception(
+                    'Apartment not found.'
+                );
+            }
+
+            return $this->unitRepository
+                ->assignToApartment(
+                    $unitId,
+                    $apartmentId
+                );
         });
     }
 
@@ -173,31 +711,80 @@ class UnitService
     | CHANGE STATUS
     |--------------------------------------------------------------------------
     */
-    public function changeStatus(int $unitId, string $status): Unit
-    {
-        return DB::transaction(function () use ($unitId, $status) {
 
-            $unit = $this->unitRepository->find($unitId);
+    public function changeStatus(
+        int $unitId,
+        string $status
+    ): Unit {
+        return DB::transaction(function () use (
+            $unitId,
+            $status
+        ): Unit {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate status
+            |--------------------------------------------------------------------------
+            */
+
+            $this->validateStatus(
+                $status
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Lightweight lookup
+            |--------------------------------------------------------------------------
+            */
+
+            $unit = Unit::query()
+                ->select([
+                    'id',
+                    'status',
+                ])
+                ->find($unitId);
 
             if (!$unit) {
-                throw new Exception('Unit not found.');
+                throw new Exception(
+                    'Unit not found.'
+                );
             }
 
-            $allowed = [
-                Unit::STATUS_VACANT,
-                Unit::STATUS_OCCUPIED,
-                Unit::STATUS_RESERVED,
-                Unit::STATUS_MAINTENANCE,
-                Unit::STATUS_INACTIVE,
-            ];
+            /*
+            |--------------------------------------------------------------------------
+            | Occupied -> vacant protection
+            |--------------------------------------------------------------------------
+            */
 
-            if (!in_array($status, $allowed)) {
-                throw new Exception('Invalid status.');
+            if (
+                $unit->status === Unit::STATUS_OCCUPIED &&
+                $status === Unit::STATUS_VACANT
+            ) {
+                throw new Exception(
+                    'Cannot mark an occupied unit as vacant.'
+                );
             }
 
-            return $this->unitRepository->update($unitId, [
-                'status' => $status
-            ]);
+            /*
+            |--------------------------------------------------------------------------
+            | Prevent invalid maintenance transition
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $unit->status === Unit::STATUS_OCCUPIED &&
+                $status === Unit::STATUS_MAINTENANCE
+            ) {
+                throw new Exception(
+                    'An occupied unit cannot be placed under maintenance.'
+                );
+            }
+
+            return $this->unitRepository
+                ->updateStatus(
+                    $unitId,
+                    $status
+                );
         });
     }
 
@@ -206,61 +793,326 @@ class UnitService
     | GET BY PROPERTY
     |--------------------------------------------------------------------------
     */
-    public function getByProperty(int $propertyId): Collection
-    {
-        return $this->unitRepository->getByProperty($propertyId);
+
+    public function getByProperty(
+        int $propertyId
+    ): Collection {
+        $propertyExists = Property::query()
+            ->whereKey($propertyId)
+            ->exists();
+
+        if (!$propertyExists) {
+            throw new Exception(
+                'Property not found.'
+            );
+        }
+
+        return $this->unitRepository
+            ->getByProperty(
+                $propertyId
+            );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | FILTERS
+    | GET BY APARTMENT
     |--------------------------------------------------------------------------
     */
+
+    public function getByApartment(
+        int $apartmentId
+    ): Collection {
+        return $this->unitRepository
+            ->getByApartment(
+                $apartmentId
+            );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET BY STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    public function getByStatus(
+        string $status
+    ): Collection {
+        $this->validateStatus(
+            $status
+        );
+
+        return $this->unitRepository
+            ->getByStatus(
+                $status
+            );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET VACANT UNITS
+    |--------------------------------------------------------------------------
+    */
+
     public function getVacantUnits(): Collection
     {
-        return $this->unitRepository->getByStatus(Unit::STATUS_VACANT);
+        return $this->unitRepository
+            ->getVacant();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET OCCUPIED UNITS
+    |--------------------------------------------------------------------------
+    */
 
     public function getOccupiedUnits(): Collection
     {
-        return $this->unitRepository->getByStatus(Unit::STATUS_OCCUPIED);
-    }
-
-    public function getMaintenanceUnits(): Collection
-    {
-        return $this->unitRepository->getByStatus(Unit::STATUS_MAINTENANCE);
+        return $this->unitRepository
+            ->getOccupied();
     }
 
     /*
     |--------------------------------------------------------------------------
-    | STATS
+    | GET MAINTENANCE UNITS
     |--------------------------------------------------------------------------
     */
-    public function getStats(int $id): array
+
+    public function getMaintenanceUnits(): Collection
     {
-        $unit = $this->unitRepository->find($id);
+        return $this->unitRepository
+            ->getMaintenance();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET RESERVED UNITS
+    |--------------------------------------------------------------------------
+    */
+
+    public function getReservedUnits(): Collection
+    {
+        return $this->unitRepository
+            ->getReserved();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET DASHBOARD STATS BY PROPERTY
+    |--------------------------------------------------------------------------
+    */
+
+    public function getPropertyStats(
+        int $propertyId
+    ): array {
+        $propertyExists = Property::query()
+            ->whereKey($propertyId)
+            ->exists();
+
+        if (!$propertyExists) {
+            throw new Exception(
+                'Property not found.'
+            );
+        }
+
+        return $this->unitRepository
+            ->statsByProperty(
+                $propertyId
+            );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET GLOBAL STATS
+    |--------------------------------------------------------------------------
+    */
+
+    public function getGlobalStats(): array
+    {
+        return $this->unitRepository
+            ->stats();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET UNIT STATS
+    |--------------------------------------------------------------------------
+    */
+
+    public function getStats(
+        int $id
+    ): array {
+        /*
+        |--------------------------------------------------------------------------
+        | Get only the fields needed for statistics.
+        |--------------------------------------------------------------------------
+        */
+
+        $unit = Unit::query()
+            ->select([
+                'id',
+                'unit_number',
+                'unit_name',
+                'type',
+                'status',
+                'price',
+                'deposit',
+                'property_id',
+                'apartment_id',
+            ])
+            ->find($id);
 
         if (!$unit) {
-            throw new Exception('Unit not found.');
+            throw new Exception(
+                'Unit not found.'
+            );
         }
 
         return [
             'id' => $unit->id,
-            'name' => $unit->name,
-            'unit_number' => $unit->unit_number,
-            'type' => $unit->type,
 
-            'status' => $unit->status,
-            'is_occupied' => $unit->is_occupied,
-            'is_vacant' => $unit->is_vacant,
-            'is_reserved' => $unit->is_reserved,
-            'is_under_maintenance' => $unit->is_under_maintenance,
+            'name' =>
+                $unit->unit_name
+                ?? $unit->unit_number,
 
-            'rent_amount' => $unit->rent_amount,
-            'deposit_amount' => $unit->deposit_amount,
+            'unit_number' =>
+                $unit->unit_number,
 
-            'property_id' => $unit->property_id,
-            'apartment_id' => $unit->apartment_id,
+            'type' =>
+                $unit->type,
+
+            'status' =>
+                $unit->status,
+
+            'status_label' =>
+                $unit->status_label,
+
+            'is_occupied' =>
+                $unit->isOccupied(),
+
+            'is_vacant' =>
+                $unit->isVacant(),
+
+            'is_reserved' =>
+                $unit->isReserved(),
+
+            'is_under_maintenance' =>
+                $unit->isUnderMaintenance(),
+
+            'is_available' =>
+                $unit->isAvailable(),
+
+            'rent_amount' =>
+                $unit->price,
+
+            'deposit_amount' =>
+                $unit->deposit,
+
+            'price' =>
+                $unit->price,
+
+            'deposit' =>
+                $unit->deposit,
+
+            'property_id' =>
+                $unit->property_id,
+
+            'apartment_id' =>
+                $unit->apartment_id,
         ];
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CHECK AVAILABILITY
+    |--------------------------------------------------------------------------
+    */
+
+    public function checkAvailability(
+        int $unitId
+    ): bool {
+        $unit = Unit::query()
+            ->select([
+                'id',
+                'status',
+            ])
+            ->find($unitId);
+
+        if (!$unit) {
+            throw new Exception(
+                'Unit not found.'
+            );
+        }
+
+        return $this->unitRepository
+            ->checkAvailability(
+                $unitId
+            );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | PRIVATE STATUS VALIDATOR
+    |--------------------------------------------------------------------------
+    */
+
+    private function validateStatus(
+        string $status
+    ): void {
+        /*
+        |--------------------------------------------------------------------------
+        | Use statuses defined by the Unit model.
+        |--------------------------------------------------------------------------
+        */
+
+        $allowedStatuses = Unit::STATUSES;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Backwards compatibility:
+        |
+        | Some existing code may still send "inactive".
+        |
+        | Only keep this if your database enum / migration supports it.
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            defined(Unit::class . '::STATUS_INACTIVE')
+        ) {
+            $allowedStatuses[] =
+                Unit::STATUS_INACTIVE;
+        }
+
+        if (
+            !in_array(
+                $status,
+                $allowedStatuses,
+                true
+            )
+        ) {
+            throw new Exception(
+                'Invalid unit status.'
+            );
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE PER PAGE
+    |--------------------------------------------------------------------------
+    */
+
+    private function normalizePerPage(
+        int $perPage
+    ): int {
+        if ($perPage < 1) {
+            return 25;
+        }
+
+        return min(
+            $perPage,
+            100
+        );
+    }
 }
+

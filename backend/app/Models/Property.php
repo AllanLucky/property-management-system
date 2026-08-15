@@ -6,6 +6,11 @@ use App\Models\User;
 use App\Models\Unit;
 use App\Models\Amenity;
 use App\Models\Apartment;
+use App\Models\Country;
+use App\Models\Region;
+use App\Models\County;
+use App\Models\City;
+use App\Models\Area;
 use App\Models\PropertyType;
 use App\Models\PropertyReview;
 use App\Models\PropertyFeature;
@@ -52,7 +57,10 @@ class Property extends Model
 
             if (empty($property->slug)) {
 
-                $baseSlug = Str::slug($property->title ?? 'property');
+                $baseSlug = Str::slug(
+                    $property->title ?? 'property'
+                );
+
                 $slug = $baseSlug;
                 $count = 1;
 
@@ -85,6 +93,39 @@ class Property extends Model
 
                 $property->property_code = $code;
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | LOCATION SNAPSHOT
+            |--------------------------------------------------------------------------
+            |
+            | Automatically populate the *_name fields from the selected
+            | location relationships when possible.
+            |
+            */
+
+            $property->syncLocationSnapshot();
+        });
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE LOCATION SNAPSHOT
+        |--------------------------------------------------------------------------
+        */
+
+        static::updating(function ($property) {
+
+            if (
+                $property->isDirty([
+                    'country_id',
+                    'region_id',
+                    'county_id',
+                    'city_id',
+                    'area_id',
+                ])
+            ) {
+                $property->syncLocationSnapshot();
+            }
         });
     }
 
@@ -115,7 +156,7 @@ class Property extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | LOCATION
+        | LOCATION IDS
         |--------------------------------------------------------------------------
         */
 
@@ -124,6 +165,19 @@ class Property extends Model
         'county_id',
         'city_id',
         'area_id',
+
+        /*
+        |--------------------------------------------------------------------------
+        | LOCATION SNAPSHOT
+        |--------------------------------------------------------------------------
+        */
+
+        'country_name',
+        'region_name',
+        'county_name',
+        'city_name',
+        'area_name',
+        'street_address',
 
         /*
         |--------------------------------------------------------------------------
@@ -144,14 +198,6 @@ class Property extends Model
 
         'listing_type',
         'status',
-
-        /*
-        |--------------------------------------------------------------------------
-        | ADDRESS
-        |--------------------------------------------------------------------------
-        */
-
-        'street_address',
 
         /*
         |--------------------------------------------------------------------------
@@ -207,14 +253,24 @@ class Property extends Model
 
         /*
         |--------------------------------------------------------------------------
+        | PROPERTY FEATURES
+        |--------------------------------------------------------------------------
+        */
+
+        'has_balcony',
+        'has_swimming_pool',
+        'has_garden',
+        'has_wifi',
+        'has_security',
+
+        /*
+        |--------------------------------------------------------------------------
         | MEDIA
         |--------------------------------------------------------------------------
         */
 
         'image',
         'thumbnail',
-        'thumbnail_public_id',
-
         'video_url',
         'virtual_tour_url',
 
@@ -284,13 +340,35 @@ class Property extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | FLAGS
+        | BOOLEAN FLAGS
         |--------------------------------------------------------------------------
         */
 
         'is_featured' => 'boolean',
         'is_verified' => 'boolean',
         'is_published' => 'boolean',
+
+        'has_balcony' => 'boolean',
+        'has_swimming_pool' => 'boolean',
+        'has_garden' => 'boolean',
+        'has_wifi' => 'boolean',
+        'has_security' => 'boolean',
+
+        /*
+        |--------------------------------------------------------------------------
+        | INTEGER COUNTERS
+        |--------------------------------------------------------------------------
+        */
+
+        'bedrooms' => 'integer',
+        'bathrooms' => 'integer',
+        'toilets' => 'integer',
+        'garages' => 'integer',
+        'parking_spaces' => 'integer',
+        'floors' => 'integer',
+
+        'views_count' => 'integer',
+        'favorites_count' => 'integer',
 
         /*
         |--------------------------------------------------------------------------
@@ -325,7 +403,7 @@ class Property extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | RELATIONSHIPS
+        | RELATIONSHIP NAMES
         |--------------------------------------------------------------------------
         */
 
@@ -377,8 +455,9 @@ class Property extends Model
     | RELATIONSHIPS
     |--------------------------------------------------------------------------
     */
-        /**
-     * Property owner.
+
+    /**
+     * Property owner / creator.
      */
     public function user()
     {
@@ -401,8 +480,60 @@ class Property extends Model
         return $this->belongsTo(PropertyCategory::class);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | LOCATION RELATIONSHIPS
+    |--------------------------------------------------------------------------
+    */
+
     /**
-     * Apartments.
+     * Property country.
+     */
+    public function country()
+    {
+        return $this->belongsTo(Country::class);
+    }
+
+    /**
+     * Property region.
+     */
+    public function region()
+    {
+        return $this->belongsTo(Region::class);
+    }
+
+    /**
+     * Property county.
+     */
+    public function county()
+    {
+        return $this->belongsTo(County::class);
+    }
+
+    /**
+     * Property city.
+     */
+    public function city()
+    {
+        return $this->belongsTo(City::class);
+    }
+
+    /**
+     * Property area.
+     */
+    public function area()
+    {
+        return $this->belongsTo(Area::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY STRUCTURE
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Apartments belonging to the property.
      */
     public function apartments()
     {
@@ -410,15 +541,21 @@ class Property extends Model
     }
 
     /**
-     * Units.
+     * Units belonging directly to the property.
      */
     public function units()
     {
         return $this->hasMany(Unit::class);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY REVIEWS
+    |--------------------------------------------------------------------------
+    */
+
     /**
-     * Property reviews.
+     * All property reviews.
      */
     public function reviews()
     {
@@ -436,6 +573,12 @@ class Property extends Model
             ->latest();
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY VISITS
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Property visits.
      */
@@ -446,13 +589,19 @@ class Property extends Model
     }
 
     /**
-     * Unique visits.
+     * Unique property visits.
      */
     public function uniqueVisits()
     {
         return $this->hasMany(PropertyVisit::class)
             ->unique();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY FAVORITES
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Property favorites.
@@ -461,25 +610,6 @@ class Property extends Model
     {
         return $this->hasMany(PropertyFavorite::class);
     }
-
-
-    /**
-    * Property analytics snapshots.
-    */
-
-    public function analytics()
-    {
-        return $this->hasMany(PropertyAnalytics::class);
-    }
-
-    /**
-    * Latest analytics snapshot.
-    */
-    public function latestAnalytics()
-    {
-         return $this->hasOne(PropertyAnalytics::class)->latestOfMany('snapshot_date');
-    }
-
 
     /**
      * Users who favorited this property.
@@ -496,10 +626,36 @@ class Property extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | PROPERTY ANALYTICS
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Property analytics snapshots.
+     */
+    public function analytics()
+    {
+        return $this->hasMany(PropertyAnalytics::class);
+    }
+
+    /**
+     * Latest analytics snapshot.
+     */
+    public function latestAnalytics()
+    {
+        return $this->hasOne(PropertyAnalytics::class)
+            ->latestOfMany('snapshot_date');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | PROPERTY FEATURES
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * All property features.
+     */
     public function features()
     {
         return $this->belongsToMany(
@@ -533,6 +689,9 @@ class Property extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * All property amenities.
+     */
     public function amenities()
     {
         return $this->belongsToMany(
@@ -606,6 +765,14 @@ class Property extends Model
     }
 
     /**
+     * Properties for lease.
+     */
+    public function scopeForLease($query)
+    {
+        return $query->where('listing_type', 'lease');
+    }
+
+    /**
      * Latest properties.
      */
     public function scopeLatest($query)
@@ -615,15 +782,65 @@ class Property extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | LOCATION SCOPES
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Properties by country.
+     */
+    public function scopeInCountry($query, $countryId)
+    {
+        return $query->where('country_id', $countryId);
+    }
+
+    /**
+     * Properties by region.
+     */
+    public function scopeInRegion($query, $regionId)
+    {
+        return $query->where('region_id', $regionId);
+    }
+
+    /**
+     * Properties by county.
+     */
+    public function scopeInCounty($query, $countyId)
+    {
+        return $query->where('county_id', $countyId);
+    }
+
+    /**
+     * Properties by city.
+     */
+    public function scopeInCity($query, $cityId)
+    {
+        return $query->where('city_id', $cityId);
+    }
+
+    /**
+     * Properties by area.
+     */
+    public function scopeInArea($query, $areaId)
+    {
+        return $query->where('area_id', $areaId);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
-        /**
+
+    /**
      * Formatted sale price.
      */
     public function getFormattedPriceAttribute()
     {
-        return 'KES ' . number_format($this->price ?? 0, 2);
+        return 'KES ' . number_format(
+            $this->price ?? 0,
+            2
+        );
     }
 
     /**
@@ -631,9 +848,29 @@ class Property extends Model
      */
     public function getDisplayPriceAttribute()
     {
-        return $this->listing_type === 'rent'
-            ? 'KES ' . number_format($this->monthly_rent ?? 0, 2) . ' / month'
-            : 'KES ' . number_format($this->price ?? 0, 2);
+        if ($this->listing_type === 'rent') {
+            return 'KES ' .
+                number_format(
+                    $this->monthly_rent ?? 0,
+                    2
+                ) .
+                ' / month';
+        }
+
+        if ($this->listing_type === 'lease') {
+            return 'KES ' .
+                number_format(
+                    $this->monthly_rent ?? $this->price ?? 0,
+                    2
+                ) .
+                ' / month';
+        }
+
+        return 'KES ' .
+            number_format(
+                $this->discount_price ?? $this->price ?? 0,
+                2
+            );
     }
 
     /**
@@ -648,7 +885,9 @@ class Property extends Model
             $this->county_name,
             $this->region_name,
             $this->country_name,
-        ])->filter()->implode(', ');
+        ])
+        ->filter(fn ($value) => filled($value))
+        ->implode(', ');
     }
 
     /**
@@ -676,11 +915,71 @@ class Property extends Model
             return asset('images/default-property.jpg');
         }
 
-        if (Str::startsWith($this->thumbnail, ['http://', 'https://'])) {
+        if (
+            Str::startsWith(
+                $this->thumbnail,
+                ['http://', 'https://']
+            )
+        ) {
             return $this->thumbnail;
         }
 
         return Storage::url($this->thumbnail);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | LOCATION HELPERS
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Synchronize location snapshot names from relationships.
+     *
+     * The *_id columns remain the source relationships while the
+     * *_name columns preserve a convenient display snapshot.
+     */
+    public function syncLocationSnapshot(): void
+    {
+        if ($this->country_id) {
+            $country = $this->country()->first();
+
+            if ($country) {
+                $this->country_name = $country->name;
+            }
+        }
+
+        if ($this->region_id) {
+            $region = $this->region()->first();
+
+            if ($region) {
+                $this->region_name = $region->name;
+            }
+        }
+
+        if ($this->county_id) {
+            $county = $this->county()->first();
+
+            if ($county) {
+                $this->county_name = $county->name;
+            }
+        }
+
+        if ($this->city_id) {
+            $city = $this->city()->first();
+
+            if ($city) {
+                $this->city_name = $city->name;
+            }
+        }
+
+        if ($this->area_id) {
+            $area = $this->area()->first();
+
+            if ($area) {
+                $this->area_name = $area->name;
+            }
+        }
     }
 
     /*
@@ -719,6 +1018,7 @@ class Property extends Model
     public function getReviewsCountAttribute(): int
     {
         if ($this->relationLoaded('reviews')) {
+
             return $this->reviews
                 ->where('is_published', true)
                 ->count();
@@ -744,8 +1044,15 @@ class Property extends Model
 
         if ($this->relationLoaded('reviews')) {
 
-            foreach ($this->reviews->where('is_published', true) as $review) {
-                $ratings[$review->rating]++;
+            foreach (
+                $this->reviews->where('is_published', true)
+                as $review
+            ) {
+                $rating = (int) $review->rating;
+
+                if (isset($ratings[$rating])) {
+                    $ratings[$rating]++;
+                }
             }
 
             return $ratings;
@@ -758,7 +1065,7 @@ class Property extends Model
             ->pluck('total', 'rating');
 
         foreach ($results as $rating => $count) {
-            $ratings[$rating] = (int) $count;
+            $ratings[(int) $rating] = (int) $count;
         }
 
         return $ratings;
@@ -788,6 +1095,7 @@ class Property extends Model
     public function getUniqueVisitsCountAttribute(): int
     {
         if ($this->relationLoaded('visits')) {
+
             return $this->visits
                 ->where('is_unique', true)
                 ->count();
@@ -807,7 +1115,7 @@ class Property extends Model
     /**
      * Vacant units.
      */
-    public function getVacantUnitsCountAttribute()
+    public function getVacantUnitsCountAttribute(): int
     {
         return $this->relationLoaded('units')
             ? $this->units
@@ -821,7 +1129,7 @@ class Property extends Model
     /**
      * Occupied units.
      */
-    public function getOccupiedUnitsCountAttribute()
+    public function getOccupiedUnitsCountAttribute(): int
     {
         return $this->relationLoaded('units')
             ? $this->units
@@ -879,7 +1187,22 @@ class Property extends Model
     {
         return $this->listing_type === 'rent';
     }
-        /**
+
+    /**
+     * Determine if property is available for lease.
+     */
+    public function isForLease(): bool
+    {
+        return $this->listing_type === 'lease';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | VISIT PERIOD STATISTICS
+    |--------------------------------------------------------------------------
+    */
+
+    /**
      * Total visits today.
      */
     public function getTodayVisitsCount(): int
@@ -909,6 +1232,12 @@ class Property extends Model
             ->count();
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | REVIEW PERCENTAGES
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Five-star review percentage.
      */
@@ -919,7 +1248,8 @@ class Property extends Model
         }
 
         return round(
-            (($this->rating_breakdown[5] ?? 0) / $this->reviews_count) * 100,
+            (($this->rating_breakdown[5] ?? 0) /
+                $this->reviews_count) * 100,
             2
         );
     }
@@ -934,7 +1264,8 @@ class Property extends Model
         }
 
         return round(
-            (($this->rating_breakdown[4] ?? 0) / $this->reviews_count) * 100,
+            (($this->rating_breakdown[4] ?? 0) /
+                $this->reviews_count) * 100,
             2
         );
     }
@@ -949,7 +1280,8 @@ class Property extends Model
         }
 
         return round(
-            (($this->rating_breakdown[3] ?? 0) / $this->reviews_count) * 100,
+            (($this->rating_breakdown[3] ?? 0) /
+                $this->reviews_count) * 100,
             2
         );
     }
@@ -964,7 +1296,8 @@ class Property extends Model
         }
 
         return round(
-            (($this->rating_breakdown[2] ?? 0) / $this->reviews_count) * 100,
+            (($this->rating_breakdown[2] ?? 0) /
+                $this->reviews_count) * 100,
             2
         );
     }
@@ -979,7 +1312,8 @@ class Property extends Model
         }
 
         return round(
-            (($this->rating_breakdown[1] ?? 0) / $this->reviews_count) * 100,
+            (($this->rating_breakdown[1] ?? 0) /
+                $this->reviews_count) * 100,
             2
         );
     }
@@ -1008,12 +1342,19 @@ class Property extends Model
         );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | PUBLISHING
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Publish property.
      */
     public function publish(): bool
     {
         return $this->update([
+            'status' => 'published',
             'is_published' => true,
             'published_at' => now(),
         ]);
@@ -1026,8 +1367,15 @@ class Property extends Model
     {
         return $this->update([
             'is_published' => false,
+            'published_at' => null,
         ]);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FEATURED
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Mark property as featured.
@@ -1048,6 +1396,12 @@ class Property extends Model
             'is_featured' => false,
         ]);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | VERIFICATION
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Verify property.
