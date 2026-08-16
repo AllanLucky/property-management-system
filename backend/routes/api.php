@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\PropertyFavorite\PropertyFavoriteController;
 use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
 use App\Http\Controllers\Api\Apartment\ApartmentController;
 use App\Http\Controllers\Api\Dashboard\DashboardController;
+use App\Http\Controllers\Api\Tenant\TenantController;
 
 /*
 |--------------------------------------------------------------------------
@@ -210,6 +211,115 @@ Route::middleware('auth:sanctum')->group(function () {
          Route::delete('{apartment}', [ApartmentController::class, 'destroy'])->whereNumber('apartment')->name('destroy');
 
      });
+
+     /*
+|--------------------------------------------------------------------------
+| TENANTS
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('tenants')
+    ->name('tenants.')
+    ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | SPECIAL / FILTER ROUTES
+        |--------------------------------------------------------------------------
+        | These must come before /{tenant} to prevent Laravel from treating
+        | "search", "statistics", "active", etc. as tenant IDs.
+        */
+
+        Route::get('search',[TenantController::class, 'search'] )->name('search');
+        Route::get('statistics',[TenantController::class, 'statistics'] )->name('statistics');
+        Route::get('active',[TenantController::class, 'active'])->name('active');
+        Route::get('pending', [TenantController::class, 'pending'] )->name('pending');
+        Route::get('inactive',[TenantController::class, 'inactive'] )->name('inactive');
+        Route::get('blacklisted',[TenantController::class, 'blacklisted'])->name('blacklisted');
+        /*
+        |--------------------------------------------------------------------------
+        | TENANT CRUD
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get( '/', [TenantController::class, 'index'] )->name('index');
+        Route::post( '/', [TenantController::class, 'store'] )->name('store');
+        Route::get( '{tenant}', [TenantController::class, 'show'])
+            ->whereNumber('tenant')
+            ->name('show');
+
+        Route::put('{tenant}',[TenantController::class, 'update'])
+            ->whereNumber('tenant')
+            ->name('update');
+
+        Route::patch('{tenant}',[TenantController::class, 'update'] )
+            ->whereNumber('tenant')
+            ->name('patch');
+
+        Route::delete('{tenant}',[TenantController::class, 'destroy'])
+            ->whereNumber('tenant')
+            ->name('destroy');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANT STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch('{tenant}/activate',[TenantController::class, 'activate'])
+            ->whereNumber('tenant')
+            ->name('activate');
+
+        Route::patch('{tenant}/deactivate',[TenantController::class, 'deactivate'])
+            ->whereNumber('tenant')
+            ->name('deactivate');
+
+        Route::patch('{tenant}/pending',[TenantController::class, 'pendingStatus'])
+            ->whereNumber('tenant')
+            ->name('pending');
+
+        Route::patch('{tenant}/blacklist',[TenantController::class, 'blacklist'])
+            ->whereNumber('tenant')
+            ->name('blacklist');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANT VERIFICATION
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch('{tenant}/verify',[TenantController::class, 'verify'])
+            ->whereNumber('tenant')
+            ->name('verify');
+
+        Route::patch('{tenant}/unverify',[TenantController::class, 'unverify'])
+            ->whereNumber('tenant')
+            ->name('unverify');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | SOFT DELETE / RESTORE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch( '{id}/restore',[TenantController::class, 'restore'])
+            ->whereNumber('id')
+            ->name('restore');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | FORCE DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete( '{id}/force',[TenantController::class, 'forceDelete'])
+            ->whereNumber('id')
+            ->name('force-delete');
+    });
         
     /*
     |--------------------------------------------------------------------------
