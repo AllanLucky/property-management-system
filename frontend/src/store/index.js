@@ -2,14 +2,14 @@ import { configureStore } from "@reduxjs/toolkit";
 
 /*
 |--------------------------------------------------------------------------
-| CORE AUTH
+| CORE AUTHENTICATION
 |--------------------------------------------------------------------------
 */
 import authReducer from "./authSlice";
 
 /*
 |--------------------------------------------------------------------------
-| UI GLOBAL STATE
+| GLOBAL UI STATE
 |--------------------------------------------------------------------------
 */
 import uiReducer from "./uiSlice";
@@ -26,7 +26,14 @@ import roleRequestReducer from "./roleRequestSlice";
 
 /*
 |--------------------------------------------------------------------------
-| USER ACTIVITY LOGS
+| TENANTS
+|--------------------------------------------------------------------------
+*/
+import tenantReducer from "./tenantSlice";
+
+/*
+|--------------------------------------------------------------------------
+| USER ACTIVITY
 |--------------------------------------------------------------------------
 */
 import userActivityReducer from "./userActivitySlice";
@@ -48,50 +55,90 @@ import unitReducer from "./unitSlice";
 */
 import propertyFeatureReducer from "./propertyFeatureSlice";
 import propertyAmenityReducer from "./propertyAmenitySlice";
-import propertyReviewsReducer from "./propertyReviewSlice";
-import  propertyVisitsReducer from "./propertyVisitSlice"
+
+/*
+|--------------------------------------------------------------------------
+| PROPERTY ENGAGEMENT
+|--------------------------------------------------------------------------
+*/
+import propertyReviewReducer from "./propertyReviewSlice";
+import propertyVisitReducer from "./propertyVisitSlice";
 import propertyFavoriteReducer from "./propertyFavoriteSlice";
 import propertyAnalyticsReducer from "./propertyAnalyticsSlice";
-
 
 /*
 |--------------------------------------------------------------------------
 | STORE CONFIGURATION
 |--------------------------------------------------------------------------
 */
+
 export const store = configureStore({
   reducer: {
-    // AUTH
+    /*
+    |--------------------------------------------------------------------------
+    | AUTHENTICATION
+    |--------------------------------------------------------------------------
+    */
     auth: authReducer,
 
-    // UI
+    /*
+    |--------------------------------------------------------------------------
+    | GLOBAL UI
+    |--------------------------------------------------------------------------
+    */
     ui: uiReducer,
 
-    // USERS & RBAC
+    /*
+    |--------------------------------------------------------------------------
+    | USERS & RBAC
+    |--------------------------------------------------------------------------
+    */
     users: userReducer,
     roles: roleReducer,
     permissions: permissionReducer,
     roleRequests: roleRequestReducer,
 
-    // USER ACTIVITY
+    /*
+    |--------------------------------------------------------------------------
+    | TENANTS
+    |--------------------------------------------------------------------------
+    */
+    tenants: tenantReducer,
+
+    /*
+    |--------------------------------------------------------------------------
+    | USER ACTIVITY
+    |--------------------------------------------------------------------------
+    */
     userActivity: userActivityReducer,
 
-    // PROPERTIES
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY SYSTEM
+    |--------------------------------------------------------------------------
+    */
     properties: propertyReducer,
     propertyCategories: propertyCategoryReducer,
     propertyTypes: propertyTypeReducer,
     units: unitReducer,
 
-    // PROPERTY DETAILS
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY FEATURES & AMENITIES
+    |--------------------------------------------------------------------------
+    */
     propertyFeatures: propertyFeatureReducer,
     propertyAmenities: propertyAmenityReducer,
-    propertyReviews: propertyReviewsReducer,
-    propertyVisits : propertyVisitsReducer,
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY ENGAGEMENT
+    |--------------------------------------------------------------------------
+    */
+    propertyReviews: propertyReviewReducer,
+    propertyVisits: propertyVisitReducer,
     propertyFavorites: propertyFavoriteReducer,
     propertyAnalytics: propertyAnalyticsReducer,
-
-
-
   },
 
   /*
@@ -100,8 +147,8 @@ export const store = configureStore({
   |--------------------------------------------------------------------------
   | Redux Toolkit already includes:
   | - redux-thunk
-  | - serializable checks
-  | - immutable checks
+  | - Serializable State Invariant Middleware
+  | - Immutable State Invariant Middleware
   |--------------------------------------------------------------------------
   */
   middleware: (getDefaultMiddleware) =>
@@ -116,7 +163,14 @@ export const store = configureStore({
   | REDUX DEVTOOLS
   |--------------------------------------------------------------------------
   */
-  devTools: import.meta.env.MODE !== "production",
+  devTools:
+    import.meta.env.MODE !== "production",
 });
+
+/*
+|--------------------------------------------------------------------------
+| DEFAULT EXPORT
+|--------------------------------------------------------------------------
+*/
 
 export default store;
