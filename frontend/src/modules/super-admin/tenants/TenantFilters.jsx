@@ -6,9 +6,7 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-
-
+import { useEffect, useMemo, useState } from "react";
 
 const TenantFilters = ({
   filters = {},
@@ -19,30 +17,51 @@ const TenantFilters = ({
 }) => {
   /*
   |--------------------------------------------------------------------------
-  | LOCAL SEARCH STATE
+  | LOCAL STATE
   |--------------------------------------------------------------------------
   */
 
-  const [search, setSearch] = useState(
-    filters?.search || ""
-  );
-
-  const [showAdvanced, setShowAdvanced] =
-    useState(false);
+  const [search, setSearch] = useState(filters?.search ?? "");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   /*
   |--------------------------------------------------------------------------
-  | SYNC SEARCH WITH REDUX FILTERS
+  | SYNC SEARCH WITH PARENT / REDUX FILTERS
   |--------------------------------------------------------------------------
   */
 
   useEffect(() => {
-    setSearch(filters?.search || "");
+    setSearch(filters?.search ?? "");
   }, [filters?.search]);
 
   /*
   |--------------------------------------------------------------------------
-  | SEARCH HANDLER
+  | HELPERS
+  |--------------------------------------------------------------------------
+  */
+
+  const normalizeBoolean = (value) => {
+    if (value === true || value === false) {
+      return value;
+    }
+
+    if (value === "true" || value === "1" || value === 1) {
+      return true;
+    }
+
+    if (value === "false" || value === "0" || value === 0) {
+      return false;
+    }
+
+    return null;
+  };
+
+  const isActive = normalizeBoolean(filters?.is_active);
+  const isVerified = normalizeBoolean(filters?.is_verified);
+
+  /*
+  |--------------------------------------------------------------------------
+  | SEARCH
   |--------------------------------------------------------------------------
   */
 
@@ -53,20 +72,18 @@ const TenantFilters = ({
 
     if (typeof onSearch === "function") {
       onSearch(value);
+    } else {
+      handleFilterChange("search", value);
     }
   };
-
-  /*
-  |--------------------------------------------------------------------------
-  | CLEAR SEARCH
-  |--------------------------------------------------------------------------
-  */
 
   const handleClearSearch = () => {
     setSearch("");
 
     if (typeof onSearch === "function") {
       onSearch("");
+    } else {
+      handleFilterChange("search", "");
     }
   };
 
@@ -76,10 +93,7 @@ const TenantFilters = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleFilterChange = (
-    field,
-    value
-  ) => {
+  const handleFilterChange = (field, value) => {
     if (typeof onChange !== "function") {
       return;
     }
@@ -92,7 +106,7 @@ const TenantFilters = ({
 
   /*
   |--------------------------------------------------------------------------
-  | STATUS CHANGE
+  | STATUS
   |--------------------------------------------------------------------------
   */
 
@@ -104,69 +118,35 @@ const TenantFilters = ({
       return;
     }
 
-    handleFilterChange(
-      "status",
-      value
-    );
+    handleFilterChange("status", value);
   };
 
   /*
   |--------------------------------------------------------------------------
-  | BOOLEAN VALUE
+  | ACCOUNT STATUS
   |--------------------------------------------------------------------------
-  */
-
-  const getBooleanValue = (value) => {
-    if (
-      value === true ||
-      value === false
-    ) {
-      return value;
-    }
-
-    if (
-      value === "true" ||
-      value === "1"
-    ) {
-      return true;
-    }
-
-    if (
-      value === "false" ||
-      value === "0"
-    ) {
-      return false;
-    }
-
-    return null;
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | ACTIVE FILTER
-  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | `undefined` is used for "All Accounts".
+  | This prevents the frontend from sending `is_active=undefined`
+  | as an actual filter value.
+  |
   */
 
   const handleActiveChange = (event) => {
     const value = event.target.value;
 
     if (value === "") {
-      handleFilterChange(
-        "is_active",
-        undefined
-      );
+      handleFilterChange("is_active", undefined);
       return;
     }
 
-    handleFilterChange(
-      "is_active",
-      value === "true"
-    );
+    handleFilterChange("is_active", value === "true");
   };
 
   /*
   |--------------------------------------------------------------------------
-  | VERIFIED FILTER
+  | VERIFICATION
   |--------------------------------------------------------------------------
   */
 
@@ -174,43 +154,39 @@ const TenantFilters = ({
     const value = event.target.value;
 
     if (value === "") {
-      handleFilterChange(
-        "is_verified",
-        undefined
-      );
+      handleFilterChange("is_verified", undefined);
       return;
     }
 
-    handleFilterChange(
-      "is_verified",
-      value === "true"
-    );
+    handleFilterChange("is_verified", value === "true");
   };
 
   /*
   |--------------------------------------------------------------------------
-  | RESET FILTERS
+  | RESET
   |--------------------------------------------------------------------------
   */
 
   const handleReset = () => {
     setSearch("");
 
+    const resetFilters = {
+      search: "",
+      status: "",
+      is_active: undefined,
+      is_verified: undefined,
+      gender: "",
+      country: "",
+      county: "",
+      city: "",
+      sort_by: "created_at",
+      sort_direction: "desc",
+      per_page: 15,
+      page: 1,
+    };
+
     if (typeof onChange === "function") {
-      onChange({
-        search: "",
-        status: "",
-        is_active: undefined,
-        is_verified: undefined,
-        gender: "",
-        country: "",
-        county: "",
-        city: "",
-        sort_by: "created_at",
-        sort_direction: "desc",
-        per_page: 15,
-        page: 1,
-      });
+      onChange(resetFilters);
     }
 
     if (typeof onSearch === "function") {
@@ -224,32 +200,58 @@ const TenantFilters = ({
   |--------------------------------------------------------------------------
   */
 
-  const activeFilterCount = [
+  const activeFilterCount = useMemo(() => {
+    return [
+      filters?.status,
+      isActive !== null ? isActive : null,
+      isVerified !== null ? isVerified : null,
+      filters?.gender,
+      filters?.country,
+      filters?.county,
+      filters?.city,
+      filters?.sort_by && filters.sort_by !== "created_at"
+        ? filters.sort_by
+        : null,
+      filters?.sort_direction && filters.sort_direction !== "desc"
+        ? filters.sort_direction
+        : null,
+    ].filter(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        value !== ""
+    ).length;
+  }, [
     filters?.status,
-    getBooleanValue(filters?.is_active) !== null
-      ? filters?.is_active
-      : null,
-    getBooleanValue(filters?.is_verified) !== null
-      ? filters?.is_verified
-      : null,
     filters?.gender,
     filters?.country,
     filters?.county,
     filters?.city,
-    filters?.sort_by &&
-      filters?.sort_by !== "created_at"
-      ? filters?.sort_by
-      : null,
-  ].filter(
-    (value) =>
-      value !== undefined &&
-      value !== null &&
-      value !== ""
-  ).length;
+    filters?.sort_by,
+    filters?.sort_direction,
+    isActive,
+    isVerified,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
-  | SELECT STYLES
+  | FILTER SUMMARY VISIBILITY
+  |--------------------------------------------------------------------------
+  */
+
+  const hasActiveFilters =
+    Boolean(search) ||
+    Boolean(filters?.status) ||
+    isActive !== null ||
+    isVerified !== null ||
+    Boolean(filters?.gender) ||
+    Boolean(filters?.country) ||
+    Boolean(filters?.county) ||
+    Boolean(filters?.city);
+
+  /*
+  |--------------------------------------------------------------------------
+  | STYLES
   |--------------------------------------------------------------------------
   */
 
@@ -271,13 +273,10 @@ const TenantFilters = ({
     focus:border-primary-500
     focus:ring-2
     focus:ring-primary-500/20
+    disabled:cursor-not-allowed
+    disabled:bg-gray-50
+    disabled:text-gray-400
   `;
-
-  /*
-  |--------------------------------------------------------------------------
-  | INPUT STYLES
-  |--------------------------------------------------------------------------
-  */
 
   const inputClassName = `
     w-full
@@ -296,6 +295,9 @@ const TenantFilters = ({
     focus:border-primary-500
     focus:ring-2
     focus:ring-primary-500/20
+    disabled:cursor-not-allowed
+    disabled:bg-gray-50
+    disabled:text-gray-400
   `;
 
   /*
@@ -311,9 +313,9 @@ const TenantFilters = ({
       ================================================================= */}
 
       <div className="flex flex-col gap-4 border-b border-gray-200 p-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* --------------------------------------------------------------
+        {/* ==============================================================
             SEARCH
-        -------------------------------------------------------------- */}
+        ============================================================== */}
 
         <div className="relative w-full lg:max-w-md">
           <Search
@@ -327,6 +329,7 @@ const TenantFilters = ({
               -translate-y-1/2
               text-gray-400
             "
+            aria-hidden="true"
           />
 
           <input
@@ -337,12 +340,14 @@ const TenantFilters = ({
             className={`${inputClassName} pl-10 pr-10`}
             disabled={loading}
             aria-label="Search tenants"
+            autoComplete="off"
           />
 
           {search && (
             <button
               type="button"
               onClick={handleClearSearch}
+              disabled={loading}
               className="
                 absolute
                 right-3
@@ -354,6 +359,8 @@ const TenantFilters = ({
                 transition
                 hover:bg-gray-100
                 hover:text-gray-600
+                disabled:cursor-not-allowed
+                disabled:opacity-50
               "
               aria-label="Clear search"
             >
@@ -362,40 +369,26 @@ const TenantFilters = ({
           )}
         </div>
 
-        {/* --------------------------------------------------------------
+        {/* ==============================================================
             QUICK FILTERS / ACTIONS
-        -------------------------------------------------------------- */}
+        ============================================================== */}
 
         <div className="flex flex-wrap items-center gap-2">
           {/* STATUS */}
 
           <div className="relative min-w-[150px]">
             <select
-              value={filters?.status || ""}
+              value={filters?.status ?? ""}
               onChange={handleStatusChange}
               disabled={loading}
               className={selectClassName}
-              aria-label="Filter by status"
+              aria-label="Filter tenants by status"
             >
-              <option value="">
-                All Statuses
-              </option>
-
-              <option value="active">
-                Active
-              </option>
-
-              <option value="pending">
-                Pending
-              </option>
-
-              <option value="inactive">
-                Inactive
-              </option>
-
-              <option value="blacklisted">
-                Blacklisted
-              </option>
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="pending">Pending</option>
+              <option value="inactive">Inactive</option>
+              <option value="blacklisted">Blacklisted</option>
             </select>
 
             <ChevronDown
@@ -409,18 +402,16 @@ const TenantFilters = ({
                 -translate-y-1/2
                 text-gray-400
               "
+              aria-hidden="true"
             />
           </div>
 
-          {/* ADVANCED FILTER BUTTON */}
+          {/* ADVANCED FILTERS */}
 
           <button
             type="button"
-            onClick={() =>
-              setShowAdvanced(
-                (previous) => !previous
-              )
-            }
+            onClick={() => setShowAdvanced((previous) => !previous)}
+            disabled={loading}
             className={`
               inline-flex
               items-center
@@ -437,21 +428,42 @@ const TenantFilters = ({
               focus:outline-none
               focus:ring-2
               focus:ring-primary-500/20
+              disabled:cursor-not-allowed
+              disabled:opacity-50
               ${showAdvanced
                 ? "border-primary-300 bg-primary-50 text-primary-700"
                 : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
               }
             `}
             aria-expanded={showAdvanced}
+            aria-controls="tenant-advanced-filters"
           >
-            <SlidersHorizontal className="h-4 w-4" />
+            <SlidersHorizontal
+              className="h-4 w-4"
+              aria-hidden="true"
+            />
 
             <span className="hidden sm:inline">
               Filters
             </span>
 
             {activeFilterCount > 0 && (
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-xs font-semibold text-white">
+              <span
+                className="
+                  flex
+                  h-5
+                  min-w-5
+                  items-center
+                  justify-center
+                  rounded-full
+                  bg-primary-600
+                  px-1.5
+                  text-xs
+                  font-semibold
+                  text-white
+                "
+                aria-label={`${activeFilterCount} active filters`}
+              >
                 {activeFilterCount}
               </span>
             )}
@@ -459,8 +471,7 @@ const TenantFilters = ({
 
           {/* RESET */}
 
-          {activeFilterCount > 0 ||
-            search ? (
+          {(activeFilterCount > 0 || search) && (
             <button
               type="button"
               onClick={handleReset}
@@ -482,17 +493,24 @@ const TenantFilters = ({
                 shadow-sm
                 transition
                 hover:bg-gray-50
+                focus:outline-none
+                focus:ring-2
+                focus:ring-primary-500/20
                 disabled:cursor-not-allowed
                 disabled:opacity-50
               "
+              aria-label="Reset all tenant filters"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw
+                className="h-4 w-4"
+                aria-hidden="true"
+              />
 
               <span className="hidden sm:inline">
                 Reset
               </span>
             </button>
-          ) : null}
+          )}
         </div>
       </div>
 
@@ -501,11 +519,14 @@ const TenantFilters = ({
       ================================================================= */}
 
       {showAdvanced && (
-        <div className="border-b border-gray-200 bg-gray-50/70 p-4">
+        <div
+          id="tenant-advanced-filters"
+          className="border-b border-gray-200 bg-gray-50/70 p-4"
+        >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {/* ----------------------------------------------------------
-                ACTIVE STATUS
-            ---------------------------------------------------------- */}
+            {/* ==========================================================
+                ACCOUNT STATUS
+            ========================================================== */}
 
             <div>
               <label
@@ -518,33 +539,14 @@ const TenantFilters = ({
               <div className="relative">
                 <select
                   id="tenant-is-active"
-                  value={
-                    filters?.is_active ===
-                      undefined ||
-                      filters?.is_active ===
-                      null
-                      ? ""
-                      : String(
-                        filters.is_active
-                      )
-                  }
-                  onChange={
-                    handleActiveChange
-                  }
+                  value={isActive === null ? "" : String(isActive)}
+                  onChange={handleActiveChange}
                   disabled={loading}
                   className={selectClassName}
                 >
-                  <option value="">
-                    All Accounts
-                  </option>
-
-                  <option value="true">
-                    Active Accounts
-                  </option>
-
-                  <option value="false">
-                    Inactive Accounts
-                  </option>
+                  <option value="">All Accounts</option>
+                  <option value="true">Active Accounts</option>
+                  <option value="false">Inactive Accounts</option>
                 </select>
 
                 <ChevronDown
@@ -558,13 +560,14 @@ const TenantFilters = ({
                     -translate-y-1/2
                     text-gray-400
                   "
+                  aria-hidden="true"
                 />
               </div>
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 VERIFICATION
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -577,33 +580,14 @@ const TenantFilters = ({
               <div className="relative">
                 <select
                   id="tenant-is-verified"
-                  value={
-                    filters?.is_verified ===
-                      undefined ||
-                      filters?.is_verified ===
-                      null
-                      ? ""
-                      : String(
-                        filters.is_verified
-                      )
-                  }
-                  onChange={
-                    handleVerifiedChange
-                  }
+                  value={isVerified === null ? "" : String(isVerified)}
+                  onChange={handleVerifiedChange}
                   disabled={loading}
                   className={selectClassName}
                 >
-                  <option value="">
-                    All Profiles
-                  </option>
-
-                  <option value="true">
-                    Verified
-                  </option>
-
-                  <option value="false">
-                    Unverified
-                  </option>
+                  <option value="">All Profiles</option>
+                  <option value="true">Verified</option>
+                  <option value="false">Unverified</option>
                 </select>
 
                 <ChevronDown
@@ -617,13 +601,14 @@ const TenantFilters = ({
                     -translate-y-1/2
                     text-gray-400
                   "
+                  aria-hidden="true"
                 />
               </div>
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 GENDER
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -636,9 +621,7 @@ const TenantFilters = ({
               <div className="relative">
                 <select
                   id="tenant-gender"
-                  value={
-                    filters?.gender || ""
-                  }
+                  value={filters?.gender ?? ""}
                   onChange={(event) =>
                     handleFilterChange(
                       "gender",
@@ -648,21 +631,10 @@ const TenantFilters = ({
                   disabled={loading}
                   className={selectClassName}
                 >
-                  <option value="">
-                    All Genders
-                  </option>
-
-                  <option value="male">
-                    Male
-                  </option>
-
-                  <option value="female">
-                    Female
-                  </option>
-
-                  <option value="other">
-                    Other
-                  </option>
+                  <option value="">All Genders</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
                 </select>
 
                 <ChevronDown
@@ -676,13 +648,14 @@ const TenantFilters = ({
                     -translate-y-1/2
                     text-gray-400
                   "
+                  aria-hidden="true"
                 />
               </div>
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 COUNTRY
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -695,9 +668,7 @@ const TenantFilters = ({
               <input
                 id="tenant-country"
                 type="text"
-                value={
-                  filters?.country || ""
-                }
+                value={filters?.country ?? ""}
                 onChange={(event) =>
                   handleFilterChange(
                     "country",
@@ -707,12 +678,13 @@ const TenantFilters = ({
                 placeholder="e.g. Kenya"
                 disabled={loading}
                 className={inputClassName}
+                autoComplete="country-name"
               />
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 COUNTY
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -725,9 +697,7 @@ const TenantFilters = ({
               <input
                 id="tenant-county"
                 type="text"
-                value={
-                  filters?.county || ""
-                }
+                value={filters?.county ?? ""}
                 onChange={(event) =>
                   handleFilterChange(
                     "county",
@@ -737,12 +707,13 @@ const TenantFilters = ({
                 placeholder="e.g. Nairobi"
                 disabled={loading}
                 className={inputClassName}
+                autoComplete="address-level1"
               />
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 CITY
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -755,9 +726,7 @@ const TenantFilters = ({
               <input
                 id="tenant-city"
                 type="text"
-                value={
-                  filters?.city || ""
-                }
+                value={filters?.city ?? ""}
                 onChange={(event) =>
                   handleFilterChange(
                     "city",
@@ -767,12 +736,13 @@ const TenantFilters = ({
                 placeholder="e.g. Nairobi"
                 disabled={loading}
                 className={inputClassName}
+                autoComplete="address-level2"
               />
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 SORT BY
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -785,10 +755,7 @@ const TenantFilters = ({
               <div className="relative">
                 <select
                   id="tenant-sort-by"
-                  value={
-                    filters?.sort_by ||
-                    "created_at"
-                  }
+                  value={filters?.sort_by ?? "created_at"}
                   onChange={(event) =>
                     handleFilterChange(
                       "sort_by",
@@ -801,23 +768,18 @@ const TenantFilters = ({
                   <option value="created_at">
                     Date Created
                   </option>
-
                   <option value="updated_at">
                     Last Updated
                   </option>
-
                   <option value="first_name">
                     First Name
                   </option>
-
                   <option value="last_name">
                     Last Name
                   </option>
-
                   <option value="tenant_number">
                     Tenant Number
                   </option>
-
                   <option value="status">
                     Status
                   </option>
@@ -834,13 +796,14 @@ const TenantFilters = ({
                     -translate-y-1/2
                     text-gray-400
                   "
+                  aria-hidden="true"
                 />
               </div>
             </div>
 
-            {/* ----------------------------------------------------------
+            {/* ==========================================================
                 SORT DIRECTION
-            ---------------------------------------------------------- */}
+            ========================================================== */}
 
             <div>
               <label
@@ -853,10 +816,7 @@ const TenantFilters = ({
               <div className="relative">
                 <select
                   id="tenant-sort-direction"
-                  value={
-                    filters?.sort_direction ||
-                    "desc"
-                  }
+                  value={filters?.sort_direction ?? "desc"}
                   onChange={(event) =>
                     handleFilterChange(
                       "sort_direction",
@@ -866,13 +826,8 @@ const TenantFilters = ({
                   disabled={loading}
                   className={selectClassName}
                 >
-                  <option value="desc">
-                    Descending
-                  </option>
-
-                  <option value="asc">
-                    Ascending
-                  </option>
+                  <option value="desc">Descending</option>
+                  <option value="asc">Ascending</option>
                 </select>
 
                 <ChevronDown
@@ -886,6 +841,7 @@ const TenantFilters = ({
                     -translate-y-1/2
                     text-gray-400
                   "
+                  aria-hidden="true"
                 />
               </div>
             </div>
@@ -897,196 +853,183 @@ const TenantFilters = ({
           FILTER SUMMARY
       ================================================================= */}
 
-      {(search ||
-        filters?.status ||
-        filters?.is_active !==
-        undefined ||
-        filters?.is_verified !==
-        undefined ||
-        filters?.gender ||
-        filters?.country ||
-        filters?.county ||
-        filters?.city) && (
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-            <div className="mr-1 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-              <Filter className="h-3.5 w-3.5" />
+      {hasActiveFilters && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <div className="mr-1 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+            <Filter
+              className="h-3.5 w-3.5"
+              aria-hidden="true"
+            />
 
-              Active filters:
-            </div>
-
-            {search && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                Search: {search}
-
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  className="rounded-full hover:bg-blue-100"
-                  aria-label="Remove search filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters?.status && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-1 text-xs font-medium capitalize text-purple-700">
-                Status:{" "}
-                {filters.status}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleFilterChange(
-                      "status",
-                      ""
-                    )
-                  }
-                  className="rounded-full hover:bg-purple-100"
-                  aria-label="Remove status filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters?.is_active !==
-              undefined &&
-              filters?.is_active !==
-              null && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-                  Account:{" "}
-                  {filters.is_active
-                    ? "Active"
-                    : "Inactive"}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleFilterChange(
-                        "is_active",
-                        undefined
-                      )
-                    }
-                    className="rounded-full hover:bg-green-100"
-                    aria-label="Remove account status filter"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-
-            {filters?.is_verified !==
-              undefined &&
-              filters?.is_verified !==
-              null && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                  Verification:{" "}
-                  {filters.is_verified
-                    ? "Verified"
-                    : "Unverified"}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleFilterChange(
-                        "is_verified",
-                        undefined
-                      )
-                    }
-                    className="rounded-full hover:bg-emerald-100"
-                    aria-label="Remove verification filter"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-
-            {filters?.gender && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium capitalize text-pink-700">
-                Gender:{" "}
-                {filters.gender}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleFilterChange(
-                      "gender",
-                      ""
-                    )
-                  }
-                  className="rounded-full hover:bg-pink-100"
-                  aria-label="Remove gender filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters?.country && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
-                Country:{" "}
-                {filters.country}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleFilterChange(
-                      "country",
-                      ""
-                    )
-                  }
-                  className="rounded-full hover:bg-gray-200"
-                  aria-label="Remove country filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters?.county && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
-                County:{" "}
-                {filters.county}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleFilterChange(
-                      "county",
-                      ""
-                    )
-                  }
-                  className="rounded-full hover:bg-gray-200"
-                  aria-label="Remove county filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters?.city && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
-                City:{" "}
-                {filters.city}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleFilterChange(
-                      "city",
-                      ""
-                    )
-                  }
-                  className="rounded-full hover:bg-gray-200"
-                  aria-label="Remove city filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
+            Active filters:
           </div>
-        )}
+
+          {/* SEARCH */}
+
+          {search && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+              Search: {search}
+
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                disabled={loading}
+                className="rounded-full hover:bg-blue-100 disabled:opacity-50"
+                aria-label="Remove search filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* STATUS */}
+
+          {filters?.status && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-1 text-xs font-medium capitalize text-purple-700">
+              Status: {filters.status}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange("status", "")
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-purple-100 disabled:opacity-50"
+                aria-label="Remove status filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* ACCOUNT STATUS */}
+
+          {isActive !== null && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+              Account: {isActive ? "Active" : "Inactive"}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange(
+                    "is_active",
+                    undefined
+                  )
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-green-100 disabled:opacity-50"
+                aria-label="Remove account status filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* VERIFICATION */}
+
+          {isVerified !== null && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+              Verification:{" "}
+              {isVerified ? "Verified" : "Unverified"}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange(
+                    "is_verified",
+                    undefined
+                  )
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-emerald-100 disabled:opacity-50"
+                aria-label="Remove verification filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* GENDER */}
+
+          {filters?.gender && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-xs font-medium capitalize text-pink-700">
+              Gender: {filters.gender}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange("gender", "")
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-pink-100 disabled:opacity-50"
+                aria-label="Remove gender filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* COUNTRY */}
+
+          {filters?.country && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+              Country: {filters.country}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange("country", "")
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-gray-200 disabled:opacity-50"
+                aria-label="Remove country filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* COUNTY */}
+
+          {filters?.county && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+              County: {filters.county}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange("county", "")
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-gray-200 disabled:opacity-50"
+                aria-label="Remove county filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
+          {/* CITY */}
+
+          {filters?.city && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+              City: {filters.city}
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleFilterChange("city", "")
+                }
+                disabled={loading}
+                className="rounded-full hover:bg-gray-200 disabled:opacity-50"
+                aria-label="Remove city filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 };
