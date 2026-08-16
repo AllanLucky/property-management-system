@@ -126,6 +126,16 @@ use App\Repositories\Eloquent\DashboardRepository;
 use App\Repositories\Interfaces\DashboardRepositoryInterface;
 
 
+/*
+|--------------------------------------------------------------------------
+| TENANT REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\TenantRepository;
+use App\Repositories\Interfaces\TenantRepositoryInterface;
+
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -301,6 +311,18 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             DashboardRepositoryInterface::class,
             DashboardRepository::class
+        );
+
+
+        
+         /*
+        |--------------------------------------------------------------------------
+        | TENANT
+        |--------------------------------------------------------------------------
+        */
+        $this->app->bind(
+            TenantRepositoryInterface::class,
+            TenantRepository::class
         );
     }
 
