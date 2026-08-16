@@ -3,12 +3,24 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const TenantHeader = ({
-  onCreate,
   onRefresh,
   loading = false,
 }) => {
+  const navigate = useNavigate();
+
+  /*
+  |--------------------------------------------------------------------------
+  | NAVIGATE TO CREATE TENANT PAGE
+  |--------------------------------------------------------------------------
+  */
+
+  const handleCreate = () => {
+    navigate("/super-admin/tenants/create");
+  };
+
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       {/*
@@ -93,7 +105,7 @@ const TenantHeader = ({
 
         <button
           type="button"
-          onClick={onCreate}
+          onClick={handleCreate}
           className="
             inline-flex
             items-center
