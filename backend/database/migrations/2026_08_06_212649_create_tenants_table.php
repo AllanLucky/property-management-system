@@ -13,27 +13,44 @@ return new class extends Migration
     {
         Schema::create('tenants', function (Blueprint $table) {
 
+            /*
+            |--------------------------------------------------------------------------
+            | Primary Key
+            |--------------------------------------------------------------------------
+            */
             $table->id();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant Identification
+            |--------------------------------------------------------------------------
+            */
+            $table->string('tenant_number')
+                ->unique();
 
 
             /*
             |--------------------------------------------------------------------------
             | User Relationship
             |--------------------------------------------------------------------------
+            |
+            | A tenant can optionally have a corresponding application user.
+            |
+            | Example:
+            |
+            | users.id = 25
+            | tenants.user_id = 25
+            |
+            | The relationship is nullable because a tenant can exist in the
+            | property management system without having a login account.
+            |
             */
             $table->foreignId('user_id')
                 ->nullable()
+                ->unique()
                 ->constrained('users')
                 ->nullOnDelete();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Number
-            |--------------------------------------------------------------------------
-            */
-            $table->string('tenant_number')
-                ->unique();
 
 
             /*
@@ -48,24 +65,22 @@ return new class extends Migration
             $table->string('other_names')
                 ->nullable();
 
-
             $table->string('email')
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('phone')
                 ->unique();
 
-
             $table->date('date_of_birth')
                 ->nullable();
-
 
             $table->enum('gender', [
                 'male',
                 'female',
-                'other'
+                'other',
             ])
-            ->nullable();
+                ->nullable();
 
 
             /*
@@ -74,10 +89,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
             $table->string('id_number')
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('passport_number')
-                ->nullable();
+                ->nullable()
+                ->index();
 
 
             /*
@@ -97,7 +114,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Address
+            | Address Information
             |--------------------------------------------------------------------------
             */
             $table->string('country')
@@ -111,7 +128,6 @@ return new class extends Migration
 
             $table->string('postal_code')
                 ->nullable();
-
 
             $table->text('address')
                 ->nullable();
@@ -134,7 +150,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Documents
+            | Tenant Documents
             |--------------------------------------------------------------------------
             */
             $table->string('photo')
@@ -143,13 +159,11 @@ return new class extends Migration
             $table->string('photo_public_id')
                 ->nullable();
 
-
             $table->string('id_front')
                 ->nullable();
 
             $table->string('id_front_public_id')
                 ->nullable();
-
 
             $table->string('id_back')
                 ->nullable();
@@ -172,20 +186,30 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Status
+            | Tenant Status
             |--------------------------------------------------------------------------
+            |
+            | active
+            |     Tenant is currently active.
+            |
+            | inactive
+            |     Tenant is no longer active.
+            |
+            | blacklisted
+            |     Tenant is restricted from the system.
+            |
+            | pending
+            |     Tenant is awaiting approval or verification.
+            |
             */
             $table->enum('status', [
                 'active',
                 'inactive',
                 'blacklisted',
-                'pending'
+                'pending',
             ])
-            ->default('pending');
-
-
-            $table->boolean('is_active')
-                ->default(true);
+                ->default('pending')
+                ->index();
 
 
             /*
@@ -199,7 +223,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Tracking
+            | Timestamps & Soft Deletes
             |--------------------------------------------------------------------------
             */
             $table->timestamps();
@@ -209,21 +233,13 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Indexes
+            | Composite Indexes
             |--------------------------------------------------------------------------
             */
-            $table->index('tenant_number');
-
-            $table->index('status');
-
-            $table->index('phone');
-
             $table->index([
                 'first_name',
-                'last_name'
+                'last_name',
             ]);
-
-            $table->index('user_id');
 
         });
     }
