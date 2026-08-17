@@ -15,7 +15,11 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 /*
 |--------------------------------------------------------------------------
@@ -80,33 +84,20 @@ const formatDateForInput = (value) => {
 
   const stringValue = String(value);
 
-  if (
-    /^\d{4}-\d{2}-\d{2}$/.test(
-      stringValue
-    )
-  ) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
     return stringValue;
   }
 
   const date = new Date(value);
 
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return "";
   }
 
-  return date
-    .toISOString()
-    .split("T")[0];
+  return date.toISOString().split("T")[0];
 };
 
-const getValue = (
-  source,
-  ...keys
-) => {
+const getValue = (source, ...keys) => {
   for (const key of keys) {
     if (
       source?.[key] !== undefined &&
@@ -119,15 +110,46 @@ const getValue = (
   return "";
 };
 
+const normalizeString = (value) => {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return "";
+  }
+
+  return String(value).trim();
+};
+
 /*
 |--------------------------------------------------------------------------
 | NORMALIZE TENANT
 |--------------------------------------------------------------------------
 */
 
-const normalizeTenant = (
-  tenant = {}
-) => {
+const normalizeTenant = (tenant = {}) => {
+  /*
+  |--------------------------------------------------------------------------
+  | Support both:
+  |
+  | emergency_contact_name
+  |
+  | and:
+  |
+  | emergency_contact: {
+  |   name,
+  |   phone,
+  |   relationship
+  | }
+  |--------------------------------------------------------------------------
+  */
+
+  const emergencyContact =
+    tenant?.emergency_contact &&
+    typeof tenant.emergency_contact === "object"
+      ? tenant.emergency_contact
+      : {};
+
   return {
     first_name: getValue(
       tenant,
@@ -169,14 +191,13 @@ const normalizeTenant = (
       "gender"
     ),
 
-    date_of_birth:
-      formatDateForInput(
-        getValue(
-          tenant,
-          "date_of_birth",
-          "dob"
-        )
-      ),
+    date_of_birth: formatDateForInput(
+      getValue(
+        tenant,
+        "date_of_birth",
+        "dob"
+      )
+    ),
 
     nationality:
       getValue(
@@ -230,22 +251,45 @@ const normalizeTenant = (
       "street_address"
     ),
 
+    /*
+    |--------------------------------------------------------------------------
+    | EMERGENCY CONTACT
+    |--------------------------------------------------------------------------
+    */
+
     emergency_contact_name:
       getValue(
         tenant,
         "emergency_contact_name"
+      ) ||
+      getValue(
+        emergencyContact,
+        "name",
+        "full_name",
+        "contact_name"
       ),
 
     emergency_contact_phone:
       getValue(
         tenant,
         "emergency_contact_phone"
+      ) ||
+      getValue(
+        emergencyContact,
+        "phone",
+        "phone_number",
+        "contact_phone"
       ),
 
     emergency_contact_relationship:
       getValue(
         tenant,
         "emergency_contact_relationship"
+      ) ||
+      getValue(
+        emergencyContact,
+        "relationship",
+        "relation"
       ),
 
     occupation: getValue(
@@ -267,16 +311,14 @@ const normalizeTenant = (
       ) || "pending",
 
     is_active:
-      tenant?.is_active !==
-      undefined
+      tenant?.is_active !== undefined
         ? normalizeBoolean(
             tenant.is_active
           )
         : true,
 
     is_verified:
-      tenant?.is_verified !==
-      undefined
+      tenant?.is_verified !== undefined
         ? normalizeBoolean(
             tenant.is_verified
           )
@@ -286,6 +328,26 @@ const normalizeTenant = (
       tenant,
       "notes"
     ),
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| BUILD INITIAL FORM
+|--------------------------------------------------------------------------
+*/
+
+const buildInitialForm = (
+  tenant,
+  isEdit,
+  initialValues
+) => {
+  return {
+    ...DEFAULT_FORM,
+    ...(isEdit
+      ? normalizeTenant(tenant)
+      : {}),
+    ...(initialValues || {}),
   };
 };
 
@@ -321,26 +383,21 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const [form, setForm] = useState(
-    () => ({
-      ...DEFAULT_FORM,
-      ...(isEdit
-        ? normalizeTenant(
-            tenant
-          )
-        : {}),
-      ...initialValues,
-    })
+  const [form, setForm] = useState(() =>
+    buildInitialForm(
+      tenant,
+      isEdit,
+      initialValues
+    )
   );
 
   /*
   |--------------------------------------------------------------------------
-  | VALIDATION
+  | VALIDATION ERRORS
   |--------------------------------------------------------------------------
   */
 
-  const [errors, setErrors] =
-    useState({});
+  const [errors, setErrors] = useState({});
 
   /*
   |--------------------------------------------------------------------------
@@ -348,27 +405,29 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const [
-    serverError,
-    setServerError,
-  ] = useState("");
+  const [serverError, setServerError] =
+    useState("");
 
   /*
   |--------------------------------------------------------------------------
   | RESET FORM WHEN TENANT CHANGES
   |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | Only reset when the actual tenant ID or mode changes.
+  |
+  | Do not put unstable objects/functions here.
+  |
   */
 
   useEffect(() => {
-    setForm({
-      ...DEFAULT_FORM,
-      ...(isEdit
-        ? normalizeTenant(
-            tenant
-          )
-        : {}),
-      ...initialValues,
-    });
+    setForm(
+      buildInitialForm(
+        tenant,
+        isEdit,
+        initialValues
+      )
+    );
 
     setErrors({});
     setServerError("");
@@ -385,21 +444,23 @@ const TenantForm = ({
 
   useEffect(() => {
     if (!error) {
-      setServerError("");
       return;
     }
 
-    if (
-      typeof error === "string"
-    ) {
+    if (typeof error === "string") {
       setServerError(error);
       return;
     }
 
-    setServerError(
+    const message =
       error?.message ||
-        error?.error ||
-        "Something went wrong. Please check the form and try again."
+      error?.error ||
+      "Something went wrong. Please check the form and try again.";
+
+    setServerError(
+      typeof message === "string"
+        ? message
+        : "Something went wrong. Please check the form and try again."
     );
   }, [error]);
 
@@ -409,9 +470,7 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleChange = (
-    event
-  ) => {
+  const handleChange = (event) => {
     const {
       name,
       value,
@@ -474,6 +533,8 @@ const TenantForm = ({
 
       return next;
     });
+
+    setServerError("");
   };
 
   /*
@@ -486,29 +547,44 @@ const TenantForm = ({
     const nextErrors = {};
 
     const firstName =
-      String(
-        form.first_name || ""
-      ).trim();
+      normalizeString(
+        form.first_name
+      );
 
     const lastName =
-      String(
-        form.last_name || ""
-      ).trim();
+      normalizeString(
+        form.last_name
+      );
 
     const email =
-      String(
-        form.email || ""
-      ).trim();
+      normalizeString(
+        form.email
+      );
 
     const phone =
-      String(
-        form.phone || ""
-      ).trim();
+      normalizeString(
+        form.phone
+      );
+
+    const emergencyName =
+      normalizeString(
+        form.emergency_contact_name
+      );
+
+    const emergencyPhone =
+      normalizeString(
+        form.emergency_contact_phone
+      );
+
+    const emergencyRelationship =
+      normalizeString(
+        form.emergency_contact_relationship
+      );
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | FIRST NAME
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (!firstName) {
@@ -522,9 +598,9 @@ const TenantForm = ({
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | LAST NAME
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (!lastName) {
@@ -538,9 +614,9 @@ const TenantForm = ({
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | EMAIL
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (!email) {
@@ -556,9 +632,9 @@ const TenantForm = ({
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | PHONE
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (!phone) {
@@ -572,23 +648,27 @@ const TenantForm = ({
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | ID / PASSPORT
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (
-      !form.id_number &&
-      !form.passport_number
+      !normalizeString(
+        form.id_number
+      ) &&
+      !normalizeString(
+        form.passport_number
+      )
     ) {
       nextErrors.id_number =
         "National ID or passport number is required.";
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | GENDER
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (!form.gender) {
@@ -597,9 +677,9 @@ const TenantForm = ({
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | STATUS
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (!form.status) {
@@ -608,33 +688,49 @@ const TenantForm = ({
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | EMERGENCY CONTACT
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
+    |
+    | The backend treats emergency contact as a complete group.
+    |
+    | Therefore:
+    |
+    | 0 fields = valid
+    | 3 fields = valid
+    | 1 or 2 fields = invalid
+    |
     */
 
-    if (
-      form.emergency_contact_name &&
-      !form.emergency_contact_phone
-    ) {
-      nextErrors.emergency_contact_phone =
-        "Emergency contact phone is required.";
-    }
+    const hasEmergencyContact =
+      Boolean(
+        emergencyName ||
+        emergencyPhone ||
+        emergencyRelationship
+      );
 
-    if (
-      form.emergency_contact_phone &&
-      !form.emergency_contact_name
-    ) {
-      nextErrors.emergency_contact_name =
-        "Emergency contact name is required.";
+    if (hasEmergencyContact) {
+      if (!emergencyName) {
+        nextErrors.emergency_contact_name =
+          "Emergency contact name is required.";
+      }
+
+      if (!emergencyPhone) {
+        nextErrors.emergency_contact_phone =
+          "Emergency contact phone is required.";
+      }
+
+      if (!emergencyRelationship) {
+        nextErrors.emergency_contact_relationship =
+          "Emergency contact relationship is required.";
+      }
     }
 
     setErrors(nextErrors);
 
     return (
-      Object.keys(
-        nextErrors
-      ).length === 0
+      Object.keys(nextErrors).length ===
+      0
     );
   };
 
@@ -645,95 +741,139 @@ const TenantForm = ({
   */
 
   const buildPayload = () => {
+    const emergencyName =
+      normalizeString(
+        form.emergency_contact_name
+      );
+
+    const emergencyPhone =
+      normalizeString(
+        form.emergency_contact_phone
+      );
+
+    const emergencyRelationship =
+      normalizeString(
+        form.emergency_contact_relationship
+      );
+
+    const hasEmergencyContact =
+      Boolean(
+        emergencyName ||
+        emergencyPhone ||
+        emergencyRelationship
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PAYLOAD
+    |--------------------------------------------------------------------------
+    */
+
     const payload = {
       first_name:
-        String(
-          form.first_name || ""
-        ).trim(),
+        normalizeString(
+          form.first_name
+        ),
 
       last_name:
-        String(
-          form.last_name || ""
-        ).trim(),
+        normalizeString(
+          form.last_name
+        ),
 
       email:
-        String(
-          form.email || ""
-        ).trim(),
+        normalizeString(
+          form.email
+        ),
 
       phone:
-        String(
-          form.phone || ""
-        ).trim(),
+        normalizeString(
+          form.phone
+        ),
 
       id_number:
-        String(
-          form.id_number || ""
-        ).trim() || null,
+        normalizeString(
+          form.id_number
+        ) || null,
 
       passport_number:
-        String(
-          form.passport_number ||
-            ""
-        ).trim() || null,
+        normalizeString(
+          form.passport_number
+        ) || null,
 
       gender:
         form.gender || null,
 
       date_of_birth:
-        form.date_of_birth ||
-        null,
+        form.date_of_birth || null,
 
       nationality:
-        form.nationality || null,
+        normalizeString(
+          form.nationality
+        ) || null,
 
       country:
-        form.country || null,
+        normalizeString(
+          form.country
+        ) || null,
 
       region:
-        form.region || null,
+        normalizeString(
+          form.region
+        ) || null,
 
       county:
-        form.county || null,
+        normalizeString(
+          form.county
+        ) || null,
 
       city:
-        form.city || null,
+        normalizeString(
+          form.city
+        ) || null,
 
       area:
-        form.area || null,
+        normalizeString(
+          form.area
+        ) || null,
 
       address:
-        String(
-          form.address || ""
-        ).trim() || null,
+        normalizeString(
+          form.address
+        ) || null,
+
+      /*
+      |--------------------------------------------------------------------------
+      | EMERGENCY CONTACT
+      |--------------------------------------------------------------------------
+      |
+      | Always send all three fields together.
+      |
+      */
 
       emergency_contact_name:
-        String(
-          form.emergency_contact_name ||
-            ""
-        ).trim() || null,
+        hasEmergencyContact
+          ? emergencyName
+          : null,
 
       emergency_contact_phone:
-        String(
-          form.emergency_contact_phone ||
-            ""
-        ).trim() || null,
+        hasEmergencyContact
+          ? emergencyPhone
+          : null,
 
       emergency_contact_relationship:
-        String(
-          form.emergency_contact_relationship ||
-            ""
-        ).trim() || null,
+        hasEmergencyContact
+          ? emergencyRelationship
+          : null,
 
       occupation:
-        String(
-          form.occupation || ""
-        ).trim() || null,
+        normalizeString(
+          form.occupation
+        ) || null,
 
       employer:
-        String(
-          form.employer || ""
-        ).trim() || null,
+        normalizeString(
+          form.employer
+        ) || null,
 
       status:
         form.status || "pending",
@@ -749,9 +889,9 @@ const TenantForm = ({
         ),
 
       notes:
-        String(
-          form.notes || ""
-        ).trim() || null,
+        normalizeString(
+          form.notes
+        ) || null,
     };
 
     return payload;
@@ -770,8 +910,7 @@ const TenantForm = ({
 
     setServerError("");
 
-    const isValid =
-      validate();
+    const isValid = validate();
 
     if (!isValid) {
       return;
@@ -784,6 +923,10 @@ const TenantForm = ({
       typeof onSubmit !==
       "function"
     ) {
+      setServerError(
+        "Unable to submit the form."
+      );
+
       return;
     }
 
@@ -797,6 +940,8 @@ const TenantForm = ({
         submitError?.message ||
           "Failed to save tenant. Please try again."
       );
+
+      throw submitError;
     }
   };
 
@@ -825,12 +970,6 @@ const TenantForm = ({
     ? "Update Tenant"
     : "Create Tenant";
 
-  /*
-  |--------------------------------------------------------------------------
-  | SUBMIT LABEL
-  |--------------------------------------------------------------------------
-  */
-
   const submitLabel = isEdit
     ? "Update Tenant"
     : "Create Tenant";
@@ -841,11 +980,8 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const fieldError = (
-    field
-  ) => {
-    return errors?.[field];
-  };
+  const fieldError = (field) =>
+    errors?.[field];
 
   /*
   |--------------------------------------------------------------------------
@@ -854,8 +990,8 @@ const TenantForm = ({
   */
 
   const hasErrors =
-    Object.keys(errors)
-      .length > 0;
+    Object.keys(errors).length >
+    0;
 
   /*
   |--------------------------------------------------------------------------
@@ -876,9 +1012,9 @@ const TenantForm = ({
     const completed =
       requiredFields.filter(
         (field) =>
-          String(
-            form[field] || ""
-          ).trim() !== ""
+          normalizeString(
+            form[field]
+          ) !== ""
       ).length;
 
     return Math.round(
@@ -924,7 +1060,7 @@ const TenantForm = ({
       className="space-y-6"
     >
       {/* ================================================================
-          FORM HEADER
+          HEADER
       ================================================================= */}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -946,8 +1082,6 @@ const TenantForm = ({
               </p>
             </div>
           </div>
-
-          {/* Completion */}
 
           <div className="min-w-[180px]">
             <div className="mb-1.5 flex items-center justify-between">
@@ -971,10 +1105,6 @@ const TenantForm = ({
           </div>
         </div>
 
-        {/* ==============================================================
-            SERVER ERROR
-        ============================================================== */}
-
         {(serverError ||
           hasErrors) && (
           <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
@@ -997,7 +1127,7 @@ const TenantForm = ({
                     {Object.entries(
                       errors
                     )
-                      .slice(0, 5)
+                      .slice(0, 8)
                       .map(
                         ([
                           field,
@@ -1034,15 +1164,11 @@ const TenantForm = ({
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
-          {/* First Name */}
-
           <InputField
             label="First Name"
             name="first_name"
             value={form.first_name}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "first_name"
             )}
@@ -1051,15 +1177,11 @@ const TenantForm = ({
             autoComplete="given-name"
           />
 
-          {/* Last Name */}
-
           <InputField
             label="Last Name"
             name="last_name"
             value={form.last_name}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "last_name"
             )}
@@ -1068,16 +1190,12 @@ const TenantForm = ({
             autoComplete="family-name"
           />
 
-          {/* Email */}
-
           <InputField
             label="Email Address"
             name="email"
             type="email"
             value={form.email}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "email"
             )}
@@ -1089,16 +1207,12 @@ const TenantForm = ({
             autoComplete="email"
           />
 
-          {/* Phone */}
-
           <InputField
             label="Phone Number"
             name="phone"
             type="tel"
             value={form.phone}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "phone"
             )}
@@ -1110,15 +1224,11 @@ const TenantForm = ({
             autoComplete="tel"
           />
 
-          {/* ID Number */}
-
           <InputField
             label="National ID Number"
             name="id_number"
             value={form.id_number}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "id_number"
             )}
@@ -1126,29 +1236,21 @@ const TenantForm = ({
             hint="Provide either National ID or Passport number."
           />
 
-          {/* Passport */}
-
           <InputField
             label="Passport Number"
             name="passport_number"
             value={
               form.passport_number
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. A12345678"
           />
-
-          {/* Gender */}
 
           <SelectField
             label="Gender"
             name="gender"
             value={form.gender}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "gender"
             )}
@@ -1174,8 +1276,6 @@ const TenantForm = ({
             ]}
           />
 
-          {/* Date of Birth */}
-
           <InputField
             label="Date of Birth"
             name="date_of_birth"
@@ -1183,15 +1283,11 @@ const TenantForm = ({
             value={
               form.date_of_birth
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             icon={
               <CalendarDays className="h-4 w-4" />
             }
           />
-
-          {/* Nationality */}
 
           <InputField
             label="Nationality"
@@ -1199,9 +1295,7 @@ const TenantForm = ({
             value={
               form.nationality
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Kenyan"
             icon={
               <Globe2 className="h-4 w-4" />
@@ -1224,76 +1318,52 @@ const TenantForm = ({
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 lg:grid-cols-3 sm:p-6">
-          {/* Country */}
-
           <InputField
             label="Country"
             name="country"
             value={form.country}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Kenya"
           />
-
-          {/* Region */}
 
           <InputField
             label="Region"
             name="region"
             value={form.region}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Nairobi Region"
           />
-
-          {/* County */}
 
           <InputField
             label="County"
             name="county"
             value={form.county}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Nairobi"
           />
-
-          {/* City */}
 
           <InputField
             label="City"
             name="city"
             value={form.city}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Nairobi"
           />
-
-          {/* Area */}
 
           <InputField
             label="Area"
             name="area"
             value={form.area}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Westlands"
           />
-
-          {/* Address */}
 
           <div className="sm:col-span-2 lg:col-span-3">
             <TextAreaField
               label="Residential Address"
               name="address"
               value={form.address}
-              onChange={
-                handleChange
-              }
+              onChange={handleChange}
               placeholder="Enter the tenant's residential address..."
               rows={3}
             />
@@ -1319,9 +1389,7 @@ const TenantForm = ({
             label="Occupation"
             name="occupation"
             value={form.occupation}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. Software Engineer"
           />
 
@@ -1329,9 +1397,7 @@ const TenantForm = ({
             label="Employer / Company"
             name="employer"
             value={form.employer}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="e.g. ABC Technologies Ltd"
           />
         </div>
@@ -1347,7 +1413,7 @@ const TenantForm = ({
             <Phone className="h-5 w-5" />
           }
           title="Emergency Contact"
-          description="Provide a person to contact in case of an emergency."
+          description="Leave all fields empty if the tenant does not have an emergency contact."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
@@ -1357,9 +1423,7 @@ const TenantForm = ({
             value={
               form.emergency_contact_name
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "emergency_contact_name"
             )}
@@ -1373,9 +1437,7 @@ const TenantForm = ({
             value={
               form.emergency_contact_phone
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "emergency_contact_phone"
             )}
@@ -1388,9 +1450,10 @@ const TenantForm = ({
             value={
               form.emergency_contact_relationship
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
+            error={fieldError(
+              "emergency_contact_relationship"
+            )}
             placeholder="e.g. Spouse, Parent, Sibling"
           />
         </div>
@@ -1410,15 +1473,11 @@ const TenantForm = ({
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
-          {/* Status */}
-
           <SelectField
             label="Tenant Status"
             name="status"
             value={form.status}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             error={fieldError(
               "status"
             )}
@@ -1444,8 +1503,6 @@ const TenantForm = ({
             ]}
           />
 
-          {/* Active */}
-
           <ToggleField
             label="Active Account"
             description="Allow this tenant account to remain active."
@@ -1453,12 +1510,8 @@ const TenantForm = ({
             checked={
               form.is_active
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
           />
-
-          {/* Verified */}
 
           <ToggleField
             label="Verified Tenant"
@@ -1467,9 +1520,7 @@ const TenantForm = ({
             checked={
               form.is_verified
             }
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
           />
         </div>
       </section>
@@ -1492,9 +1543,7 @@ const TenantForm = ({
             label="Notes"
             name="notes"
             value={form.notes}
-            onChange={
-              handleChange
-            }
+            onChange={handleChange}
             placeholder="Enter any additional notes about this tenant..."
             rows={5}
           />
@@ -1507,8 +1556,6 @@ const TenantForm = ({
 
       <div className="sticky bottom-0 z-10 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:p-5">
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Cancel */}
-
           <button
             type="button"
             onClick={handleCancel}
@@ -1539,11 +1586,8 @@ const TenantForm = ({
             "
           >
             <X className="h-4 w-4" />
-
             Cancel
           </button>
-
-          {/* Submit */}
 
           <button
             type="submit"
@@ -1668,16 +1712,7 @@ const InputField = ({
 
       <div className="relative">
         {icon && (
-          <span
-            className="
-              pointer-events-none
-              absolute
-              left-3
-              top-1/2
-              -translate-y-1/2
-              text-gray-400
-            "
-          >
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
             {icon}
           </span>
         )}
@@ -1691,9 +1726,7 @@ const InputField = ({
           placeholder={placeholder}
           autoComplete={autoComplete}
           disabled={disabled}
-          aria-invalid={
-            hasError
-          }
+          aria-invalid={hasError}
           aria-describedby={
             hasError
               ? `${name}-error`
@@ -1716,11 +1749,7 @@ const InputField = ({
             disabled:cursor-not-allowed
             disabled:bg-gray-50
             disabled:text-gray-500
-            ${
-              icon
-                ? "pl-10"
-                : ""
-            }
+            ${icon ? "pl-10" : ""}
             ${
               hasError
                 ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
@@ -1745,7 +1774,6 @@ const InputField = ({
           className="flex items-center gap-1 text-xs text-red-600"
         >
           <AlertCircle className="h-3.5 w-3.5" />
-
           {error}
         </p>
       )}
@@ -1794,9 +1822,7 @@ const SelectField = ({
           value={value ?? ""}
           onChange={onChange}
           disabled={disabled}
-          aria-invalid={
-            hasError
-          }
+          aria-invalid={hasError}
           className={`
             h-10
             w-full
@@ -1842,7 +1868,6 @@ const SelectField = ({
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
-
           {error}
         </p>
       )}
@@ -1891,9 +1916,7 @@ const TextAreaField = ({
         onChange={onChange}
         rows={rows}
         placeholder={placeholder}
-        aria-invalid={
-          hasError
-        }
+        aria-invalid={hasError}
         className={`
           w-full
           resize-y
@@ -1918,7 +1941,6 @@ const TextAreaField = ({
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
-
           {error}
         </p>
       )}

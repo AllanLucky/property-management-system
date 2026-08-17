@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import {
+  useLocation,
   useNavigate,
   useParams,
 } from "react-router-dom";
@@ -36,16 +37,6 @@ import {
   useDispatch,
   useSelector,
 } from "react-redux";
-
-/*
-|--------------------------------------------------------------------------
-| REDUX
-|--------------------------------------------------------------------------
-|
-| IMPORTANT:
-| pendingTenant was removed because tenantSlice.js does not export it.
-|
-*/
 
 import {
   activateTenant,
@@ -67,6 +58,7 @@ import {
 const TenantDetails = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { id } = useParams();
 
@@ -78,13 +70,13 @@ const TenantDetails = () => {
 
   const {
     tenant,
-    loading,
-    error,
-    activating,
-    deactivating,
-    blacklisting,
-    verifying,
-    unverifying,
+    loading = false,
+    error = null,
+    activating = false,
+    deactivating = false,
+    blacklisting = false,
+    verifying = false,
+    unverifying = false,
   } = useSelector(
     (state) => state.tenants || {}
   );
@@ -93,35 +85,144 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   | LOAD TENANT
   |--------------------------------------------------------------------------
+  |
+  | This is deliberately kept stable.
+  |
   */
 
-  const loadTenant = useCallback(() => {
-    if (!id) {
-      return;
-    }
+  const loadTenant = useCallback(
+    async () => {
+      if (!id) {
+        return null;
+      }
 
-    dispatch(clearTenantError());
-    dispatch(fetchTenant(id));
-  }, [dispatch, id]);
+      dispatch(clearTenantError());
+
+      return dispatch(
+        fetchTenant(id)
+      );
+    },
+    [dispatch, id]
+  );
 
   /*
   |--------------------------------------------------------------------------
-  | INITIAL LOAD
+  | LOAD / REFRESH TENANT
   |--------------------------------------------------------------------------
+  |
+  | location.key changes when navigating away and coming back to this page.
+  |
+  | This means:
+  |
+  | Edit tenant
+  |     ↓
+  | Save
+  |     ↓
+  | Navigate back to details
+  |     ↓
+  | location.key changes
+  |     ↓
+  | fetchTenant(id)
+  |
+  | No setState is performed inside the dependency chain.
+  |
   */
 
   useEffect(() => {
+    if (!id) {
+      return undefined;
+    }
+
     loadTenant();
 
     return () => {
-      dispatch(clearTenant());
       dispatch(clearTenantError());
     };
-  }, [dispatch, loadTenant]);
+  }, [
+    id,
+    location.key,
+    loadTenant,
+    dispatch,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
-  | NORMALIZED VALUES
+  | HANDLE UPDATED STATE
+  |--------------------------------------------------------------------------
+  |
+  | TenantForm can navigate back using:
+  |
+  | navigate(`/super-admin/tenants/${id}`, {
+  |   state: { updated: true }
+  | })
+  |
+  | We refresh immediately and then remove the temporary state.
+  |
+  */
+
+  useEffect(() => {
+    if (
+      !id ||
+      location.state?.updated !== true
+    ) {
+      return;
+    }
+
+    loadTenant();
+
+    navigate(
+      location.pathname,
+      {
+        replace: true,
+        state: {},
+      }
+    );
+  }, [
+    id,
+    location.state?.updated,
+    location.pathname,
+    loadTenant,
+    navigate,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | USER / TENANT NORMALIZATION
+  |--------------------------------------------------------------------------
+  */
+
+  const tenantUser = useMemo(() => {
+    return tenant?.user || null;
+  }, [tenant]);
+
+  const firstName =
+    tenant?.first_name ??
+    tenantUser?.first_name ??
+    "";
+
+  const lastName =
+    tenant?.last_name ??
+    tenantUser?.last_name ??
+    "";
+
+  const otherNames =
+    tenant?.other_names ??
+    tenantUser?.other_names ??
+    "";
+
+  const email =
+    tenant?.email ??
+    tenantUser?.email ??
+    "";
+
+  const phone =
+    tenant?.phone ??
+    tenantUser?.phone ??
+    "";
+
+  /*
+  |--------------------------------------------------------------------------
+  | FULL NAME
   |--------------------------------------------------------------------------
   */
 
@@ -130,41 +231,233 @@ const TenantDetails = () => {
       return tenant.full_name;
     }
 
+    if (tenantUser?.full_name) {
+      return tenantUser.full_name;
+    }
+
     return [
-      tenant?.first_name,
-      tenant?.last_name,
+      firstName,
+      otherNames,
+      lastName,
     ]
       .filter(Boolean)
       .join(" ") || "Tenant";
-  }, [tenant]);
+  }, [
+    tenant?.full_name,
+    tenantUser?.full_name,
+    firstName,
+    otherNames,
+    lastName,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | INITIALS
+  |--------------------------------------------------------------------------
+  */
 
   const initials = useMemo(() => {
     const first = String(
-      tenant?.first_name || ""
-    ).charAt(0);
+      firstName || ""
+    )
+      .trim()
+      .charAt(0);
 
     const last = String(
-      tenant?.last_name || ""
-    ).charAt(0);
+      lastName || ""
+    )
+      .trim()
+      .charAt(0);
 
-    const result = `${first}${last}`.trim();
+    const result =
+      `${first}${last}`.trim();
+
+    if (result) {
+      return result.toUpperCase();
+    }
+
+    const fallback = String(
+      fullName || "Tenant"
+    )
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) =>
+        part.charAt(0)
+      )
+      .join("");
 
     return (
-      result || "T"
+      fallback || "T"
     ).toUpperCase();
-  }, [tenant]);
+  }, [
+    firstName,
+    lastName,
+    fullName,
+  ]);
 
-  const status = String(
-    tenant?.status || "pending"
-  ).toLowerCase();
+  /*
+  |--------------------------------------------------------------------------
+  | BOOLEAN NORMALIZATION
+  |--------------------------------------------------------------------------
+  */
 
-  const isActive = Boolean(
-    tenant?.is_active
+  const toBoolean = useCallback(
+    (value) => {
+      if (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "true" ||
+        value === "TRUE" ||
+        value === "yes" ||
+        value === "active"
+      ) {
+        return true;
+      }
+
+      return false;
+    },
+    []
   );
 
-  const isVerified = Boolean(
-    tenant?.is_verified
-  );
+  /*
+  |--------------------------------------------------------------------------
+  | STATUS
+  |--------------------------------------------------------------------------
+  */
+
+  const status = useMemo(() => {
+    const rawStatus =
+      tenant?.status ??
+      tenant?.account_status ??
+      tenantUser?.status ??
+      tenantUser?.account_status ??
+      "pending";
+
+    return String(
+      rawStatus
+    ).toLowerCase();
+  }, [
+    tenant?.status,
+    tenant?.account_status,
+    tenantUser?.status,
+    tenantUser?.account_status,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | ACTIVE
+  |--------------------------------------------------------------------------
+  */
+
+  const isActive = useMemo(() => {
+    if (
+      tenant?.is_active !==
+      undefined
+    ) {
+      return toBoolean(
+        tenant.is_active
+      );
+    }
+
+    if (
+      tenant?.active !==
+      undefined
+    ) {
+      return toBoolean(
+        tenant.active
+      );
+    }
+
+    if (
+      tenantUser?.is_active !==
+      undefined
+    ) {
+      return toBoolean(
+        tenantUser.is_active
+      );
+    }
+
+    if (
+      tenantUser?.active !==
+      undefined
+    ) {
+      return toBoolean(
+        tenantUser.active
+      );
+    }
+
+    return (
+      status === "active" ||
+      status === "approved"
+    );
+  }, [
+    tenant?.is_active,
+    tenant?.active,
+    tenantUser?.is_active,
+    tenantUser?.active,
+    status,
+    toBoolean,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | VERIFIED
+  |--------------------------------------------------------------------------
+  */
+
+  const isVerified = useMemo(() => {
+    if (
+      tenant?.is_verified !==
+      undefined
+    ) {
+      return toBoolean(
+        tenant.is_verified
+      );
+    }
+
+    if (
+      tenant?.verified !==
+      undefined
+    ) {
+      return toBoolean(
+        tenant.verified
+      );
+    }
+
+    if (
+      tenantUser?.is_verified !==
+      undefined
+    ) {
+      return toBoolean(
+        tenantUser.is_verified
+      );
+    }
+
+    if (
+      tenantUser?.verified !==
+      undefined
+    ) {
+      return toBoolean(
+        tenantUser.verified
+      );
+    }
+
+    return Boolean(
+      tenant?.verified_at ||
+      tenantUser?.verified_at
+    );
+  }, [
+    tenant?.is_verified,
+    tenant?.verified,
+    tenantUser?.is_verified,
+    tenantUser?.verified,
+    tenant?.verified_at,
+    tenantUser?.verified_at,
+    toBoolean,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -172,15 +465,20 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const statusLabel = status
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) =>
-      char.toUpperCase()
+  const statusLabel = useMemo(() => {
+    return capitalize(
+      String(
+        status || "pending"
+      ).replace(
+        /_/g,
+        " "
+      )
     );
+  }, [status]);
 
   /*
   |--------------------------------------------------------------------------
-  | DATE FORMATTER
+  | DATE
   |--------------------------------------------------------------------------
   */
 
@@ -214,7 +512,7 @@ const TenantDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | DATE + TIME FORMATTER
+  | DATE TIME
   |--------------------------------------------------------------------------
   */
 
@@ -263,7 +561,34 @@ const TenantDetails = () => {
       return fallback;
     }
 
-    return value;
+    if (
+      typeof value === "object"
+    ) {
+      if (
+        value?.name !==
+        undefined
+      ) {
+        return value.name;
+      }
+
+      if (
+        value?.title !==
+        undefined
+      ) {
+        return value.title;
+      }
+
+      if (
+        value?.label !==
+        undefined
+      ) {
+        return value.label;
+      }
+
+      return fallback;
+    }
+
+    return String(value);
   };
 
   /*
@@ -272,7 +597,7 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const location = useMemo(() => {
+  const locationName = useMemo(() => {
     const parts = [
       tenant?.area?.name ||
       tenant?.area_name ||
@@ -333,31 +658,20 @@ const TenantDetails = () => {
   */
 
   const tenancies = useMemo(() => {
-    if (
-      Array.isArray(
-        tenant?.tenancies
-      )
-    ) {
-      return tenant.tenancies;
-    }
+    const candidates = [
+      tenant?.tenancies,
+      tenant?.active_tenancies,
+      tenant?.tenancy_history,
+      tenant?.tenancy_records,
+      tenant?.tenancyRecords,
+    ];
 
-    if (
-      Array.isArray(
-        tenant?.active_tenancies
-      )
-    ) {
-      return tenant.active_tenancies;
-    }
+    const found = candidates.find(
+      (value) =>
+        Array.isArray(value)
+    );
 
-    if (
-      Array.isArray(
-        tenant?.tenancy_history
-      )
-    ) {
-      return tenant.tenancy_history;
-    }
-
-    return [];
+    return found || [];
   }, [tenant]);
 
   /*
@@ -367,17 +681,45 @@ const TenantDetails = () => {
   */
 
   const activeTenancy = useMemo(() => {
-    if (tenant?.active_tenancy) {
+    if (
+      tenant?.active_tenancy &&
+      typeof tenant.active_tenancy ===
+      "object"
+    ) {
       return tenant.active_tenancy;
     }
 
+    if (
+      tenant?.current_tenancy &&
+      typeof tenant.current_tenancy ===
+      "object"
+    ) {
+      return tenant.current_tenancy;
+    }
+
     return tenancies.find(
-      (item) =>
-        item?.is_active === true ||
-        item?.status === "active" ||
-        item?.status === "ongoing"
+      (item) => {
+        const itemStatus =
+          String(
+            item?.status || ""
+          ).toLowerCase();
+
+        return (
+          toBoolean(
+            item?.is_active
+          ) ||
+          itemStatus === "active" ||
+          itemStatus === "ongoing" ||
+          itemStatus === "current"
+        );
+      }
     );
-  }, [tenant, tenancies]);
+  }, [
+    tenant?.active_tenancy,
+    tenant?.current_tenancy,
+    tenancies,
+    toBoolean,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -385,11 +727,27 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const tenancyCount =
-    tenant?.tenancies_count ??
-    tenant?.tenancy_count ??
-    tenancies.length ??
-    0;
+  const tenancyCount = useMemo(() => {
+    const count =
+      tenant?.tenancies_count ??
+      tenant?.tenancy_count ??
+      tenant?.tenanciesCount;
+
+    if (
+      count !== null &&
+      count !== undefined &&
+      count !== ""
+    ) {
+      return Number(count) || 0;
+    }
+
+    return tenancies.length;
+  }, [
+    tenant?.tenancies_count,
+    tenant?.tenancy_count,
+    tenant?.tenanciesCount,
+    tenancies.length,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -398,15 +756,17 @@ const TenantDetails = () => {
   */
 
   const actionLoading =
-    activating ||
-    deactivating ||
-    blacklisting ||
-    verifying ||
-    unverifying;
+    Boolean(
+      activating ||
+      deactivating ||
+      blacklisting ||
+      verifying ||
+      unverifying
+    );
 
   /*
   |--------------------------------------------------------------------------
-  | GENERIC ACTION HANDLER
+  | GENERIC TENANT ACTION
   |--------------------------------------------------------------------------
   */
 
@@ -429,7 +789,8 @@ const TenantDetails = () => {
         showCancelButton: true,
         confirmButtonText:
           confirmText || "Continue",
-        cancelButtonText: "Cancel",
+        cancelButtonText:
+          "Cancel",
         confirmButtonColor:
           confirmButtonColor ||
           "#2563eb",
@@ -441,11 +802,14 @@ const TenantDetails = () => {
     }
 
     try {
-      dispatch(clearTenantError());
-
-      const response = await dispatch(
-        action(tenant.id)
+      dispatch(
+        clearTenantError()
       );
+
+      const response =
+        await dispatch(
+          action(tenant.id)
+        );
 
       if (
         response?.meta
@@ -463,18 +827,27 @@ const TenantDetails = () => {
             "#2563eb",
         });
 
-        loadTenant();
+        /*
+        | Refresh the Redux tenant
+        | from the API after action.
+        */
+        await loadTenant();
 
         return;
       }
 
       throw new Error(
-        response?.payload?.message ||
-        response?.payload?.error ||
-        response?.error?.message ||
+        response?.payload
+          ?.message ||
+        response?.payload
+          ?.error ||
+        response?.error
+          ?.message ||
         "The tenant action failed."
       );
-    } catch (actionError) {
+    } catch (
+    actionError
+    ) {
       await Swal.fire({
         icon: "error",
         title: "Action Failed",
@@ -489,89 +862,67 @@ const TenantDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | ACTIVATE
+  | ACTIONS
   |--------------------------------------------------------------------------
   */
 
-  const handleActivate = () => {
-    return runTenantAction({
+  const handleActivate = () =>
+    runTenantAction({
       action: activateTenant,
       title: "Activate Tenant?",
       successMessage:
         "Tenant activated successfully.",
-      confirmText: "Activate Tenant",
-      confirmButtonColor: "#16a34a",
+      confirmText:
+        "Activate Tenant",
+      confirmButtonColor:
+        "#16a34a",
     });
-  };
 
-  /*
-  |--------------------------------------------------------------------------
-  | DEACTIVATE
-  |--------------------------------------------------------------------------
-  */
-
-  const handleDeactivate = () => {
-    return runTenantAction({
+  const handleDeactivate = () =>
+    runTenantAction({
       action: deactivateTenant,
       title: "Deactivate Tenant?",
       successMessage:
         "Tenant deactivated successfully.",
       confirmText: "Deactivate",
-      confirmButtonColor: "#d97706",
+      confirmButtonColor:
+        "#d97706",
     });
-  };
 
-  /*
-  |--------------------------------------------------------------------------
-  | BLACKLIST
-  |--------------------------------------------------------------------------
-  */
-
-  const handleBlacklist = () => {
-    return runTenantAction({
+  const handleBlacklist = () =>
+    runTenantAction({
       action: blacklistTenant,
       title: "Blacklist Tenant?",
       successMessage:
         "Tenant blacklisted successfully.",
-      confirmText: "Blacklist Tenant",
-      confirmButtonColor: "#dc2626",
+      confirmText:
+        "Blacklist Tenant",
+      confirmButtonColor:
+        "#dc2626",
     });
-  };
 
-  /*
-  |--------------------------------------------------------------------------
-  | VERIFY
-  |--------------------------------------------------------------------------
-  */
-
-  const handleVerify = () => {
-    return runTenantAction({
+  const handleVerify = () =>
+    runTenantAction({
       action: verifyTenant,
       title: "Verify Tenant?",
       successMessage:
         "Tenant verified successfully.",
       confirmText: "Verify Tenant",
-      confirmButtonColor: "#2563eb",
+      confirmButtonColor:
+        "#2563eb",
     });
-  };
 
-  /*
-  |--------------------------------------------------------------------------
-  | UNVERIFY
-  |--------------------------------------------------------------------------
-  */
-
-  const handleUnverify = () => {
-    return runTenantAction({
+  const handleUnverify = () =>
+    runTenantAction({
       action: unverifyTenant,
       title: "Remove Verification?",
       successMessage:
         "Tenant verification removed successfully.",
       confirmText:
         "Remove Verification",
-      confirmButtonColor: "#d97706",
+      confirmButtonColor:
+        "#d97706",
     });
-  };
 
   /*
   |--------------------------------------------------------------------------
@@ -595,7 +946,7 @@ const TenantDetails = () => {
     }
 
     navigate(
-      `/tenants/${tenant.id}/edit`
+      `/super-admin/tenants/${tenant.id}/edit`
     );
   };
 
@@ -605,14 +956,19 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  if (!loading && !tenant) {
+  if (
+    !loading &&
+    !tenant
+  ) {
     return (
       <div className="min-h-screen bg-gray-50">
         <PageHeader
           title="Tenant Details"
           subtitle="Tenant information"
           onBack={() =>
-            navigate("/tenants")
+            navigate(
+              "/super-admin/tenants"
+            )
           }
         />
 
@@ -639,21 +995,7 @@ const TenantDetails = () => {
               <button
                 type="button"
                 onClick={handleRetry}
-                className="
-                  inline-flex
-                  items-center
-                  gap-2
-                  rounded-lg
-                  border
-                  border-gray-300
-                  bg-white
-                  px-4
-                  py-2.5
-                  text-sm
-                  font-medium
-                  text-gray-700
-                  hover:bg-gray-50
-                "
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 <RefreshCw className="h-4 w-4" />
                 Retry
@@ -662,21 +1004,11 @@ const TenantDetails = () => {
               <button
                 type="button"
                 onClick={() =>
-                  navigate("/tenants")
+                  navigate(
+                    "/super-admin/tenants"
+                  )
                 }
-                className="
-                  inline-flex
-                  items-center
-                  gap-2
-                  rounded-lg
-                  bg-primary-600
-                  px-4
-                  py-2.5
-                  text-sm
-                  font-semibold
-                  text-white
-                  hover:bg-primary-700
-                "
+                className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to Tenants
@@ -694,14 +1026,19 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  if (loading && !tenant) {
+  if (
+    loading &&
+    !tenant
+  ) {
     return (
       <div className="min-h-screen bg-gray-50">
         <PageHeader
           title="Tenant Details"
           subtitle="Loading tenant information..."
           onBack={() =>
-            navigate("/tenants")
+            navigate(
+              "/super-admin/tenants"
+            )
           }
         />
 
@@ -720,50 +1057,27 @@ const TenantDetails = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* PAGE HEADER */}
-
       <PageHeader
         title="Tenant Details"
         subtitle="View tenant profile, account status and tenancy information."
         onBack={() =>
-          navigate("/tenants")
+          navigate(
+            "/super-admin/tenants"
+          )
         }
       >
         <button
           type="button"
           onClick={handleEdit}
           disabled={actionLoading}
-          className="
-            inline-flex
-            w-full
-            items-center
-            justify-center
-            gap-2
-            rounded-lg
-            bg-primary-600
-            px-4
-            py-2.5
-            text-sm
-            font-semibold
-            text-white
-            shadow-sm
-            transition
-            hover:bg-primary-700
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-            sm:w-auto
-          "
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
         >
           <Edit3 className="h-4 w-4" />
           Edit Tenant
         </button>
       </PageHeader>
 
-      {/* MAIN */}
-
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* ERROR */}
-
         {error && (
           <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -785,23 +1099,7 @@ const TenantDetails = () => {
               <button
                 type="button"
                 onClick={handleRetry}
-                className="
-                  inline-flex
-                  shrink-0
-                  items-center
-                  justify-center
-                  gap-2
-                  rounded-lg
-                  border
-                  border-red-200
-                  bg-white
-                  px-3
-                  py-2
-                  text-sm
-                  font-medium
-                  text-red-700
-                  hover:bg-red-50
-                "
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
               >
                 <RefreshCw className="h-4 w-4" />
                 Retry
@@ -810,7 +1108,7 @@ const TenantDetails = () => {
           </div>
         )}
 
-        {/* PROFILE HEADER */}
+        {/* PROFILE */}
 
         <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="bg-gradient-to-r from-primary-50 via-white to-white px-5 py-6 sm:px-6 lg:px-8">
@@ -820,9 +1118,9 @@ const TenantDetails = () => {
                   {initials}
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-bold text-gray-900">
+                    <h2 className="break-words text-xl font-bold text-gray-900">
                       {fullName}
                     </h2>
 
@@ -835,10 +1133,18 @@ const TenantDetails = () => {
                   </div>
 
                   <p className="mt-1 text-sm text-gray-500">
-                    Tenant ID:{" "}
+                    Tenant Number:{" "}
                     <span className="font-medium text-gray-700">
-                      #{tenant?.id}
+                      {valueOrFallback(
+                        tenant?.tenant_number,
+                        `#${tenant?.id ?? "N/A"}`
+                      )}
                     </span>
+                  </p>
+
+                  <p className="mt-1 text-xs text-gray-400">
+                    Record ID: #
+                    {tenant?.id}
                   </p>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -861,7 +1167,7 @@ const TenantDetails = () => {
                   }
                   label="Email"
                   value={valueOrFallback(
-                    tenant?.email
+                    email
                   )}
                 />
 
@@ -871,7 +1177,7 @@ const TenantDetails = () => {
                   }
                   label="Phone"
                   value={valueOrFallback(
-                    tenant?.phone
+                    phone
                   )}
                 />
               </div>
@@ -891,7 +1197,9 @@ const TenantDetails = () => {
                   onClick={
                     handleActivate
                   }
-                  loading={activating}
+                  loading={
+                    activating
+                  }
                   disabled={
                     actionLoading
                   }
@@ -908,7 +1216,9 @@ const TenantDetails = () => {
                   onClick={
                     handleDeactivate
                   }
-                  loading={deactivating}
+                  loading={
+                    deactivating
+                  }
                   disabled={
                     actionLoading
                   }
@@ -922,8 +1232,12 @@ const TenantDetails = () => {
                     <ShieldCheck className="h-4 w-4" />
                   }
                   label="Verify"
-                  onClick={handleVerify}
-                  loading={verifying}
+                  onClick={
+                    handleVerify
+                  }
+                  loading={
+                    verifying
+                  }
                   disabled={
                     actionLoading
                   }
@@ -940,7 +1254,9 @@ const TenantDetails = () => {
                   onClick={
                     handleUnverify
                   }
-                  loading={unverifying}
+                  loading={
+                    unverifying
+                  }
                   disabled={
                     actionLoading
                   }
@@ -970,38 +1286,21 @@ const TenantDetails = () => {
 
               <button
                 type="button"
-                onClick={handleRetry}
+                onClick={
+                  handleRetry
+                }
                 disabled={
                   loading ||
                   actionLoading
                 }
-                className="
-                  ml-auto
-                  inline-flex
-                  items-center
-                  gap-2
-                  rounded-lg
-                  border
-                  border-gray-300
-                  bg-white
-                  px-3
-                  py-2
-                  text-sm
-                  font-medium
-                  text-gray-700
-                  transition
-                  hover:bg-gray-50
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
-                "
+                className="ml-auto inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw
                   className={`h-4 w-4 ${loading
-                    ? "animate-spin"
-                    : ""
+                      ? "animate-spin"
+                      : ""
                     }`}
                 />
-
                 Refresh
               </button>
             </div>
@@ -1062,11 +1361,9 @@ const TenantDetails = () => {
           />
         </div>
 
-        {/* DETAILS GRID */}
+        {/* PERSONAL + ACCOUNT */}
 
         <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-3">
-          {/* PERSONAL INFORMATION */}
-
           <InfoSection
             className="xl:col-span-2"
             icon={
@@ -1079,21 +1376,28 @@ const TenantDetails = () => {
               <InfoItem
                 label="First Name"
                 value={valueOrFallback(
-                  tenant?.first_name
+                  firstName
+                )}
+              />
+
+              <InfoItem
+                label="Other Names"
+                value={valueOrFallback(
+                  otherNames
                 )}
               />
 
               <InfoItem
                 label="Last Name"
                 value={valueOrFallback(
-                  tenant?.last_name
+                  lastName
                 )}
               />
 
               <InfoItem
                 label="Email"
                 value={valueOrFallback(
-                  tenant?.email
+                  email
                 )}
                 icon={
                   <Mail className="h-4 w-4" />
@@ -1103,7 +1407,7 @@ const TenantDetails = () => {
               <InfoItem
                 label="Phone"
                 value={valueOrFallback(
-                  tenant?.phone
+                  phone
                 )}
                 icon={
                   <Phone className="h-4 w-4" />
@@ -1113,8 +1417,8 @@ const TenantDetails = () => {
               <InfoItem
                 label="National ID"
                 value={valueOrFallback(
-                  tenant?.id_number ||
-                  tenant?.national_id ||
+                  tenant?.id_number ??
+                  tenant?.national_id ??
                   tenant?.national_id_number
                 )}
               />
@@ -1156,8 +1460,6 @@ const TenantDetails = () => {
               />
             </InfoGrid>
           </InfoSection>
-
-          {/* ACCOUNT */}
 
           <InfoSection
             icon={
@@ -1217,14 +1519,18 @@ const TenantDetails = () => {
                 )}
               />
 
-              {tenant?.verified_at && (
-                <StatusRow
-                  label="Verified At"
-                  value={formatDateTime(
-                    tenant.verified_at
-                  )}
-                />
-              )}
+              {(
+                tenant?.verified_at ||
+                tenantUser?.verified_at
+              ) && (
+                  <StatusRow
+                    label="Verified At"
+                    value={formatDateTime(
+                      tenant?.verified_at ??
+                      tenantUser?.verified_at
+                    )}
+                  />
+                )}
             </div>
           </InfoSection>
         </div>
@@ -1312,7 +1618,7 @@ const TenantDetails = () => {
 
               <InfoItem
                 label="Full Location"
-                value={location}
+                value={locationName}
                 icon={
                   <MapPin className="h-4 w-4" />
                 }
@@ -1391,7 +1697,7 @@ const TenantDetails = () => {
           </InfoSection>
         </div>
 
-        {/* ACTIVE TENANCY */}
+        {/* CURRENT TENANCY */}
 
         <div className="mt-5">
           <InfoSection
@@ -1422,8 +1728,8 @@ const TenantDetails = () => {
               }
               title="Tenancy History"
               description={`${tenancyCount} tenancy record${tenancyCount === 1
-                ? ""
-                : "s"
+                  ? ""
+                  : "s"
                 } associated with this tenant.`}
             >
               <div className="overflow-x-auto">
@@ -1432,6 +1738,10 @@ const TenantDetails = () => {
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                         Property
+                      </th>
+
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Apartment
                       </th>
 
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -1460,13 +1770,19 @@ const TenantDetails = () => {
                       ) => (
                         <tr
                           key={
-                            tenancy?.id ||
+                            tenancy?.id ??
                             index
                           }
                           className="hover:bg-gray-50"
                         >
                           <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">
                             {getPropertyName(
+                              tenancy
+                            )}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                            {getApartmentName(
                               tenancy
                             )}
                           </td>
@@ -1479,14 +1795,14 @@ const TenantDetails = () => {
 
                           <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
                             {formatDate(
-                              tenancy?.start_date ||
+                              tenancy?.start_date ??
                               tenancy?.lease_start_date
                             )}
                           </td>
 
                           <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
                             {formatDate(
-                              tenancy?.end_date ||
+                              tenancy?.end_date ??
                               tenancy?.lease_end_date
                             )}
                           </td>
@@ -1530,12 +1846,14 @@ const TenantDetails = () => {
           >
             {tenant?.notes ? (
               <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">
-                {tenant.notes}
+                {String(
+                  tenant.notes
+                )}
               </p>
             ) : (
               <p className="text-sm text-gray-400">
-                No additional notes have been
-                added.
+                No additional notes
+                have been added.
               </p>
             )}
           </InfoSection>
@@ -1547,26 +1865,11 @@ const TenantDetails = () => {
           <button
             type="button"
             onClick={() =>
-              navigate("/tenants")
+              navigate(
+                "/super-admin/tenants"
+              )
             }
-            className="
-              inline-flex
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              border
-              border-gray-300
-              bg-white
-              px-4
-              py-2.5
-              text-sm
-              font-medium
-              text-gray-700
-              shadow-sm
-              transition
-              hover:bg-gray-50
-            "
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Tenants
@@ -1575,22 +1878,7 @@ const TenantDetails = () => {
           <button
             type="button"
             onClick={handleEdit}
-            className="
-              inline-flex
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              bg-primary-600
-              px-5
-              py-2.5
-              text-sm
-              font-semibold
-              text-white
-              shadow-sm
-              transition
-              hover:bg-primary-700
-            "
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
           >
             <Edit3 className="h-4 w-4" />
             Edit Tenant
@@ -1612,53 +1900,36 @@ const PageHeader = ({
   subtitle,
   onBack,
   children,
-}) => {
-  return (
-    <header className="border-b border-gray-200 bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="
-                flex
-                h-10
-                w-10
-                shrink-0
-                items-center
-                justify-center
-                rounded-lg
-                border
-                border-gray-200
-                bg-white
-                text-gray-600
-                transition
-                hover:bg-gray-50
-                hover:text-gray-900
-              "
-              aria-label="Back"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
+}) => (
+  <header className="border-b border-gray-200 bg-white">
+    <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 hover:text-gray-900"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
 
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-gray-900">
-                {title}
-              </h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-gray-900">
+              {title}
+            </h1>
 
-              <p className="mt-1 text-sm text-gray-500">
-                {subtitle}
-              </p>
-            </div>
+            <p className="mt-1 text-sm text-gray-500">
+              {subtitle}
+            </p>
           </div>
-
-          {children}
         </div>
+
+        {children}
       </div>
-    </header>
-  );
-};
+    </div>
+  </header>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -1672,33 +1943,31 @@ const InfoSection = ({
   description,
   children,
   className = "",
-}) => {
-  return (
-    <section
-      className={`rounded-xl border border-gray-200 bg-white shadow-sm ${className}`}
-    >
-      <div className="flex items-start gap-3 border-b border-gray-200 px-5 py-4 sm:px-6">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
-          {icon}
-        </div>
-
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">
-            {title}
-          </h3>
-
-          <p className="mt-0.5 text-xs leading-5 text-gray-500">
-            {description}
-          </p>
-        </div>
+}) => (
+  <section
+    className={`rounded-xl border border-gray-200 bg-white shadow-sm ${className}`}
+  >
+    <div className="flex items-start gap-3 border-b border-gray-200 px-5 py-4 sm:px-6">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+        {icon}
       </div>
 
-      <div className="p-5 sm:p-6">
-        {children}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900">
+          {title}
+        </h3>
+
+        <p className="mt-0.5 text-xs leading-5 text-gray-500">
+          {description}
+        </p>
       </div>
-    </section>
-  );
-};
+    </div>
+
+    <div className="p-5 sm:p-6">
+      {children}
+    </div>
+  </section>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -1709,15 +1978,13 @@ const InfoSection = ({
 const InfoGrid = ({
   children,
   columns = "sm:grid-cols-2",
-}) => {
-  return (
-    <div
-      className={`grid grid-cols-1 gap-x-6 gap-y-5 ${columns}`}
-    >
-      {children}
-    </div>
-  );
-};
+}) => (
+  <div
+    className={`grid grid-cols-1 gap-x-6 gap-y-5 ${columns}`}
+  >
+    {children}
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -1729,27 +1996,25 @@ const InfoItem = ({
   label,
   value,
   icon,
-}) => {
-  return (
-    <div className="min-w-0">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-        {label}
+}) => (
+  <div className="min-w-0">
+    <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+      {label}
+    </p>
+
+    <div className="mt-1.5 flex items-center gap-2">
+      {icon && (
+        <span className="shrink-0 text-gray-400">
+          {icon}
+        </span>
+      )}
+
+      <p className="break-words text-sm font-medium text-gray-800">
+        {value}
       </p>
-
-      <div className="mt-1.5 flex items-center gap-2">
-        {icon && (
-          <span className="shrink-0 text-gray-400">
-            {icon}
-          </span>
-        )}
-
-        <p className="break-words text-sm font-medium text-gray-800">
-          {value}
-        </p>
-      </div>
     </div>
-  );
-};
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -1760,19 +2025,17 @@ const InfoItem = ({
 const StatusRow = ({
   label,
   value,
-}) => {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-      <span className="text-sm text-gray-500">
-        {label}
-      </span>
+}) => (
+  <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+    <span className="text-sm text-gray-500">
+      {label}
+    </span>
 
-      <div className="text-right">
-        {value}
-      </div>
+    <div className="text-right">
+      {value}
     </div>
-  );
-};
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -1784,9 +2047,10 @@ const StatusBadge = ({
   status,
   label,
 }) => {
-  const normalized = String(
-    status || ""
-  ).toLowerCase();
+  const normalized =
+    String(
+      status || ""
+    ).toLowerCase();
 
   let classes =
     "bg-gray-100 text-gray-700";
@@ -1838,8 +2102,8 @@ const StatusBadge = ({
 
 const ActivityBadge = ({
   active,
-}) => {
-  return active ? (
+}) =>
+  active ? (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700">
       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
       Active
@@ -1850,7 +2114,6 @@ const ActivityBadge = ({
       Inactive
     </span>
   );
-};
 
 /*
 |--------------------------------------------------------------------------
@@ -1862,29 +2125,27 @@ const ContactCard = ({
   icon,
   label,
   value,
-}) => {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <span className="text-primary-600">
-          {icon}
-        </span>
+}) => (
+  <div className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2.5">
+    <div className="flex items-center gap-2">
+      <span className="text-primary-600">
+        {icon}
+      </span>
 
-        <span className="text-xs font-medium text-gray-400">
-          {label}
-        </span>
-      </div>
-
-      <p className="mt-1 truncate text-sm font-medium text-gray-800">
-        {value}
-      </p>
+      <span className="text-xs font-medium text-gray-400">
+        {label}
+      </span>
     </div>
-  );
-};
+
+    <p className="mt-1 truncate text-sm font-medium text-gray-800">
+      {value}
+    </p>
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
-| MINI STAT CARD
+| MINI STAT
 |--------------------------------------------------------------------------
 */
 
@@ -1893,31 +2154,29 @@ const MiniStatCard = ({
   label,
   value,
   description,
-}) => {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-            {label}
-          </p>
+}) => (
+  <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+          {label}
+        </p>
 
-          <p className="mt-2 break-words text-lg font-bold text-gray-900">
-            {value}
-          </p>
+        <p className="mt-2 break-words text-lg font-bold text-gray-900">
+          {value}
+        </p>
 
-          <p className="mt-1 text-xs text-gray-500">
-            {description}
-          </p>
-        </div>
+        <p className="mt-1 text-xs text-gray-500">
+          {description}
+        </p>
+      </div>
 
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
-          {icon}
-        </div>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+        {icon}
       </div>
     </div>
-  );
-};
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -1936,16 +2195,12 @@ const ActionButton = ({
   const variants = {
     primary:
       "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100",
-
     success:
       "border-green-200 bg-green-50 text-green-700 hover:bg-green-100",
-
     warning:
       "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
-
     danger:
       "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
-
     neutral:
       "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
   };
@@ -1957,24 +2212,9 @@ const ActionButton = ({
       disabled={
         disabled || loading
       }
-      className={`
-        inline-flex
-        items-center
-        justify-center
-        gap-2
-        rounded-lg
-        border
-        px-3
-        py-2
-        text-sm
-        font-medium
-        transition
-        disabled:cursor-not-allowed
-        disabled:opacity-50
-        ${variants[variant] ||
+      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant] ||
         variants.neutral
-        }
-      `}
+        }`}
     >
       {loading ? (
         <RefreshCw className="h-4 w-4 animate-spin" />
@@ -2013,12 +2253,22 @@ const TenancyCard = ({
     tenancy?.monthly_rent ??
     tenancy?.rent ??
     tenancy?.pricing
-      ?.rent_amount;
+      ?.rent_amount ??
+    tenancy?.unit
+      ?.rent_amount ??
+    tenancy?.unit?.price;
 
   const deposit =
     tenancy?.deposit_amount ??
     tenancy?.deposit ??
-    tenancy?.security_deposit;
+    tenancy?.security_deposit ??
+    tenancy?.unit?.deposit;
+
+  const serviceCharge =
+    tenancy?.service_charge ??
+    tenancy?.service_charge_amount ??
+    tenancy?.unit
+      ?.service_charge;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
@@ -2066,7 +2316,7 @@ const TenancyCard = ({
         <TenancyValue
           label="Start Date"
           value={formatDate(
-            tenancy?.start_date ||
+            tenancy?.start_date ??
             tenancy?.lease_start_date
           )}
           icon={
@@ -2077,7 +2327,7 @@ const TenancyCard = ({
         <TenancyValue
           label="End Date"
           value={formatDate(
-            tenancy?.end_date ||
+            tenancy?.end_date ??
             tenancy?.lease_end_date
           )}
           icon={
@@ -2104,6 +2354,17 @@ const TenancyCard = ({
               : "Not provided"
           }
         />
+
+        {serviceCharge !==
+          undefined &&
+          serviceCharge !== null && (
+            <TenancyValue
+              label="Service Charge"
+              value={formatMoney(
+                serviceCharge
+              )}
+            />
+          )}
       </div>
     </div>
   );
@@ -2119,27 +2380,25 @@ const TenancyValue = ({
   label,
   value,
   icon,
-}) => {
-  return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-        {label}
+}) => (
+  <div className="min-w-0">
+    <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+      {label}
+    </p>
+
+    <div className="mt-1.5 flex items-center gap-2">
+      {icon && (
+        <span className="shrink-0 text-gray-400">
+          {icon}
+        </span>
+      )}
+
+      <p className="break-words text-sm font-semibold text-gray-800">
+        {value}
       </p>
-
-      <div className="mt-1.5 flex items-center gap-2">
-        {icon && (
-          <span className="text-gray-400">
-            {icon}
-          </span>
-        )}
-
-        <p className="break-words text-sm font-semibold text-gray-800">
-          {value}
-        </p>
-      </div>
     </div>
-  );
-};
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -2147,132 +2406,158 @@ const TenancyValue = ({
 |--------------------------------------------------------------------------
 */
 
-const EmptyTenancy = () => {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
-        <Home className="h-6 w-6" />
-      </div>
-
-      <h4 className="mt-3 text-sm font-semibold text-gray-800">
-        No Active Tenancy
-      </h4>
-
-      <p className="mt-1 max-w-md text-sm text-gray-500">
-        This tenant currently has no active
-        property or unit assignment.
-      </p>
+const EmptyTenancy = () => (
+  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
+    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+      <Home className="h-6 w-6" />
     </div>
-  );
-};
+
+    <h4 className="mt-3 text-sm font-semibold text-gray-800">
+      No Active Tenancy
+    </h4>
+
+    <p className="mt-1 max-w-md text-sm text-gray-500">
+      This tenant currently
+      has no active property
+      or unit assignment.
+    </p>
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
-| TENANT DETAILS SKELETON
+| SKELETON
 |--------------------------------------------------------------------------
 */
 
-const TenantDetailsSkeleton = () => {
-  return (
-    <div className="space-y-5">
-      <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-2xl bg-gray-200" />
+const TenantDetailsSkeleton = () => (
+  <div className="space-y-5">
+    <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-4">
+        <div className="h-16 w-16 rounded-2xl bg-gray-200" />
 
-          <div className="space-y-2">
-            <div className="h-5 w-48 rounded bg-gray-200" />
-
-            <div className="h-4 w-32 rounded bg-gray-200" />
-
-            <div className="h-5 w-20 rounded-full bg-gray-200" />
-          </div>
+        <div className="space-y-2">
+          <div className="h-5 w-48 rounded bg-gray-200" />
+          <div className="h-4 w-32 rounded bg-gray-200" />
+          <div className="h-5 w-20 rounded-full bg-gray-200" />
         </div>
       </div>
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {[1, 2, 3, 4].map(
-          (item) => (
-            <div
-              key={item}
-              className="animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
-            >
-              <div className="h-5 w-40 rounded bg-gray-200" />
-
-              <div className="mt-6 grid grid-cols-2 gap-5">
-                {[1, 2, 3, 4].map(
-                  (field) => (
-                    <div
-                      key={field}
-                      className="space-y-2"
-                    >
-                      <div className="h-3 w-20 rounded bg-gray-200" />
-
-                      <div className="h-4 w-32 rounded bg-gray-200" />
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-          )
-        )}
-      </div>
     </div>
-  );
-};
+
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      {[1, 2, 3, 4].map(
+        (item) => (
+          <div
+            key={item}
+            className="animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+          >
+            <div className="h-5 w-40 rounded bg-gray-200" />
+
+            <div className="mt-6 grid grid-cols-2 gap-5">
+              {[1, 2, 3, 4].map(
+                (field) => (
+                  <div
+                    key={field}
+                    className="space-y-2"
+                  >
+                    <div className="h-3 w-20 rounded bg-gray-200" />
+                    <div className="h-4 w-32 rounded bg-gray-200" />
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
-| GET PROPERTY NAME
+| PROPERTY NAME
 |--------------------------------------------------------------------------
 */
 
 const getPropertyName = (
   tenancy
 ) => {
+  const property =
+    tenancy?.property ||
+    tenancy?.unit?.property;
+
+  if (
+    typeof property ===
+    "string"
+  ) {
+    return property;
+  }
+
   return (
-    tenancy?.property?.title ||
-    tenancy?.property?.name ||
+    property?.title ||
+    property?.name ||
     tenancy?.property_title ||
     tenancy?.property_name ||
+    tenancy?.property?.property_name ||
     tenancy?.unit?.property
-      ?.title ||
-    tenancy?.unit?.property
-      ?.name ||
+      ?.property_name ||
     "Not assigned"
   );
 };
 
 /*
 |--------------------------------------------------------------------------
-| GET APARTMENT NAME
+| APARTMENT NAME
 |--------------------------------------------------------------------------
 */
 
 const getApartmentName = (
   tenancy
 ) => {
+  const apartment =
+    tenancy?.apartment ||
+    tenancy?.unit?.apartment;
+
+  if (
+    typeof apartment ===
+    "string"
+  ) {
+    return apartment;
+  }
+
   return (
-    tenancy?.apartment?.name ||
+    apartment?.name ||
+    apartment?.title ||
     tenancy?.apartment_name ||
-    tenancy?.unit?.apartment
-      ?.name ||
+    tenancy?.apartment_title ||
     "Not assigned"
   );
 };
 
 /*
 |--------------------------------------------------------------------------
-| GET UNIT NAME
+| UNIT NAME
 |--------------------------------------------------------------------------
 */
 
 const getUnitName = (
   tenancy
 ) => {
+  const unit =
+    tenancy?.unit;
+
+  if (
+    typeof unit ===
+    "string"
+  ) {
+    return unit;
+  }
+
   return (
-    tenancy?.unit?.full_unit_name ||
-    tenancy?.unit?.unit_name ||
-    tenancy?.unit?.unit_number ||
+    unit?.full_unit_name ||
+    unit?.unit_name ||
+    unit?.unit_number ||
+    tenancy?.full_unit_name ||
     tenancy?.unit_name ||
     tenancy?.unit_number ||
     "Not assigned"
@@ -2281,21 +2566,22 @@ const getUnitName = (
 
 /*
 |--------------------------------------------------------------------------
-| FORMAT MONEY
+| MONEY
 |--------------------------------------------------------------------------
 */
 
-const formatMoney = (value) => {
-  const numericValue = Number(
-    value
-  );
+const formatMoney = (
+  value
+) => {
+  const numericValue =
+    Number(value);
 
   if (
     Number.isNaN(
       numericValue
     )
   ) {
-    return value;
+    return String(value);
   }
 
   return new Intl.NumberFormat(
@@ -2315,7 +2601,9 @@ const formatMoney = (value) => {
 |--------------------------------------------------------------------------
 */
 
-const capitalize = (value) => {
+const capitalize = (
+  value
+) => {
   if (!value) {
     return "";
   }
