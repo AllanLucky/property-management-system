@@ -1,184 +1,129 @@
 import {
+  AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleUserRound,
   Eye,
-  Mail,
-  MapPin,
+  Loader2,
   MoreHorizontal,
   Pencil,
-  Phone,
-  ShieldAlert,
+  RefreshCw,
+  Search,
   Trash2,
-  UserCheck,
-  UserX,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 /*
 |--------------------------------------------------------------------------
-| TenantTable
-|--------------------------------------------------------------------------
-| Professional tenant directory table.
-|
-| Designed to work with the current Tenant API response:
-|
-| tenant
-| ├── id
-| ├── tenant_number
-| ├── user_id
-| ├── first_name
-| ├── last_name
-| ├── other_names
-| ├── email
-| ├── phone
-| ├── country
-| ├── county
-| ├── city
-| ├── status
-| ├── is_verified
-| ├── verified_at
-| ├── created_at
-| ├── user
-| ├── tenancies
-| └── active_tenancy
-|
-| The component is intentionally defensive because tenancy/unit
-| information may not be returned by the tenant index endpoint.
+| TENANT TABLE
 |--------------------------------------------------------------------------
 */
 
 const TenantTable = ({
   tenants = [],
   loading = false,
-  onEdit,
-  onView,
   onDelete,
   onRefresh,
+  pagination = {},
+  onPageChange,
 }) => {
+  const navigate = useNavigate();
+
+  /*
+  |--------------------------------------------------------------------------
+  | STATE
+  |--------------------------------------------------------------------------
+  */
+
   const [openMenu, setOpenMenu] = useState(null);
+  const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   /*
   |--------------------------------------------------------------------------
-  | SAFE TENANT LIST
+  | PAGINATION
   |--------------------------------------------------------------------------
   */
 
-  const tenantList = Array.isArray(tenants)
-    ? tenants
-    : [];
+  const currentPage = Number(
+    pagination?.current_page ??
+    pagination?.currentPage ??
+    1
+  );
+
+  const lastPage = Number(
+    pagination?.last_page ??
+    pagination?.lastPage ??
+    1
+  );
+
+  const total = Number(
+    pagination?.total ??
+    tenants.length ??
+    0
+  );
 
   /*
   |--------------------------------------------------------------------------
-  | SAFE BOOLEAN
+  | SEARCH
   |--------------------------------------------------------------------------
   */
 
-  const isTrue = (value) => {
-    if (typeof value === "boolean") {
-      return value;
+  const filteredTenants = useMemo(() => {
+    const query = String(search || "")
+      .trim()
+      .toLowerCase();
+
+    if (!query) {
+      return tenants;
     }
 
-    if (typeof value === "number") {
-      return value === 1;
-    }
+    return tenants.filter((tenant) => {
+      const values = [
+        tenant?.id,
+        tenant?.tenant_number,
+        tenant?.first_name,
+        tenant?.last_name,
+        tenant?.other_names,
+        tenant?.full_name,
+        tenant?.email,
+        tenant?.phone,
+        tenant?.status,
+      ];
 
-    if (typeof value === "string") {
-      return [
-        "1",
-        "true",
-        "yes",
-        "active",
-        "verified",
-      ].includes(value.trim().toLowerCase());
-    }
-
-    return false;
-  };
+      return values.some((value) =>
+        String(value ?? "")
+          .toLowerCase()
+          .includes(query)
+      );
+    });
+  }, [tenants, search]);
 
   /*
   |--------------------------------------------------------------------------
-  | SAFE STRING
+  | TENANT NAME
   |--------------------------------------------------------------------------
   */
 
-  const getString = (value) => {
-    if (
-      value === null ||
-      value === undefined
-    ) {
-      return "";
+  const getTenantName = (tenant) => {
+    if (tenant?.full_name) {
+      return tenant.full_name;
     }
 
-    if (typeof value === "string") {
-      return value.trim();
-    }
+    const name = [
+      tenant?.first_name,
+      tenant?.last_name,
+      tenant?.other_names,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
 
-    if (
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
-      return String(value);
-    }
-
-    return "";
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | FULL NAME
-  |--------------------------------------------------------------------------
-  */
-
-  const getFullName = (tenant) => {
-    if (!tenant) {
-      return "Unknown Tenant";
-    }
-
-    if (
-      typeof tenant.full_name === "string" &&
-      tenant.full_name.trim()
-    ) {
-      return tenant.full_name.trim();
-    }
-
-    const user = tenant.user;
-
-    if (
-      user &&
-      typeof user.full_name === "string" &&
-      user.full_name.trim()
-    ) {
-      return user.full_name.trim();
-    }
-
-    const parts = [
-      tenant.first_name,
-      tenant.other_names,
-      tenant.last_name,
-    ].filter(
-      (value) =>
-        typeof value === "string" &&
-        value.trim()
-    );
-
-    if (parts.length > 0) {
-      return parts.join(" ");
-    }
-
-    const userParts = [
-      user?.first_name,
-      user?.other_names,
-      user?.last_name,
-    ].filter(
-      (value) =>
-        typeof value === "string" &&
-        value.trim()
-    );
-
-    return userParts.length > 0
-      ? userParts.join(" ")
-      : "Unknown Tenant";
+    return name || "Unknown Tenant";
   };
 
   /*
@@ -188,47 +133,18 @@ const TenantTable = ({
   */
 
   const getInitials = (tenant) => {
-    const name = getFullName(tenant);
+    const first = String(
+      tenant?.first_name || ""
+    ).charAt(0);
 
-    if (
-      !name ||
-      name === "Unknown Tenant"
-    ) {
-      return "T";
-    }
+    const last = String(
+      tenant?.last_name || ""
+    ).charAt(0);
 
-    const parts = name
-      .split(/\s+/)
-      .filter(Boolean);
+    const initials =
+      `${first}${last}`.toUpperCase();
 
-    if (parts.length === 1) {
-      return parts[0]
-        .substring(0, 2)
-        .toUpperCase();
-    }
-
-    return `${parts[0][0]}${
-      parts[parts.length - 1][0]
-    }`.toUpperCase();
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | TENANT NUMBER
-  |--------------------------------------------------------------------------
-  */
-
-  const getTenantNumber = (tenant) => {
-    return (
-      getString(tenant?.tenant_number) ||
-      getString(tenant?.tenant_code) ||
-      getString(tenant?.code) ||
-      (
-        tenant?.id
-          ? `TNT-${String(tenant.id).padStart(6, "0")}`
-          : "N/A"
-      )
-    );
+    return initials || "T";
   };
 
   /*
@@ -237,32 +153,39 @@ const TenantTable = ({
   |--------------------------------------------------------------------------
   */
 
-  const getStatus = (tenant) => {
-    return String(
+  const normalizeStatus = (tenant) => {
+    const status =
       tenant?.status ||
       tenant?.tenant_status ||
       tenant?.account_status ||
-      ""
-    )
-      .trim()
-      .toLowerCase();
+      "";
+
+    return String(status).toLowerCase();
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | STATUS LABEL
-  |--------------------------------------------------------------------------
-  */
+  const getStatusClasses = (tenant) => {
+    const status = normalizeStatus(tenant);
 
-  const getStatusLabel = (tenant) => {
-    if (
-      typeof tenant?.status_label === "string" &&
-      tenant.status_label.trim()
-    ) {
-      return tenant.status_label.trim();
+    switch (status) {
+      case "active":
+        return "bg-green-50 text-green-700 ring-green-600/20";
+
+      case "blacklisted":
+        return "bg-red-50 text-red-700 ring-red-600/20";
+
+      case "inactive":
+        return "bg-gray-100 text-gray-700 ring-gray-500/20";
+
+      case "pending":
+        return "bg-yellow-50 text-yellow-700 ring-yellow-600/20";
+
+      default:
+        return "bg-gray-100 text-gray-700 ring-gray-500/20";
     }
+  };
 
-    const status = getStatus(tenant);
+  const formatStatus = (tenant) => {
+    const status = normalizeStatus(tenant);
 
     if (!status) {
       return "Unknown";
@@ -270,671 +193,230 @@ const TenantTable = ({
 
     return status
       .replace(/_/g, " ")
-      .replace(/\b\w/g, (letter) =>
-        letter.toUpperCase()
+      .replace(/\b\w/g, (char) =>
+        char.toUpperCase()
       );
   };
 
   /*
   |--------------------------------------------------------------------------
-  | STATUS STYLES
-  |--------------------------------------------------------------------------
-  */
-
-  const getStatusClasses = (tenant) => {
-    switch (getStatus(tenant)) {
-      case "active":
-        return {
-          wrapper:
-            "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-          icon: CheckCircle2,
-        };
-
-      case "pending":
-        return {
-          wrapper:
-            "bg-amber-50 text-amber-700 ring-amber-600/20",
-          icon: UserCheck,
-        };
-
-      case "inactive":
-        return {
-          wrapper:
-            "bg-slate-100 text-slate-600 ring-slate-500/20",
-          icon: UserX,
-        };
-
-      case "blacklisted":
-        return {
-          wrapper:
-            "bg-red-50 text-red-700 ring-red-600/20",
-          icon: ShieldAlert,
-        };
-
-      default:
-        return {
-          wrapper:
-            "bg-gray-100 text-gray-600 ring-gray-500/20",
-          icon: CircleUserRound,
-        };
-    }
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | VERIFIED
-  |--------------------------------------------------------------------------
-  */
-
-  const isVerified = (tenant) => {
-    return isTrue(
-      tenant?.is_verified ??
-      tenant?.verified ??
-      tenant?.user?.is_verified
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | ACTIVE ACCOUNT
-  |--------------------------------------------------------------------------
-  */
-
-  const isActive = (tenant) => {
-    if (
-      tenant?.is_active !== undefined &&
-      tenant?.is_active !== null
-    ) {
-      return isTrue(tenant.is_active);
-    }
-
-    if (
-      tenant?.account_status !== undefined &&
-      tenant?.account_status !== null
-    ) {
-      return (
-        String(tenant.account_status)
-          .toLowerCase() === "active"
-      );
-    }
-
-    return getStatus(tenant) === "active";
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | TENANCIES
-  |--------------------------------------------------------------------------
-  */
-
-  const getTenancies = (tenant) => {
-    if (
-      Array.isArray(tenant?.tenancies)
-    ) {
-      return tenant.tenancies;
-    }
-
-    if (
-      Array.isArray(tenant?.tenancy)
-    ) {
-      return tenant.tenancy;
-    }
-
-    return [];
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | ACTIVE TENANCY
-  |--------------------------------------------------------------------------
-  */
-
-  const getActiveTenancy = (tenant) => {
-    if (
-      tenant?.active_tenancy &&
-      typeof tenant.active_tenancy === "object"
-    ) {
-      return tenant.active_tenancy;
-    }
-
-    if (
-      tenant?.current_tenancy &&
-      typeof tenant.current_tenancy === "object"
-    ) {
-      return tenant.current_tenancy;
-    }
-
-    const tenancies = getTenancies(tenant);
-
-    if (tenancies.length === 0) {
-      return null;
-    }
-
-    return (
-      tenancies.find((tenancy) =>
-        isTrue(
-          tenancy?.is_currently_active
-        )
-      ) ||
-      tenancies.find((tenancy) =>
-        isTrue(tenancy?.is_active)
-      ) ||
-      tenancies.find(
-        (tenancy) =>
-          String(
-            tenancy?.status || ""
-          ).toLowerCase() === "active"
-      ) ||
-      null
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | HAS ACTIVE TENANCY
-  |--------------------------------------------------------------------------
-  */
-
-  const hasActiveTenancy = (tenant) => {
-    return Boolean(
-      getActiveTenancy(tenant)
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | PHONE
-  |--------------------------------------------------------------------------
-  */
-
-  const getPhone = (tenant) => {
-    return (
-      getString(tenant?.phone) ||
-      getString(tenant?.phone_number) ||
-      getString(tenant?.user?.phone) ||
-      "—"
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | EMAIL
-  |--------------------------------------------------------------------------
-  */
-
-  const getEmail = (tenant) => {
-    return (
-      getString(tenant?.email) ||
-      getString(tenant?.user?.email) ||
-      "—"
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | UNIT
-  |--------------------------------------------------------------------------
-  */
-
-  const getUnitName = (tenant) => {
-    /*
-    | Direct unit relation
-    */
-
-    const directUnit = tenant?.unit;
-
-    if (
-      directUnit &&
-      typeof directUnit === "object"
-    ) {
-      return (
-        getString(
-          directUnit.full_unit_name
-        ) ||
-        getString(
-          directUnit.unit_name
-        ) ||
-        getString(
-          directUnit.unit_number
-        ) ||
-        (
-          directUnit.id
-            ? `Unit #${directUnit.id}`
-            : "—"
-        )
-      );
-    }
-
-    /*
-    | Direct tenant unit fields
-    */
-
-    if (
-      tenant?.unit_name ||
-      tenant?.unit_number
-    ) {
-      return (
-        getString(tenant.unit_name) ||
-        getString(tenant.unit_number)
-      );
-    }
-
-    /*
-    | Active tenancy
-    */
-
-    const activeTenancy =
-      getActiveTenancy(tenant);
-
-    if (activeTenancy) {
-      const tenancyUnit =
-        activeTenancy.unit;
-
-      if (
-        tenancyUnit &&
-        typeof tenancyUnit === "object"
-      ) {
-        return (
-          getString(
-            tenancyUnit.full_unit_name
-          ) ||
-          getString(
-            tenancyUnit.unit_name
-          ) ||
-          getString(
-            tenancyUnit.unit_number
-          ) ||
-          (
-            tenancyUnit.id
-              ? `Unit #${tenancyUnit.id}`
-              : "—"
-          )
-        );
-      }
-
-      if (
-        activeTenancy.unit_name ||
-        activeTenancy.unit_number
-      ) {
-        return (
-          getString(
-            activeTenancy.unit_name
-          ) ||
-          getString(
-            activeTenancy.unit_number
-          )
-        );
-      }
-
-      if (activeTenancy.unit_id) {
-        return `Unit #${activeTenancy.unit_id}`;
-      }
-    }
-
-    /*
-    | First tenancy
-    */
-
-    const tenancies = getTenancies(tenant);
-
-    const firstTenancy =
-      tenancies.find(
-        (tenancy) =>
-          tenancy?.unit_id ||
-          tenancy?.unit
-      );
-
-    if (firstTenancy) {
-      const tenancyUnit =
-        firstTenancy.unit;
-
-      if (
-        tenancyUnit &&
-        typeof tenancyUnit === "object"
-      ) {
-        return (
-          getString(
-            tenancyUnit.full_unit_name
-          ) ||
-          getString(
-            tenancyUnit.unit_name
-          ) ||
-          getString(
-            tenancyUnit.unit_number
-          ) ||
-          (
-            tenancyUnit.id
-              ? `Unit #${tenancyUnit.id}`
-              : "—"
-          )
-        );
-      }
-
-      if (firstTenancy.unit_name) {
-        return getString(
-          firstTenancy.unit_name
-        );
-      }
-
-      if (firstTenancy.unit_number) {
-        return getString(
-          firstTenancy.unit_number
-        );
-      }
-
-      if (firstTenancy.unit_id) {
-        return `Unit #${firstTenancy.unit_id}`;
-      }
-    }
-
-    /*
-    | Direct unit ID
-    */
-
-    if (tenant?.unit_id) {
-      return `Unit #${tenant.unit_id}`;
-    }
-
-    /*
-    | No tenancy/unit supplied by API
-    */
-
-    return "Not assigned";
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOCATION VALUE
-  |--------------------------------------------------------------------------
-  */
-
-  const getLocationValue = (value) => {
-    if (!value) {
-      return "";
-    }
-
-    if (typeof value === "string") {
-      return value.trim();
-    }
-
-    if (typeof value === "object") {
-      return (
-        getString(value.name) ||
-        getString(value.title) ||
-        getString(value.label) ||
-        ""
-      );
-    }
-
-    return "";
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOCATION
-  |--------------------------------------------------------------------------
-  */
-
-  const getLocation = (tenant) => {
-    const city =
-      getLocationValue(
-        tenant?.city
-      ) ||
-      getLocationValue(
-        tenant?.city_name
-      );
-
-    const county =
-      getLocationValue(
-        tenant?.county
-      ) ||
-      getLocationValue(
-        tenant?.county_name
-      );
-
-    if (city && county) {
-      return `${city}, ${county}`;
-    }
-
-    return (
-      city ||
-      county ||
-      getLocationValue(tenant?.address) ||
-      "—"
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | CREATED DATE
-  |--------------------------------------------------------------------------
-  */
-
-  const formatDate = (value) => {
-    if (!value) {
-      return "—";
-    }
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return "—";
-    }
-
-    return date.toLocaleDateString(
-      "en-KE",
-      {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | PHOTO
-  |--------------------------------------------------------------------------
-  */
-
-  const getPhoto = (tenant) => {
-    const documents =
-      tenant?.documents &&
-      typeof tenant.documents === "object"
-        ? tenant.documents
-        : {};
-
-    return (
-      getString(tenant?.avatar) ||
-      getString(tenant?.profile_photo) ||
-      getString(tenant?.photo_url) ||
-      getString(
-        tenant?.profile_photo_url
-      ) ||
-      getString(tenant?.photo) ||
-      getString(documents?.photo) ||
-      null
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | VERIFICATION LABEL
-  |--------------------------------------------------------------------------
-  */
-
-  const getVerificationLabel = (tenant) => {
-    if (
-      typeof tenant?.verification_status ===
-        "string" &&
-      tenant.verification_status.trim()
-    ) {
-      return tenant.verification_status.trim();
-    }
-
-    if (isVerified(tenant)) {
-      return "Verified";
-    }
-
-    return "Unverified";
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | MENU
-  |--------------------------------------------------------------------------
-  */
-
-  const toggleMenu = (tenantId) => {
-    setOpenMenu((current) =>
-      current === tenantId
-        ? null
-        : tenantId
-    );
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | ACTIONS
+  | VIEW TENANT
   |--------------------------------------------------------------------------
   */
 
   const handleView = (tenant) => {
     setOpenMenu(null);
 
-    if (typeof onView === "function") {
-      onView(tenant);
+    const tenantId = tenant?.id;
+
+    if (!tenantId) {
+      console.error(
+        "Cannot view tenant: tenant ID is missing.",
+        tenant
+      );
+
+      return;
     }
+
+    navigate(
+      `/super-admin/tenants/${tenantId}`
+    );
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | EDIT TENANT
+  |--------------------------------------------------------------------------
+  */
 
   const handleEdit = (tenant) => {
     setOpenMenu(null);
 
-    if (typeof onEdit === "function") {
-      onEdit(tenant);
+    const tenantId = tenant?.id;
+
+    if (!tenantId) {
+      console.error(
+        "Cannot edit tenant: tenant ID is missing.",
+        tenant
+      );
+
+      return;
     }
+
+    navigate(
+      `/super-admin/tenants/${tenantId}/edit`
+    );
   };
 
-  const handleDelete = (tenant) => {
+  /*
+  |--------------------------------------------------------------------------
+  | DELETE TENANT
+  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | The actual API delete operation is handled by the parent through
+  | the onDelete prop.
+  |
+  | This component:
+  | 1. Validates the tenant.
+  | 2. Confirms the deletion.
+  | 3. Sets deleting state.
+  | 4. Calls onDelete(tenant).
+  | 5. Waits for async deletion if a Promise is returned.
+  |
+  */
+
+  const handleDelete = async (tenant) => {
     setOpenMenu(null);
 
-    if (typeof onDelete === "function") {
-      onDelete(tenant);
+    const tenantId = tenant?.id;
+
+    if (!tenantId) {
+      console.error(
+        "Cannot delete tenant: tenant ID is missing.",
+        tenant
+      );
+
+      window.alert(
+        "Unable to delete this tenant because the tenant ID is missing."
+      );
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | VERIFY DELETE HANDLER
+    |--------------------------------------------------------------------------
+    */
+
+    if (typeof onDelete !== "function") {
+      console.error(
+        "TenantTable: onDelete prop is not provided.",
+        {
+          tenant,
+          tenantId,
+        }
+      );
+
+      window.alert(
+        "Delete is not configured. Please connect the tenant delete handler."
+      );
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONFIRM DELETE
+    |--------------------------------------------------------------------------
+    */
+
+    const tenantName =
+      getTenantName(tenant);
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${tenantName}?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | START DELETE
+    |--------------------------------------------------------------------------
+    */
+
+    setDeletingId(tenantId);
+
+    try {
+      /*
+      |--------------------------------------------------------------------------
+      | PASS THE FULL TENANT OBJECT
+      |--------------------------------------------------------------------------
+      |
+      | The parent should receive:
+      |
+      | onDelete(tenant)
+      |
+      | and can then use tenant.id for the API request.
+      |
+      */
+
+      const result = onDelete(tenant);
+
+      /*
+      |--------------------------------------------------------------------------
+      | WAIT FOR ASYNC DELETE
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        result &&
+        typeof result.then === "function"
+      ) {
+        await result;
+      }
+    } catch (error) {
+      console.error(
+        "Tenant deletion failed:",
+        error
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | SHOW ERROR ONLY IF THE PARENT THROWS
+      |--------------------------------------------------------------------------
+      */
+
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Failed to delete tenant.";
+
+      window.alert(message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
   /*
   |--------------------------------------------------------------------------
-  | TABLE HEADER
+  | REFRESH
   |--------------------------------------------------------------------------
   */
 
-  const tableHeadClass =
-    "px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500";
+  const handleRefresh = () => {
+    setOpenMenu(null);
+
+    if (typeof onRefresh === "function") {
+      onRefresh();
+    }
+  };
 
   /*
   |--------------------------------------------------------------------------
-  | LOADING STATE
+  | PAGE CHANGE
   |--------------------------------------------------------------------------
   */
 
-  if (
-    loading &&
-    tenantList.length === 0
-  ) {
-    return (
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 bg-white px-5 py-4">
-          <div className="animate-pulse space-y-2">
-            <div className="h-4 w-32 rounded bg-gray-200" />
-            <div className="h-3 w-48 rounded bg-gray-100" />
-          </div>
-        </div>
+  const handlePageChange = (page) => {
+    if (
+      page < 1 ||
+      page > lastPage ||
+      page === currentPage
+    ) {
+      return;
+    }
 
-        <div className="overflow-x-auto">
-          <table className="min-w-[1100px] w-full">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50/80">
-                {[
-                  "Tenant",
-                  "Contact",
-                  "Unit",
-                  "Location",
-                  "Status",
-                  "Verification",
-                  "Created",
-                  "Actions",
-                ].map((heading) => (
-                  <th
-                    key={heading}
-                    className={tableHeadClass}
-                  >
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+    setOpenMenu(null);
 
-            <tbody>
-              {Array.from({
-                length: 7,
-              }).map((_, index) => (
-                <tr
-                  key={index}
-                  className="animate-pulse border-b border-gray-100"
-                >
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-gray-200" />
-
-                      <div className="space-y-2">
-                        <div className="h-3.5 w-32 rounded bg-gray-200" />
-                        <div className="h-3 w-20 rounded bg-gray-100" />
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="space-y-2">
-                      <div className="h-3 w-36 rounded bg-gray-200" />
-                      <div className="h-3 w-28 rounded bg-gray-100" />
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="h-7 w-24 rounded-lg bg-gray-200" />
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="h-3.5 w-28 rounded bg-gray-200" />
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="h-6 w-20 rounded-full bg-gray-200" />
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="space-y-2">
-                      <div className="h-6 w-24 rounded-full bg-gray-200" />
-                      <div className="h-3 w-20 rounded bg-gray-100" />
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="h-3.5 w-24 rounded bg-gray-200" />
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="ml-auto h-9 w-9 rounded-lg bg-gray-200" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
+    if (typeof onPageChange === "function") {
+      onPageChange(page);
+    }
+  };
 
   /*
   |--------------------------------------------------------------------------
@@ -942,604 +424,771 @@ const TenantTable = ({
   |--------------------------------------------------------------------------
   */
 
-  if (
+  const isEmpty =
     !loading &&
-    tenantList.length === 0
-  ) {
-    return (
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-400">
-            <CircleUserRound className="h-8 w-8" />
-          </div>
-
-          <h3 className="mt-5 text-base font-semibold text-gray-900">
-            No tenants found
-          </h3>
-
-          <p className="mt-1.5 max-w-md text-sm leading-6 text-gray-500">
-            There are no tenants matching
-            your current filters. Try
-            adjusting your search or
-            refreshing the tenant list.
-          </p>
-
-          {typeof onRefresh ===
-            "function" && (
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="mt-5 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-              >
-                Refresh tenant list
-              </button>
-            )}
-        </div>
-      </div>
-    );
-  }
+    filteredTenants.length === 0;
 
   /*
   |--------------------------------------------------------------------------
-  | TABLE
+  | RENDER
   |--------------------------------------------------------------------------
   */
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/* ------------------------------------------------------------------
+          TABLE HEADER
+      ------------------------------------------------------------------ */}
 
-      {/* HEADER */}
+      <div className="border-b border-gray-200 px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          {/* TITLE */}
 
-      <div className="flex flex-col gap-3 border-b border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h3 className="text-sm font-semibold text-gray-900">
-              Tenant Directory
-            </h3>
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">
+              Tenant List
+            </h2>
 
-            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-              {tenantList.length.toLocaleString()}
-            </span>
+            <p className="mt-1 text-sm text-gray-500">
+              Manage registered tenants and their
+              account information.
+            </p>
           </div>
 
-          <p className="mt-1 text-xs text-gray-500">
-            Manage tenant profiles,
-            contact details and occupancy
-            information.
-          </p>
+          {/* ACTIONS */}
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {/* SEARCH */}
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+              <input
+                type="search"
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search tenants..."
+                className="
+                  h-10
+                  w-full
+                  rounded-lg
+                  border
+                  border-gray-300
+                  bg-white
+                  pl-9
+                  pr-9
+                  text-sm
+                  text-gray-900
+                  outline-none
+                  placeholder:text-gray-400
+                  focus:border-primary-500
+                  focus:ring-2
+                  focus:ring-primary-500/20
+                  sm:w-64
+                "
+              />
+
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="
+                    absolute
+                    right-2
+                    top-1/2
+                    flex
+                    h-6
+                    w-6
+                    -translate-y-1/2
+                    items-center
+                    justify-center
+                    rounded-md
+                    text-gray-400
+                    hover:bg-gray-100
+                    hover:text-gray-600
+                  "
+                  aria-label="Clear search"
+                >
+                  <XCircle className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* REFRESH */}
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="
+                inline-flex
+                h-10
+                items-center
+                justify-center
+                gap-2
+                rounded-lg
+                border
+                border-gray-300
+                bg-white
+                px-3
+                text-sm
+                font-medium
+                text-gray-700
+                transition
+                hover:bg-gray-50
+                focus:outline-none
+                focus:ring-2
+                focus:ring-primary-500/20
+                disabled:cursor-not-allowed
+                disabled:opacity-60
+              "
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading
+                    ? "animate-spin"
+                    : ""
+                  }`}
+              />
+
+              <span className="hidden sm:inline">
+                Refresh
+              </span>
+            </button>
+          </div>
         </div>
-
-        {loading && (
-          <div className="inline-flex items-center gap-2 self-start rounded-full bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 sm:self-auto">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-600" />
-            Updating tenant list...
-          </div>
-        )}
       </div>
 
-      {/* TABLE */}
+      {/* ------------------------------------------------------------------
+          LOADING
+      ------------------------------------------------------------------ */}
 
-      <div className="overflow-x-auto">
-        <table className="min-w-[1100px] w-full">
+      {loading && (
+        <div className="flex min-h-[300px] items-center justify-center">
+          <div className="flex flex-col items-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-50">
+              <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
+            </div>
 
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50/80">
+            <p className="mt-3 text-sm font-medium text-gray-900">
+              Loading tenants...
+            </p>
 
-              <th className={tableHeadClass}>
-                Tenant
-              </th>
+            <p className="mt-1 text-xs text-gray-500">
+              Please wait while we fetch tenant
+              records.
+            </p>
+          </div>
+        </div>
+      )}
 
-              <th className={tableHeadClass}>
-                Contact
-              </th>
+      {/* ------------------------------------------------------------------
+          EMPTY
+      ------------------------------------------------------------------ */}
 
-              <th className={tableHeadClass}>
-                Unit
-              </th>
+      {isEmpty && (
+        <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+            {search ? (
+              <Search className="h-7 w-7" />
+            ) : (
+              <UsersIcon />
+            )}
+          </div>
 
-              <th className={tableHeadClass}>
-                Location
-              </th>
+          <h3 className="mt-4 text-sm font-semibold text-gray-900">
+            {search
+              ? "No tenants found"
+              : "No tenants available"}
+          </h3>
 
-              <th className={tableHeadClass}>
-                Status
-              </th>
+          <p className="mt-1 max-w-md text-sm text-gray-500">
+            {search
+              ? "Try changing your search criteria."
+              : "There are currently no tenant records to display."}
+          </p>
+        </div>
+      )}
 
-              <th className={tableHeadClass}>
-                Verification
-              </th>
+      {/* ------------------------------------------------------------------
+          TABLE
+      ------------------------------------------------------------------ */}
 
-              <th className={tableHeadClass}>
-                Created
-              </th>
+      {!loading &&
+        filteredTenants.length > 0 && (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="
+                        px-4
+                        py-3
+                        text-left
+                        text-xs
+                        font-semibold
+                        uppercase
+                        tracking-wider
+                        text-gray-500
+                        sm:px-6
+                      "
+                    >
+                      Tenant
+                    </th>
 
-              <th
-                className={`${tableHeadClass} text-right`}
-              >
-                Actions
-              </th>
+                    <th
+                      scope="col"
+                      className="
+                        px-4
+                        py-3
+                        text-left
+                        text-xs
+                        font-semibold
+                        uppercase
+                        tracking-wider
+                        text-gray-500
+                      "
+                    >
+                      Tenant Number
+                    </th>
 
-            </tr>
-          </thead>
+                    <th
+                      scope="col"
+                      className="
+                        px-4
+                        py-3
+                        text-left
+                        text-xs
+                        font-semibold
+                        uppercase
+                        tracking-wider
+                        text-gray-500
+                      "
+                    >
+                      Phone
+                    </th>
 
-          <tbody className="divide-y divide-gray-100">
+                    <th
+                      scope="col"
+                      className="
+                        px-4
+                        py-3
+                        text-left
+                        text-xs
+                        font-semibold
+                        uppercase
+                        tracking-wider
+                        text-gray-500
+                      "
+                    >
+                      Status
+                    </th>
 
-            {tenantList.map((tenant) => {
-              const tenantId =
-                tenant?.id ??
-                tenant?.tenant_number ??
-                Math.random();
+                    <th
+                      scope="col"
+                      className="
+                        px-4
+                        py-3
+                        text-left
+                        text-xs
+                        font-semibold
+                        uppercase
+                        tracking-wider
+                        text-gray-500
+                      "
+                    >
+                      Verification
+                    </th>
 
-              const statusClasses =
-                getStatusClasses(tenant);
+                    <th
+                      scope="col"
+                      className="
+                        px-4
+                        py-3
+                        text-right
+                        text-xs
+                        font-semibold
+                        uppercase
+                        tracking-wider
+                        text-gray-500
+                      "
+                    >
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
 
-              const StatusIcon =
-                statusClasses.icon;
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {filteredTenants.map(
+                    (tenant) => {
+                      const tenantId =
+                        tenant?.id;
 
-              const verified =
-                isVerified(tenant);
+                      const name =
+                        getTenantName(
+                          tenant
+                        );
 
-              const active =
-                isActive(tenant);
+                      const isDeleting =
+                        deletingId ===
+                        tenantId;
 
-              const activeTenancy =
-                hasActiveTenancy(tenant);
+                      return (
+                        <tr
+                          key={
+                            tenantId ||
+                            tenant?.tenant_number ||
+                            name
+                          }
+                          className="transition hover:bg-gray-50"
+                        >
+                          {/* TENANT */}
 
-              const photo =
-                getPhoto(tenant);
+                          <td className="whitespace-nowrap px-4 py-4 sm:px-6">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-50 text-sm font-semibold text-primary-700">
+                                {getInitials(
+                                  tenant
+                                )}
+                              </div>
 
-              const verificationLabel =
-                getVerificationLabel(
-                  tenant
-                );
+                              <div className="min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleView(
+                                      tenant
+                                    )
+                                  }
+                                  disabled={
+                                    isDeleting
+                                  }
+                                  className="
+                                    truncate
+                                    text-left
+                                    text-sm
+                                    font-semibold
+                                    text-gray-900
+                                    hover:text-primary-600
+                                    disabled:cursor-not-allowed
+                                    disabled:opacity-60
+                                  "
+                                >
+                                  {name}
+                                </button>
 
-              return (
-                <tr
-                  key={tenantId}
-                  className="group transition-colors duration-150 hover:bg-gray-50/70"
-                >
+                                <p className="truncate text-xs text-gray-500">
+                                  {tenant?.email ||
+                                    tenant
+                                      ?.user
+                                      ?.email ||
+                                    "No email address"}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
 
-                  {/* TENANT */}
+                          {/* TENANT NUMBER */}
 
-                  <td className="whitespace-nowrap px-5 py-4">
-                    <div className="flex items-center gap-3.5">
+                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                            {tenant?.tenant_number ||
+                              tenantId ||
+                              "—"}
+                          </td>
 
-                      <div className="relative shrink-0">
+                          {/* PHONE */}
 
-                        <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-primary-50 text-sm font-bold text-primary-700 ring-2 ring-white ring-offset-1 ring-offset-gray-100">
+                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                            {tenant?.phone ||
+                              tenant?.user
+                                ?.phone ||
+                              "—"}
+                          </td>
 
-                          {photo ? (
-                            <img
-                              src={photo}
-                              alt={getFullName(
+                          {/* STATUS */}
+
+                          <td className="whitespace-nowrap px-4 py-4">
+                            <span
+                              className={`
+                                inline-flex
+                                items-center
+                                rounded-full
+                                px-2.5
+                                py-1
+                                text-xs
+                                font-medium
+                                ring-1
+                                ring-inset
+                                ${getStatusClasses(
                                 tenant
                               )}
-                              className="h-full w-full object-cover"
-                              onError={(event) => {
-                                event.currentTarget.style.display =
-                                  "none";
-                                event.currentTarget.parentElement.textContent =
-                                  getInitials(
-                                    tenant
-                                  );
-                              }}
-                            />
-                          ) : (
-                            getInitials(
-                              tenant
-                            )
-                          )}
+                              `}
+                            >
+                              {normalizeStatus(
+                                tenant
+                              ) ===
+                                "active" ? (
+                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                              ) : normalizeStatus(
+                                tenant
+                              ) ===
+                                "blacklisted" ? (
+                                <XCircle className="mr-1 h-3.5 w-3.5" />
+                              ) : (
+                                <AlertCircle className="mr-1 h-3.5 w-3.5" />
+                              )}
 
-                        </div>
+                              {formatStatus(
+                                tenant
+                              )}
+                            </span>
+                          </td>
 
-                        {active && (
-                          <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
-                        )}
+                          {/* VERIFICATION */}
 
-                      </div>
+                          <td className="whitespace-nowrap px-4 py-4">
+                            {tenant?.is_verified ||
+                              tenant?.email_verified_at ? (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                                <CheckCircle2 className="h-4 w-4" />
 
-                      <div className="min-w-0">
+                                Verified
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                <XCircle className="h-4 w-4" />
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleView(
-                              tenant
-                            )
-                          }
-                          className="block max-w-[230px] truncate text-left text-sm font-semibold text-gray-900 transition hover:text-primary-600"
-                          title={getFullName(
-                            tenant
-                          )}
-                        >
-                          {getFullName(
-                            tenant
-                          )}
-                        </button>
-
-                        <div className="mt-1 flex items-center gap-1.5">
-
-                          <span className="text-[11px] font-medium tracking-wide text-gray-400">
-                            {getTenantNumber(
-                              tenant
+                                Not Verified
+                              </span>
                             )}
-                          </span>
+                          </td>
 
-                          {activeTenancy && (
-                            <>
-                              <span className="text-gray-300">
-                                •
-                              </span>
+                          {/* ACTIONS */}
 
-                              <span className="text-[11px] font-medium text-emerald-600">
-                                Occupied
-                              </span>
-                            </>
-                          )}
+                          <td className="whitespace-nowrap px-4 py-4 text-right">
+                            <div className="relative inline-block text-left">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenMenu(
+                                    openMenu ===
+                                      tenantId
+                                      ? null
+                                      : tenantId
+                                  )
+                                }
+                                disabled={
+                                  isDeleting
+                                }
+                                className="
+                                  inline-flex
+                                  items-center
+                                  gap-1.5
+                                  rounded-lg
+                                  border
+                                  border-gray-300
+                                  bg-white
+                                  px-3
+                                  py-2
+                                  text-sm
+                                  font-medium
+                                  text-gray-700
+                                  shadow-sm
+                                  transition
+                                  hover:bg-gray-50
+                                  focus:outline-none
+                                  focus:ring-2
+                                  focus:ring-primary-500/20
+                                  disabled:cursor-not-allowed
+                                  disabled:opacity-60
+                                "
+                                aria-expanded={
+                                  openMenu ===
+                                  tenantId
+                                }
+                                aria-haspopup="menu"
+                              >
+                                {isDeleting ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
 
-                        </div>
+                                    <span>
+                                      Deleting...
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <MoreHorizontal className="h-4 w-4" />
 
-                      </div>
+                                    <span className="hidden sm:inline">
+                                      Actions
+                                    </span>
 
-                    </div>
-                  </td>
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  </>
+                                )}
+                              </button>
 
-                  {/* CONTACT */}
+                              {/* MENU */}
 
-                  <td className="px-5 py-4">
-                    <div className="space-y-2">
+                              {openMenu ===
+                                tenantId &&
+                                !isDeleting && (
+                                  <div
+                                    className="
+                                      absolute
+                                      right-0
+                                      z-50
+                                      mt-2
+                                      w-48
+                                      origin-top-right
+                                      rounded-xl
+                                      border
+                                      border-gray-200
+                                      bg-white
+                                      p-1
+                                      text-left
+                                      shadow-lg
+                                      ring-1
+                                      ring-black/5
+                                    "
+                                    role="menu"
+                                  >
+                                    {/* VIEW */}
 
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500">
-                          <Mail className="h-3.5 w-3.5" />
-                        </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleView(
+                                          tenant
+                                        )
+                                      }
+                                      className="
+                                        flex
+                                        w-full
+                                        items-center
+                                        gap-3
+                                        rounded-lg
+                                        px-3
+                                        py-2.5
+                                        text-sm
+                                        font-medium
+                                        text-gray-700
+                                        transition
+                                        hover:bg-gray-50
+                                      "
+                                      role="menuitem"
+                                    >
+                                      <Eye className="h-4 w-4 text-gray-500" />
 
-                        <span
-                          className="max-w-[220px] truncate text-xs font-medium text-gray-700"
-                          title={getEmail(
-                            tenant
-                          )}
-                        >
-                          {getEmail(
-                            tenant
-                          )}
-                        </span>
-                      </div>
+                                      View Tenant
+                                    </button>
 
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500">
-                          <Phone className="h-3.5 w-3.5" />
-                        </span>
+                                    {/* EDIT */}
 
-                        <span className="text-xs text-gray-600">
-                          {getPhone(
-                            tenant
-                          )}
-                        </span>
-                      </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleEdit(
+                                          tenant
+                                        )
+                                      }
+                                      className="
+                                        flex
+                                        w-full
+                                        items-center
+                                        gap-3
+                                        rounded-lg
+                                        px-3
+                                        py-2.5
+                                        text-sm
+                                        font-medium
+                                        text-gray-700
+                                        transition
+                                        hover:bg-gray-50
+                                      "
+                                      role="menuitem"
+                                    >
+                                      <Pencil className="h-4 w-4 text-primary-600" />
 
-                    </div>
-                  </td>
+                                      Edit Tenant
+                                    </button>
 
-                  {/* UNIT */}
+                                    <div className="my-1 border-t border-gray-100" />
 
-                  <td className="px-5 py-4">
+                                    {/* DELETE */}
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleDelete(
+                                          tenant
+                                        )
+                                      }
+                                      disabled={
+                                        deletingId !==
+                                        null
+                                      }
+                                      className="
+                                        flex
+                                        w-full
+                                        items-center
+                                        gap-3
+                                        rounded-lg
+                                        px-3
+                                        py-2.5
+                                        text-sm
+                                        font-medium
+                                        text-red-600
+                                        transition
+                                        hover:bg-red-50
+                                        disabled:cursor-not-allowed
+                                        disabled:opacity-50
+                                      "
+                                      role="menuitem"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+
+                                      Delete Tenant
+                                    </button>
+                                  </div>
+                                )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ----------------------------------------------------------------
+                PAGINATION
+            ---------------------------------------------------------------- */}
+
+            <div className="border-t border-gray-200 bg-white px-4 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-500">
+                  Showing{" "}
+                  <span className="font-medium text-gray-700">
+                    {filteredTenants.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-medium text-gray-700">
+                    {total}
+                  </span>{" "}
+                  tenants
+                </p>
+
+                {lastPage > 1 && (
+                  <div className="flex items-center gap-2">
+                    {/* PREVIOUS */}
 
                     <button
                       type="button"
                       onClick={() =>
-                        handleView(
-                          tenant
+                        handlePageChange(
+                          currentPage - 1
                         )
                       }
-                      className="group/unit inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-primary-200 hover:bg-primary-50/70 hover:shadow-none"
+                      disabled={
+                        currentPage <= 1 ||
+                        loading
+                      }
+                      className="
+                        inline-flex
+                        h-9
+                        items-center
+                        gap-1
+                        rounded-lg
+                        border
+                        border-gray-300
+                        bg-white
+                        px-3
+                        text-sm
+                        font-medium
+                        text-gray-700
+                        transition
+                        hover:bg-gray-50
+                        disabled:cursor-not-allowed
+                        disabled:opacity-50
+                      "
                     >
+                      <ChevronLeft className="h-4 w-4" />
 
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold text-gray-500 transition group-hover/unit:bg-primary-100 group-hover/unit:text-primary-700">
-                        U
+                      <span className="hidden sm:inline">
+                        Previous
                       </span>
-
-                      <span className="max-w-[120px] truncate text-xs font-semibold text-gray-700 group-hover/unit:text-primary-700">
-                        {getUnitName(
-                          tenant
-                        )}
-                      </span>
-
                     </button>
 
-                  </td>
+                    {/* CURRENT PAGE */}
 
-                  {/* LOCATION */}
-
-                  <td className="px-5 py-4">
-
-                    <div className="flex items-center gap-2">
-
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500">
-                        <MapPin className="h-3.5 w-3.5" />
-                      </span>
-
-                      <span className="max-w-[150px] truncate text-xs font-medium text-gray-600">
-                        {getLocation(
-                          tenant
-                        )}
-                      </span>
-
-                    </div>
-
-                  </td>
-
-                  {/* STATUS */}
-
-                  <td className="px-5 py-4">
-
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset ${statusClasses.wrapper}`}
-                    >
-
-                      <StatusIcon className="h-3.5 w-3.5" />
-
-                      {getStatusLabel(
-                        tenant
-                      )}
-
+                    <span className="inline-flex h-9 items-center rounded-lg bg-primary-50 px-3 text-sm font-medium text-primary-700">
+                      {currentPage} /{" "}
+                      {lastPage}
                     </span>
 
-                  </td>
+                    {/* NEXT */}
 
-                  {/* VERIFICATION */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handlePageChange(
+                          currentPage + 1
+                        )
+                      }
+                      disabled={
+                        currentPage >=
+                        lastPage ||
+                        loading
+                      }
+                      className="
+                        inline-flex
+                        h-9
+                        items-center
+                        gap-1
+                        rounded-lg
+                        border
+                        border-gray-300
+                        bg-white
+                        px-3
+                        text-sm
+                        font-medium
+                        text-gray-700
+                        transition
+                        hover:bg-gray-50
+                        disabled:cursor-not-allowed
+                        disabled:opacity-50
+                      "
+                    >
+                      <span className="hidden sm:inline">
+                        Next
+                      </span>
 
-                  <td className="px-5 py-4">
-
-                    <div className="space-y-1.5">
-
-                      {verified ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-
-                          {verificationLabel}
-
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1.5 text-[11px] font-semibold text-gray-600 ring-1 ring-inset ring-gray-500/20">
-
-                          <XCircle className="h-3.5 w-3.5" />
-
-                          {verificationLabel}
-
-                        </span>
-                      )}
-
-                      <div className="flex items-center gap-1.5 text-[11px]">
-
-                        <span className="text-gray-400">
-                          Account
-                        </span>
-
-                        <span
-                          className={`font-semibold ${
-                            active
-                              ? "text-emerald-600"
-                              : "text-gray-500"
-                          }`}
-                        >
-                          {active
-                            ? "Active"
-                            : "Inactive"}
-                        </span>
-
-                      </div>
-
-                      {activeTenancy && (
-                        <div className="flex items-center gap-1.5 text-[11px]">
-
-                          <span className="text-gray-400">
-                            Tenancy
-                          </span>
-
-                          <span className="font-semibold text-emerald-600">
-                            Active
-                          </span>
-
-                        </div>
-                      )}
-
-                    </div>
-
-                  </td>
-
-                  {/* CREATED */}
-
-                  <td className="whitespace-nowrap px-5 py-4">
-
-                    <div className="text-xs font-medium text-gray-600">
-                      {formatDate(
-                        tenant?.created_at
-                      )}
-                    </div>
-
-                  </td>
-
-                  {/* ACTIONS */}
-
-                  <td className="px-5 py-4 text-right">
-
-                    <div className="relative flex justify-end">
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          toggleMenu(
-                            tenantId
-                          )
-                        }
-                        className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition focus:outline-none focus:ring-2 focus:ring-primary-500/20 ${
-                          openMenu ===
-                          tenantId
-                            ? "border-gray-300 bg-gray-100 text-gray-800"
-                            : "border-transparent text-gray-400 hover:border-gray-200 hover:bg-gray-100 hover:text-gray-700"
-                        }`}
-                        aria-label={`Actions for ${getFullName(
-                          tenant
-                        )}`}
-                        aria-expanded={
-                          openMenu ===
-                          tenantId
-                        }
-                      >
-                        <MoreHorizontal className="h-5 w-5" />
-                      </button>
-
-                      {openMenu ===
-                        tenantId && (
-                        <>
-
-                          <button
-                            type="button"
-                            className="fixed inset-0 z-10 cursor-default"
-                            onClick={() =>
-                              setOpenMenu(
-                                null
-                              )
-                            }
-                            aria-label="Close menu"
-                          />
-
-                          <div className="absolute right-0 top-11 z-20 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 text-left shadow-xl shadow-gray-200/50">
-
-                            {typeof onView ===
-                              "function" && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleView(
-                                    tenant
-                                  )
-                                }
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 hover:text-gray-900"
-                              >
-
-                                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-100">
-                                  <Eye className="h-4 w-4 text-gray-500" />
-                                </span>
-
-                                <span>
-                                  View Tenant
-                                </span>
-
-                              </button>
-                            )}
-
-                            {typeof onEdit ===
-                              "function" && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleEdit(
-                                    tenant
-                                  )
-                                }
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 hover:text-gray-900"
-                              >
-
-                                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-100">
-                                  <Pencil className="h-4 w-4 text-gray-500" />
-                                </span>
-
-                                <span>
-                                  Edit Tenant
-                                </span>
-
-                              </button>
-                            )}
-
-                            {(typeof onView ===
-                              "function" ||
-                              typeof onEdit ===
-                                "function") &&
-                              typeof onDelete ===
-                                "function" && (
-                                <div className="my-1.5 border-t border-gray-100" />
-                              )}
-
-                            {typeof onDelete ===
-                              "function" && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleDelete(
-                                    tenant
-                                  )
-                                }
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
-                              >
-
-                                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-red-50">
-                                  <Trash2 className="h-4 w-4" />
-                                </span>
-
-                                <span>
-                                  Delete Tenant
-                                </span>
-
-                              </button>
-                            )}
-
-                          </div>
-                        </>
-                      )}
-
-                    </div>
-
-                  </td>
-
-                </tr>
-              );
-            })}
-
-          </tbody>
-
-        </table>
-      </div>
-
-      {/* FOOTER */}
-
-      <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-
-          <span>
-            Showing
-          </span>
-
-          <span className="font-semibold text-gray-700">
-            {tenantList.length.toLocaleString()}
-          </span>
-
-          <span>
-            tenant
-            {tenantList.length !== 1
-              ? "s"
-              : ""}
-          </span>
-
-        </div>
-
-        {loading && (
-          <div className="inline-flex items-center gap-2 text-xs font-medium text-primary-600">
-
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-600" />
-
-            Syncing tenant data...
-
-          </div>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
         )}
-
-      </div>
-
     </div>
   );
 };
+
+/*
+|--------------------------------------------------------------------------
+| EMPTY STATE ICON
+|--------------------------------------------------------------------------
+*/
+
+const UsersIcon = () => (
+  <CircleUserRound className="h-7 w-7" />
+);
 
 export default TenantTable;

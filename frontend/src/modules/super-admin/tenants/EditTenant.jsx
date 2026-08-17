@@ -10,111 +10,122 @@ import {
 } from "react-router-dom";
 import Swal from "sweetalert2";
 import { useEffect } from "react";
-import { useDispatch, useSelector } from "react-redux";
-
-/*
-|--------------------------------------------------------------------------
-| TENANT FORM
-|--------------------------------------------------------------------------
-*/
 
 import TenantForm from "./TenantForm";
-
-/*
-|--------------------------------------------------------------------------
-| TENANT REDUX
-|--------------------------------------------------------------------------
-*/
-
-import {
-  clearTenant,
-  clearTenantError,
-  fetchTenant,
-  updateTenant,
-} from "../../../store/tenantSlice";
-
-/*
-|--------------------------------------------------------------------------
-| COMPONENT
-|--------------------------------------------------------------------------
-*/
+import { useTenant } from "../../../hooks/useTenant";
 
 const EditTenant = () => {
-  const dispatch = useDispatch();
   const navigate = useNavigate();
-
   const { id } = useParams();
 
   /*
   |--------------------------------------------------------------------------
-  | TENANT STATE
+  | TENANT HOOK
   |--------------------------------------------------------------------------
   */
 
   const {
     tenant,
-    loading,
+    loadingTenant,
     updating,
     error,
-  } = useSelector(
-    (state) =>
-      state.tenants || {}
-  );
+    updateError,
+    getTenant,
+    editTenant,
+    clear,
+    clearError,
+  } = useTenant();
+
+  /*
+  |--------------------------------------------------------------------------
+  | ROUTES
+  |--------------------------------------------------------------------------
+  */
+
+  const TENANT_ROUTES = {
+    index: "/super-admin/tenants",
+
+    show: (tenantId) =>
+      `/super-admin/tenants/${tenantId}`,
+
+    edit: (tenantId) =>
+      `/super-admin/tenants/${tenantId}/edit`,
+
+    create:
+      "/super-admin/tenants/create",
+  };
 
   /*
   |--------------------------------------------------------------------------
   | LOAD TENANT
   |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  |
+  | Do not put getTenant(), clear(), or clearError() in this dependency
+  | array if useTenant recreates those functions on every render.
+  |
+  | The route ID is the actual thing that determines which tenant we load.
+  |
   */
 
   useEffect(() => {
-    if (!id) {
-      return;
-    }
+    let mounted = true;
 
-    /*
-    |----------------------------------------------------------------------
-    | CLEAR PREVIOUS STATE
-    |----------------------------------------------------------------------
-    */
+    const loadTenant = async () => {
+      if (!id) {
+        return;
+      }
 
-    dispatch(
-      clearTenant()
-    );
+      try {
+        /*
+        |----------------------------------------------------------------------
+        | Clear stale state once when route changes.
+        |----------------------------------------------------------------------
+        */
 
-    dispatch(
-      clearTenantError()
-    );
+        clear();
+        clearError();
 
-    /*
-    |----------------------------------------------------------------------
-    | FETCH TENANT
-    |----------------------------------------------------------------------
-    */
+        /*
+        |----------------------------------------------------------------------
+        | Fetch tenant.
+        |----------------------------------------------------------------------
+        */
 
-    dispatch(
-      fetchTenant(id)
-    );
+        if (!mounted) {
+          return;
+        }
 
-    /*
-    |----------------------------------------------------------------------
-    | CLEANUP
-    |----------------------------------------------------------------------
-    */
+        await getTenant(id);
+      } catch (fetchError) {
+        /*
+        |----------------------------------------------------------------------
+        | The hook already stores the error.
+        |----------------------------------------------------------------------
+        */
+
+        console.error(
+          "Failed to load tenant:",
+          fetchError
+        );
+      }
+    };
+
+    loadTenant();
 
     return () => {
-      dispatch(
-        clearTenant()
-      );
-
-      dispatch(
-        clearTenantError()
-      );
+      mounted = false;
     };
-  }, [
-    dispatch,
-    id,
-  ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | INTENTIONALLY DEPEND ONLY ON ID
+    |--------------------------------------------------------------------------
+    */
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   /*
   |--------------------------------------------------------------------------
@@ -132,113 +143,77 @@ const EditTenant = () => {
     }
 
     try {
-      /*
-      |--------------------------------------------------------------------
-      | CLEAR PREVIOUS ERROR
-      |--------------------------------------------------------------------
-      */
+      clearError();
 
-      dispatch(
-        clearTenantError()
+      console.log(
+        "Updating tenant:",
+        payload
       );
-
-      /*
-      |--------------------------------------------------------------------
-      | UPDATE
-      |--------------------------------------------------------------------
-      */
 
       const result =
-        await dispatch(
-          updateTenant({
-            id,
-            data: payload,
-          })
+        await editTenant(
+          id,
+          payload
         );
 
       /*
-      |--------------------------------------------------------------------
+      |--------------------------------------------------------------------------
       | SUCCESS
-      |--------------------------------------------------------------------
-      */
-
-      if (
-        updateTenant.fulfilled.match(
-          result
-        )
-      ) {
-        await Swal.fire({
-          icon: "success",
-          title: "Tenant Updated",
-          text:
-            result?.payload?.message ||
-            "Tenant updated successfully.",
-          confirmButtonText:
-            "View Tenant",
-          confirmButtonColor:
-            "#2563eb",
-        });
-
-        /*
-        |------------------------------------------------------------------
-        | REDIRECT
-        |------------------------------------------------------------------
-        */
-
-        navigate(
-          `/tenants/${id}`
-        );
-
-        return result.payload;
-      }
-
-      /*
-      |--------------------------------------------------------------------
-      | FAILED
-      |--------------------------------------------------------------------
-      */
-
-      const message =
-        result?.payload?.message ||
-        result?.payload?.error ||
-        result?.error?.message ||
-        "Failed to update tenant.";
-
-      throw new Error(
-        message
-      );
-    } catch (submitError) {
-      /*
-      |--------------------------------------------------------------------------
-      | ERROR MESSAGE
-      |--------------------------------------------------------------------------
-      */
-
-      const message =
-        submitError?.message ||
-        "Failed to update tenant. Please try again.";
-
-      /*
-      |--------------------------------------------------------------------------
-      | SHOW ERROR
       |--------------------------------------------------------------------------
       */
 
       await Swal.fire({
+        icon: "success",
+        title: "Tenant Updated",
+        text:
+          result?.message ||
+          "Tenant updated successfully.",
+        confirmButtonText:
+          "View Tenant",
+        confirmButtonColor:
+          "#2563eb",
+      });
+
+      /*
+      |--------------------------------------------------------------------------
+      | REDIRECT
+      |--------------------------------------------------------------------------
+      */
+
+      navigate(
+        TENANT_ROUTES.show(id)
+      );
+
+      return result;
+    } catch (submitError) {
+      console.error(
+        "Tenant update failed:",
+        submitError
+      );
+
+      const message =
+        submitError?.message ||
+        submitError?.error ||
+        updateError?.message ||
+        updateError?.error ||
+        updateError ||
+        "Failed to update tenant. Please try again.";
+
+      const displayMessage =
+        typeof message === "string"
+          ? message
+          : "Failed to update tenant. Please try again.";
+
+      await Swal.fire({
         icon: "error",
-        title: "Unable to Update Tenant",
-        text: message,
+        title:
+          "Unable to Update Tenant",
+        text: displayMessage,
         confirmButtonText:
           "Try Again",
         confirmButtonColor:
           "#dc2626",
       });
-
-      /*
-      |--------------------------------------------------------------------------
-      | RETURN ERROR TO FORM
-      |--------------------------------------------------------------------------
-      */
 
       throw submitError;
     }
@@ -253,26 +228,26 @@ const EditTenant = () => {
   const handleCancel = () => {
     if (id) {
       navigate(
-        `/tenants/${id}`
+        TENANT_ROUTES.show(id)
       );
 
       return;
     }
 
     navigate(
-      "/tenants"
+      TENANT_ROUTES.index
     );
   };
 
   /*
   |--------------------------------------------------------------------------
-  | BACK TO TENANTS
+  | BACK
   |--------------------------------------------------------------------------
   */
 
   const handleBack = () => {
     navigate(
-      "/tenants"
+      TENANT_ROUTES.index
     );
   };
 
@@ -296,13 +271,14 @@ const EditTenant = () => {
             </h2>
 
             <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">
-              We could not determine which tenant
-              you want to edit.
+              We could not determine which tenant you want to edit.
             </p>
 
             <button
               type="button"
-              onClick={handleBack}
+              onClick={
+                handleBack
+              }
               className="
                 mt-5
                 inline-flex
@@ -317,6 +293,10 @@ const EditTenant = () => {
                 text-white
                 transition
                 hover:bg-primary-700
+                focus:outline-none
+                focus:ring-2
+                focus:ring-primary-500
+                focus:ring-offset-2
               "
             >
               <ArrowLeft className="h-4 w-4" />
@@ -331,20 +311,16 @@ const EditTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | LOADING TENANT
+  | LOADING
   |--------------------------------------------------------------------------
   */
 
   if (
-    loading &&
+    loadingTenant &&
     !tenant
   ) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* ================================================================
-            HEADER
-        ================================================================= */}
-
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -365,7 +341,9 @@ const EditTenant = () => {
               </div>
 
               <Link
-                to="/tenants"
+                to={
+                  TENANT_ROUTES.index
+                }
                 className="
                   inline-flex
                   w-full
@@ -394,10 +372,6 @@ const EditTenant = () => {
           </div>
         </div>
 
-        {/* ================================================================
-            LOADING
-        ================================================================= */}
-
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="flex min-h-[450px] items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="flex flex-col items-center">
@@ -421,20 +395,27 @@ const EditTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | TENANT NOT FOUND
+  | NOT FOUND
   |--------------------------------------------------------------------------
   */
 
   if (
-    !loading &&
+    !loadingTenant &&
     !tenant
   ) {
+    const loadError =
+      error || updateError;
+
+    const errorMessage =
+      typeof loadError ===
+        "string"
+        ? loadError
+        : loadError?.message ||
+        loadError?.error ||
+        "Failed to load tenant.";
+
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* ================================================================
-            HEADER
-        ================================================================= */}
-
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
@@ -455,7 +436,9 @@ const EditTenant = () => {
               </div>
 
               <Link
-                to="/tenants"
+                to={
+                  TENANT_ROUTES.index
+                }
                 className="
                   inline-flex
                   items-center
@@ -481,10 +464,6 @@ const EditTenant = () => {
           </div>
         </div>
 
-        {/* ================================================================
-            NOT FOUND
-        ================================================================= */}
-
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
@@ -496,25 +475,20 @@ const EditTenant = () => {
             </h2>
 
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-gray-500">
-              The tenant you are trying to edit does not
-              exist, may have been deleted, or could not be
-              loaded from the server.
+              The tenant you are trying to edit does not exist, may have been deleted, or could not be loaded from the server.
             </p>
 
-            {error && (
+            {loadError && (
               <p className="mx-auto mt-3 max-w-lg rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-                {typeof error ===
-                "string"
-                  ? error
-                  : error?.message ||
-                    error?.error ||
-                    "Failed to load tenant."}
+                {errorMessage}
               </p>
             )}
 
             <button
               type="button"
-              onClick={handleBack}
+              onClick={
+                handleBack
+              }
               className="
                 mt-5
                 inline-flex
@@ -548,19 +522,48 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
+  const initials =
+    (
+      String(
+        tenant?.first_name ||
+        ""
+      ).charAt(0) +
+      String(
+        tenant?.last_name ||
+        ""
+      ).charAt(0)
+    ).toUpperCase() || "T";
+
+  const tenantName =
+    tenant?.full_name ||
+    [
+      tenant?.first_name,
+      tenant?.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    "Tenant";
+
+  const currentError =
+    updateError || error;
+
+  const currentErrorMessage =
+    typeof currentError ===
+      "string"
+      ? currentError
+      : currentError?.message ||
+      currentError?.error ||
+      "Unable to update tenant.";
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ================================================================
-          PAGE HEADER
+          HEADER
       ================================================================= */}
 
       <div className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            {/* ------------------------------------------------------------
-                TITLE
-            ------------------------------------------------------------- */}
-
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                 <UserRoundPen className="h-5 w-5" />
@@ -577,12 +580,10 @@ const EditTenant = () => {
               </div>
             </div>
 
-            {/* ------------------------------------------------------------
-                BACK
-            ------------------------------------------------------------- */}
-
             <Link
-              to="/tenants"
+              to={
+                TENANT_ROUTES.show(id)
+              }
               className="
                 inline-flex
                 w-full
@@ -601,15 +602,12 @@ const EditTenant = () => {
                 shadow-sm
                 transition
                 hover:bg-gray-50
-                focus:outline-none
-                focus:ring-2
-                focus:ring-primary-500/20
                 sm:w-auto
               "
             >
               <ArrowLeft className="h-4 w-4" />
 
-              Back to Tenants
+              Back to Tenant
             </Link>
           </div>
         </div>
@@ -620,39 +618,18 @@ const EditTenant = () => {
       ================================================================= */}
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* ---------------------------------------------------------------
-            TENANT SUMMARY
-        ---------------------------------------------------------------- */}
+        {/* TENANT SUMMARY */}
 
         <div className="mb-5 rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold uppercase text-gray-600">
-                {String(
-                  tenant?.first_name ||
-                    ""
-                )
-                  .charAt(0)
-                  .concat(
-                    String(
-                      tenant?.last_name ||
-                        ""
-                    ).charAt(0)
-                  ) || "T"}
+                {initials}
               </div>
 
               <div>
                 <p className="text-sm font-semibold text-gray-900">
-                  {tenant?.full_name ||
-                    [
-                      tenant?.first_name,
-                      tenant?.last_name,
-                    ]
-                      .filter(
-                        Boolean
-                      )
-                      .join(" ") ||
-                    "Tenant"}
+                  {tenantName}
                 </p>
 
                 <p className="mt-0.5 text-xs text-gray-500">
@@ -673,17 +650,16 @@ const EditTenant = () => {
                     py-1
                     text-xs
                     font-medium
-                    ${
-                      tenant.status ===
+                    ${tenant.status ===
                       "active"
-                        ? "bg-green-50 text-green-700"
+                      ? "bg-green-50 text-green-700"
+                      : tenant.status ===
+                        "blacklisted"
+                        ? "bg-red-50 text-red-700"
                         : tenant.status ===
-                            "blacklisted"
-                          ? "bg-red-50 text-red-700"
-                          : tenant.status ===
-                              "inactive"
-                            ? "bg-gray-100 text-gray-600"
-                            : "bg-yellow-50 text-yellow-700"
+                          "inactive"
+                          ? "bg-gray-100 text-gray-600"
+                          : "bg-yellow-50 text-yellow-700"
                     }
                   `}
                 >
@@ -711,54 +687,36 @@ const EditTenant = () => {
           </div>
         </div>
 
-        {/* ---------------------------------------------------------------
-            ERROR
-        ---------------------------------------------------------------- */}
+        {/* ERROR */}
 
-        {error && (
+        {currentError && (
           <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-red-500" />
 
               <div>
                 <p className="text-sm font-semibold text-red-800">
-                  Tenant update error
+                  Tenant error
                 </p>
 
                 <p className="mt-1 text-sm text-red-700">
-                  {typeof error ===
-                  "string"
-                    ? error
-                    : error?.message ||
-                      error?.error ||
-                      "Unable to update tenant."}
+                  {currentErrorMessage}
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* ---------------------------------------------------------------
-            FORM
-        ---------------------------------------------------------------- */}
+        {/* FORM */}
 
         <TenantForm
           mode="edit"
           tenant={tenant}
-          loading={
-            loading &&
-            !tenant
-          }
-          submitting={
-            updating
-          }
-          error={error}
-          onSubmit={
-            handleUpdate
-          }
-          onCancel={
-            handleCancel
-          }
+          loading={loadingTenant}
+          submitting={updating}
+          error={updateError}
+          onSubmit={handleUpdate}
+          onCancel={handleCancel}
         />
       </main>
     </div>
