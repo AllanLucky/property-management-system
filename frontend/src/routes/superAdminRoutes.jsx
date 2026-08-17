@@ -190,8 +190,10 @@ import UnitDetails from "../modules/super-admin/units/UnitDetails";
 |--------------------------------------------------------------------------
 */
 import {
+  CreateTenant,
+  EditTenant,
+  TenantDetails,
   TenantList,
-  TenantShow,
 } from "../modules/super-admin/tenants";
 
 
@@ -850,10 +852,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
       {/* ------------------------------------------------------------------
-          TENANTS
-      ------------------------------------------------------------------ */}
+    TENANTS
+------------------------------------------------------------------ */}
 
       {/* Tenant List */}
       <Route
@@ -865,12 +866,32 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      {/* Create Tenant */}
+      <Route
+        path="tenants/create"
+        element={
+          <PermissionGuard permission="tenants.create">
+            <CreateTenant />
+          </PermissionGuard>
+        }
+      />
+
       {/* Tenant Details */}
       <Route
         path="tenants/:id"
         element={
           <PermissionGuard permission="tenants.view">
-            <TenantShow />
+            <TenantDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Edit Tenant */}
+      <Route
+        path="tenants/:id/edit"
+        element={
+          <PermissionGuard permission="tenants.edit">
+            <EditTenant />
           </PermissionGuard>
         }
       />
