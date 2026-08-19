@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
 
@@ -56,6 +55,7 @@ import EditTenant from "./EditTenant";
 const TenantList = () => {
   const dispatch = useDispatch();
 
+
   /*
   |--------------------------------------------------------------------------
   | REDUX STATE
@@ -63,10 +63,22 @@ const TenantList = () => {
   */
 
   const tenants = useSelector(selectTenants);
-  const pagination = useSelector(selectTenantPagination);
-  const filters = useSelector(selectTenantFilters);
-  const loading = useSelector(selectTenantLoading);
-  const error = useSelector(selectTenantError);
+
+  const pagination = useSelector(
+    selectTenantPagination
+  );
+
+  const filters = useSelector(
+    selectTenantFilters
+  );
+
+  const loading = useSelector(
+    selectTenantLoading
+  );
+
+  const error = useSelector(
+    selectTenantError
+  );
 
 
   /*
@@ -80,19 +92,6 @@ const TenantList = () => {
   const [showEdit, setShowEdit] = useState(false);
 
   const [selectedTenant, setSelectedTenant] = useState(null);
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | INITIAL FETCH CONTROL
-  |--------------------------------------------------------------------------
-  |
-  | Prevents the initial useEffect from causing unnecessary duplicate
-  | requests when Redux filters are initialized.
-  |
-  */
-
-  const hasInitialFetched = useRef(false);
 
 
   /*
@@ -137,25 +136,29 @@ const TenantList = () => {
         ...customFilters,
       };
 
+
       /*
       |--------------------------------------------------------------------------
-      | Remove undefined/null values
+      | Remove undefined/null/empty values
       |--------------------------------------------------------------------------
       */
 
       const cleanedFilters = Object.entries(
         requestFilters
-      ).reduce((acc, [key, value]) => {
-        if (
-          value !== undefined &&
-          value !== null &&
-          value !== ""
-        ) {
-          acc[key] = value;
-        }
+      ).reduce(
+        (acc, [key, value]) => {
+          if (
+            value !== undefined &&
+            value !== null &&
+            value !== ""
+          ) {
+            acc[key] = value;
+          }
 
-        return acc;
-      }, {});
+          return acc;
+        },
+        {}
+      );
 
 
       try {
@@ -181,18 +184,22 @@ const TenantList = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | INITIAL FETCH
+  | FETCH WHEN FILTERS / PAGINATION CHANGE
   |--------------------------------------------------------------------------
+  |
+  | Redux controls the filters.
+  |
+  | Whenever tenantFilters changes:
+  |
+  | 1. Redux state updates
+  | 2. loadTenants is recreated
+  | 3. This effect runs
+  | 4. API request is made
+  |
   */
 
   useEffect(() => {
-    if (hasInitialFetched.current) {
-      return;
-    }
-
-    hasInitialFetched.current = true;
-
-    loadTenants().catch(() => {});
+    loadTenants().catch(() => { });
   }, [loadTenants]);
 
 
@@ -238,6 +245,14 @@ const TenantList = () => {
   |--------------------------------------------------------------------------
   | STATUS FILTER
   |--------------------------------------------------------------------------
+  |
+  | Supported tenant statuses from the database:
+  |
+  | - active
+  | - pending
+  | - inactive
+  | - blacklisted
+  |
   */
 
   const handleStatusChange = useCallback(
@@ -263,6 +278,7 @@ const TenantList = () => {
     (page) => {
       const nextPage = Number(page);
 
+
       if (
         !Number.isInteger(nextPage) ||
         nextPage < 1
@@ -270,9 +286,11 @@ const TenantList = () => {
         return;
       }
 
+
       const lastPage = Number(
         tenantPagination?.last_page || 1
       );
+
 
       if (
         lastPage > 0 &&
@@ -280,6 +298,7 @@ const TenantList = () => {
       ) {
         return;
       }
+
 
       dispatch(
         setTenantFilters({
@@ -304,12 +323,14 @@ const TenantList = () => {
     (perPage) => {
       const nextPerPage = Number(perPage);
 
+
       if (
         !Number.isInteger(nextPerPage) ||
         nextPerPage < 1
       ) {
         return;
       }
+
 
       dispatch(
         setTenantFilters({
@@ -329,7 +350,7 @@ const TenantList = () => {
   */
 
   const handleRefresh = useCallback(() => {
-    return loadTenants().catch(() => {});
+    return loadTenants().catch(() => { });
   }, [loadTenants]);
 
 
@@ -350,24 +371,31 @@ const TenantList = () => {
   | EDIT TENANT
   |--------------------------------------------------------------------------
   |
-  | The tenant object contains:
+  | The tenant object may contain:
   |
-  | tenant details
-  | + tenancies[]
-  | + tenancy_count
+  | - tenant details
+  | - user
+  | - tenancies[]
+  | - tenancy_count
+  | - tenancy_statistics
   |
-  | Therefore the complete API object is passed to EditTenant.
+  | Therefore the complete API tenant object is passed
+  | to EditTenant.
   |
   */
 
-  const handleEdit = useCallback((tenant) => {
-    if (!tenant || !tenant.id) {
-      return;
-    }
+  const handleEdit = useCallback(
+    (tenant) => {
+      if (!tenant || !tenant.id) {
+        return;
+      }
 
-    setSelectedTenant(tenant);
-    setShowEdit(true);
-  }, []);
+
+      setSelectedTenant(tenant);
+      setShowEdit(true);
+    },
+    []
+  );
 
 
   /*
@@ -401,17 +429,18 @@ const TenantList = () => {
   */
 
   const handleCreated = useCallback(
-    async (createdTenant = null) => {
+    async () => {
       setShowCreate(false);
       setSelectedTenant(null);
 
+
       /*
-      |----------------------------------------------------------------------
+      |--------------------------------------------------------------------------
       | Refresh the current tenant list
-      |----------------------------------------------------------------------
+      |--------------------------------------------------------------------------
       */
 
-      await loadTenants().catch(() => {});
+      await loadTenants().catch(() => { });
     },
     [loadTenants]
   );
@@ -424,17 +453,18 @@ const TenantList = () => {
   */
 
   const handleUpdated = useCallback(
-    async (updatedTenant = null) => {
+    async () => {
       setShowEdit(false);
       setSelectedTenant(null);
 
+
       /*
-      |----------------------------------------------------------------------
+      |--------------------------------------------------------------------------
       | Refresh the current tenant list
-      |----------------------------------------------------------------------
+      |--------------------------------------------------------------------------
       */
 
-      await loadTenants().catch(() => {});
+      await loadTenants().catch(() => { });
     },
     [loadTenants]
   );
@@ -456,7 +486,11 @@ const TenantList = () => {
   | CLEAR FILTERS
   |--------------------------------------------------------------------------
   |
-  | Matches the filters supported by the tenant API.
+  | Matches the tenant fields supported by the API.
+  |
+  | NOTE:
+  | `is_active` has intentionally been removed because
+  | the tenants table uses `status`.
   |
   */
 
@@ -465,7 +499,6 @@ const TenantList = () => {
       setTenantFilters({
         search: "",
         status: "",
-        is_active: undefined,
         is_verified: undefined,
         gender: "",
         country: "",
@@ -502,9 +535,9 @@ const TenantList = () => {
   );
 
   const totalTenants = Number(
-    tenantPagination?.total ||
-      tenantList.length ||
-      0
+    tenantPagination?.total ??
+    tenantList.length ??
+    0
   );
 
   const hasPagination =
@@ -523,7 +556,7 @@ const TenantList = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | EMPTY SEARCH/FILTER STATE
+  | EMPTY SEARCH / FILTER STATE
   |--------------------------------------------------------------------------
   */
 
@@ -535,7 +568,6 @@ const TenantList = () => {
       tenantFilters?.country ||
       tenantFilters?.county ||
       tenantFilters?.city ||
-      tenantFilters?.is_active !== undefined ||
       tenantFilters?.is_verified !== undefined
     );
 
@@ -591,21 +623,24 @@ const TenantList = () => {
             aria-hidden="true"
           />
 
+
           <div className="min-w-0 flex-1">
 
             <p className="font-semibold">
               Unable to load tenants
             </p>
 
+
             <p className="mt-1 text-sm">
               {typeof error === "string"
                 ? error
                 : error?.message ||
-                  error?.error ||
-                  "An unexpected error occurred while loading tenants."}
+                error?.error ||
+                "An unexpected error occurred while loading tenants."}
             </p>
 
           </div>
+
 
           <button
             type="button"
@@ -685,17 +720,21 @@ const TenantList = () => {
           >
 
             <div>
+
               <p className="text-sm text-gray-500">
                 {hasActiveFilters
                   ? "Filtered tenants"
                   : "All tenants"}
               </p>
 
+
               <p className="text-sm font-medium text-gray-900">
                 {totalTenants.toLocaleString()} tenant
                 {totalTenants === 1 ? "" : "s"}
               </p>
+
             </div>
+
 
             {loading && (
               <p

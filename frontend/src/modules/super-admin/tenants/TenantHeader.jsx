@@ -3,21 +3,74 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const TenantHeader = ({
-  onCreate,
   onRefresh,
   loading = false,
 }) => {
+  const navigate = useNavigate();
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT ROUTES
+  |--------------------------------------------------------------------------
+  */
+
+  const TENANT_ROUTES = {
+    index: "/super-admin/tenants",
+    create: "/super-admin/tenants/create",
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | NAVIGATE TO TENANT LIST
+  |--------------------------------------------------------------------------
+  */
+
+  const handleList = () => {
+    navigate(TENANT_ROUTES.index);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | NAVIGATE TO CREATE TENANT PAGE
+  |--------------------------------------------------------------------------
+  */
+
+  const handleCreate = () => {
+    navigate(TENANT_ROUTES.create);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | REFRESH TENANTS
+  |--------------------------------------------------------------------------
+  */
+
+  const handleRefresh = () => {
+    if (typeof onRefresh === "function") {
+      onRefresh();
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      {/*
-      |--------------------------------------------------------------------------
-      | PAGE INFORMATION
-      |--------------------------------------------------------------------------
-      */}
+      {/* ------------------------------------------------------------------
+          PAGE INFORMATION
+      ------------------------------------------------------------------ */}
 
-      <div className="flex items-start gap-3">
+      <div
+        className="flex cursor-pointer items-start gap-3"
+        onClick={handleList}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            handleList();
+          }
+        }}
+      >
         {/* Icon */}
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
           <Users className="h-6 w-6" />
@@ -36,11 +89,9 @@ const TenantHeader = ({
         </div>
       </div>
 
-      {/*
-      |--------------------------------------------------------------------------
-      | HEADER ACTIONS
-      |--------------------------------------------------------------------------
-      */}
+      {/* ------------------------------------------------------------------
+          HEADER ACTIONS
+      ------------------------------------------------------------------ */}
 
       <div className="flex items-center gap-2">
         {/* --------------------------------------------------------------
@@ -49,7 +100,7 @@ const TenantHeader = ({
 
         <button
           type="button"
-          onClick={onRefresh}
+          onClick={handleRefresh}
           disabled={loading}
           className="
             inline-flex
@@ -93,7 +144,7 @@ const TenantHeader = ({
 
         <button
           type="button"
-          onClick={onCreate}
+          onClick={handleCreate}
           className="
             inline-flex
             items-center

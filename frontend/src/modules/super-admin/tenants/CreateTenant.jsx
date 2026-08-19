@@ -108,7 +108,7 @@ const CreateTenant = () => {
         */
 
         navigate(
-          "/tenants"
+          "/super-admin/tenants"
         );
 
         return result.payload;
@@ -177,7 +177,7 @@ const CreateTenant = () => {
 
   const handleCancel = () => {
     navigate(
-      "/tenants"
+      "/super-admin/tenants"
     );
   };
 
@@ -223,7 +223,7 @@ const CreateTenant = () => {
             ------------------------------------------------------------- */}
 
             <Link
-              to="/tenants"
+              to="/super-admin/tenants"
               className="
                 inline-flex
                 w-full
@@ -277,11 +277,11 @@ const CreateTenant = () => {
 
                 <p className="mt-1 text-sm text-red-700">
                   {typeof error ===
-                  "string"
+                    "string"
                     ? error
                     : error?.message ||
-                      error?.error ||
-                      "Unable to create tenant."}
+                    error?.error ||
+                    "Unable to create tenant."}
                 </p>
               </div>
             </div>
