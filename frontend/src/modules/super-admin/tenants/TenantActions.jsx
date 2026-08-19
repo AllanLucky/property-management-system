@@ -19,7 +19,6 @@ import Swal from "sweetalert2";
 
 import { useTenant } from "../../../hooks/useTenant";
 
-
 /*
 |--------------------------------------------------------------------------
 | HELPERS
@@ -27,25 +26,37 @@ import { useTenant } from "../../../hooks/useTenant";
 */
 
 const getStatus = (tenant) => {
-  if (!tenant) return "";
+  if (!tenant) {
+    return "";
+  }
 
   return String(
-    tenant?.status ||
-    tenant?.account_status ||
-    tenant?.tenant_status ||
+    tenant?.status ??
+    tenant?.account_status ??
+    tenant?.tenant_status ??
     ""
   ).toLowerCase();
 };
-
 
 const getIsVerified = (tenant) => {
   return (
     tenant?.is_verified === true ||
     tenant?.is_verified === 1 ||
-    tenant?.verified === true
+    tenant?.is_verified === "1" ||
+    tenant?.verified === true ||
+    tenant?.verified === 1 ||
+    tenant?.verified === "1"
   );
 };
 
+const getTenantId = (tenant) => {
+  return (
+    tenant?.id ??
+    tenant?.tenant_id ??
+    tenant?.tenantId ??
+    null
+  );
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -95,11 +106,9 @@ const StatusBadge = ({ tenant }) => {
 
   const current =
     config[status] || {
-      label:
-        status
-          ? status.charAt(0).toUpperCase() +
-            status.slice(1)
-          : "Unknown",
+      label: status
+        ? status.charAt(0).toUpperCase() + status.slice(1)
+        : "Unknown",
       classes:
         "bg-slate-50 text-slate-600 ring-slate-200",
       icon: ShieldCheck,
@@ -116,7 +125,6 @@ const StatusBadge = ({ tenant }) => {
     </span>
   );
 };
-
 
 /*
 |--------------------------------------------------------------------------
@@ -151,30 +159,23 @@ const TenantActions = ({
     autoFetch: false,
   });
 
-
   /*
   |--------------------------------------------------------------------------
-  | TENANT ID
+  | TENANT INFORMATION
   |--------------------------------------------------------------------------
   */
 
-  const tenantId =
-    tenant?.id ||
-    tenant?.tenant_id;
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | STATUS
-  |--------------------------------------------------------------------------
-  */
+  const tenantId = getTenantId(tenant);
 
   const status = getStatus(tenant);
 
-  const isVerified = getIsVerified(
-    tenant
-  );
+  const isVerified = getIsVerified(tenant);
 
+  const isDeleted = Boolean(
+    tenant?.deleted_at ||
+    tenant?.deletedAt ||
+    tenant?.trashed
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -186,18 +187,17 @@ const TenantActions = ({
     setOpen(false);
   };
 
-
   /*
   |--------------------------------------------------------------------------
-  | HANDLE RESULT
+  | SUCCESS HANDLER
   |--------------------------------------------------------------------------
   */
 
-  const handleSuccess = (
+  const handleSuccess = async (
     message,
     response
   ) => {
-    Swal.fire({
+    await Swal.fire({
       icon: "success",
       title: "Success",
       text: message,
@@ -207,17 +207,16 @@ const TenantActions = ({
 
     if (typeof onUpdated === "function") {
       onUpdated(
-        response?.data ||
-        response?.tenant ||
+        response?.data ??
+        response?.tenant ??
         response
       );
     }
   };
 
-
   /*
   |--------------------------------------------------------------------------
-  | EXECUTE ACTION
+  | GENERIC ACTION EXECUTOR
   |--------------------------------------------------------------------------
   */
 
@@ -226,23 +225,27 @@ const TenantActions = ({
     message,
     successMessage,
   }) => {
-    if (!tenantId || processing) {
+    if (
+      !tenantId ||
+      processing ||
+      typeof action !== "function"
+    ) {
       return;
     }
 
     try {
       setProcessing(true);
+
       closeMenu();
 
       const response = await action(
         tenantId
       );
 
-      handleSuccess(
+      await handleSuccess(
         successMessage || message,
         response
       );
-
     } catch (error) {
       console.error(
         "Tenant action failed:",
@@ -251,21 +254,36 @@ const TenantActions = ({
 
       const errorMessage =
         error?.response?.data?.message ||
+        error?.response?.data?.error ||
         error?.message ||
         message ||
         "Something went wrong.";
 
-      Swal.fire({
+      await Swal.fire({
         icon: "error",
         title: "Action Failed",
         text: errorMessage,
       });
-
     } finally {
       setProcessing(false);
     }
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | VIEW
+  |--------------------------------------------------------------------------
+  */
+
+  const handleView = () => {
+    closeMenu();
+
+    if (!tenantId) {
+      return;
+    }
+
+    navigate(`/tenants/${tenantId}`);
+  };
 
   /*
   |--------------------------------------------------------------------------
@@ -281,30 +299,12 @@ const TenantActions = ({
       return;
     }
 
-    if (!tenantId) return;
+    if (!tenantId) {
+      return;
+    }
 
-    navigate(
-      `/tenants/${tenantId}/edit`
-    );
+    navigate(`/tenants/${tenantId}/edit`);
   };
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | VIEW
-  |--------------------------------------------------------------------------
-  */
-
-  const handleView = () => {
-    closeMenu();
-
-    if (!tenantId) return;
-
-    navigate(
-      `/tenants/${tenantId}`
-    );
-  };
-
 
   /*
   |--------------------------------------------------------------------------
@@ -322,15 +322,18 @@ const TenantActions = ({
     });
   };
 
-
   /*
   |--------------------------------------------------------------------------
   | DEACTIVATE
   |--------------------------------------------------------------------------
   */
 
-  const handleDeactivate = () => {
-    Swal.fire({
+  const handleDeactivate = async () => {
+    if (processing) {
+      return;
+    }
+
+    const result = await Swal.fire({
       icon: "warning",
       title: "Deactivate Tenant?",
       text:
@@ -340,21 +343,21 @@ const TenantActions = ({
         "Yes, deactivate",
       cancelButtonText: "Cancel",
       reverseButtons: true,
-    }).then((result) => {
-      if (!result.isConfirmed) {
-        return;
-      }
+      focusCancel: true,
+    });
 
-      executeAction({
-        action: deactivateTenant,
-        message:
-          "Unable to deactivate this tenant.",
-        successMessage:
-          "Tenant deactivated successfully.",
-      });
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    executeAction({
+      action: deactivateTenant,
+      message:
+        "Unable to deactivate this tenant.",
+      successMessage:
+        "Tenant deactivated successfully.",
     });
   };
-
 
   /*
   |--------------------------------------------------------------------------
@@ -362,8 +365,12 @@ const TenantActions = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleBlacklist = () => {
-    Swal.fire({
+  const handleBlacklist = async () => {
+    if (processing) {
+      return;
+    }
+
+    const result = await Swal.fire({
       icon: "warning",
       title: "Blacklist Tenant?",
       text:
@@ -380,30 +387,76 @@ const TenantActions = ({
         "aria-label":
           "Blacklist reason",
       },
-    }).then((result) => {
-      if (!result.isConfirmed) {
-        return;
-      }
-
-      executeAction({
-        action: blacklistTenant,
-        message:
-          "Unable to blacklist this tenant.",
-        successMessage:
-          "Tenant blacklisted successfully.",
-      });
     });
-  };
 
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    /*
+     * Keep the reason available if the backend later
+     * accepts a second/options argument.
+     */
+    const reason = result.value || "";
+
+    if (typeof blacklistTenant !== "function") {
+      await Swal.fire({
+        icon: "error",
+        title: "Action Unavailable",
+        text:
+          "Blacklist action is not available.",
+      });
+
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      closeMenu();
+
+      const response =
+        await blacklistTenant(
+          tenantId,
+          reason
+        );
+
+      await handleSuccess(
+        "Tenant blacklisted successfully.",
+        response
+      );
+    } catch (error) {
+      console.error(
+        "Failed to blacklist tenant:",
+        error
+      );
+
+      await Swal.fire({
+        icon: "error",
+        title: "Blacklist Failed",
+        text:
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          "Unable to blacklist this tenant.",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   /*
   |--------------------------------------------------------------------------
-  | SET PENDING
+  | PENDING
   |--------------------------------------------------------------------------
   */
 
-  const handlePending = () => {
-    Swal.fire({
+  const handlePending = async () => {
+    if (processing) {
+      return;
+    }
+
+    const result = await Swal.fire({
       icon: "question",
       title: "Set Tenant to Pending?",
       text:
@@ -413,21 +466,21 @@ const TenantActions = ({
         "Yes, set pending",
       cancelButtonText: "Cancel",
       reverseButtons: true,
-    }).then((result) => {
-      if (!result.isConfirmed) {
-        return;
-      }
+      focusCancel: true,
+    });
 
-      executeAction({
-        action: pendingTenant,
-        message:
-          "Unable to update tenant status.",
-        successMessage:
-          "Tenant status changed to pending.",
-      });
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    executeAction({
+      action: pendingTenant,
+      message:
+        "Unable to update tenant status.",
+      successMessage:
+        "Tenant status changed to pending.",
     });
   };
-
 
   /*
   |--------------------------------------------------------------------------
@@ -445,15 +498,18 @@ const TenantActions = ({
     });
   };
 
-
   /*
   |--------------------------------------------------------------------------
   | UNVERIFY
   |--------------------------------------------------------------------------
   */
 
-  const handleUnverify = () => {
-    Swal.fire({
+  const handleUnverify = async () => {
+    if (processing) {
+      return;
+    }
+
+    const result = await Swal.fire({
       icon: "warning",
       title: "Remove Verification?",
       text:
@@ -463,21 +519,21 @@ const TenantActions = ({
         "Yes, remove",
       cancelButtonText: "Cancel",
       reverseButtons: true,
-    }).then((result) => {
-      if (!result.isConfirmed) {
-        return;
-      }
+      focusCancel: true,
+    });
 
-      executeAction({
-        action: unverifyTenant,
-        message:
-          "Unable to remove tenant verification.",
-        successMessage:
-          "Tenant verification removed successfully.",
-      });
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    executeAction({
+      action: unverifyTenant,
+      message:
+        "Unable to remove tenant verification.",
+      successMessage:
+        "Tenant verification removed successfully.",
     });
   };
-
 
   /*
   |--------------------------------------------------------------------------
@@ -485,7 +541,28 @@ const TenantActions = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleRestore = () => {
+  const handleRestore = async () => {
+    if (processing) {
+      return;
+    }
+
+    const result = await Swal.fire({
+      icon: "question",
+      title: "Restore Tenant?",
+      text:
+        "This tenant will be restored from deleted records.",
+      showCancelButton: true,
+      confirmButtonText:
+        "Yes, restore",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+      focusCancel: true,
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
     executeAction({
       action: restoreTenant,
       message:
@@ -495,42 +572,81 @@ const TenantActions = ({
     });
   };
 
-
   /*
   |--------------------------------------------------------------------------
-  | DELETE
+  | SOFT DELETE
   |--------------------------------------------------------------------------
   */
 
-  const handleDelete = () => {
-    Swal.fire({
+  const handleDelete = async () => {
+    if (
+      !tenantId ||
+      processing
+    ) {
+      return;
+    }
+
+    const tenantName =
+      tenant?.full_name ||
+      [
+        tenant?.first_name,
+        tenant?.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ") ||
+      tenant?.name ||
+      tenant?.tenant_number ||
+      `Tenant #${tenantId}`;
+
+    const result = await Swal.fire({
       icon: "warning",
       title: "Delete Tenant?",
-      text:
-        "The tenant will be moved to the deleted records.",
+      html: `
+        <div class="text-sm text-gray-600">
+          <p>
+            You are about to delete
+            <strong>${tenantName}</strong>.
+          </p>
+          <p class="mt-2">
+            The tenant will be moved to deleted records
+            and can be restored later.
+          </p>
+        </div>
+      `,
       showCancelButton: true,
       confirmButtonText:
-        "Yes, delete",
+        "Yes, delete tenant",
       cancelButtonText: "Cancel",
       reverseButtons: true,
       focusCancel: true,
-    }).then((result) => {
-      if (!result.isConfirmed) {
-        return;
-      }
-
-      executeDelete();
+      confirmButtonColor: "#dc2626",
     });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    await executeDelete();
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | EXECUTE SOFT DELETE
+  |--------------------------------------------------------------------------
+  */
 
   const executeDelete = async () => {
-    if (!tenantId || processing) {
+    if (
+      !tenantId ||
+      processing ||
+      typeof deleteTenant !== "function"
+    ) {
       return;
     }
 
     try {
       setProcessing(true);
+
       closeMenu();
 
       const response =
@@ -540,9 +656,135 @@ const TenantActions = ({
 
       await Swal.fire({
         icon: "success",
-        title: "Deleted",
+        title: "Tenant Deleted",
         text:
           "Tenant deleted successfully.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
+
+      /*
+       * Tell the parent to remove the tenant from
+       * the current table/list.
+       */
+      if (typeof onDeleted === "function") {
+        onDeleted(
+          tenant,
+          response
+        );
+      }
+
+      /*
+       * Also notify the parent that tenant data changed.
+       * This allows a refetch if the parent uses it.
+       */
+      if (typeof onUpdated === "function") {
+        onUpdated(
+          response?.data ??
+          response?.tenant ??
+          response
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Failed to delete tenant:",
+        error
+      );
+
+      await Swal.fire({
+        icon: "error",
+        title: "Delete Failed",
+        text:
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          "Failed to delete tenant.",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | FORCE DELETE
+  |--------------------------------------------------------------------------
+  */
+
+  const handleForceDelete = async () => {
+    if (
+      !tenantId ||
+      processing
+    ) {
+      return;
+    }
+
+    const result = await Swal.fire({
+      icon: "error",
+      title: "Permanently Delete Tenant?",
+      html: `
+        <div class="text-sm text-gray-600">
+          <p>
+            This action is permanent.
+          </p>
+
+          <p class="mt-2 font-semibold text-red-600">
+            The tenant and its deleted record
+            cannot be restored.
+          </p>
+
+          <p class="mt-2">
+            All associated soft-deleted tenant data
+            may be permanently removed.
+          </p>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText:
+        "Yes, permanently delete",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+      focusCancel: true,
+      confirmButtonColor: "#b91c1c",
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    await executeForceDelete();
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | EXECUTE FORCE DELETE
+  |--------------------------------------------------------------------------
+  */
+
+  const executeForceDelete = async () => {
+    if (
+      !tenantId ||
+      processing ||
+      typeof forceDeleteTenant !== "function"
+    ) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      closeMenu();
+
+      const response =
+        await forceDeleteTenant(
+          tenantId
+        );
+
+      await Swal.fire({
+        icon: "success",
+        title: "Permanently Deleted",
+        text:
+          "Tenant permanently deleted successfully.",
         timer: 1800,
         showConfirmButton: false,
       });
@@ -554,127 +796,42 @@ const TenantActions = ({
         );
       }
 
+      if (typeof onUpdated === "function") {
+        onUpdated(
+          response?.data ??
+          response?.tenant ??
+          response
+        );
+      }
     } catch (error) {
       console.error(
-        "Failed to delete tenant:",
+        "Failed to permanently delete tenant:",
         error
       );
 
-      Swal.fire({
+      await Swal.fire({
         icon: "error",
-        title: "Delete Failed",
+        title: "Permanent Delete Failed",
         text:
           error?.response?.data?.message ||
+          error?.response?.data?.error ||
           error?.message ||
-          "Failed to delete tenant.",
+          "Failed to permanently delete tenant.",
       });
-
     } finally {
       setProcessing(false);
     }
   };
 
-
   /*
   |--------------------------------------------------------------------------
-  | FORCE DELETE
+  | INVALID TENANT
   |--------------------------------------------------------------------------
   */
 
-  const handleForceDelete = () => {
-    Swal.fire({
-      icon: "error",
-      title: "Permanently Delete Tenant?",
-      html: `
-        <div class="text-sm">
-          <p>This action is permanent.</p>
-          <p class="mt-2 font-semibold">
-            The tenant and its deleted record cannot be restored.
-          </p>
-        </div>
-      `,
-      showCancelButton: true,
-      confirmButtonText:
-        "Yes, permanently delete",
-      cancelButtonText: "Cancel",
-      reverseButtons: true,
-      focusCancel: true,
-    }).then((result) => {
-      if (!result.isConfirmed) {
-        return;
-      }
-
-      executeForceDelete();
-    });
-  };
-
-
-  const executeForceDelete =
-    async () => {
-      if (!tenantId || processing) {
-        return;
-      }
-
-      try {
-        setProcessing(true);
-        closeMenu();
-
-        const response =
-          await forceDeleteTenant(
-            tenantId
-          );
-
-        await Swal.fire({
-          icon: "success",
-          title: "Permanently Deleted",
-          text:
-            "Tenant permanently deleted successfully.",
-          timer: 1800,
-          showConfirmButton: false,
-        });
-
-        if (
-          typeof onDeleted ===
-          "function"
-        ) {
-          onDeleted(
-            tenant,
-            response
-          );
-        }
-
-      } catch (error) {
-        console.error(
-          "Failed to permanently delete tenant:",
-          error
-        );
-
-        Swal.fire({
-          icon: "error",
-          title: "Permanent Delete Failed",
-          text:
-            error?.response?.data
-              ?.message ||
-            error?.message ||
-            "Failed to permanently delete tenant.",
-        });
-
-      } finally {
-        setProcessing(false);
-      }
-    };
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | DISABLE ACTIONS
-  |--------------------------------------------------------------------------
-  */
-
-  const isDeleted =
-    tenant?.deleted_at ||
-    tenant?.deletedAt;
-
+  if (!tenant) {
+    return null;
+  }
 
   /*
   |--------------------------------------------------------------------------
@@ -684,38 +841,37 @@ const TenantActions = ({
 
   return (
     <div className="relative">
-
-      {/* --------------------------------------------------------------- */}
-      {/* MAIN ACTION BUTTON                                              */}
-      {/* --------------------------------------------------------------- */}
+      {/* ================================================================
+          MAIN ACTION BUTTON
+      ================================================================= */}
 
       <div className="flex items-center gap-2">
-
         {showLabel && (
-          <StatusBadge
-            tenant={tenant}
-          />
+          <StatusBadge tenant={tenant} />
         )}
 
         <button
           type="button"
-          disabled={processing}
+          disabled={
+            processing ||
+            !tenantId
+          }
           onClick={() =>
             setOpen((value) => !value)
           }
           aria-label="Tenant actions"
           aria-expanded={open}
-          className={`inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 ${
-            compact
-              ? "h-9 w-9"
-              : "h-10 px-3"
-          }`}
+          className={`inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 ${compact
+            ? "h-9 w-9"
+            : "h-10 px-3"
+            }`}
         >
           {processing ? (
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
           ) : (
             <MoreHorizontal
               size={18}
+              aria-hidden="true"
             />
           )}
 
@@ -725,34 +881,33 @@ const TenantActions = ({
             </span>
           )}
         </button>
-
       </div>
 
-
-      {/* --------------------------------------------------------------- */}
-      {/* DROPDOWN                                                        */}
-      {/* --------------------------------------------------------------- */}
+      {/* ================================================================
+          DROPDOWN
+      ================================================================= */}
 
       {open && (
         <>
           {/* Overlay */}
+
           <button
             type="button"
-            aria-label="Close actions"
+            aria-label="Close tenant actions"
             onClick={closeMenu}
             className="fixed inset-0 z-40 cursor-default bg-transparent"
           />
 
           <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-
-            {/* --------------------------------------------------------- */}
-            {/* VIEW                                                       */}
-            {/* --------------------------------------------------------- */}
+            {/* ==========================================================
+                VIEW
+            ========================================================== */}
 
             <button
               type="button"
               onClick={handleView}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              disabled={processing}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
             >
               <ShieldCheck
                 size={17}
@@ -762,15 +917,15 @@ const TenantActions = ({
               <span>View Tenant</span>
             </button>
 
-
-            {/* --------------------------------------------------------- */}
-            {/* EDIT                                                       */}
-            {/* --------------------------------------------------------- */}
+            {/* ==========================================================
+                EDIT
+            ========================================================== */}
 
             <button
               type="button"
               onClick={handleEdit}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              disabled={processing}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
             >
               <Edit3
                 size={17}
@@ -780,168 +935,184 @@ const TenantActions = ({
               <span>Edit Tenant</span>
             </button>
 
-
             <div className="my-1 border-t border-slate-100" />
 
-
-            {/* --------------------------------------------------------- */}
-            {/* ACTIVATE                                                   */}
-            {/* --------------------------------------------------------- */}
-
-            {(status === "inactive" ||
-              status === "pending" ||
-              status === "suspended") && (
-              <button
-                type="button"
-                onClick={handleActivate}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
-              >
-                <UserCheck size={17} />
-
-                <span>
-                  Activate Tenant
-                </span>
-              </button>
-            )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* DEACTIVATE                                                 */}
-            {/* --------------------------------------------------------- */}
-
-            {status === "active" && (
-              <button
-                type="button"
-                onClick={handleDeactivate}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-orange-700 transition hover:bg-orange-50"
-              >
-                <UserX size={17} />
-
-                <span>
-                  Deactivate Tenant
-                </span>
-              </button>
-            )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* PENDING                                                    */}
-            {/* --------------------------------------------------------- */}
-
-            {status !== "pending" &&
-              status !== "blacklisted" && (
-                <button
-                  type="button"
-                  onClick={handlePending}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50"
-                >
-                  <Clock3 size={17} />
-
-                  <span>
-                    Set Pending
-                  </span>
-                </button>
-              )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* BLACKLIST                                                  */}
-            {/* --------------------------------------------------------- */}
-
-            {status !== "blacklisted" && (
-              <button
-                type="button"
-                onClick={handleBlacklist}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-700 transition hover:bg-red-50"
-              >
-                <Ban size={17} />
-
-                <span>
-                  Blacklist Tenant
-                </span>
-              </button>
-            )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* VERIFY                                                     */}
-            {/* --------------------------------------------------------- */}
-
-            {!isVerified && (
-              <button
-                type="button"
-                onClick={handleVerify}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
-              >
-                <CheckCircle2 size={17} />
-
-                <span>
-                  Verify Tenant
-                </span>
-              </button>
-            )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* UNVERIFY                                                   */}
-            {/* --------------------------------------------------------- */}
-
-            {isVerified && (
-              <button
-                type="button"
-                onClick={handleUnverify}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <XCircle size={17} />
-
-                <span>
-                  Remove Verification
-                </span>
-              </button>
-            )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* RESTORE                                                    */}
-            {/* --------------------------------------------------------- */}
+            {/* ==========================================================
+                RESTORE
+            ========================================================== */}
 
             {isDeleted && (
               <>
-                <div className="my-1 border-t border-slate-100" />
-
                 <button
                   type="button"
                   onClick={handleRestore}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                  disabled={processing}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                 >
-                  <RotateCcw
-                    size={17}
-                  />
+                  <RotateCcw size={17} />
 
                   <span>
                     Restore Tenant
                   </span>
                 </button>
+
+                <div className="my-1 border-t border-slate-100" />
+
+                {/* ======================================================
+                    FORCE DELETE
+                ====================================================== */}
+
+                <button
+                  type="button"
+                  onClick={handleForceDelete}
+                  disabled={processing}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 size={17} />
+
+                  <span>
+                    Permanently Delete
+                  </span>
+                </button>
               </>
             )}
 
-
-            {/* --------------------------------------------------------- */}
-            {/* DELETE                                                     */}
-            {/* --------------------------------------------------------- */}
+            {/* ==========================================================
+                NORMAL TENANT ACTIONS
+            ========================================================== */}
 
             {!isDeleted && (
               <>
+                {/* ======================================================
+                    ACTIVATE
+                ====================================================== */}
+
+                {(status === "inactive" ||
+                  status === "pending" ||
+                  status === "suspended") && (
+                    <button
+                      type="button"
+                      onClick={handleActivate}
+                      disabled={processing}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      <UserCheck size={17} />
+
+                      <span>
+                        Activate Tenant
+                      </span>
+                    </button>
+                  )}
+
+                {/* ======================================================
+                    DEACTIVATE
+                ====================================================== */}
+
+                {status === "active" && (
+                  <button
+                    type="button"
+                    onClick={handleDeactivate}
+                    disabled={processing}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-50"
+                  >
+                    <UserX size={17} />
+
+                    <span>
+                      Deactivate Tenant
+                    </span>
+                  </button>
+                )}
+
+                {/* ======================================================
+                    PENDING
+                ====================================================== */}
+
+                {status !== "pending" &&
+                  status !== "blacklisted" && (
+                    <button
+                      type="button"
+                      onClick={handlePending}
+                      disabled={processing}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      <Clock3 size={17} />
+
+                      <span>
+                        Set Pending
+                      </span>
+                    </button>
+                  )}
+
+                {/* ======================================================
+                    BLACKLIST
+                ====================================================== */}
+
+                {status !== "blacklisted" && (
+                  <button
+                    type="button"
+                    onClick={handleBlacklist}
+                    disabled={processing}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Ban size={17} />
+
+                    <span>
+                      Blacklist Tenant
+                    </span>
+                  </button>
+                )}
+
+                {/* ======================================================
+                    VERIFY
+                ====================================================== */}
+
+                {!isVerified && (
+                  <button
+                    type="button"
+                    onClick={handleVerify}
+                    disabled={processing}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={17} />
+
+                    <span>
+                      Verify Tenant
+                    </span>
+                  </button>
+                )}
+
+                {/* ======================================================
+                    UNVERIFY
+                ====================================================== */}
+
+                {isVerified && (
+                  <button
+                    type="button"
+                    onClick={handleUnverify}
+                    disabled={processing}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <XCircle size={17} />
+
+                    <span>
+                      Remove Verification
+                    </span>
+                  </button>
+                )}
+
+                {/* ======================================================
+                    DELETE
+                ====================================================== */}
+
                 <div className="my-1 border-t border-slate-100" />
 
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
+                  disabled={processing}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
                 >
-                  <Trash2
-                    size={17}
-                  />
+                  <Trash2 size={17} />
 
                   <span>
                     Delete Tenant
@@ -949,32 +1120,9 @@ const TenantActions = ({
                 </button>
               </>
             )}
-
-
-            {/* --------------------------------------------------------- */}
-            {/* FORCE DELETE                                               */}
-            {/* --------------------------------------------------------- */}
-
-            {isDeleted && (
-              <button
-                type="button"
-                onClick={handleForceDelete}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-700 transition hover:bg-red-50"
-              >
-                <Trash2
-                  size={17}
-                />
-
-                <span>
-                  Permanently Delete
-                </span>
-              </button>
-            )}
-
           </div>
         </>
       )}
-
     </div>
   );
 };
