@@ -20,44 +20,80 @@ return new class extends Migration
             | Relationships
             |--------------------------------------------------------------------------
             */
+
+            /**
+             * Property associated with the tenancy.
+             */
             $table->foreignId('property_id')
                 ->constrained('properties')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
+            /**
+             * Apartment associated with the tenancy.
+             *
+             * Nullable because some systems may assign
+             * tenants directly to a unit.
+             */
             $table->foreignId('apartment_id')
                 ->nullable()
                 ->constrained('apartments')
                 ->nullOnDelete();
 
+            /**
+             * Unit assigned to the tenant.
+             *
+             * This is the main relationship used for:
+             *
+             * Tenant → Tenancy → Unit
+             */
             $table->foreignId('unit_id')
                 ->nullable()
                 ->constrained('units')
                 ->nullOnDelete();
 
+            /**
+             * Tenant assigned to this tenancy.
+             */
             $table->foreignId('tenant_id')
                 ->constrained('tenants')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Tenancy Information
+            | Tenancy Identification
             |--------------------------------------------------------------------------
             */
-            $table->string('tenancy_number')->unique();
 
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
-
-            $table->date('move_in_date')->nullable();
-            $table->date('move_out_date')->nullable();
+            $table->string('tenancy_number')
+                ->unique();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Financial
+            | Tenancy Dates
             |--------------------------------------------------------------------------
             */
+
+            $table->date('start_date')
+                ->nullable();
+
+            $table->date('end_date')
+                ->nullable();
+
+            $table->date('move_in_date')
+                ->nullable();
+
+            $table->date('move_out_date')
+                ->nullable();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Financial Information
+            |--------------------------------------------------------------------------
+            */
+
             $table->decimal('rent_amount', 12, 2)
                 ->default(0);
 
@@ -73,9 +109,10 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Payment
+            | Payment Information
             |--------------------------------------------------------------------------
             */
+
             $table->string('payment_frequency')
                 ->default('monthly');
 
@@ -85,18 +122,27 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Status
+            | Tenancy Status
             |--------------------------------------------------------------------------
             */
+
             $table->string('status')
-                ->default('active');
+                ->default('pending');
+
+            /*
+             * Controls whether the tenancy is currently enabled.
+             */
+            $table->boolean('is_active')
+                ->default(true)
+                ->index();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Documents
+            | Agreement / Documents
             |--------------------------------------------------------------------------
             */
+
             $table->string('agreement_file')
                 ->nullable();
 
@@ -109,28 +155,58 @@ return new class extends Migration
             | Notes
             |--------------------------------------------------------------------------
             */
+
             $table->text('notes')
                 ->nullable();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Flags
+            | Timestamps / Soft Deletes
             |--------------------------------------------------------------------------
             */
-            $table->boolean('is_active')
-                ->default(true);
-
 
             $table->timestamps();
             $table->softDeletes();
 
+
+            /*
+            |--------------------------------------------------------------------------
+            | Indexes
+            |--------------------------------------------------------------------------
+            */
+
             $table->index('status');
+
             $table->index('tenant_id');
+
             $table->index('property_id');
+
+            $table->index('apartment_id');
+
+            $table->index('unit_id');
+
+            $table->index([
+                'tenant_id',
+                'status',
+            ]);
+
+            $table->index([
+                'unit_id',
+                'status',
+            ]);
+
+            $table->index([
+                'unit_id',
+                'is_active',
+            ]);
+
+            $table->index([
+                'tenant_id',
+                'is_active',
+            ]);
         });
     }
-
 
     /**
      * Reverse the migrations.
@@ -140,3 +216,4 @@ return new class extends Migration
         Schema::dropIfExists('tenancies');
     }
 };
+
