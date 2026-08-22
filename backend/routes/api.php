@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\PropertyAnalytics\PropertyAnalyticsController;
 use App\Http\Controllers\Api\Apartment\ApartmentController;
 use App\Http\Controllers\Api\Dashboard\DashboardController;
 use App\Http\Controllers\Api\Tenant\TenantController;
+use App\Http\Controllers\Api\Tenancy\TenancyController;
 
 /*
 |--------------------------------------------------------------------------
@@ -213,22 +214,14 @@ Route::middleware('auth:sanctum')->group(function () {
      });
 
      /*
-|--------------------------------------------------------------------------
-| TENANTS
-|--------------------------------------------------------------------------
-*/
+      |--------------------------------------------------------------------------
+      | TENANTS
+      |--------------------------------------------------------------------------
+    */
 
 Route::prefix('tenants')
     ->name('tenants.')
     ->group(function () {
-
-        /*
-        |--------------------------------------------------------------------------
-        | SPECIAL / FILTER ROUTES
-        |--------------------------------------------------------------------------
-        | These must come before /{tenant} to prevent Laravel from treating
-        | "search", "statistics", "active", etc. as tenant IDs.
-        */
 
         Route::get('search',[TenantController::class, 'search'] )->name('search');
         Route::get('statistics',[TenantController::class, 'statistics'] )->name('statistics');
@@ -317,6 +310,90 @@ Route::prefix('tenants')
         */
 
         Route::delete( '{id}/force',[TenantController::class, 'forceDelete'])
+            ->whereNumber('id')
+            ->name('force-delete');
+    });
+
+
+     /*
+      |--------------------------------------------------------------------------
+      | TENANCY
+      |--------------------------------------------------------------------------
+    */
+    Route::prefix('tenancies')
+    ->name('tenancies.')
+    ->group(function () {
+        Route::get('search', [TenancyController::class, 'index'])->name('search');
+        Route::get('statistics', [TenancyController::class, 'statistics'])->name('statistics');
+        Route::get('active', [TenancyController::class, 'index'])->name('active');
+        Route::get('pending', [TenancyController::class, 'index'])->name('pending');
+        Route::get('expired', [TenancyController::class, 'index'])->name('expired');
+        Route::get('terminated', [TenancyController::class, 'index'])->name('terminated');
+        Route::get('cancelled', [TenancyController::class, 'index'])->name('cancelled');
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANCY CRUD
+        |--------------------------------------------------------------------------
+        */
+        Route::get('/', [TenancyController::class, 'index'])->name('index');
+        Route::post('/', [TenancyController::class, 'store'])->name('store');
+        Route::get('{tenancy}', [TenancyController::class, 'show'])
+            ->whereNumber('tenancy')
+            ->name('show');
+        Route::put('{tenancy}', [TenancyController::class, 'update'])
+            ->whereNumber('tenancy')
+            ->name('update');
+        Route::patch('{tenancy}', [TenancyController::class, 'update'])
+            ->whereNumber('tenancy')
+            ->name('patch');
+        Route::delete('{tenancy}', [TenancyController::class, 'destroy'])
+            ->whereNumber('tenancy')
+            ->name('destroy');
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANCY STATUS MANAGEMENT
+        |--------------------------------------------------------------------------
+        */
+        Route::patch('{tenancy}/activate', [TenancyController::class, 'activate'])
+            ->whereNumber('tenancy')
+            ->name('activate');
+        Route::patch('{tenancy}/deactivate', [TenancyController::class, 'deactivate'])
+            ->whereNumber('tenancy')
+            ->name('deactivate');
+        Route::patch('{tenancy}/renew', [TenancyController::class, 'renew'])
+            ->whereNumber('tenancy')
+            ->name('renew');
+        Route::patch('{tenancy}/terminate', [TenancyController::class, 'terminate'])
+            ->whereNumber('tenancy')
+            ->name('terminate');
+        Route::patch('{tenancy}/cancel', [TenancyController::class, 'cancel'])
+            ->whereNumber('tenancy')
+            ->name('cancel');
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANCY ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+        Route::post('assign-unit', [TenancyController::class, 'assignUnit'])->name('assign-unit');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SOFT DELETE / RESTORE
+        |--------------------------------------------------------------------------
+        */
+        Route::patch('{id}/restore', [TenancyController::class, 'restore'])
+            ->whereNumber('id')
+            ->name('restore');
+
+        /*
+        |--------------------------------------------------------------------------
+        | FORCE DELETE
+        |--------------------------------------------------------------------------
+        */
+        Route::delete('{id}/force', [TenancyController::class, 'forceDelete'])
             ->whereNumber('id')
             ->name('force-delete');
     });

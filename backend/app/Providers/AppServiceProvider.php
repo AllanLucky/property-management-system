@@ -136,6 +136,18 @@ use App\Repositories\Eloquent\TenantRepository;
 use App\Repositories\Interfaces\TenantRepositoryInterface;
 
 
+
+/*
+|--------------------------------------------------------------------------
+| TENANCIES REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\TenancyRepository;
+use App\Repositories\Interfaces\TenancyRepositoryInterface;
+
+
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -324,6 +336,18 @@ class AppServiceProvider extends ServiceProvider
             TenantRepositoryInterface::class,
             TenantRepository::class
         );
+
+
+          /*
+        |--------------------------------------------------------------------------
+        | TENANcy
+        |--------------------------------------------------------------------------
+        */
+        $this->app->bind(
+            TenancyRepositoryInterface::class,
+            TenancyRepository::class
+        );
+
     }
 
     public function boot(): void

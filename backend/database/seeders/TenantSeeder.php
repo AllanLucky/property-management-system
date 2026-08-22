@@ -6,7 +6,6 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class TenantSeeder extends Seeder
 {
@@ -15,13 +14,7 @@ class TenantSeeder extends Seeder
      */
     public function run(): void
     {
-        /*
-        |--------------------------------------------------------------------------
-        | Tenant Data
-        |--------------------------------------------------------------------------
-        */
-
-        $tenants = [
+          $tenants = [
             [
                 'tenant_number' => 'TNT-000001',
                 'first_name' => 'Brian',
@@ -443,32 +436,24 @@ class TenantSeeder extends Seeder
             ],
         ];
 
-        /*
-        |--------------------------------------------------------------------------
-        | Create Tenant Users + Tenants
-        |--------------------------------------------------------------------------
-        */
-
         foreach ($tenants as $data) {
+            /*
+            |--------------------------------------------------------------------------
+            | Auto-compute is_active based on status
+            |--------------------------------------------------------------------------
+            */
+            $data['is_active'] = $data['status'] === Tenant::STATUS_ACTIVE;
 
             /*
             |--------------------------------------------------------------------------
             | Find Existing User
             |--------------------------------------------------------------------------
             */
-
             $user = User::withTrashed()
                 ->where('email', $data['email'])
                 ->first();
 
-            /*
-            |--------------------------------------------------------------------------
-            | Create / Restore User
-            |--------------------------------------------------------------------------
-            */
-
             if ($user) {
-
                 if (method_exists($user, 'trashed') && $user->trashed()) {
                     $user->restore();
                 }
@@ -478,9 +463,7 @@ class TenantSeeder extends Seeder
                     'last_name' => $data['last_name'],
                     'phone' => $data['phone'],
                 ]);
-
             } else {
-
                 $user = User::create([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
@@ -494,12 +477,7 @@ class TenantSeeder extends Seeder
             |--------------------------------------------------------------------------
             | Assign Tenant Role
             |--------------------------------------------------------------------------
-            |
-            | Only execute this if Spatie Permission is installed and
-            | the "tenant" role exists.
-            |
             */
-
             if (
                 method_exists($user, 'assignRole') &&
                 \Spatie\Permission\Models\Role::where('name', 'tenant')->exists()
@@ -512,26 +490,13 @@ class TenantSeeder extends Seeder
             | Create / Update Tenant
             |--------------------------------------------------------------------------
             */
-
             Tenant::withTrashed()->updateOrCreate(
-                [
-                    'tenant_number' => $data['tenant_number'],
-                ],
-                array_merge(
-                    $data,
-                    [
-                        'user_id' => $user->id,
-                    ]
-                )
+                ['tenant_number' => $data['tenant_number']],
+                array_merge($data, ['user_id' => $user->id])
             );
         }
 
-        $this->command?->info(
-            count($tenants) . ' tenants and their user accounts seeded successfully.'
-        );
-
-        $this->command?->info(
-            'Tenant login password: Password@123'
-        );
+        $this->command?->info(count($tenants) . ' tenants and their user accounts seeded successfully.');
+        $this->command?->info('Tenant login password: Password@123');
     }
 }

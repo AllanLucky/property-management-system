@@ -18,6 +18,7 @@ return new class extends Migration
             | Primary Key
             |--------------------------------------------------------------------------
             */
+
             $table->id();
 
 
@@ -26,6 +27,7 @@ return new class extends Migration
             | Tenant Identification
             |--------------------------------------------------------------------------
             */
+
             $table->string('tenant_number')
                 ->unique();
 
@@ -35,17 +37,16 @@ return new class extends Migration
             | User Relationship
             |--------------------------------------------------------------------------
             |
-            | A tenant can optionally have a corresponding application user.
+            | Each tenant can be linked to one user account.
             |
-            | Example:
+            | The user_id is nullable here to allow existing/imported tenant
+            | records to exist before their user account is created.
             |
-            | users.id = 25
-            | tenants.user_id = 25
-            |
-            | The relationship is nullable because a tenant can exist in the
-            | property management system without having a login account.
+            | New tenants should always be created with a valid user_id
+            | from the TenantController/service.
             |
             */
+
             $table->foreignId('user_id')
                 ->nullable()
                 ->unique()
@@ -58,6 +59,7 @@ return new class extends Migration
             | Personal Information
             |--------------------------------------------------------------------------
             */
+
             $table->string('first_name');
 
             $table->string('last_name');
@@ -79,8 +81,7 @@ return new class extends Migration
                 'male',
                 'female',
                 'other',
-            ])
-                ->nullable();
+            ])->nullable();
 
 
             /*
@@ -88,6 +89,7 @@ return new class extends Migration
             | Identification
             |--------------------------------------------------------------------------
             */
+
             $table->string('id_number')
                 ->nullable()
                 ->index();
@@ -102,6 +104,7 @@ return new class extends Migration
             | Emergency Contact
             |--------------------------------------------------------------------------
             */
+
             $table->string('emergency_contact_name')
                 ->nullable();
 
@@ -117,6 +120,7 @@ return new class extends Migration
             | Address Information
             |--------------------------------------------------------------------------
             */
+
             $table->string('country')
                 ->default('Kenya');
 
@@ -138,6 +142,7 @@ return new class extends Migration
             | Employment Information
             |--------------------------------------------------------------------------
             */
+
             $table->string('occupation')
                 ->nullable();
 
@@ -153,6 +158,7 @@ return new class extends Migration
             | Tenant Documents
             |--------------------------------------------------------------------------
             */
+
             $table->string('photo')
                 ->nullable();
 
@@ -177,8 +183,10 @@ return new class extends Migration
             | Verification
             |--------------------------------------------------------------------------
             */
+
             $table->boolean('is_verified')
-                ->default(false);
+                ->default(false)
+                ->index();
 
             $table->timestamp('verified_at')
                 ->nullable();
@@ -188,20 +196,8 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Status
             |--------------------------------------------------------------------------
-            |
-            | active
-            |     Tenant is currently active.
-            |
-            | inactive
-            |     Tenant is no longer active.
-            |
-            | blacklisted
-            |     Tenant is restricted from the system.
-            |
-            | pending
-            |     Tenant is awaiting approval or verification.
-            |
             */
+
             $table->enum('status', [
                 'active',
                 'inactive',
@@ -214,9 +210,34 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | Active Flag
+            |--------------------------------------------------------------------------
+            |
+            | This flag is separate from the tenant status.
+            |
+            | status:
+            |   - active
+            |   - inactive
+            |   - pending
+            |   - blacklisted
+            |
+            | is_active:
+            |   - true  = tenant record is enabled
+            |   - false = tenant record is disabled
+            |
+            */
+
+            $table->boolean('is_active')
+                ->default(true)
+                ->index();
+
+
+            /*
+            |--------------------------------------------------------------------------
             | Notes
             |--------------------------------------------------------------------------
             */
+
             $table->text('notes')
                 ->nullable();
 
@@ -226,6 +247,7 @@ return new class extends Migration
             | Timestamps & Soft Deletes
             |--------------------------------------------------------------------------
             */
+
             $table->timestamps();
 
             $table->softDeletes();
@@ -236,14 +258,23 @@ return new class extends Migration
             | Composite Indexes
             |--------------------------------------------------------------------------
             */
+
             $table->index([
                 'first_name',
                 'last_name',
             ]);
 
+            $table->index([
+                'status',
+                'is_active',
+            ]);
+
+            $table->index([
+                'is_verified',
+                'is_active',
+            ]);
         });
     }
-
 
     /**
      * Reverse the migrations.
