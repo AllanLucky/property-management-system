@@ -13,6 +13,7 @@ class TenancyResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | Tenancy Identification
@@ -35,93 +36,187 @@ class TenancyResource extends JsonResource
 
             'unit_id' => $this->unit_id,
 
+            'tenant_id' => $this->tenant_id,
+
             /*
             |--------------------------------------------------------------------------
             | Tenant
             |--------------------------------------------------------------------------
             */
 
-            'tenant_id' => $this->tenant_id,
+            'tenant' => $this->whenLoaded('tenant', function () {
 
-            /*
-            | Return the complete tenant relationship only when loaded.
-            | This avoids unnecessary database queries.
-            */
-
-            'tenant' => $this->whenLoaded(
-                'tenant',
-                function () {
-                    return [
-                        'id' => $this->tenant->id,
-                        'tenant_number' => $this->tenant->tenant_number,
-
-                        'user_id' => $this->tenant->user_id,
-
-                        'first_name' => $this->tenant->first_name,
-                        'last_name' => $this->tenant->last_name,
-                        'other_names' => $this->tenant->other_names,
-
-                        'full_name' => $this->tenant->full_name,
-
-                        'email' => $this->tenant->email,
-                        'phone' => $this->tenant->phone,
-
-                        'date_of_birth' => $this->tenant->date_of_birth?->format('Y-m-d'),
-                        'gender' => $this->tenant->gender,
-
-                        'id_number' => $this->tenant->id_number,
-                        'passport_number' => $this->tenant->passport_number,
-
-                        'country' => $this->tenant->country,
-                        'county' => $this->tenant->county,
-                        'city' => $this->tenant->city,
-                        'postal_code' => $this->tenant->postal_code,
-                        'address' => $this->tenant->address,
-
-                        'occupation' => $this->tenant->occupation,
-                        'employer' => $this->tenant->employer,
-                        'monthly_income' => $this->tenant->monthly_income,
-
-                        'emergency_contact' => [
-                            'name' => $this->tenant->emergency_contact_name,
-                            'phone' => $this->tenant->emergency_contact_phone,
-                            'relationship' => $this->tenant->emergency_contact_relationship,
-                        ],
-
-                        'documents' => [
-                            'photo' => $this->tenant->photo,
-                            'id_front' => $this->tenant->id_front,
-                            'id_back' => $this->tenant->id_back,
-                        ],
-
-                        'is_verified' => (bool) $this->tenant->is_verified,
-
-                        'verification_status' =>
-                            $this->tenant->verification_status,
-
-                        'verified_at' => $this->tenant->verified_at?->toISOString(),
-
-                        'status' => $this->tenant->status,
-
-                        'status_label' => $this->tenant->status_label,
-
-                        'is_active' => (bool) $this->tenant->is_active,
-
-                        'notes' => $this->tenant->notes,
-                    ];
+                if (!$this->tenant) {
+                    return null;
                 }
-            ),
+
+                $tenant = $this->tenant;
+
+                return [
+
+                    'id' => $tenant->id,
+
+                    'tenant_number' => $tenant->tenant_number,
+
+                    'user_id' => $tenant->user_id,
+
+                    'first_name' => $tenant->first_name,
+
+                    'last_name' => $tenant->last_name,
+
+                    'other_names' => $tenant->other_names,
+
+                    'email' => $tenant->email,
+
+                    'phone' => $tenant->phone,
+
+                    'date_of_birth' => $tenant->date_of_birth?->toISOString(),
+
+                    'gender' => $tenant->gender,
+
+                    'id_number' => $tenant->id_number,
+
+                    'passport_number' => $tenant->passport_number,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Emergency Contact
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'emergency_contact_name' =>
+                        $tenant->emergency_contact_name,
+
+                    'emergency_contact_phone' =>
+                        $tenant->emergency_contact_phone,
+
+                    'emergency_contact_relationship' =>
+                        $tenant->emergency_contact_relationship,
+
+                    'emergency_contact' => [
+                        'name' =>
+                            $tenant->emergency_contact_name,
+
+                        'phone' =>
+                            $tenant->emergency_contact_phone,
+
+                        'relationship' =>
+                            $tenant->emergency_contact_relationship,
+                    ],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Location
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'country' => $tenant->country,
+
+                    'county' => $tenant->county,
+
+                    'city' => $tenant->city,
+
+                    'postal_code' => $tenant->postal_code,
+
+                    'address' => $tenant->address,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Employment / Financial
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'occupation' => $tenant->occupation,
+
+                    'employer' => $tenant->employer,
+
+                    'monthly_income' => $tenant->monthly_income,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Documents
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'photo' => $tenant->photo,
+
+                    'id_front' => $tenant->id_front,
+
+                    'id_back' => $tenant->id_back,
+
+                    'documents' => [
+                        'photo' => $tenant->photo,
+                        'id_front' => $tenant->id_front,
+                        'id_back' => $tenant->id_back,
+                    ],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Verification
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'is_verified' =>
+                        (bool) $tenant->is_verified,
+
+                    'verified_at' =>
+                        $tenant->verified_at?->toISOString(),
+
+                    'verification_status' =>
+                        $tenant->verification_status,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Tenant Status
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'status' => $tenant->status,
+
+                    'status_label' =>
+                        $tenant->status_label,
+
+                    'is_active' =>
+                        (bool) $tenant->is_active,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Full Name
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'full_name' =>
+                        $tenant->full_name
+                        ?? trim(
+                            collect([
+                                $tenant->first_name,
+                                $tenant->last_name,
+                                $tenant->other_names,
+                            ])
+                                ->filter()
+                                ->implode(' ')
+                        ),
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Notes / Timestamps
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'notes' => $tenant->notes,
+
+                    'created_at' =>
+                        $tenant->created_at?->toISOString(),
+
+                    'updated_at' =>
+                        $tenant->updated_at?->toISOString(),
+                ];
+            }),
 
             /*
             |--------------------------------------------------------------------------
             | Tenant User Account
             |--------------------------------------------------------------------------
-            |
-            | This is important for your current issue where user_id was null.
-            |
-            | If the tenant has a linked User record, this will return the
-            | actual user account information.
-            |
             */
 
             'user' => $this->when(
@@ -129,20 +224,108 @@ class TenancyResource extends JsonResource
                 $this->tenant &&
                 $this->tenant->relationLoaded('user'),
                 function () {
-                    if (!$this->tenant->user) {
-                        return null;
-                    }
 
                     $user = $this->tenant->user;
 
+                    if (!$user) {
+                        return null;
+                    }
+
                     return [
+
                         'id' => $user->id,
-                        'slug' => $user->slug ?? null,
 
                         'first_name' => $user->first_name,
+
                         'last_name' => $user->last_name,
 
-                        'full_name' => $user->full_name
+                        'slug' => $user->slug ?? null,
+
+                        'email' => $user->email,
+
+                        'phone' => $user->phone,
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Authentication Fields
+                        |--------------------------------------------------------------------------
+                        |
+                        | Sensitive authentication fields are intentionally
+                        | not exposed through the API resource.
+                        |
+                        */
+
+                        'email_verified_at' =>
+                            $user->email_verified_at?->toISOString(),
+
+                        'is_verified' =>
+                            (bool) ($user->is_verified ?? false),
+
+                        'otp_expires_at' =>
+                            $user->otp_expires_at?->toISOString(),
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Profile
+                        |--------------------------------------------------------------------------
+                        */
+
+                        'image' =>
+                            $user->image ?? null,
+
+                        'gender' =>
+                            $user->gender ?? null,
+
+                        'nationality' =>
+                            $user->nationality ?? null,
+
+                        'address' =>
+                            $user->address ?? null,
+
+                        'date_of_birth' =>
+                            $user->date_of_birth?->toISOString(),
+
+                        'bio' =>
+                            $user->bio ?? null,
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Account Status
+                        |--------------------------------------------------------------------------
+                        */
+
+                        'account_status' =>
+                            $user->account_status ?? null,
+
+                        'approval_status' =>
+                            $user->approval_status ?? null,
+
+                        'is_banner' =>
+                            (bool) ($user->is_banner ?? false),
+
+                        'last_login_at' =>
+                            $user->last_login_at?->toISOString(),
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Timestamps
+                        |--------------------------------------------------------------------------
+                        */
+
+                        'created_at' =>
+                            $user->created_at?->toISOString(),
+
+                        'updated_at' =>
+                            $user->updated_at?->toISOString(),
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Computed Information
+                        |--------------------------------------------------------------------------
+                        */
+
+                        'full_name' =>
+                            $user->full_name
                             ?? trim(
                                 collect([
                                     $user->first_name,
@@ -152,73 +335,102 @@ class TenancyResource extends JsonResource
                                     ->implode(' ')
                             ),
 
-                        'email' => $user->email,
-                        'phone' => $user->phone,
+                        'image_url' =>
+                            $user->image_url ?? null,
 
-                        'is_verified' => (bool) ($user->is_verified ?? false),
+                        'initials' =>
+                            $user->initials
+                            ?? strtoupper(
+                                collect([
+                                    $user->first_name,
+                                    $user->last_name,
+                                ])
+                                    ->filter()
+                                    ->map(
+                                        fn ($name) =>
+                                            mb_substr($name, 0, 1)
+                                    )
+                                    ->implode('')
+                            ),
 
-                        'email_verified_at' =>
-                            $user->email_verified_at?->toISOString(),
+                        'is_active' =>
+                            (bool) ($user->is_active ?? false),
 
-                        'profile' => [
-                            'image' => $user->profile?->image ?? null,
-                            'image_url' => $user->profile?->image_url
-                                ?? null,
-                            'image_public_id' =>
-                                $user->profile?->image_public_id ?? null,
-                            'gender' => $user->profile?->gender ?? null,
-                            'nationality' =>
-                                $user->profile?->nationality ?? null,
-                            'address' =>
-                                $user->profile?->address ?? null,
-                            'date_of_birth' =>
-                                $user->profile?->date_of_birth?->format('Y-m-d'),
-                            'bio' => $user->profile?->bio ?? null,
-                        ],
+                        'is_verified_user' =>
+                            (bool) ($user->is_verified_user ?? false),
 
-                        'roles' => method_exists($user, 'roles')
-                            ? $user->roles->map(function ($role) {
-                                return [
-                                    'id' => $role->id,
-                                    'name' => $role->name,
-                                    'guard_name' => $role->guard_name,
-                                ];
-                            })->values()
-                            : [],
+                        'is_super_admin' =>
+                            (bool) ($user->is_super_admin ?? false),
 
-                        'role_names' => method_exists($user, 'roles')
-                            ? $user->roles
-                                ->pluck('name')
-                                ->values()
-                                ->toArray()
-                            : [],
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Roles
+                        |--------------------------------------------------------------------------
+                        */
 
-                        'permissions' => method_exists($user, 'permissions')
-                            ? $user->permissions
-                                ->map(function ($permission) {
-                                    return [
-                                        'id' => $permission->id,
-                                        'name' => $permission->name,
-                                        'guard_name' =>
-                                            $permission->guard_name,
-                                    ];
-                                })
-                                ->values()
-                            : [],
+                        'roles' =>
+                            $user->relationLoaded('roles')
+                                ? $user->roles
+                                    ->map(function ($role) {
+                                        return [
+                                            'id' => $role->id,
 
-                        'permission_names' =>
-                            method_exists($user, 'permissions')
-                                ? $user->permissions
+                                            'name' => $role->name,
+
+                                            'guard_name' =>
+                                                $role->guard_name,
+
+                                            'created_at' =>
+                                                $role->created_at?->toISOString(),
+
+                                            'updated_at' =>
+                                                $role->updated_at?->toISOString(),
+                                        ];
+                                    })
+                                    ->values()
+                                    ->toArray()
+                                : [],
+
+                        'role_names' =>
+                            $user->relationLoaded('roles')
+                                ? $user->roles
                                     ->pluck('name')
                                     ->values()
                                     ->toArray()
                                 : [],
 
-                        'created_at' =>
-                            $user->created_at?->toISOString(),
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Permissions
+                        |--------------------------------------------------------------------------
+                        */
 
-                        'updated_at' =>
-                            $user->updated_at?->toISOString(),
+                        'permissions' =>
+                            $user->relationLoaded('permissions')
+                                ? $user->permissions
+                                    ->map(function ($permission) {
+                                        return [
+                                            'id' =>
+                                                $permission->id,
+
+                                            'name' =>
+                                                $permission->name,
+
+                                            'guard_name' =>
+                                                $permission->guard_name,
+                                        ];
+                                    })
+                                    ->values()
+                                    ->toArray()
+                                : [],
+
+                        'permission_names' =>
+                            $user->relationLoaded('permissions')
+                                ? $user->permissions
+                                    ->pluck('name')
+                                    ->values()
+                                    ->toArray()
+                                : [],
                     ];
                 }
             ),
@@ -229,37 +441,392 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'property' => $this->whenLoaded(
-                'property',
-                function () {
-                    if (!$this->property) {
-                        return null;
-                    }
+            'property' => $this->whenLoaded('property', function () {
 
-                    return [
-                        'id' => $this->property->id,
-
-                        'name' => $this->property->name ?? null,
-
-                        'slug' => $this->property->slug ?? null,
-
-                        'property_number' =>
-                            $this->property->property_number ?? null,
-
-                        'address' =>
-                            $this->property->address ?? null,
-
-                        'county' =>
-                            $this->property->county ?? null,
-
-                        'city' =>
-                            $this->property->city ?? null,
-
-                        'status' =>
-                            $this->property->status ?? null,
-                    ];
+                if (!$this->property) {
+                    return null;
                 }
-            ),
+
+                $property = $this->property;
+
+                return [
+
+                    'id' => $property->id,
+
+                    'user_id' => $property->user_id,
+
+                    'property_type_id' =>
+                        $property->property_type_id,
+
+                    'property_category_id' =>
+                        $property->property_category_id,
+
+                    'country_id' =>
+                        $property->country_id,
+
+                    'region_id' =>
+                        $property->region_id,
+
+                    'county_id' =>
+                        $property->county_id,
+
+                    'city_id' =>
+                        $property->city_id,
+
+                    'area_id' =>
+                        $property->area_id,
+
+                    'title' =>
+                        $property->title,
+
+                    'name' =>
+                        $property->title
+                        ?? $property->name
+                        ?? null,
+
+                    'slug' =>
+                        $property->slug,
+
+                    'property_code' =>
+                        $property->property_code,
+
+                    'property_number' =>
+                        $property->property_number ?? null,
+
+                    'description' =>
+                        $property->description,
+
+                    'listing_type' =>
+                        $property->listing_type,
+
+                    'status' =>
+                        $property->status,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Location
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'country_name' =>
+                        $property->country_name,
+
+                    'region_name' =>
+                        $property->region_name,
+
+                    'county_name' =>
+                        $property->county_name,
+
+                    'city_name' =>
+                        $property->city_name,
+
+                    'area_name' =>
+                        $property->area_name,
+
+                    'street_address' =>
+                        $property->street_address,
+
+                    'address' =>
+                        $property->address
+                        ?? $property->street_address,
+
+                    'latitude' =>
+                        $property->latitude,
+
+                    'longitude' =>
+                        $property->longitude,
+
+                    'full_location' =>
+                        $property->full_location ?? null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Specifications
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'bedrooms' =>
+                        $property->bedrooms,
+
+                    'bathrooms' =>
+                        $property->bathrooms,
+
+                    'toilets' =>
+                        $property->toilets,
+
+                    'garages' =>
+                        $property->garages,
+
+                    'parking_spaces' =>
+                        $property->parking_spaces,
+
+                    'floors' =>
+                        $property->floors,
+
+                    'size' =>
+                        $property->size,
+
+                    'size_unit' =>
+                        $property->size_unit,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Pricing
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'price' =>
+                        $property->price,
+
+                    'discount_price' =>
+                        $property->discount_price,
+
+                    'monthly_rent' =>
+                        $property->monthly_rent,
+
+                    'service_charge' =>
+                        $property->service_charge,
+
+                    'formatted_price' =>
+                        $property->formatted_price ?? null,
+
+                    'display_price' =>
+                        $property->display_price ?? null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Features
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'is_featured' =>
+                        (bool) $property->is_featured,
+
+                    'is_verified' =>
+                        (bool) $property->is_verified,
+
+                    'is_published' =>
+                        (bool) $property->is_published,
+
+                    'has_balcony' =>
+                        (bool) $property->has_balcony,
+
+                    'has_swimming_pool' =>
+                        (bool) $property->has_swimming_pool,
+
+                    'has_garden' =>
+                        (bool) $property->has_garden,
+
+                    'has_wifi' =>
+                        (bool) $property->has_wifi,
+
+                    'has_security' =>
+                        (bool) $property->has_security,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Media
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'image' =>
+                        $property->image,
+
+                    'thumbnail' =>
+                        $property->thumbnail,
+
+                    'thumbnail_url' =>
+                        $property->thumbnail_url ?? null,
+
+                    'video_url' =>
+                        $property->video_url,
+
+                    'virtual_tour_url' =>
+                        $property->virtual_tour_url,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | SEO
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'meta_title' =>
+                        $property->meta_title,
+
+                    'meta_description' =>
+                        $property->meta_description,
+
+                    'meta_keywords' =>
+                        $property->meta_keywords,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Statistics
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'views_count' =>
+                        $property->views_count,
+
+                    'favorites_count' =>
+                        $property->favorites_count,
+
+                    'published_at' =>
+                        $property->published_at?->toISOString(),
+
+                    'vacant_units_count' =>
+                        $property->vacant_units_count ?? 0,
+
+                    'occupied_units_count' =>
+                        $property->occupied_units_count ?? 0,
+
+                    'average_rating' =>
+                        $property->average_rating ?? 0,
+
+                    'reviews_count' =>
+                        $property->reviews_count ?? 0,
+
+                    'rating_breakdown' =>
+                        $property->rating_breakdown ?? [],
+
+                    'visits_count' =>
+                        $property->visits_count ?? 0,
+
+                    'unique_visits_count' =>
+                        $property->unique_visits_count ?? 0,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Property Type
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'property_type' =>
+                        $property->relationLoaded('propertyType') &&
+                        $property->propertyType
+                            ? [
+                                'id' =>
+                                    $property->propertyType->id,
+
+                                'name' =>
+                                    $property->propertyType->name,
+
+                                'slug' =>
+                                    $property->propertyType->slug,
+
+                                'description' =>
+                                    $property->propertyType->description,
+
+                                'icon' =>
+                                    $property->propertyType->icon,
+
+                                'color' =>
+                                    $property->propertyType->color,
+
+                                'status' =>
+                                    $property->propertyType->status,
+
+                                'is_active' =>
+                                    (bool) $property->propertyType->is_active,
+
+                                'is_featured' =>
+                                    (bool) $property->propertyType->is_featured,
+
+                                'sort_order' =>
+                                    $property->propertyType->sort_order,
+
+                                'display_name' =>
+                                    $property->propertyType->display_name
+                                    ?? $property->propertyType->name,
+
+                                'status_label' =>
+                                    $property->propertyType->status_label
+                                    ?? null,
+                            ]
+                            : null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Property Category
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'property_category' =>
+                        $property->relationLoaded('propertyCategory') &&
+                        $property->propertyCategory
+                            ? [
+                                'id' =>
+                                    $property->propertyCategory->id,
+
+                                'parent_id' =>
+                                    $property->propertyCategory->parent_id,
+
+                                'name' =>
+                                    $property->propertyCategory->name,
+
+                                'slug' =>
+                                    $property->propertyCategory->slug,
+
+                                'description' =>
+                                    $property->propertyCategory->description,
+
+                                'icon' =>
+                                    $property->propertyCategory->icon,
+
+                                'image_url' =>
+                                    $property->propertyCategory->image_url,
+
+                                'banner_url' =>
+                                    $property->propertyCategory->banner_url,
+
+                                'status' =>
+                                    $property->propertyCategory->status,
+
+                                'is_featured' =>
+                                    (bool) $property->propertyCategory->is_featured,
+
+                                'show_in_homepage' =>
+                                    (bool) $property->propertyCategory->show_in_homepage,
+
+                                'is_popular' =>
+                                    (bool) $property->propertyCategory->is_popular,
+
+                                'sort_order' =>
+                                    $property->propertyCategory->sort_order,
+
+                                'color' =>
+                                    $property->propertyCategory->color,
+
+                                'views_count' =>
+                                    $property->propertyCategory->views_count,
+
+                                'settings' =>
+                                    $property->propertyCategory->settings,
+
+                                'published_at' =>
+                                    $property->propertyCategory->published_at?->toISOString(),
+
+                                'properties_count' =>
+                                    $property->propertyCategory->properties_count ?? 0,
+                            ]
+                            : null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Timestamps
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'deleted_at' =>
+                        $property->deleted_at?->toISOString(),
+
+                    'created_at' =>
+                        $property->created_at?->toISOString(),
+
+                    'updated_at' =>
+                        $property->updated_at?->toISOString(),
+                ];
+            }),
 
             /*
             |--------------------------------------------------------------------------
@@ -267,33 +834,160 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'apartment' => $this->whenLoaded(
-                'apartment',
-                function () {
-                    if (!$this->apartment) {
-                        return null;
-                    }
+            'apartment' => $this->whenLoaded('apartment', function () {
 
-                    return [
-                        'id' => $this->apartment->id,
-
-                        'name' =>
-                            $this->apartment->name ?? null,
-
-                        'slug' =>
-                            $this->apartment->slug ?? null,
-
-                        'apartment_number' =>
-                            $this->apartment->apartment_number ?? null,
-
-                        'property_id' =>
-                            $this->apartment->property_id ?? null,
-
-                        'status' =>
-                            $this->apartment->status ?? null,
-                    ];
+                if (!$this->apartment) {
+                    return null;
                 }
-            ),
+
+                $apartment = $this->apartment;
+
+                return [
+
+                    'id' => $apartment->id,
+
+                    'property_id' =>
+                        $apartment->property_id,
+
+                    'name' =>
+                        $apartment->name,
+
+                    'slug' =>
+                        $apartment->slug,
+
+                    'description' =>
+                        $apartment->description,
+
+                    'block' =>
+                        $apartment->block,
+
+                    'apartment_number' =>
+                        $apartment->apartment_number ?? null,
+
+                    'total_floors' =>
+                        $apartment->total_floors,
+
+                    'total_units' =>
+                        $apartment->total_units,
+
+                    'status' =>
+                        $apartment->status,
+
+                    'has_elevator' =>
+                        (bool) $apartment->has_elevator,
+
+                    'has_backup_generator' =>
+                        (bool) $apartment->has_backup_generator,
+
+                    'has_security' =>
+                        (bool) $apartment->has_security,
+
+                    'has_parking' =>
+                        (bool) $apartment->has_parking,
+
+                    'thumbnail' =>
+                        $apartment->thumbnail,
+
+                    'thumbnail_public_id' =>
+                        $apartment->thumbnail_public_id,
+
+                    'thumbnail_url' =>
+                        $apartment->thumbnail_url ?? null,
+
+                    'meta_title' =>
+                        $apartment->meta_title,
+
+                    'meta_description' =>
+                        $apartment->meta_description,
+
+                    'meta_keywords' =>
+                        $apartment->meta_keywords,
+
+                    'units_count' =>
+                        $apartment->units_count ?? 0,
+
+                    'status_label' =>
+                        $apartment->status_label ?? null,
+
+                    'property_title' =>
+                        $apartment->property_title
+                        ?? $apartment->property?->title
+                        ?? null,
+
+                    'full_name' =>
+                        $apartment->full_name
+                        ?? $apartment->name,
+
+                    'occupied_units_count' =>
+                        $apartment->occupied_units_count ?? 0,
+
+                    'vacant_units_count' =>
+                        $apartment->vacant_units_count ?? 0,
+
+                    'maintenance_units_count' =>
+                        $apartment->maintenance_units_count ?? 0,
+
+                    'occupancy_rate' =>
+                        $apartment->occupancy_rate ?? 0,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Nested Property
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'property' =>
+                        $apartment->relationLoaded('property') &&
+                        $apartment->property
+                            ? [
+                                'id' =>
+                                    $apartment->property->id,
+
+                                'title' =>
+                                    $apartment->property->title,
+
+                                'slug' =>
+                                    $apartment->property->slug,
+
+                                'property_code' =>
+                                    $apartment->property->property_code,
+
+                                'status' =>
+                                    $apartment->property->status,
+
+                                'country_name' =>
+                                    $apartment->property->country_name,
+
+                                'region_name' =>
+                                    $apartment->property->region_name,
+
+                                'county_name' =>
+                                    $apartment->property->county_name,
+
+                                'city_name' =>
+                                    $apartment->property->city_name,
+
+                                'area_name' =>
+                                    $apartment->property->area_name,
+
+                                'street_address' =>
+                                    $apartment->property->street_address,
+
+                                'full_location' =>
+                                    $apartment->property->full_location ?? null,
+                            ]
+                            : null,
+
+                    'deleted_at' =>
+                        $apartment->deleted_at?->toISOString(),
+
+                    'created_at' =>
+                        $apartment->created_at?->toISOString(),
+
+                    'updated_at' =>
+                        $apartment->updated_at?->toISOString(),
+                ];
+            }),
 
             /*
             |--------------------------------------------------------------------------
@@ -301,48 +995,76 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'unit' => $this->whenLoaded(
-                'unit',
-                function () {
-                    if (!$this->unit) {
-                        return null;
-                    }
+            'unit' => $this->whenLoaded('unit', function () {
 
-                    return [
-                        'id' => $this->unit->id,
-
-                        'unit_number' =>
-                            $this->unit->unit_number ?? null,
-
-                        'name' =>
-                            $this->unit->name ?? null,
-
-                        'slug' =>
-                            $this->unit->slug ?? null,
-
-                        'property_id' =>
-                            $this->unit->property_id ?? null,
-
-                        'apartment_id' =>
-                            $this->unit->apartment_id ?? null,
-
-                        'status' =>
-                            $this->unit->status ?? null,
-
-                        'price' =>
-                            $this->unit->price ?? null,
-
-                        'deposit' =>
-                            $this->unit->deposit ?? null,
-
-                        'service_charge' =>
-                            $this->unit->service_charge ?? null,
-
-                        'size' =>
-                            $this->unit->size ?? null,
-                    ];
+                if (!$this->unit) {
+                    return null;
                 }
-            ),
+
+                $unit = $this->unit;
+
+                return [
+
+                    'id' => $unit->id,
+
+                    'property_id' =>
+                        $unit->property_id,
+
+                    'apartment_id' =>
+                        $unit->apartment_id,
+
+                    'unit_number' =>
+                        $unit->unit_number,
+
+                    'name' =>
+                        $unit->name ?? null,
+
+                    'slug' =>
+                        $unit->slug ?? null,
+
+                    'status' =>
+                        $unit->status,
+
+                    'price' =>
+                        $unit->price,
+
+                    'deposit' =>
+                        $unit->deposit,
+
+                    'service_charge' =>
+                        $unit->service_charge,
+
+                    'size' =>
+                        $unit->size,
+
+                    'size_unit' =>
+                        $unit->size_unit ?? null,
+
+                    'status_label' =>
+                        $unit->status_label ?? null,
+
+                    'is_vacant' =>
+                        isset($unit->is_vacant)
+                            ? (bool) $unit->is_vacant
+                            : null,
+
+                    'is_occupied' =>
+                        isset($unit->is_occupied)
+                            ? (bool) $unit->is_occupied
+                            : null,
+
+                    'is_reserved' =>
+                        isset($unit->is_reserved)
+                            ? (bool) $unit->is_reserved
+                            : null,
+
+                    'created_at' =>
+                        $unit->created_at?->toISOString(),
+
+                    'updated_at' =>
+                        $unit->updated_at?->toISOString(),
+                ];
+            }),
 
             /*
             |--------------------------------------------------------------------------
@@ -351,16 +1073,16 @@ class TenancyResource extends JsonResource
             */
 
             'start_date' =>
-                $this->start_date?->format('Y-m-d'),
+                $this->start_date?->toISOString(),
 
             'end_date' =>
-                $this->end_date?->format('Y-m-d'),
+                $this->end_date?->toISOString(),
 
             'move_in_date' =>
-                $this->move_in_date?->format('Y-m-d'),
+                $this->move_in_date?->toISOString(),
 
             'move_out_date' =>
-                $this->move_out_date?->format('Y-m-d'),
+                $this->move_out_date?->toISOString(),
 
             /*
             |--------------------------------------------------------------------------
@@ -368,13 +1090,17 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'rent_amount' => $this->rent_amount,
+            'rent_amount' =>
+                $this->rent_amount,
 
-            'deposit_amount' => $this->deposit_amount,
+            'deposit_amount' =>
+                $this->deposit_amount,
 
-            'service_charge' => $this->service_charge,
+            'service_charge' =>
+                $this->service_charge,
 
-            'late_fee' => $this->late_fee,
+            'late_fee' =>
+                $this->late_fee,
 
             /*
             |--------------------------------------------------------------------------
@@ -382,9 +1108,11 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'payment_frequency' => $this->payment_frequency,
+            'payment_frequency' =>
+                $this->payment_frequency,
 
-            'due_day' => $this->due_day,
+            'due_day' =>
+                $this->due_day,
 
             /*
             |--------------------------------------------------------------------------
@@ -392,13 +1120,17 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'status' => $this->status,
+            'status' =>
+                $this->status,
 
-            'status_label' => $this->status_label,
+            'status_label' =>
+                $this->status_label,
 
-            'is_active' => (bool) $this->is_active,
+            'is_active' =>
+                (bool) $this->is_active,
 
-            'is_expired' => (bool) $this->is_expired,
+            'is_expired' =>
+                (bool) $this->is_expired,
 
             'is_currently_active' =>
                 (bool) $this->is_currently_active,
@@ -415,8 +1147,18 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
+            'agreement_file' =>
+                $this->agreement_file,
+
+            'agreement_public_id' =>
+                $this->agreement_public_id ?? null,
+
             'agreement' => [
-                'file' => $this->agreement_file,
+                'file' =>
+                    $this->agreement_file,
+
+                'public_id' =>
+                    $this->agreement_public_id ?? null,
 
                 'has_agreement' =>
                     !empty($this->agreement_file),
@@ -428,7 +1170,8 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'notes' => $this->notes,
+            'notes' =>
+                $this->notes,
 
             /*
             |--------------------------------------------------------------------------
