@@ -19,23 +19,10 @@ class TenancyController extends Controller
     protected TenancyRepositoryInterface $tenancies;
 
     /**
-     * Relationships required by TenancyResource.
+     * Create controller instance.
      */
-    protected array $resourceRelations = [
-        'tenant.user.roles',
-        'tenant.user.permissions',
-        'property.propertyType',
-        'property.propertyCategory',
-        'apartment.property',
-        'unit',
-    ];
-
-    /**
-     * Constructor.
-     */
-    public function __construct(
-        TenancyRepositoryInterface $tenancies
-    ) {
+    public function __construct(TenancyRepositoryInterface $tenancies)
+    {
         $this->tenancies = $tenancies;
 
         $this->authorizeResource(
@@ -46,21 +33,12 @@ class TenancyController extends Controller
 
     /**
      * List all tenancies.
-     *
-     * GET /api/tenancies
      */
     public function index(Request $request)
     {
-        $perPage = (int) $request->get('per_page', 15);
-
-        /*
-         * Protect pagination from invalid values.
-         */
-        $perPage = max(1, min($perPage, 100));
-
         $paginator = $this->tenancies->paginate(
             $request->all(),
-            $perPage
+            $request->get('per_page', 15)
         );
 
         return ApiResponse::paginated(
@@ -71,19 +49,15 @@ class TenancyController extends Controller
 
     /**
      * Show a specific tenancy.
-     *
-     * GET /api/tenancies/{tenancy}
      */
     public function show(Tenancy $tenancy)
     {
-        /*
-         * Load all relationships required by TenancyResource.
-         *
-         * property.propertyType and property.propertyCategory
-         * are especially important so the response contains the
-         * complete property information.
-         */
-        $tenancy->load($this->resourceRelations);
+        $tenancy->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::success(
             new TenancyResource($tenancy),
@@ -93,8 +67,6 @@ class TenancyController extends Controller
 
     /**
      * Store a new tenancy.
-     *
-     * POST /api/tenancies
      */
     public function store(StoreTenancyRequest $request)
     {
@@ -103,12 +75,14 @@ class TenancyController extends Controller
         );
 
         /*
-         * Reload relationships after creation.
-         *
-         * Repository create() may return a model without all
-         * relationships loaded.
+         * Load relationships required by the resource.
          */
-        $tenancy->load($this->resourceRelations);
+        $tenancy->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::created(
             new TenancyResource($tenancy),
@@ -118,40 +92,25 @@ class TenancyController extends Controller
 
     /**
      * Update tenancy.
-     *
-     * PUT /api/tenancies/{tenancy}
      */
     public function update(
         UpdateTenancyRequest $request,
         Tenancy $tenancy
     ) {
-        /*
-         * Only validated fields are passed to the repository.
-         */
-        $data = $request->validated();
-
-        /*
-         * Update the tenancy through the repository.
-         */
         $updated = $this->tenancies->update(
             $tenancy,
-            $data
+            $request->validated()
         );
 
         /*
-         * Make sure we have a valid model instance.
+         * Load relationships required by the resource.
          */
-        if (!$updated instanceof Tenancy) {
-            $updated = Tenancy::query()->find($tenancy->id);
-        }
-
-        /*
-         * Reload all relationships after the update.
-         *
-         * This is important because the update response should have
-         * the same complete structure as the GET /tenancies response.
-         */
-        $updated->load($this->resourceRelations);
+        $updated->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::updated(
             new TenancyResource($updated),
@@ -162,24 +121,66 @@ class TenancyController extends Controller
     /**
      * Delete tenancy.
      *
-     * Performs a soft delete through the repository.
+     * IMPORTANT:
+     * Do not use implicit model binding here.
      *
-     * DELETE /api/tenancies/{tenancy}
+     * This allows us to return our own API response when the
+     * tenancy does not exist instead of Laravel returning:
+     *
+     * "No query results for model [App\Models\Tenancy] {id}"
      */
-    public function destroy(Tenancy $tenancy)
+    public function destroy($id)
     {
-        $this->tenancies->delete($tenancy);
+        /*
+         * Find the tenancy manually.
+         *
+         * withTrashed() is useful when the model uses SoftDeletes.
+         * This allows us to correctly identify records that have
+         * already been deleted.
+         */
+        $tenancy = Tenancy::withTrashed()->find($id);
+
+        /*
+         * Tenancy does not exist.
+         */
+        if (!$tenancy) {
+            return ApiResponse::notFound(
+                'Tenancy not found.'
+            );
+        }
+
+        /*
+         * Tenancy already exists but was previously soft deleted.
+         */
+        if ($tenancy->trashed()) {
+            return ApiResponse::notFound(
+                'Tenancy not found or has already been deleted.'
+            );
+        }
+
+        /*
+         * Delete the tenancy through the repository.
+         */
+        $deleted = $this->tenancies->delete($tenancy);
+
+        /*
+         * Make sure the delete operation succeeded.
+         */
+        if (!$deleted) {
+            return ApiResponse::error(
+                'Failed to delete tenancy.',
+                500
+            );
+        }
 
         return ApiResponse::deleted(
             null,
-            'Tenancy deleted successfully'
+            'Tenancy deleted successfully.'
         );
     }
 
     /**
-     * Restore a soft-deleted tenancy.
-     *
-     * PATCH /api/tenancies/{id}/restore
+     * Restore tenancy.
      */
     public function restore($id)
     {
@@ -187,14 +188,19 @@ class TenancyController extends Controller
 
         if (!$tenancy) {
             return ApiResponse::notFound(
-                'Tenancy not found'
+                'Tenancy not found.'
             );
         }
 
         /*
-         * Load complete resource relationships.
+         * Load relationships for the response.
          */
-        $tenancy->load($this->resourceRelations);
+        $tenancy->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::success(
             new TenancyResource($tenancy),
@@ -204,29 +210,37 @@ class TenancyController extends Controller
 
     /**
      * Permanently delete tenancy.
-     *
-     * DELETE /api/tenancies/{id}/force
      */
     public function forceDelete($id)
     {
+        /*
+         * Check whether the record exists before force deletion.
+         */
+        $tenancy = Tenancy::withTrashed()->find($id);
+
+        if (!$tenancy) {
+            return ApiResponse::notFound(
+                'Tenancy not found.'
+            );
+        }
+
         $deleted = $this->tenancies->forceDelete($id);
 
         if (!$deleted) {
-            return ApiResponse::notFound(
-                'Tenancy not found'
+            return ApiResponse::error(
+                'Failed to permanently delete tenancy.',
+                500
             );
         }
 
         return ApiResponse::deleted(
             null,
-            'Tenancy permanently deleted'
+            'Tenancy permanently deleted.'
         );
     }
 
     /**
      * Activate tenancy.
-     *
-     * PATCH /api/tenancies/{tenancy}/activate
      */
     public function activate(Tenancy $tenancy)
     {
@@ -234,10 +248,12 @@ class TenancyController extends Controller
             $tenancy
         );
 
-        /*
-         * Reload relationships after status change.
-         */
-        $activated->load($this->resourceRelations);
+        $activated->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::success(
             new TenancyResource($activated),
@@ -247,8 +263,6 @@ class TenancyController extends Controller
 
     /**
      * Deactivate tenancy.
-     *
-     * PATCH /api/tenancies/{tenancy}/deactivate
      */
     public function deactivate(Tenancy $tenancy)
     {
@@ -256,10 +270,12 @@ class TenancyController extends Controller
             $tenancy
         );
 
-        /*
-         * Reload relationships after status change.
-         */
-        $deactivated->load($this->resourceRelations);
+        $deactivated->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::success(
             new TenancyResource($deactivated),
@@ -269,8 +285,6 @@ class TenancyController extends Controller
 
     /**
      * Renew tenancy.
-     *
-     * POST /api/tenancies/{tenancy}/renew
      */
     public function renew(
         Request $request,
@@ -289,10 +303,12 @@ class TenancyController extends Controller
             $data
         );
 
-        /*
-         * Load complete resource relationships.
-         */
-        $renewed->load($this->resourceRelations);
+        $renewed->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::success(
             new TenancyResource($renewed),
@@ -301,9 +317,7 @@ class TenancyController extends Controller
     }
 
     /**
-     * Assign a unit to a tenant.
-     *
-     * POST /api/tenancies/assign-unit
+     * Assign unit to tenant.
      */
     public function assignUnit(Request $request)
     {
@@ -350,10 +364,12 @@ class TenancyController extends Controller
             $data
         );
 
-        /*
-         * Load complete relationships for the response.
-         */
-        $tenancy->load($this->resourceRelations);
+        $tenancy->load([
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+        ]);
 
         return ApiResponse::created(
             new TenancyResource($tenancy),
@@ -362,9 +378,7 @@ class TenancyController extends Controller
     }
 
     /**
-     * Get tenancy statistics.
-     *
-     * GET /api/tenancies/statistics
+     * Tenancy statistics.
      */
     public function statistics()
     {
