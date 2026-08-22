@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useCallback, useMemo } from "react";
+import { useDispatch, useSelector } from "react-redux";
 
 import {
     fetchTenancies,
@@ -12,13 +12,11 @@ import {
     activateTenancy,
     deactivateTenancy,
     renewTenancy,
-    terminateTenancy,
-    cancelTenancy,
     assignUnit,
     fetchTenancyStatistics,
     clearTenancyError,
     setTenancyFilters,
-} from '../store/tenancySlice';
+} from "../store/tenancySlice";
 
 import {
     selectTenancies,
@@ -28,7 +26,33 @@ import {
     selectTenancyLoading,
     selectTenancyError,
     selectTenancyStatistics,
-} from '../store/tenancySlice';
+} from "../store/tenancySlice";
+
+/*
+|--------------------------------------------------------------------------
+| useTenancy
+|--------------------------------------------------------------------------
+|
+| Centralized React hook for tenancy management.
+|
+| This hook provides:
+|
+| - Tenancy listing
+| - Tenancy details
+| - Create
+| - Update
+| - Delete
+| - Restore
+| - Force delete
+| - Activate
+| - Deactivate
+| - Renew
+| - Unit assignment
+| - Statistics
+| - Filters
+| - Error handling
+|
+*/
 
 const useTenancy = () => {
     const dispatch = useDispatch();
@@ -40,12 +64,28 @@ const useTenancy = () => {
     */
 
     const tenancies = useSelector(selectTenancies);
+
     const tenancy = useSelector(selectTenancy);
-    const pagination = useSelector(selectTenancyPagination);
-    const filters = useSelector(selectTenancyFilters);
-    const loading = useSelector(selectTenancyLoading);
-    const error = useSelector(selectTenancyError);
-    const statistics = useSelector(selectTenancyStatistics);
+
+    const pagination = useSelector(
+        selectTenancyPagination
+    );
+
+    const filters = useSelector(
+        selectTenancyFilters
+    );
+
+    const loading = useSelector(
+        selectTenancyLoading
+    );
+
+    const error = useSelector(
+        selectTenancyError
+    );
+
+    const statistics = useSelector(
+        selectTenancyStatistics
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -53,23 +93,44 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Whether any tenancy request is currently loading.
+     */
     const isLoading = useMemo(
         () => Boolean(loading),
         [loading]
     );
 
+    /**
+     * Whether the tenancy state contains an error.
+     */
     const hasError = useMemo(
         () => Boolean(error),
         [error]
     );
 
+    /**
+     * Whether tenancies exist.
+     */
     const hasTenancies = useMemo(
-        () => Array.isArray(tenancies) && tenancies.length > 0,
+        () =>
+            Array.isArray(tenancies) &&
+            tenancies.length > 0,
         [tenancies]
     );
 
+    /**
+     * Number of currently loaded tenancies.
+     *
+     * NOTE:
+     * This is the number of records currently loaded in Redux,
+     * not necessarily the total number of records in the database.
+     */
     const tenancyCount = useMemo(
-        () => (Array.isArray(tenancies) ? tenancies.length : 0),
+        () =>
+            Array.isArray(tenancies)
+                ? tenancies.length
+                : 0,
         [tenancies]
     );
 
@@ -79,6 +140,11 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Fetch paginated tenancies.
+     *
+     * Merges current Redux filters with optional parameters.
+     */
     const getTenancies = useCallback(
         (params = {}) => {
             return dispatch(
@@ -97,43 +163,92 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Fetch a single tenancy.
+     */
     const getTenancy = useCallback(
         (id) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
                 );
             }
 
-            return dispatch(fetchTenancy(id));
+            return dispatch(
+                fetchTenancy(id)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Create
+    | CREATE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Create a new tenancy.
+     */
     const addTenancy = useCallback(
         (data) => {
-            return dispatch(createTenancy(data));
+            if (
+                !data ||
+                typeof data !== "object" ||
+                Array.isArray(data)
+            ) {
+                return Promise.reject(
+                    new Error(
+                        "Tenancy data is required."
+                    )
+                );
+            }
+
+            return dispatch(
+                createTenancy(data)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Update
+    | UPDATE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Update an existing tenancy.
+     */
     const editTenancy = useCallback(
         (id, data) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
+                );
+            }
+
+            if (
+                !data ||
+                typeof data !== "object" ||
+                Array.isArray(data)
+            ) {
+                return Promise.reject(
+                    new Error(
+                        "Tenancy data is required."
+                    )
                 );
             }
 
@@ -149,110 +264,192 @@ const useTenancy = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Delete
+    | DELETE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Soft delete a tenancy.
+     */
     const removeTenancy = useCallback(
         (id) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
                 );
             }
 
-            return dispatch(deleteTenancy(id));
+            return dispatch(
+                deleteTenancy(id)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Restore
+    | RESTORE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Restore a soft-deleted tenancy.
+     */
     const restore = useCallback(
         (id) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
                 );
             }
 
-            return dispatch(restoreTenancy(id));
+            return dispatch(
+                restoreTenancy(id)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Force Delete
+    | FORCE DELETE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Permanently delete a tenancy.
+     */
     const forceDelete = useCallback(
         (id) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
                 );
             }
 
-            return dispatch(forceDeleteTenancy(id));
+            return dispatch(
+                forceDeleteTenancy(id)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Activate
+    | ACTIVATE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Activate a tenancy.
+     */
     const activate = useCallback(
         (id) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
                 );
             }
 
-            return dispatch(activateTenancy(id));
+            return dispatch(
+                activateTenancy(id)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Deactivate
+    | DEACTIVATE
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Deactivate a tenancy.
+     */
     const deactivate = useCallback(
         (id) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
                 );
             }
 
-            return dispatch(deactivateTenancy(id));
+            return dispatch(
+                deactivateTenancy(id)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Renew
+    | RENEW
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Renew an existing tenancy.
+     *
+     * Expected data:
+     *
+     * {
+     *     end_date: "YYYY-MM-DD"
+     * }
+     */
     const renew = useCallback(
         (id, data) => {
-            if (!id) {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
                 return Promise.reject(
-                    new Error('Tenancy ID is required.')
+                    new Error(
+                        "Tenancy ID is required."
+                    )
+                );
+            }
+
+            if (
+                !data ||
+                typeof data !== "object" ||
+                Array.isArray(data)
+            ) {
+                return Promise.reject(
+                    new Error(
+                        "Renewal data is required."
+                    )
                 );
             }
 
@@ -268,151 +465,202 @@ const useTenancy = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Terminate
+    | ASSIGN UNIT
     |--------------------------------------------------------------------------
     */
 
-    const terminate = useCallback(
-        (id, data = {}) => {
-            if (!id) {
-                return Promise.reject(
-                    new Error('Tenancy ID is required.')
-                );
-            }
-
-            return dispatch(
-                terminateTenancy({
-                    id,
-                    data,
-                })
-            );
-        },
-        [dispatch]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Cancel
-    |--------------------------------------------------------------------------
-    */
-
-    const cancel = useCallback(
-        (id, data = {}) => {
-            if (!id) {
-                return Promise.reject(
-                    new Error('Tenancy ID is required.')
-                );
-            }
-
-            return dispatch(
-                cancelTenancy({
-                    id,
-                    data,
-                })
-            );
-        },
-        [dispatch]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Assign Unit
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Assign a unit to a tenant.
+     *
+     * Expected data:
+     *
+     * {
+     *     tenant_id,
+     *     unit_id,
+     *     start_date,
+     *     end_date,
+     *     rent_amount,
+     *     deposit_amount
+     * }
+     */
     const assign = useCallback(
         (data) => {
-            return dispatch(assignUnit(data));
+            if (
+                !data ||
+                typeof data !== "object" ||
+                Array.isArray(data)
+            ) {
+                return Promise.reject(
+                    new Error(
+                        "Assignment data is required."
+                    )
+                );
+            }
+
+            return dispatch(
+                assignUnit(data)
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Statistics
+    | STATISTICS
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Fetch tenancy statistics.
+     */
     const getStatistics = useCallback(
         () => {
-            return dispatch(fetchTenancyStatistics());
+            return dispatch(
+                fetchTenancyStatistics()
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Filters
+    | FILTERS
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Update tenancy filters.
+     */
     const updateFilters = useCallback(
         (newFilters) => {
-            dispatch(setTenancyFilters(newFilters));
+            if (
+                !newFilters ||
+                typeof newFilters !== "object" ||
+                Array.isArray(newFilters)
+            ) {
+                return;
+            }
+
+            dispatch(
+                setTenancyFilters(
+                    newFilters
+                )
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Clear Error
+    | CLEAR ERROR
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Clear tenancy error.
+     */
     const clearError = useCallback(
         () => {
-            dispatch(clearTenancyError());
+            dispatch(
+                clearTenancyError()
+            );
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Return API
+    | RETURN API
     |--------------------------------------------------------------------------
     */
 
     return {
-        // Data
+        /*
+        |----------------------------------------------------------------------
+        | Data
+        |----------------------------------------------------------------------
+        */
+
         tenancies,
         tenancy,
         pagination,
         filters,
         statistics,
 
-        // Derived state
+        /*
+        |----------------------------------------------------------------------
+        | Loading / Error
+        |----------------------------------------------------------------------
+        */
+
         loading: isLoading,
         isLoading,
+
         error,
         hasError,
+
+        /*
+        |----------------------------------------------------------------------
+        | Derived
+        |----------------------------------------------------------------------
+        */
+
         hasTenancies,
         tenancyCount,
 
-        // CRUD
+        /*
+        |----------------------------------------------------------------------
+        | CRUD
+        |----------------------------------------------------------------------
+        */
+
         getTenancies,
         getTenancy,
         addTenancy,
         editTenancy,
         removeTenancy,
 
-        // Delete / restore
+        /*
+        |----------------------------------------------------------------------
+        | Delete / Restore
+        |----------------------------------------------------------------------
+        */
+
         restore,
         forceDelete,
 
-        // Status
+        /*
+        |----------------------------------------------------------------------
+        | Status
+        |----------------------------------------------------------------------
+        */
+
         activate,
         deactivate,
         renew,
-        terminate,
-        cancel,
 
-        // Assignment
+        /*
+        |----------------------------------------------------------------------
+        | Unit Assignment
+        |----------------------------------------------------------------------
+        */
+
         assign,
 
-        // Statistics
+        /*
+        |----------------------------------------------------------------------
+        | Statistics
+        |----------------------------------------------------------------------
+        */
+
         getStatistics,
 
-        // Filters / errors
+        /*
+        |----------------------------------------------------------------------
+        | Filters / Errors
+        |----------------------------------------------------------------------
+        */
+
         updateFilters,
         clearError,
     };
