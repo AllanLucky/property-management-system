@@ -71,7 +71,7 @@ const tenancyService = {
    *
    * GET /api/tenancies
    *
-   * Supported parameters:
+   * Supported parameters can include:
    *
    * - page
    * - per_page
@@ -90,114 +90,6 @@ const tenancyService = {
   async getTenancies(params = {}) {
     const response = await api.get(
       BASE_URL,
-      {
-        params,
-      }
-    );
-
-    return response.data;
-  },
-
-  /*
-  |--------------------------------------------------------------------------
-  | SEARCH
-  |--------------------------------------------------------------------------
-  */
-
-  /**
-   * Search tenancies.
-   *
-   * GET /api/tenancies/search
-   */
-  async searchTenancies(params = {}) {
-    const response = await api.get(
-      `${BASE_URL}/search`,
-      {
-        params,
-      }
-    );
-
-    return response.data;
-  },
-
-  /*
-  |--------------------------------------------------------------------------
-  | STATUS LISTS
-  |--------------------------------------------------------------------------
-  */
-
-  /**
-   * Fetch active tenancies.
-   *
-   * GET /api/tenancies/active
-   */
-  async getActiveTenancies(params = {}) {
-    const response = await api.get(
-      `${BASE_URL}/active`,
-      {
-        params,
-      }
-    );
-
-    return response.data;
-  },
-
-  /**
-   * Fetch pending tenancies.
-   *
-   * GET /api/tenancies/pending
-   */
-  async getPendingTenancies(params = {}) {
-    const response = await api.get(
-      `${BASE_URL}/pending`,
-      {
-        params,
-      }
-    );
-
-    return response.data;
-  },
-
-  /**
-   * Fetch expired tenancies.
-   *
-   * GET /api/tenancies/expired
-   */
-  async getExpiredTenancies(params = {}) {
-    const response = await api.get(
-      `${BASE_URL}/expired`,
-      {
-        params,
-      }
-    );
-
-    return response.data;
-  },
-
-  /**
-   * Fetch terminated tenancies.
-   *
-   * GET /api/tenancies/terminated
-   */
-  async getTerminatedTenancies(params = {}) {
-    const response = await api.get(
-      `${BASE_URL}/terminated`,
-      {
-        params,
-      }
-    );
-
-    return response.data;
-  },
-
-  /**
-   * Fetch cancelled tenancies.
-   *
-   * GET /api/tenancies/cancelled
-   */
-  async getCancelledTenancies(params = {}) {
-    const response = await api.get(
-      `${BASE_URL}/cancelled`,
       {
         params,
       }
@@ -234,7 +126,7 @@ const tenancyService = {
   */
 
   /**
-   * Create tenancy.
+   * Create a new tenancy.
    *
    * POST /api/tenancies
    */
@@ -259,7 +151,7 @@ const tenancyService = {
   */
 
   /**
-   * Update tenancy.
+   * Update an existing tenancy.
    *
    * PUT /api/tenancies/{tenancy}
    */
@@ -280,9 +172,14 @@ const tenancyService = {
   },
 
   /**
-   * Partially update tenancy.
+   * Partially update a tenancy.
    *
    * PATCH /api/tenancies/{tenancy}
+   *
+   * NOTE:
+   * This method is kept for frontend flexibility.
+   * Make sure your Laravel routes include a PATCH route
+   * for the tenancy if you intend to use it.
    */
   async patchTenancy(id, data) {
     const tenancyId = validateId(id);
@@ -316,6 +213,48 @@ const tenancyService = {
 
     const response = await api.delete(
       `${BASE_URL}/${tenancyId}`
+    );
+
+    return response.data;
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESTORE
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Restore a soft-deleted tenancy.
+   *
+   * PATCH /api/tenancies/{id}/restore
+   */
+  async restoreTenancy(id) {
+    const tenancyId = validateId(id);
+
+    const response = await api.patch(
+      `${BASE_URL}/${tenancyId}/restore`
+    );
+
+    return response.data;
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | FORCE DELETE
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Permanently delete a tenancy.
+   *
+   * DELETE /api/tenancies/{id}/force
+   */
+  async forceDeleteTenancy(id) {
+    const tenancyId = validateId(id);
+
+    const response = await api.delete(
+      `${BASE_URL}/${tenancyId}/force`
     );
 
     return response.data;
@@ -357,10 +296,23 @@ const tenancyService = {
     return response.data;
   },
 
+  /*
+  |--------------------------------------------------------------------------
+  | RENEW
+  |--------------------------------------------------------------------------
+  */
+
   /**
    * Renew tenancy.
    *
    * PATCH /api/tenancies/{tenancy}/renew
+   *
+   * Controller validation:
+   *
+   * end_date:
+   * - required
+   * - date
+   * - after:today
    */
   async renewTenancy(id, data) {
     const tenancyId = validateId(id);
@@ -378,44 +330,6 @@ const tenancyService = {
     return response.data;
   },
 
-  /**
-   * Terminate tenancy.
-   *
-   * PATCH /api/tenancies/{tenancy}/terminate
-   */
-  async terminateTenancy(
-    id,
-    data = {}
-  ) {
-    const tenancyId = validateId(id);
-
-    const response = await api.patch(
-      `${BASE_URL}/${tenancyId}/terminate`,
-      data
-    );
-
-    return response.data;
-  },
-
-  /**
-   * Cancel tenancy.
-   *
-   * PATCH /api/tenancies/{tenancy}/cancel
-   */
-  async cancelTenancy(
-    id,
-    data = {}
-  ) {
-    const tenancyId = validateId(id);
-
-    const response = await api.patch(
-      `${BASE_URL}/${tenancyId}/cancel`,
-      data
-    );
-
-    return response.data;
-  },
-
   /*
   |--------------------------------------------------------------------------
   | UNIT ASSIGNMENT
@@ -423,9 +337,20 @@ const tenancyService = {
   */
 
   /**
-   * Assign unit to tenant.
+   * Assign a unit to a tenant.
    *
    * POST /api/tenancies/assign-unit
+   *
+   * Expected data:
+   *
+   * {
+   *   tenant_id,
+   *   unit_id,
+   *   start_date,
+   *   end_date,
+   *   rent_amount,
+   *   deposit_amount
+   * }
    */
   async assignUnit(data) {
     validateData(
@@ -436,48 +361,6 @@ const tenancyService = {
     const response = await api.post(
       `${BASE_URL}/assign-unit`,
       data
-    );
-
-    return response.data;
-  },
-
-  /*
-  |--------------------------------------------------------------------------
-  | RESTORE
-  |--------------------------------------------------------------------------
-  */
-
-  /**
-   * Restore soft-deleted tenancy.
-   *
-   * PATCH /api/tenancies/{id}/restore
-   */
-  async restoreTenancy(id) {
-    const tenancyId = validateId(id);
-
-    const response = await api.patch(
-      `${BASE_URL}/${tenancyId}/restore`
-    );
-
-    return response.data;
-  },
-
-  /*
-  |--------------------------------------------------------------------------
-  | FORCE DELETE
-  |--------------------------------------------------------------------------
-  */
-
-  /**
-   * Permanently delete tenancy.
-   *
-   * DELETE /api/tenancies/{id}/force
-   */
-  async forceDeleteTenancy(id) {
-    const tenancyId = validateId(id);
-
-    const response = await api.delete(
-      `${BASE_URL}/${tenancyId}/force`
     );
 
     return response.data;
@@ -510,6 +393,8 @@ const tenancyService = {
 
   /**
    * Fetch tenancies belonging to a tenant.
+   *
+   * GET /api/tenancies?tenant_id={id}
    */
   async getTenanciesByTenant(
     tenantId,
@@ -540,6 +425,8 @@ const tenancyService = {
 
   /**
    * Fetch tenancies belonging to a property.
+   *
+   * GET /api/tenancies?property_id={id}
    */
   async getTenanciesByProperty(
     propertyId,
@@ -570,6 +457,8 @@ const tenancyService = {
 
   /**
    * Fetch tenancies belonging to an apartment.
+   *
+   * GET /api/tenancies?apartment_id={id}
    */
   async getTenanciesByApartment(
     apartmentId,
@@ -600,6 +489,8 @@ const tenancyService = {
 
   /**
    * Fetch tenancies belonging to a unit.
+   *
+   * GET /api/tenancies?unit_id={id}
    */
   async getTenanciesByUnit(
     unitId,
