@@ -118,7 +118,7 @@ const initialState = {
 
   /*
   |--------------------------------------------------------------------------
-  | SUCCESS MESSAGE
+  | SUCCESS
   |--------------------------------------------------------------------------
   */
 
@@ -131,14 +131,137 @@ const initialState = {
 |--------------------------------------------------------------------------
 */
 
-const getErrorMessage = (error) => {
-  return (
-    error?.message ||
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    "Something went wrong."
-  );
+/**
+ * Extract tenant ID safely.
+ *
+ * Supports:
+ *
+ * deleteTenant(15)
+ *
+ * deleteTenant("15")
+ *
+ * deleteTenant({
+ *   id: 15,
+ *   tenant_number: "TNT-000015"
+ * })
+ */
+const getTenantId = (tenant) => {
+  if (
+    tenant !== null &&
+    typeof tenant === "object"
+  ) {
+    return (
+      tenant?.id ??
+      tenant?.tenant_id ??
+      tenant?.tenant?.id ??
+      null
+    );
+  }
+
+  return tenant ?? null;
 };
+
+
+/**
+ * Normalize an error into a useful string.
+ *
+ * Supports:
+ *
+ * {
+ *   message: "...",
+ *   errors: {...}
+ * }
+ *
+ * Axios:
+ *
+ * error.response.data.message
+ *
+ * Laravel:
+ *
+ * {
+ *   status: false,
+ *   code: 500,
+ *   message: "...",
+ *   data: null,
+ *   errors: {
+ *     error: "SQLSTATE..."
+ *   }
+ * }
+ */
+const getErrorMessage = (error) => {
+  if (!error) {
+    return "Something went wrong.";
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  /*
+   * Normalized service error
+   */
+  if (error?.message) {
+    return String(error.message);
+  }
+
+  /*
+   * Laravel response
+   */
+  if (
+    error?.response?.data?.message
+  ) {
+    return String(
+      error.response.data.message
+    );
+  }
+
+  /*
+   * Laravel error
+   */
+  if (
+    error?.response?.data?.error
+  ) {
+    return String(
+      error.response.data.error
+    );
+  }
+
+  /*
+   * Nested Laravel error
+   */
+  if (
+    error?.response?.data?.errors?.error
+  ) {
+    return String(
+      error.response.data.errors.error
+    );
+  }
+
+  /*
+   * Nested data message
+   */
+  if (
+    error?.data?.message
+  ) {
+    return String(
+      error.data.message
+    );
+  }
+
+  /*
+   * Nested data error
+   */
+  if (
+    error?.data?.error
+  ) {
+    return String(
+      error.data.error
+    );
+  }
+
+  return "Something went wrong.";
+};
+
 
 /*
 |--------------------------------------------------------------------------
@@ -147,27 +270,14 @@ const getErrorMessage = (error) => {
 */
 
 /**
- * Normalize Laravel API collection responses.
- *
- * Supports:
- *
- * {
- *   data: [],
- *   pagination: {}
- * }
- *
- * and Laravel paginator:
- *
- * {
- *   data: [],
- *   current_page: 1,
- *   last_page: 10,
- *   per_page: 15,
- *   total: 100
- * }
+ * Normalize tenant list response.
  */
-const normalizeTenantListResponse = (response) => {
-  const data = Array.isArray(response?.data)
+const normalizeTenantListResponse = (
+  response
+) => {
+  const data = Array.isArray(
+    response?.data
+  )
     ? response.data
     : Array.isArray(response)
       ? response
@@ -176,16 +286,30 @@ const normalizeTenantListResponse = (response) => {
   const pagination =
     response?.pagination ||
     response?.meta ||
-    (response?.current_page !== undefined
-      ? {
-        current_page: response.current_page,
-        last_page: response.last_page,
-        per_page: response.per_page,
-        total: response.total,
-        from: response.from,
-        to: response.to,
-      }
-      : null);
+    (
+      response?.current_page !==
+        undefined
+        ? {
+          current_page:
+            response.current_page,
+
+          last_page:
+            response.last_page,
+
+          per_page:
+            response.per_page,
+
+          total:
+            response.total,
+
+          from:
+            response.from,
+
+          to:
+            response.to,
+        }
+        : null
+    );
 
   return {
     data,
@@ -193,31 +317,44 @@ const normalizeTenantListResponse = (response) => {
   };
 };
 
+
 /**
- * Normalize simple tenant lists.
+ * Normalize simple tenant array.
  */
-const normalizeTenantArrayResponse = (response) => {
+const normalizeTenantArrayResponse = (
+  response
+) => {
   if (Array.isArray(response)) {
     return response;
   }
 
-  if (Array.isArray(response?.data)) {
+  if (
+    Array.isArray(
+      response?.data
+    )
+  ) {
     return response.data;
   }
 
   return [];
 };
 
+
 /**
- * Normalize a single tenant response.
+ * Normalize single tenant response.
  */
-const normalizeTenantResponse = (response) => {
-  if (response?.data) {
+const normalizeTenantResponse = (
+  response
+) => {
+  if (
+    response?.data !== undefined
+  ) {
     return response.data;
   }
 
   return response || null;
 };
+
 
 /*
 |--------------------------------------------------------------------------
@@ -231,18 +368,36 @@ const normalizeTenantResponse = (response) => {
 |--------------------------------------------------------------------------
 */
 
-export const fetchTenants = createAsyncThunk(
-  "tenant/fetchTenants",
-  async (params = {}, { rejectWithValue }) => {
-    try {
-      const response = await tenantService.getTenants(params);
+export const fetchTenants =
+  createAsyncThunk(
+    "tenant/fetchTenants",
 
-      return normalizeTenantListResponse(response);
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      params = {},
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.getTenants(
+            params
+          );
+
+        return normalizeTenantListResponse(
+          response
+        );
+      } catch (error) {
+        console.error(
+          "Redux: Failed to fetch tenants:",
+          error
+        );
+
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -250,21 +405,51 @@ export const fetchTenants = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const fetchTenant = createAsyncThunk(
-  "tenant/fetchTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response = await tenantService.getTenant(tenantId);
+export const fetchTenant =
+  createAsyncThunk(
+    "tenant/fetchTenant",
 
-      return {
-        data: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenantId,
+      { rejectWithValue }
+    ) => {
+      try {
+        const id =
+          getTenantId(tenantId);
+
+        if (!id) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.getTenant(
+            id
+          );
+
+        return {
+          data:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        console.error(
+          "Redux: Failed to fetch tenant:",
+          error
+        );
+
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -272,22 +457,47 @@ export const fetchTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const createTenant = createAsyncThunk(
-  "tenant/createTenant",
-  async (tenantData, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.createTenant(tenantData);
+export const createTenant =
+  createAsyncThunk(
+    "tenant/createTenant",
 
-      return {
-        ...response,
-        data: normalizeTenantResponse(response),
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenantData,
+      { rejectWithValue }
+    ) => {
+      try {
+        if (!tenantData) {
+          return rejectWithValue(
+            "Tenant data is required."
+          );
+        }
+
+        const response =
+          await tenantService.createTenant(
+            tenantData
+          );
+
+        return {
+          ...response,
+
+          data:
+            normalizeTenantResponse(
+              response
+            ),
+        };
+      } catch (error) {
+        console.error(
+          "Redux: Failed to create tenant:",
+          error
+        );
+
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -295,51 +505,140 @@ export const createTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const updateTenant = createAsyncThunk(
-  "tenant/updateTenant",
-  async (
-    { tenantId, tenantData },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenantService.updateTenant(
-          tenantId,
-          tenantData
+export const updateTenant =
+  createAsyncThunk(
+    "tenant/updateTenant",
+
+    async (
+      {
+        tenantId,
+        tenantData,
+      },
+      { rejectWithValue }
+    ) => {
+      try {
+        const id =
+          getTenantId(tenantId);
+
+        if (!id) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        if (!tenantData) {
+          return rejectWithValue(
+            "Tenant data is required."
+          );
+        }
+
+        const response =
+          await tenantService.updateTenant(
+            id,
+            tenantData
+          );
+
+        return {
+          ...response,
+
+          data:
+            normalizeTenantResponse(
+              response
+            ),
+        };
+      } catch (error) {
+        console.error(
+          "Redux: Failed to update tenant:",
+          error
         );
 
-      return {
-        ...response,
-        data: normalizeTenantResponse(response),
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
 | DELETE TENANT
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| This thunk accepts either:
+|
+| deleteTenant(15)
+|
+| OR:
+|
+| deleteTenant({
+|   id: 15,
+|   tenant_number: "TNT-000015"
+| })
+|
+| This protects the application because TenantTable currently
+| passes the complete tenant object to onDelete().
+|
+|--------------------------------------------------------------------------
 */
 
-export const deleteTenant = createAsyncThunk(
-  "tenant/deleteTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.deleteTenant(tenantId);
+export const deleteTenant =
+  createAsyncThunk(
+    "tenant/deleteTenant",
 
-      return {
-        tenantId,
-        ...response,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        console.log(
+          "Redux: Delete tenant request:",
+          {
+            tenant,
+            tenantId,
+          }
+        );
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        /*
+         * IMPORTANT:
+         *
+         * Only the numeric/string ID is sent
+         * to the service.
+         */
+        const response =
+          await tenantService.deleteTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          ...response,
+        };
+      } catch (error) {
+        console.error(
+          "Redux: Failed to delete tenant:",
+          error
+        );
+
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -347,105 +646,160 @@ export const deleteTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const searchTenants = createAsyncThunk(
-  "tenant/searchTenants",
-  async (
-    { search, limit = 20 },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenantService.searchTenants(
-          search,
-          limit
+export const searchTenants =
+  createAsyncThunk(
+    "tenant/searchTenants",
+
+    async (
+      {
+        search,
+        limit = 20,
+      } = {},
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.searchTenants(
+            search,
+            limit
+          );
+
+        return normalizeTenantArrayResponse(
+          response
+        );
+      } catch (error) {
+        console.error(
+          "Redux: Tenant search failed:",
+          error
         );
 
-      return normalizeTenantArrayResponse(response);
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
-| FETCH ACTIVE TENANTS
+| ACTIVE TENANTS
 |--------------------------------------------------------------------------
 */
 
-export const fetchActiveTenants = createAsyncThunk(
-  "tenant/fetchActiveTenants",
-  async (_, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.getActiveTenants();
+export const fetchActiveTenants =
+  createAsyncThunk(
+    "tenant/fetchActiveTenants",
 
-      return normalizeTenantArrayResponse(response);
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      _,
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.getActiveTenants();
+
+        return normalizeTenantArrayResponse(
+          response
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
-| FETCH PENDING TENANTS
+| PENDING TENANTS
 |--------------------------------------------------------------------------
 */
 
-export const fetchPendingTenants = createAsyncThunk(
-  "tenant/fetchPendingTenants",
-  async (_, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.getPendingTenants();
+export const fetchPendingTenants =
+  createAsyncThunk(
+    "tenant/fetchPendingTenants",
 
-      return normalizeTenantArrayResponse(response);
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      _,
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.getPendingTenants();
+
+        return normalizeTenantArrayResponse(
+          response
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
-| FETCH INACTIVE TENANTS
+| INACTIVE TENANTS
 |--------------------------------------------------------------------------
 */
 
-export const fetchInactiveTenants = createAsyncThunk(
-  "tenant/fetchInactiveTenants",
-  async (_, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.getInactiveTenants();
+export const fetchInactiveTenants =
+  createAsyncThunk(
+    "tenant/fetchInactiveTenants",
 
-      return normalizeTenantArrayResponse(response);
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      _,
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.getInactiveTenants();
+
+        return normalizeTenantArrayResponse(
+          response
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
-| FETCH BLACKLISTED TENANTS
+| BLACKLISTED TENANTS
 |--------------------------------------------------------------------------
 */
 
-export const fetchBlacklistedTenants = createAsyncThunk(
-  "tenant/fetchBlacklistedTenants",
-  async (_, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.getBlacklistedTenants();
+export const fetchBlacklistedTenants =
+  createAsyncThunk(
+    "tenant/fetchBlacklistedTenants",
 
-      return normalizeTenantArrayResponse(response);
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      _,
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.getBlacklistedTenants();
+
+        return normalizeTenantArrayResponse(
+          response
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -453,23 +807,48 @@ export const fetchBlacklistedTenants = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const activateTenant = createAsyncThunk(
-  "tenant/activateTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.activateTenant(tenantId);
+export const activateTenant =
+  createAsyncThunk(
+    "tenant/activateTenant",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.activateTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -477,23 +856,48 @@ export const activateTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const deactivateTenant = createAsyncThunk(
-  "tenant/deactivateTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.deactivateTenant(tenantId);
+export const deactivateTenant =
+  createAsyncThunk(
+    "tenant/deactivateTenant",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.deactivateTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -501,23 +905,48 @@ export const deactivateTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const blacklistTenant = createAsyncThunk(
-  "tenant/blacklistTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.blacklistTenant(tenantId);
+export const blacklistTenant =
+  createAsyncThunk(
+    "tenant/blacklistTenant",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.blacklistTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -525,23 +954,48 @@ export const blacklistTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const setTenantPending = createAsyncThunk(
-  "tenant/setTenantPending",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.setTenantPending(tenantId);
+export const setTenantPending =
+  createAsyncThunk(
+    "tenant/setTenantPending",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.setTenantPending(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -549,23 +1003,48 @@ export const setTenantPending = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const verifyTenant = createAsyncThunk(
-  "tenant/verifyTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.verifyTenant(tenantId);
+export const verifyTenant =
+  createAsyncThunk(
+    "tenant/verifyTenant",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.verifyTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -573,23 +1052,48 @@ export const verifyTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const unverifyTenant = createAsyncThunk(
-  "tenant/unverifyTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.unverifyTenant(tenantId);
+export const unverifyTenant =
+  createAsyncThunk(
+    "tenant/unverifyTenant",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.unverifyTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -597,19 +1101,35 @@ export const unverifyTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const fetchTenantStatistics = createAsyncThunk(
-  "tenant/fetchTenantStatistics",
-  async (_, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.getTenantStatistics();
+export const fetchTenantStatistics =
+  createAsyncThunk(
+    "tenant/fetchTenantStatistics",
 
-      return response?.data ?? response ?? null;
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      _,
+      { rejectWithValue }
+    ) => {
+      try {
+        const response =
+          await tenantService.getTenantStatistics();
+
+        /*
+         * tenantService.getTenantStatistics()
+         * already returns the statistics object.
+         */
+        return (
+          response?.data ??
+          response ??
+          null
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -617,23 +1137,48 @@ export const fetchTenantStatistics = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const restoreTenant = createAsyncThunk(
-  "tenant/restoreTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.restoreTenant(tenantId);
+export const restoreTenant =
+  createAsyncThunk(
+    "tenant/restoreTenant",
 
-      return {
-        tenantId,
-        tenant: normalizeTenantResponse(response),
-        message: response?.message,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.restoreTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          tenant:
+            normalizeTenantResponse(
+              response
+            ),
+
+          message:
+            response?.message,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -641,22 +1186,42 @@ export const restoreTenant = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const forceDeleteTenant = createAsyncThunk(
-  "tenant/forceDeleteTenant",
-  async (tenantId, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenantService.forceDeleteTenant(tenantId);
+export const forceDeleteTenant =
+  createAsyncThunk(
+    "tenant/forceDeleteTenant",
 
-      return {
-        tenantId,
-        ...response,
-      };
-    } catch (error) {
-      return rejectWithValue(getErrorMessage(error));
+    async (
+      tenant,
+      { rejectWithValue }
+    ) => {
+      try {
+        const tenantId =
+          getTenantId(tenant);
+
+        if (!tenantId) {
+          return rejectWithValue(
+            "Tenant ID is required."
+          );
+        }
+
+        const response =
+          await tenantService.forceDeleteTenant(
+            tenantId
+          );
+
+        return {
+          tenantId,
+
+          ...response,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
     }
-  }
-);
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -676,21 +1241,33 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setTenants: (state, action) => {
-      state.tenants = Array.isArray(action.payload)
-        ? action.payload
-        : [];
+    setTenants: (
+      state,
+      action
+    ) => {
+      state.tenants =
+        Array.isArray(
+          action.payload
+        )
+          ? action.payload
+          : [];
     },
+
 
     /*
     |--------------------------------------------------------------------------
-    | SET SINGLE TENANT
+    | SET TENANT
     |--------------------------------------------------------------------------
     */
 
-    setTenant: (state, action) => {
-      state.tenant = action.payload || null;
+    setTenant: (
+      state,
+      action
+    ) => {
+      state.tenant =
+        action.payload || null;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -698,9 +1275,12 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    clearTenant: (state) => {
+    clearTenant: (
+      state
+    ) => {
       state.tenant = null;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -708,12 +1288,18 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setTenantFilters: (state, action) => {
+    setTenantFilters: (
+      state,
+      action
+    ) => {
       state.filters = {
         ...state.filters,
         ...(action.payload || {}),
       };
+
+      state.filters.page = 1;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -721,10 +1307,16 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setTenantSearch: (state, action) => {
-      state.filters.search = action.payload || "";
+    setTenantSearch: (
+      state,
+      action
+    ) => {
+      state.filters.search =
+        action.payload || "";
+
       state.filters.page = 1;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -732,10 +1324,16 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setTenantStatus: (state, action) => {
-      state.filters.status = action.payload || "";
+    setTenantStatus: (
+      state,
+      action
+    ) => {
+      state.filters.status =
+        action.payload || "";
+
       state.filters.page = 1;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -743,9 +1341,17 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setTenantPage: (state, action) => {
-      state.filters.page = action.payload || 1;
+    setTenantPage: (
+      state,
+      action
+    ) => {
+      const page =
+        Number(action.payload) || 1;
+
+      state.filters.page =
+        Math.max(1, page);
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -753,10 +1359,19 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setTenantPerPage: (state, action) => {
-      state.filters.per_page = action.payload || 15;
+    setTenantPerPage: (
+      state,
+      action
+    ) => {
+      const perPage =
+        Number(action.payload) || 15;
+
+      state.filters.per_page =
+        Math.max(1, perPage);
+
       state.filters.page = 1;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -764,21 +1379,27 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    resetTenantFilters: (state) => {
+    resetTenantFilters: (
+      state
+    ) => {
       state.filters = {
         ...initialState.filters,
       };
     },
 
+
     /*
     |--------------------------------------------------------------------------
-    | CLEAR SEARCH RESULTS
+    | CLEAR SEARCH
     |--------------------------------------------------------------------------
     */
 
-    clearTenantSearch: (state) => {
+    clearTenantSearch: (
+      state
+    ) => {
       state.searchResults = [];
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -786,7 +1407,9 @@ const tenantSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    clearTenantError: (state) => {
+    clearTenantError: (
+      state
+    ) => {
       state.error = null;
       state.createError = null;
       state.updateError = null;
@@ -796,15 +1419,19 @@ const tenantSlice = createSlice({
       state.statisticsError = null;
     },
 
+
     /*
     |--------------------------------------------------------------------------
     | CLEAR SUCCESS
     |--------------------------------------------------------------------------
     */
 
-    clearTenantSuccess: (state) => {
+    clearTenantSuccess: (
+      state
+    ) => {
       state.successMessage = null;
     },
+
 
     /*
     |--------------------------------------------------------------------------
@@ -816,6 +1443,7 @@ const tenantSlice = createSlice({
       ...initialState,
 
       tenants: [],
+
       tenant: null,
 
       pagination: {
@@ -827,6 +1455,7 @@ const tenantSlice = createSlice({
       },
 
       searchResults: [],
+
       activeTenants: [],
       pendingTenants: [],
       inactiveTenants: [],
@@ -836,13 +1465,17 @@ const tenantSlice = createSlice({
     }),
   },
 
+
   /*
   |--------------------------------------------------------------------------
   | EXTRA REDUCERS
   |--------------------------------------------------------------------------
   */
 
-  extraReducers: (builder) => {
+  extraReducers: (
+    builder
+  ) => {
+
     /*
     |--------------------------------------------------------------------------
     | FETCH TENANTS
@@ -850,35 +1483,57 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchTenants.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
 
-      .addCase(fetchTenants.fulfilled, (state, action) => {
-        state.loading = false;
-
-        state.tenants = Array.isArray(action.payload?.data)
-          ? action.payload.data
-          : [];
-
-        if (action.payload?.pagination) {
-          state.pagination = {
-            ...state.pagination,
-            ...action.payload.pagination,
-          };
+      .addCase(
+        fetchTenants.pending,
+        (state) => {
+          state.loading = true;
+          state.error = null;
         }
+      )
 
-        state.error = null;
-      })
+      .addCase(
+        fetchTenants.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loading = false;
 
-      .addCase(fetchTenants.rejected, (state, action) => {
-        state.loading = false;
+          state.tenants =
+            Array.isArray(
+              action.payload?.data
+            )
+              ? action.payload.data
+              : [];
 
-        state.error =
-          action.payload ||
-          "Failed to fetch tenants.";
-      });
+          if (
+            action.payload?.pagination
+          ) {
+            state.pagination = {
+              ...state.pagination,
+              ...action.payload.pagination,
+            };
+          }
+
+          state.error = null;
+        }
+      )
+
+      .addCase(
+        fetchTenants.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loading = false;
+
+          state.error =
+            action.payload ||
+            "Failed to fetch tenants.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -887,27 +1542,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchTenant.pending, (state) => {
-        state.loadingTenant = true;
-        state.error = null;
-      })
 
-      .addCase(fetchTenant.fulfilled, (state, action) => {
-        state.loadingTenant = false;
+      .addCase(
+        fetchTenant.pending,
+        (state) => {
+          state.loadingTenant = true;
+          state.error = null;
+        }
+      )
 
-        state.tenant =
-          action.payload?.data || null;
+      .addCase(
+        fetchTenant.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingTenant = false;
 
-        state.error = null;
-      })
+          state.tenant =
+            action.payload?.data ||
+            null;
 
-      .addCase(fetchTenant.rejected, (state, action) => {
-        state.loadingTenant = false;
+          state.error = null;
+        }
+      )
 
-        state.error =
-          action.payload ||
-          "Failed to fetch tenant.";
-      });
+      .addCase(
+        fetchTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingTenant = false;
+
+          state.error =
+            action.payload ||
+            "Failed to fetch tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -916,40 +1589,60 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(createTenant.pending, (state) => {
-        state.creating = true;
-        state.createError = null;
-        state.successMessage = null;
-      })
 
-      .addCase(createTenant.fulfilled, (state, action) => {
-        state.creating = false;
-
-        const createdTenant =
-          action.payload?.data;
-
-        if (createdTenant) {
-          state.tenant = createdTenant;
-
-          state.tenants.unshift(createdTenant);
-
-          state.pagination.total += 1;
+      .addCase(
+        createTenant.pending,
+        (state) => {
+          state.creating = true;
+          state.createError = null;
+          state.successMessage = null;
         }
+      )
 
-        state.createError = null;
+      .addCase(
+        createTenant.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.creating = false;
 
-        state.successMessage =
-          action.payload?.message ||
-          "Tenant created successfully.";
-      })
+          const createdTenant =
+            action.payload?.data;
 
-      .addCase(createTenant.rejected, (state, action) => {
-        state.creating = false;
+          if (createdTenant) {
+            state.tenant =
+              createdTenant;
 
-        state.createError =
-          action.payload ||
-          "Failed to create tenant.";
-      });
+            state.tenants.unshift(
+              createdTenant
+            );
+
+            state.pagination.total += 1;
+          }
+
+          state.createError = null;
+
+          state.successMessage =
+            action.payload?.message ||
+            "Tenant created successfully.";
+        }
+      )
+
+      .addCase(
+        createTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.creating = false;
+
+          state.createError =
+            action.payload ||
+            "Failed to create tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -958,46 +1651,68 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(updateTenant.pending, (state) => {
-        state.updating = true;
-        state.updateError = null;
-        state.successMessage = null;
-      })
 
-      .addCase(updateTenant.fulfilled, (state, action) => {
-        state.updating = false;
-
-        const updatedTenant =
-          action.payload?.data;
-
-        if (updatedTenant) {
-          state.tenant = updatedTenant;
-
-          const index =
-            state.tenants.findIndex(
-              (item) =>
-                item.id === updatedTenant.id
-            );
-
-          if (index !== -1) {
-            state.tenants[index] = updatedTenant;
-          }
+      .addCase(
+        updateTenant.pending,
+        (state) => {
+          state.updating = true;
+          state.updateError = null;
+          state.successMessage = null;
         }
+      )
 
-        state.updateError = null;
+      .addCase(
+        updateTenant.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.updating = false;
 
-        state.successMessage =
-          action.payload?.message ||
-          "Tenant updated successfully.";
-      })
+          const updatedTenant =
+            action.payload?.data;
 
-      .addCase(updateTenant.rejected, (state, action) => {
-        state.updating = false;
+          if (updatedTenant) {
+            state.tenant =
+              updatedTenant;
 
-        state.updateError =
-          action.payload ||
-          "Failed to update tenant.";
-      });
+            const index =
+              state.tenants.findIndex(
+                (item) =>
+                  String(item.id) ===
+                  String(
+                    updatedTenant.id
+                  )
+              );
+
+            if (index !== -1) {
+              state.tenants[index] =
+                updatedTenant;
+            }
+          }
+
+          state.updateError = null;
+
+          state.successMessage =
+            action.payload?.message ||
+            "Tenant updated successfully.";
+        }
+      )
+
+      .addCase(
+        updateTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.updating = false;
+
+          state.updateError =
+            action.payload ||
+            "Failed to update tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1006,45 +1721,92 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(deleteTenant.pending, (state) => {
-        state.deleting = true;
-        state.deleteError = null;
-        state.successMessage = null;
-      })
 
-      .addCase(deleteTenant.fulfilled, (state, action) => {
-        state.deleting = false;
-
-        const tenantId =
-          action.payload?.tenantId;
-
-        state.tenants =
-          state.tenants.filter(
-            (item) => item.id !== tenantId
-          );
-
-        if (state.tenant?.id === tenantId) {
-          state.tenant = null;
+      .addCase(
+        deleteTenant.pending,
+        (
+          state
+        ) => {
+          state.deleting = true;
+          state.deleteError = null;
+          state.successMessage = null;
         }
+      )
 
-        if (state.pagination.total > 0) {
-          state.pagination.total -= 1;
+      .addCase(
+        deleteTenant.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.deleting = false;
+
+          const tenantId =
+            action.payload?.tenantId;
+
+          if (tenantId) {
+            state.tenants =
+              state.tenants.filter(
+                (item) =>
+                  String(item.id) !==
+                  String(tenantId)
+              );
+
+            if (
+              state.tenant?.id !==
+              null &&
+              String(
+                state.tenant?.id
+              ) === String(tenantId)
+            ) {
+              state.tenant = null;
+            }
+
+            if (
+              state.pagination.total >
+              0
+            ) {
+              state.pagination.total -= 1;
+            }
+
+            /*
+             * Keep pagination valid.
+             */
+            if (
+              state.pagination.total ===
+              0
+            ) {
+              state.pagination.current_page = 1;
+              state.pagination.last_page = 1;
+              state.pagination.from = 0;
+              state.pagination.to = 0;
+            }
+          }
+
+          state.deleteError = null;
+
+          state.successMessage =
+            action.payload?.message ||
+            "Tenant deleted successfully.";
         }
+      )
 
-        state.deleteError = null;
+      .addCase(
+        deleteTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.deleting = false;
 
-        state.successMessage =
-          action.payload?.message ||
-          "Tenant deleted successfully.";
-      })
+          state.deleteError =
+            action.payload ||
+            "Failed to delete tenant.";
 
-      .addCase(deleteTenant.rejected, (state, action) => {
-        state.deleting = false;
+          state.successMessage = null;
+        }
+      );
 
-        state.deleteError =
-          action.payload ||
-          "Failed to delete tenant.";
-      });
 
     /*
     |--------------------------------------------------------------------------
@@ -1053,29 +1815,50 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(searchTenants.pending, (state) => {
-        state.searching = true;
-        state.searchError = null;
-      })
 
-      .addCase(searchTenants.fulfilled, (state, action) => {
-        state.searching = false;
+      .addCase(
+        searchTenants.pending,
+        (
+          state
+        ) => {
+          state.searching = true;
+          state.searchError = null;
+        }
+      )
 
-        state.searchResults =
-          Array.isArray(action.payload)
-            ? action.payload
-            : [];
+      .addCase(
+        searchTenants.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.searching = false;
 
-        state.searchError = null;
-      })
+          state.searchResults =
+            Array.isArray(
+              action.payload
+            )
+              ? action.payload
+              : [];
 
-      .addCase(searchTenants.rejected, (state, action) => {
-        state.searching = false;
+          state.searchError = null;
+        }
+      )
 
-        state.searchError =
-          action.payload ||
-          "Failed to search tenants.";
-      });
+      .addCase(
+        searchTenants.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.searching = false;
+
+          state.searchError =
+            action.payload ||
+            "Failed to search tenants.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1084,27 +1867,47 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchActiveTenants.pending, (state) => {
-        state.loadingActive = true;
-        state.error = null;
-      })
 
-      .addCase(fetchActiveTenants.fulfilled, (state, action) => {
-        state.loadingActive = false;
+      .addCase(
+        fetchActiveTenants.pending,
+        (
+          state
+        ) => {
+          state.loadingActive = true;
+        }
+      )
 
-        state.activeTenants =
-          Array.isArray(action.payload)
-            ? action.payload
-            : [];
-      })
+      .addCase(
+        fetchActiveTenants.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingActive = false;
 
-      .addCase(fetchActiveTenants.rejected, (state, action) => {
-        state.loadingActive = false;
+          state.activeTenants =
+            Array.isArray(
+              action.payload
+            )
+              ? action.payload
+              : [];
+        }
+      )
 
-        state.error =
-          action.payload ||
-          "Failed to fetch active tenants.";
-      });
+      .addCase(
+        fetchActiveTenants.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingActive = false;
+
+          state.error =
+            action.payload ||
+            "Failed to fetch active tenants.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1113,27 +1916,47 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchPendingTenants.pending, (state) => {
-        state.loadingPending = true;
-        state.error = null;
-      })
 
-      .addCase(fetchPendingTenants.fulfilled, (state, action) => {
-        state.loadingPending = false;
+      .addCase(
+        fetchPendingTenants.pending,
+        (
+          state
+        ) => {
+          state.loadingPending = true;
+        }
+      )
 
-        state.pendingTenants =
-          Array.isArray(action.payload)
-            ? action.payload
-            : [];
-      })
+      .addCase(
+        fetchPendingTenants.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingPending = false;
 
-      .addCase(fetchPendingTenants.rejected, (state, action) => {
-        state.loadingPending = false;
+          state.pendingTenants =
+            Array.isArray(
+              action.payload
+            )
+              ? action.payload
+              : [];
+        }
+      )
 
-        state.error =
-          action.payload ||
-          "Failed to fetch pending tenants.";
-      });
+      .addCase(
+        fetchPendingTenants.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingPending = false;
+
+          state.error =
+            action.payload ||
+            "Failed to fetch pending tenants.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1142,27 +1965,47 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchInactiveTenants.pending, (state) => {
-        state.loadingInactive = true;
-        state.error = null;
-      })
 
-      .addCase(fetchInactiveTenants.fulfilled, (state, action) => {
-        state.loadingInactive = false;
+      .addCase(
+        fetchInactiveTenants.pending,
+        (
+          state
+        ) => {
+          state.loadingInactive = true;
+        }
+      )
 
-        state.inactiveTenants =
-          Array.isArray(action.payload)
-            ? action.payload
-            : [];
-      })
+      .addCase(
+        fetchInactiveTenants.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingInactive = false;
 
-      .addCase(fetchInactiveTenants.rejected, (state, action) => {
-        state.loadingInactive = false;
+          state.inactiveTenants =
+            Array.isArray(
+              action.payload
+            )
+              ? action.payload
+              : [];
+        }
+      )
 
-        state.error =
-          action.payload ||
-          "Failed to fetch inactive tenants.";
-      });
+      .addCase(
+        fetchInactiveTenants.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingInactive = false;
+
+          state.error =
+            action.payload ||
+            "Failed to fetch inactive tenants.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1171,27 +2014,47 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchBlacklistedTenants.pending, (state) => {
-        state.loadingBlacklisted = true;
-        state.error = null;
-      })
 
-      .addCase(fetchBlacklistedTenants.fulfilled, (state, action) => {
-        state.loadingBlacklisted = false;
+      .addCase(
+        fetchBlacklistedTenants.pending,
+        (
+          state
+        ) => {
+          state.loadingBlacklisted = true;
+        }
+      )
 
-        state.blacklistedTenants =
-          Array.isArray(action.payload)
-            ? action.payload
-            : [];
-      })
+      .addCase(
+        fetchBlacklistedTenants.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingBlacklisted = false;
 
-      .addCase(fetchBlacklistedTenants.rejected, (state, action) => {
-        state.loadingBlacklisted = false;
+          state.blacklistedTenants =
+            Array.isArray(
+              action.payload
+            )
+              ? action.payload
+              : [];
+        }
+      )
 
-        state.error =
-          action.payload ||
-          "Failed to fetch blacklisted tenants.";
-      });
+      .addCase(
+        fetchBlacklistedTenants.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingBlacklisted = false;
+
+          state.error =
+            action.payload ||
+            "Failed to fetch blacklisted tenants.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1210,12 +2073,16 @@ const tenantSlice = createSlice({
         action.payload?.tenant;
 
       if (updatedTenant) {
-        state.tenant = updatedTenant;
+        state.tenant =
+          updatedTenant;
 
         const index =
           state.tenants.findIndex(
             (item) =>
-              item.id === updatedTenant.id
+              String(item.id) ===
+              String(
+                updatedTenant.id
+              )
           );
 
         if (index !== -1) {
@@ -1231,6 +2098,7 @@ const tenantSlice = createSlice({
         defaultMessage;
     };
 
+
     /*
     |--------------------------------------------------------------------------
     | ACTIVATE
@@ -1238,26 +2106,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(activateTenant.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(activateTenant.fulfilled, (state, action) => {
-        handleTenantAction(
+      .addCase(
+        activateTenant.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
+        }
+      )
+
+      .addCase(
+        activateTenant.fulfilled,
+        (
           state,
-          action,
-          "Tenant activated successfully."
-        );
-      })
+          action
+        ) => {
+          handleTenantAction(
+            state,
+            action,
+            "Tenant activated successfully."
+          );
+        }
+      )
 
-      .addCase(activateTenant.rejected, (state, action) => {
-        state.actionLoading = false;
+      .addCase(
+        activateTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.actionError =
-          action.payload ||
-          "Failed to activate tenant.";
-      });
+          state.actionError =
+            action.payload ||
+            "Failed to activate tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1266,26 +2153,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(deactivateTenant.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(deactivateTenant.fulfilled, (state, action) => {
-        handleTenantAction(
+      .addCase(
+        deactivateTenant.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
+        }
+      )
+
+      .addCase(
+        deactivateTenant.fulfilled,
+        (
           state,
-          action,
-          "Tenant deactivated successfully."
-        );
-      })
+          action
+        ) => {
+          handleTenantAction(
+            state,
+            action,
+            "Tenant deactivated successfully."
+          );
+        }
+      )
 
-      .addCase(deactivateTenant.rejected, (state, action) => {
-        state.actionLoading = false;
+      .addCase(
+        deactivateTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.actionError =
-          action.payload ||
-          "Failed to deactivate tenant.";
-      });
+          state.actionError =
+            action.payload ||
+            "Failed to deactivate tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1294,26 +2200,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(blacklistTenant.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(blacklistTenant.fulfilled, (state, action) => {
-        handleTenantAction(
+      .addCase(
+        blacklistTenant.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
+        }
+      )
+
+      .addCase(
+        blacklistTenant.fulfilled,
+        (
           state,
-          action,
-          "Tenant blacklisted successfully."
-        );
-      })
+          action
+        ) => {
+          handleTenantAction(
+            state,
+            action,
+            "Tenant blacklisted successfully."
+          );
+        }
+      )
 
-      .addCase(blacklistTenant.rejected, (state, action) => {
-        state.actionLoading = false;
+      .addCase(
+        blacklistTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.actionError =
-          action.payload ||
-          "Failed to blacklist tenant.";
-      });
+          state.actionError =
+            action.payload ||
+            "Failed to blacklist tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1322,26 +2247,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(setTenantPending.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(setTenantPending.fulfilled, (state, action) => {
-        handleTenantAction(
+      .addCase(
+        setTenantPending.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
+        }
+      )
+
+      .addCase(
+        setTenantPending.fulfilled,
+        (
           state,
-          action,
-          "Tenant status changed to pending."
-        );
-      })
+          action
+        ) => {
+          handleTenantAction(
+            state,
+            action,
+            "Tenant status changed to pending."
+          );
+        }
+      )
 
-      .addCase(setTenantPending.rejected, (state, action) => {
-        state.actionLoading = false;
+      .addCase(
+        setTenantPending.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.actionError =
-          action.payload ||
-          "Failed to update tenant status.";
-      });
+          state.actionError =
+            action.payload ||
+            "Failed to update tenant status.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1350,26 +2294,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(verifyTenant.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(verifyTenant.fulfilled, (state, action) => {
-        handleTenantAction(
+      .addCase(
+        verifyTenant.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
+        }
+      )
+
+      .addCase(
+        verifyTenant.fulfilled,
+        (
           state,
-          action,
-          "Tenant verified successfully."
-        );
-      })
+          action
+        ) => {
+          handleTenantAction(
+            state,
+            action,
+            "Tenant verified successfully."
+          );
+        }
+      )
 
-      .addCase(verifyTenant.rejected, (state, action) => {
-        state.actionLoading = false;
+      .addCase(
+        verifyTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.actionError =
-          action.payload ||
-          "Failed to verify tenant.";
-      });
+          state.actionError =
+            action.payload ||
+            "Failed to verify tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1378,26 +2341,45 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(unverifyTenant.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(unverifyTenant.fulfilled, (state, action) => {
-        handleTenantAction(
+      .addCase(
+        unverifyTenant.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
+        }
+      )
+
+      .addCase(
+        unverifyTenant.fulfilled,
+        (
           state,
-          action,
-          "Tenant verification removed successfully."
-        );
-      })
+          action
+        ) => {
+          handleTenantAction(
+            state,
+            action,
+            "Tenant verification removed successfully."
+          );
+        }
+      )
 
-      .addCase(unverifyTenant.rejected, (state, action) => {
-        state.actionLoading = false;
+      .addCase(
+        unverifyTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.actionError =
-          action.payload ||
-          "Failed to remove tenant verification.";
-      });
+          state.actionError =
+            action.payload ||
+            "Failed to remove tenant verification.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1406,14 +2388,23 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(fetchTenantStatistics.pending, (state) => {
-        state.loadingStatistics = true;
-        state.statisticsError = null;
-      })
+
+      .addCase(
+        fetchTenantStatistics.pending,
+        (
+          state
+        ) => {
+          state.loadingStatistics = true;
+          state.statisticsError = null;
+        }
+      )
 
       .addCase(
         fetchTenantStatistics.fulfilled,
-        (state, action) => {
+        (
+          state,
+          action
+        ) => {
           state.loadingStatistics = false;
 
           state.statistics =
@@ -1425,7 +2416,10 @@ const tenantSlice = createSlice({
 
       .addCase(
         fetchTenantStatistics.rejected,
-        (state, action) => {
+        (
+          state,
+          action
+        ) => {
           state.loadingStatistics = false;
 
           state.statisticsError =
@@ -1434,6 +2428,7 @@ const tenantSlice = createSlice({
         }
       );
 
+
     /*
     |--------------------------------------------------------------------------
     | RESTORE
@@ -1441,50 +2436,75 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(restoreTenant.pending, (state) => {
-        state.actionLoading = true;
-        state.actionError = null;
-      })
 
-      .addCase(restoreTenant.fulfilled, (state, action) => {
-        state.actionLoading = false;
-
-        const restoredTenant =
-          action.payload?.tenant;
-
-        if (restoredTenant) {
-          state.tenant = restoredTenant;
-
-          const index =
-            state.tenants.findIndex(
-              (item) =>
-                item.id === restoredTenant.id
-            );
-
-          if (index !== -1) {
-            state.tenants[index] =
-              restoredTenant;
-          } else {
-            state.tenants.unshift(
-              restoredTenant
-            );
-          }
+      .addCase(
+        restoreTenant.pending,
+        (
+          state
+        ) => {
+          state.actionLoading = true;
+          state.actionError = null;
         }
+      )
 
-        state.actionError = null;
+      .addCase(
+        restoreTenant.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
 
-        state.successMessage =
-          action.payload?.message ||
-          "Tenant restored successfully.";
-      })
+          const restoredTenant =
+            action.payload?.tenant;
 
-      .addCase(restoreTenant.rejected, (state, action) => {
-        state.actionLoading = false;
+          if (restoredTenant) {
+            state.tenant =
+              restoredTenant;
 
-        state.actionError =
-          action.payload ||
-          "Failed to restore tenant.";
-      });
+            const index =
+              state.tenants.findIndex(
+                (item) =>
+                  String(item.id) ===
+                  String(
+                    restoredTenant.id
+                  )
+              );
+
+            if (index !== -1) {
+              state.tenants[index] =
+                restoredTenant;
+            } else {
+              state.tenants.unshift(
+                restoredTenant
+              );
+
+              state.pagination.total += 1;
+            }
+          }
+
+          state.actionError = null;
+
+          state.successMessage =
+            action.payload?.message ||
+            "Tenant restored successfully.";
+        }
+      )
+
+      .addCase(
+        restoreTenant.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.actionLoading = false;
+
+          state.actionError =
+            action.payload ||
+            "Failed to restore tenant.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1493,27 +2513,53 @@ const tenantSlice = createSlice({
     */
 
     builder
-      .addCase(forceDeleteTenant.pending, (state) => {
-        state.deleting = true;
-        state.deleteError = null;
-      })
+
+      .addCase(
+        forceDeleteTenant.pending,
+        (
+          state
+        ) => {
+          state.deleting = true;
+          state.deleteError = null;
+          state.successMessage = null;
+        }
+      )
 
       .addCase(
         forceDeleteTenant.fulfilled,
-        (state, action) => {
+        (
+          state,
+          action
+        ) => {
           state.deleting = false;
 
           const tenantId =
             action.payload?.tenantId;
 
-          state.tenants =
-            state.tenants.filter(
-              (item) =>
-                item.id !== tenantId
-            );
+          if (tenantId) {
+            state.tenants =
+              state.tenants.filter(
+                (item) =>
+                  String(item.id) !==
+                  String(tenantId)
+              );
 
-          if (state.tenant?.id === tenantId) {
-            state.tenant = null;
+            if (
+              state.tenant?.id !==
+              null &&
+              String(
+                state.tenant?.id
+              ) === String(tenantId)
+            ) {
+              state.tenant = null;
+            }
+
+            if (
+              state.pagination.total >
+              0
+            ) {
+              state.pagination.total -= 1;
+            }
           }
 
           state.deleteError = null;
@@ -1526,7 +2572,10 @@ const tenantSlice = createSlice({
 
       .addCase(
         forceDeleteTenant.rejected,
-        (state, action) => {
+        (
+          state,
+          action
+        ) => {
           state.deleting = false;
 
           state.deleteError =
@@ -1536,6 +2585,7 @@ const tenantSlice = createSlice({
       );
   },
 });
+
 
 /*
 |--------------------------------------------------------------------------
@@ -1559,69 +2609,90 @@ export const {
   resetTenantState,
 } = tenantSlice.actions;
 
+
 /*
 |--------------------------------------------------------------------------
-| SELECTOR ROOT
-|--------------------------------------------------------------------------
-|
-| IMPORTANT:
-|
-| The normal Redux store registration should be:
-|
-| tenant: tenantReducer
-|
-| But these selectors also tolerate:
-|
-| tenants: tenantReducer
-|
-| This prevents:
-|
-| Cannot read properties of undefined (reading 'tenants')
-|
+| ROOT STATE
 |--------------------------------------------------------------------------
 */
 
-const getTenantState = (state) => {
-  return state?.tenant || state?.tenants || initialState;
+const getTenantState = (
+  state
+) => {
+  return (
+    state?.tenant ||
+    state?.tenants ||
+    initialState
+  );
 };
 
+
 /*
 |--------------------------------------------------------------------------
-| SELECTORS
+| DATA SELECTORS
 |--------------------------------------------------------------------------
 */
 
-export const selectTenants = (state) =>
-  getTenantState(state).tenants || [];
+export const selectTenants = (
+  state
+) =>
+  getTenantState(state).tenants ||
+  [];
 
-export const selectTenant = (state) =>
-  getTenantState(state).tenant || null;
+export const selectTenant = (
+  state
+) =>
+  getTenantState(state).tenant ||
+  null;
 
-export const selectTenantPagination = (state) =>
+export const selectTenantPagination = (
+  state
+) =>
   getTenantState(state).pagination ||
   initialState.pagination;
 
-export const selectTenantFilters = (state) =>
+export const selectTenantFilters = (
+  state
+) =>
   getTenantState(state).filters ||
   initialState.filters;
 
-export const selectTenantStatistics = (state) =>
-  getTenantState(state).statistics || null;
+export const selectTenantStatistics = (
+  state
+) =>
+  getTenantState(state).statistics ||
+  null;
 
-export const selectTenantSearchResults = (state) =>
-  getTenantState(state).searchResults || [];
+export const selectTenantSearchResults = (
+  state
+) =>
+  getTenantState(state).searchResults ||
+  [];
 
-export const selectActiveTenants = (state) =>
-  getTenantState(state).activeTenants || [];
+export const selectActiveTenants = (
+  state
+) =>
+  getTenantState(state).activeTenants ||
+  [];
 
-export const selectPendingTenants = (state) =>
-  getTenantState(state).pendingTenants || [];
+export const selectPendingTenants = (
+  state
+) =>
+  getTenantState(state).pendingTenants ||
+  [];
 
-export const selectInactiveTenants = (state) =>
-  getTenantState(state).inactiveTenants || [];
+export const selectInactiveTenants = (
+  state
+) =>
+  getTenantState(state).inactiveTenants ||
+  [];
 
-export const selectBlacklistedTenants = (state) =>
-  getTenantState(state).blacklistedTenants || [];
+export const selectBlacklistedTenants = (
+  state
+) =>
+  getTenantState(state).blacklistedTenants ||
+  [];
+
 
 /*
 |--------------------------------------------------------------------------
@@ -1629,29 +2700,62 @@ export const selectBlacklistedTenants = (state) =>
 |--------------------------------------------------------------------------
 */
 
-export const selectTenantLoading = (state) =>
-  Boolean(getTenantState(state).loading);
+export const selectTenantLoading = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).loading
+  );
 
-export const selectTenantLoadingTenant = (state) =>
-  Boolean(getTenantState(state).loadingTenant);
+export const selectTenantLoadingTenant = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).loadingTenant
+  );
 
-export const selectTenantCreating = (state) =>
-  Boolean(getTenantState(state).creating);
+export const selectTenantCreating = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).creating
+  );
 
-export const selectTenantUpdating = (state) =>
-  Boolean(getTenantState(state).updating);
+export const selectTenantUpdating = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).updating
+  );
 
-export const selectTenantDeleting = (state) =>
-  Boolean(getTenantState(state).deleting);
+export const selectTenantDeleting = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).deleting
+  );
 
-export const selectTenantSearching = (state) =>
-  Boolean(getTenantState(state).searching);
+export const selectTenantSearching = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).searching
+  );
 
-export const selectTenantActionLoading = (state) =>
-  Boolean(getTenantState(state).actionLoading);
+export const selectTenantActionLoading = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).actionLoading
+  );
 
-export const selectTenantLoadingStatistics = (state) =>
-  Boolean(getTenantState(state).loadingStatistics);
+export const selectTenantLoadingStatistics = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).loadingStatistics
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -1659,23 +2763,42 @@ export const selectTenantLoadingStatistics = (state) =>
 |--------------------------------------------------------------------------
 */
 
-export const selectTenantError = (state) =>
-  getTenantState(state).error || null;
+export const selectTenantError = (
+  state
+) =>
+  getTenantState(state).error ||
+  null;
 
-export const selectTenantCreateError = (state) =>
-  getTenantState(state).createError || null;
+export const selectTenantCreateError = (
+  state
+) =>
+  getTenantState(state).createError ||
+  null;
 
-export const selectTenantUpdateError = (state) =>
-  getTenantState(state).updateError || null;
+export const selectTenantUpdateError = (
+  state
+) =>
+  getTenantState(state).updateError ||
+  null;
 
-export const selectTenantDeleteError = (state) =>
-  getTenantState(state).deleteError || null;
+export const selectTenantDeleteError = (
+  state
+) =>
+  getTenantState(state).deleteError ||
+  null;
 
-export const selectTenantActionError = (state) =>
-  getTenantState(state).actionError || null;
+export const selectTenantActionError = (
+  state
+) =>
+  getTenantState(state).actionError ||
+  null;
 
-export const selectTenantStatisticsError = (state) =>
-  getTenantState(state).statisticsError || null;
+export const selectTenantStatisticsError = (
+  state
+) =>
+  getTenantState(state).statisticsError ||
+  null;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -1683,8 +2806,12 @@ export const selectTenantStatisticsError = (state) =>
 |--------------------------------------------------------------------------
 */
 
-export const selectTenantSuccessMessage = (state) =>
-  getTenantState(state).successMessage || null;
+export const selectTenantSuccessMessage = (
+  state
+) =>
+  getTenantState(state).successMessage ||
+  null;
+
 
 /*
 |--------------------------------------------------------------------------
