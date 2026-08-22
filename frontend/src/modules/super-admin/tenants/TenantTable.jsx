@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Swal from "sweetalert2";
+
+import useTenant from "../../../hooks/useTenant";
 
 /*
 |--------------------------------------------------------------------------
@@ -35,6 +38,18 @@ const TenantTable = ({
 
   /*
   |--------------------------------------------------------------------------
+  | TENANT HOOK
+  |--------------------------------------------------------------------------
+  */
+
+  const {
+    removeTenant,
+    deleting,
+    deleteError,
+  } = useTenant();
+
+  /*
+  |--------------------------------------------------------------------------
   | STATE
   |--------------------------------------------------------------------------
   */
@@ -51,20 +66,20 @@ const TenantTable = ({
 
   const currentPage = Number(
     pagination?.current_page ??
-    pagination?.currentPage ??
-    1
+      pagination?.currentPage ??
+      1
   );
 
   const lastPage = Number(
     pagination?.last_page ??
-    pagination?.lastPage ??
-    1
+      pagination?.lastPage ??
+      1
   );
 
   const total = Number(
     pagination?.total ??
-    tenants.length ??
-    0
+      tenants.length ??
+      0
   );
 
   /*
@@ -79,10 +94,15 @@ const TenantTable = ({
       .toLowerCase();
 
     if (!query) {
-      return tenants;
+      return Array.isArray(tenants)
+        ? tenants
+        : [];
     }
 
-    return tenants.filter((tenant) => {
+    return (Array.isArray(tenants)
+      ? tenants
+      : []
+    ).filter((tenant) => {
       const values = [
         tenant?.id,
         tenant?.tenant_number,
@@ -91,8 +111,12 @@ const TenantTable = ({
         tenant?.other_names,
         tenant?.full_name,
         tenant?.email,
+        tenant?.user?.email,
         tenant?.phone,
+        tenant?.user?.phone,
         tenant?.status,
+        tenant?.tenant_status,
+        tenant?.account_status,
       ];
 
       return values.some((value) =>
@@ -114,16 +138,33 @@ const TenantTable = ({
       return tenant.full_name;
     }
 
+    if (tenant?.user?.full_name) {
+      return tenant.user.full_name;
+    }
+
     const name = [
       tenant?.first_name,
-      tenant?.last_name,
       tenant?.other_names,
+      tenant?.last_name,
     ]
       .filter(Boolean)
       .join(" ")
       .trim();
 
-    return name || "Unknown Tenant";
+    if (name) {
+      return name;
+    }
+
+    const userName = [
+      tenant?.user?.first_name,
+      tenant?.user?.other_names,
+      tenant?.user?.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    return userName || "Unknown Tenant";
   };
 
   /*
@@ -133,16 +174,20 @@ const TenantTable = ({
   */
 
   const getInitials = (tenant) => {
-    const first = String(
-      tenant?.first_name || ""
-    ).charAt(0);
+    const first =
+      tenant?.first_name ||
+      tenant?.user?.first_name ||
+      "";
 
-    const last = String(
-      tenant?.last_name || ""
-    ).charAt(0);
+    const last =
+      tenant?.last_name ||
+      tenant?.user?.last_name ||
+      "";
 
     const initials =
-      `${first}${last}`.toUpperCase();
+      `${String(first).charAt(0)}${String(
+        last
+      ).charAt(0)}`.toUpperCase();
 
     return initials || "T";
   };
@@ -160,8 +205,29 @@ const TenantTable = ({
       tenant?.account_status ||
       "";
 
+    /*
+     * Prevent React from attempting to render an object.
+     */
+    if (
+      typeof status === "object" &&
+      status !== null
+    ) {
+      return String(
+        status?.value ||
+          status?.name ||
+          status?.label ||
+          ""
+      ).toLowerCase();
+    }
+
     return String(status).toLowerCase();
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | STATUS CLASSES
+  |--------------------------------------------------------------------------
+  */
 
   const getStatusClasses = (tenant) => {
     const status = normalizeStatus(tenant);
@@ -183,6 +249,12 @@ const TenantTable = ({
         return "bg-gray-100 text-gray-700 ring-gray-500/20";
     }
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | FORMAT STATUS
+  |--------------------------------------------------------------------------
+  */
 
   const formatStatus = (tenant) => {
     const status = normalizeStatus(tenant);
@@ -210,10 +282,12 @@ const TenantTable = ({
     const tenantId = tenant?.id;
 
     if (!tenantId) {
-      console.error(
-        "Cannot view tenant: tenant ID is missing.",
-        tenant
-      );
+      Swal.fire({
+        icon: "error",
+        title: "Unable to view tenant",
+        text: "The tenant ID is missing.",
+        confirmButtonText: "OK",
+      });
 
       return;
     }
@@ -235,10 +309,12 @@ const TenantTable = ({
     const tenantId = tenant?.id;
 
     if (!tenantId) {
-      console.error(
-        "Cannot edit tenant: tenant ID is missing.",
-        tenant
-      );
+      Swal.fire({
+        icon: "error",
+        title: "Unable to edit tenant",
+        text: "The tenant ID is missing.",
+        confirmButtonText: "OK",
+      });
 
       return;
     }
@@ -253,16 +329,19 @@ const TenantTable = ({
   | DELETE TENANT
   |--------------------------------------------------------------------------
   |
-  | IMPORTANT:
-  | The actual API delete operation is handled by the parent through
-  | the onDelete prop.
+  | Flow:
   |
-  | This component:
-  | 1. Validates the tenant.
-  | 2. Confirms the deletion.
-  | 3. Sets deleting state.
-  | 4. Calls onDelete(tenant).
-  | 5. Waits for async deletion if a Promise is returned.
+  | TenantTable
+  |     ↓
+  | removeTenant()
+  |     ↓
+  | Redux deleteTenant()
+  |     ↓
+  | tenantService.deleteTenant()
+  |     ↓
+  | tenantAPI.deleteTenant()
+  |     ↓
+  | DELETE /api/tenants/{id}
   |
   */
 
@@ -271,93 +350,159 @@ const TenantTable = ({
 
     const tenantId = tenant?.id;
 
+    /*
+     * Validate ID.
+     */
     if (!tenantId) {
-      console.error(
-        "Cannot delete tenant: tenant ID is missing.",
-        tenant
-      );
-
-      window.alert(
-        "Unable to delete this tenant because the tenant ID is missing."
-      );
+      await Swal.fire({
+        icon: "error",
+        title: "Unable to delete tenant",
+        text: "The tenant ID is missing.",
+        confirmButtonText: "OK",
+      });
 
       return;
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | VERIFY DELETE HANDLER
-    |--------------------------------------------------------------------------
-    */
-
-    if (typeof onDelete !== "function") {
-      console.error(
-        "TenantTable: onDelete prop is not provided.",
-        {
-          tenant,
-          tenantId,
-        }
-      );
-
-      window.alert(
-        "Delete is not configured. Please connect the tenant delete handler."
-      );
-
-      return;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | CONFIRM DELETE
-    |--------------------------------------------------------------------------
-    */
 
     const tenantName =
       getTenantName(tenant);
 
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ${tenantName}?\n\nThis action cannot be undone.`
-    );
+    const tenantNumber =
+      tenant?.tenant_number ||
+      tenantId;
 
-    if (!confirmed) {
+    /*
+     * Confirmation dialog.
+     */
+    const confirmation = await Swal.fire({
+      icon: "warning",
+      title: "Delete Tenant?",
+      html: `
+        <div style="text-align:center">
+          <p style="margin-bottom:8px;">
+            Are you sure you want to delete
+            <strong>${tenantName}</strong>?
+          </p>
+
+          <p style="font-size:13px;color:#6b7280;">
+            Tenant Number:
+            <strong>${tenantNumber}</strong>
+          </p>
+
+          <p style="font-size:13px;color:#dc2626;margin-top:12px;">
+            This will remove the tenant from the active
+            tenant list.
+          </p>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Yes, Delete",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+      focusCancel: true,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+    });
+
+    /*
+     * User cancelled.
+     */
+    if (!confirmation.isConfirmed) {
       return;
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | START DELETE
-    |--------------------------------------------------------------------------
-    */
-
+     * Start deleting.
+     */
     setDeletingId(tenantId);
 
+    /*
+     * Loading alert.
+     */
+    Swal.fire({
+      title: "Deleting Tenant...",
+      text: `Removing ${tenantName}`,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      showConfirmButton: false,
+      didOpen: () => {
+        Swal.showLoading();
+      },
+    });
+
     try {
-      /*
-      |--------------------------------------------------------------------------
-      | PASS THE FULL TENANT OBJECT
-      |--------------------------------------------------------------------------
-      |
-      | The parent should receive:
-      |
-      | onDelete(tenant)
-      |
-      | and can then use tenant.id for the API request.
-      |
-      */
-
-      const result = onDelete(tenant);
+      let result;
 
       /*
-      |--------------------------------------------------------------------------
-      | WAIT FOR ASYNC DELETE
-      |--------------------------------------------------------------------------
-      */
+       * Parent callback has priority.
+       */
+      if (typeof onDelete === "function") {
+        result = await onDelete(tenant);
+      } else {
+        result = await removeTenant(tenantId);
+      }
 
-      if (
-        result &&
-        typeof result.then === "function"
-      ) {
-        await result;
+      /*
+       * IMPORTANT:
+       *
+       * Redux Toolkit dispatch().unwrap() normally returns
+       * the fulfilled thunk payload.
+       *
+       * Depending on useTenant(), result can therefore be:
+       *
+       * {
+       *   tenantId,
+       *   message: "Tenant deleted successfully."
+       * }
+       *
+       * or:
+       *
+       * "Tenant deleted successfully."
+       *
+       * or:
+       *
+       * {
+       *   data: {...},
+       *   message: "Tenant deleted successfully."
+       * }
+       */
+
+      console.log("Tenant deletion response:", result);
+
+      /*
+       * Extract a clean success message.
+       */
+      const successMessage =
+        result?.message ||
+        result?.data?.message ||
+        (typeof result === "string"
+          ? result
+          : null) ||
+        "Tenant deleted successfully.";
+
+      /*
+       * Close loading alert.
+       */
+      Swal.close();
+
+      /*
+       * Success notification.
+       */
+      await Swal.fire({
+        icon: "success",
+        title: "Tenant Deleted",
+        text: successMessage,
+        confirmButtonText: "OK",
+        confirmButtonColor: "#16a34a",
+        timer: 2500,
+        timerProgressBar: true,
+      });
+
+      /*
+       * Refresh table after successful deletion.
+       */
+      if (typeof onRefresh === "function") {
+        await onRefresh();
       }
     } catch (error) {
       console.error(
@@ -366,17 +511,31 @@ const TenantTable = ({
       );
 
       /*
-      |--------------------------------------------------------------------------
-      | SHOW ERROR ONLY IF THE PARENT THROWS
-      |--------------------------------------------------------------------------
-      */
+       * Close loading alert.
+       */
+      Swal.close();
 
+      /*
+       * Extract backend error.
+       */
       const message =
-        error?.response?.data?.message ||
         error?.message ||
+        error?.error ||
+        error?.response?.data?.message ||
+        error?.response?.data?.errors?.error ||
+        deleteError ||
         "Failed to delete tenant.";
 
-      window.alert(message);
+      /*
+       * Error notification.
+       */
+      await Swal.fire({
+        icon: "error",
+        title: "Delete Failed",
+        text: message,
+        confirmButtonText: "OK",
+        confirmButtonColor: "#dc2626",
+      });
     } finally {
       setDeletingId(null);
     }
@@ -388,11 +547,11 @@ const TenantTable = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setOpenMenu(null);
 
     if (typeof onRefresh === "function") {
-      onRefresh();
+      await onRefresh();
     }
   };
 
@@ -436,12 +595,14 @@ const TenantTable = ({
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+
       {/* ------------------------------------------------------------------
           TABLE HEADER
       ------------------------------------------------------------------ */}
 
       <div className="border-b border-gray-200 px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
           {/* TITLE */}
 
           <div>
@@ -458,6 +619,7 @@ const TenantTable = ({
           {/* ACTIONS */}
 
           <div className="flex flex-col gap-2 sm:flex-row">
+
             {/* SEARCH */}
 
             <div className="relative">
@@ -521,7 +683,10 @@ const TenantTable = ({
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={loading}
+              disabled={
+                loading ||
+                deleting
+              }
               className="
                 inline-flex
                 h-10
@@ -546,10 +711,11 @@ const TenantTable = ({
               "
             >
               <RefreshCw
-                className={`h-4 w-4 ${loading
+                className={`h-4 w-4 ${
+                  loading
                     ? "animate-spin"
                     : ""
-                  }`}
+                }`}
               />
 
               <span className="hidden sm:inline">
@@ -567,6 +733,7 @@ const TenantTable = ({
       {loading && (
         <div className="flex min-h-[300px] items-center justify-center">
           <div className="flex flex-col items-center">
+
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-50">
               <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
             </div>
@@ -589,6 +756,7 @@ const TenantTable = ({
 
       {isEmpty && (
         <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
+
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500">
             {search ? (
               <Search className="h-7 w-7" />
@@ -620,8 +788,10 @@ const TenantTable = ({
           <>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
+
                 <thead className="bg-gray-50">
                   <tr>
+
                     <th
                       scope="col"
                       className="
@@ -718,10 +888,12 @@ const TenantTable = ({
                     >
                       Actions
                     </th>
+
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-gray-200 bg-white">
+
                   {filteredTenants.map(
                     (tenant) => {
                       const tenantId =
@@ -745,10 +917,12 @@ const TenantTable = ({
                           }
                           className="transition hover:bg-gray-50"
                         >
+
                           {/* TENANT */}
 
                           <td className="whitespace-nowrap px-4 py-4 sm:px-6">
                             <div className="flex items-center gap-3">
+
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-50 text-sm font-semibold text-primary-700">
                                 {getInitials(
                                   tenant
@@ -756,6 +930,7 @@ const TenantTable = ({
                               </div>
 
                               <div className="min-w-0">
+
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -782,11 +957,11 @@ const TenantTable = ({
 
                                 <p className="truncate text-xs text-gray-500">
                                   {tenant?.email ||
-                                    tenant
-                                      ?.user
+                                    tenant?.user
                                       ?.email ||
                                     "No email address"}
                                 </p>
+
                               </div>
                             </div>
                           </td>
@@ -803,14 +978,14 @@ const TenantTable = ({
 
                           <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
                             {tenant?.phone ||
-                              tenant?.user
-                                ?.phone ||
+                              tenant?.user?.phone ||
                               "—"}
                           </td>
 
                           {/* STATUS */}
 
                           <td className="whitespace-nowrap px-4 py-4">
+
                             <span
                               className={`
                                 inline-flex
@@ -823,18 +998,19 @@ const TenantTable = ({
                                 ring-1
                                 ring-inset
                                 ${getStatusClasses(
-                                tenant
-                              )}
+                                  tenant
+                                )}
                               `}
                             >
+
                               {normalizeStatus(
                                 tenant
                               ) ===
-                                "active" ? (
+                              "active" ? (
                                 <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                               ) : normalizeStatus(
-                                tenant
-                              ) ===
+                                  tenant
+                                ) ===
                                 "blacklisted" ? (
                                 <XCircle className="mr-1 h-3.5 w-3.5" />
                               ) : (
@@ -844,14 +1020,16 @@ const TenantTable = ({
                               {formatStatus(
                                 tenant
                               )}
+
                             </span>
                           </td>
 
                           {/* VERIFICATION */}
 
                           <td className="whitespace-nowrap px-4 py-4">
+
                             {tenant?.is_verified ||
-                              tenant?.email_verified_at ? (
+                            tenant?.email_verified_at ? (
                               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
                                 <CheckCircle2 className="h-4 w-4" />
 
@@ -864,12 +1042,15 @@ const TenantTable = ({
                                 Not Verified
                               </span>
                             )}
+
                           </td>
 
                           {/* ACTIONS */}
 
                           <td className="whitespace-nowrap px-4 py-4 text-right">
+
                             <div className="relative inline-block text-left">
+
                               <button
                                 type="button"
                                 onClick={() =>
@@ -881,7 +1062,8 @@ const TenantTable = ({
                                   )
                                 }
                                 disabled={
-                                  isDeleting
+                                  isDeleting ||
+                                  deleting
                                 }
                                 className="
                                   inline-flex
@@ -911,6 +1093,7 @@ const TenantTable = ({
                                 }
                                 aria-haspopup="menu"
                               >
+
                                 {isDeleting ? (
                                   <>
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -930,6 +1113,7 @@ const TenantTable = ({
                                     <ChevronDown className="h-3.5 w-3.5" />
                                   </>
                                 )}
+
                               </button>
 
                               {/* MENU */}
@@ -957,6 +1141,7 @@ const TenantTable = ({
                                     "
                                     role="menu"
                                   >
+
                                     {/* VIEW */}
 
                                     <button
@@ -1030,7 +1215,8 @@ const TenantTable = ({
                                       }
                                       disabled={
                                         deletingId !==
-                                        null
+                                          null ||
+                                        deleting
                                       }
                                       className="
                                         flex
@@ -1050,18 +1236,30 @@ const TenantTable = ({
                                       "
                                       role="menuitem"
                                     >
-                                      <Trash2 className="h-4 w-4" />
 
-                                      Delete Tenant
+                                      {isDeleting ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                      )}
+
+                                      {isDeleting
+                                        ? "Deleting..."
+                                        : "Delete Tenant"}
+
                                     </button>
+
                                   </div>
                                 )}
+
                             </div>
                           </td>
+
                         </tr>
                       );
                     }
                   )}
+
                 </tbody>
               </table>
             </div>
@@ -1071,7 +1269,9 @@ const TenantTable = ({
             ---------------------------------------------------------------- */}
 
             <div className="border-t border-gray-200 bg-white px-4 py-4 sm:px-6">
+
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
                 <p className="text-sm text-gray-500">
                   Showing{" "}
                   <span className="font-medium text-gray-700">
@@ -1086,6 +1286,7 @@ const TenantTable = ({
 
                 {lastPage > 1 && (
                   <div className="flex items-center gap-2">
+
                     {/* PREVIOUS */}
 
                     <button
@@ -1097,7 +1298,8 @@ const TenantTable = ({
                       }
                       disabled={
                         currentPage <= 1 ||
-                        loading
+                        loading ||
+                        deleting
                       }
                       className="
                         inline-flex
@@ -1143,8 +1345,9 @@ const TenantTable = ({
                       }
                       disabled={
                         currentPage >=
-                        lastPage ||
-                        loading
+                          lastPage ||
+                        loading ||
+                        deleting
                       }
                       className="
                         inline-flex
@@ -1171,8 +1374,10 @@ const TenantTable = ({
 
                       <ChevronRight className="h-4 w-4" />
                     </button>
+
                   </div>
                 )}
+
               </div>
             </div>
           </>
