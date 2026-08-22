@@ -1,14 +1,5 @@
 import api from "./axios";
 
-/*
-|--------------------------------------------------------------------------
-| Tenancy API
-|--------------------------------------------------------------------------
-|
-| Centralized API communication for tenancy management.
-|
-*/
-
 const TENANCY_ENDPOINT = "/tenancies";
 
 /*
@@ -17,9 +8,6 @@ const TENANCY_ENDPOINT = "/tenancies";
 |--------------------------------------------------------------------------
 */
 
-/**
- * Validate tenancy ID.
- */
 const validateTenancyId = (tenancyId) => {
   if (
     tenancyId === undefined ||
@@ -32,28 +20,39 @@ const validateTenancyId = (tenancyId) => {
   return tenancyId;
 };
 
-/**
- * Validate request data.
- */
-const validateData = (data, message = "Request data is required.") => {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
+const validateData = (
+  data,
+  message = "Request data is required."
+) => {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
     throw new Error(message);
   }
 
   return data;
 };
 
-/**
- * Preserve the original Axios error.
- *
- * This is important because Redux/hooks/components need access to:
- *
- * error.response.status
- * error.response.data.message
- * error.response.data.errors
- */
+const validateFilterId = (id, message) => {
+  if (
+    id === undefined ||
+    id === null ||
+    id === ""
+  ) {
+    throw new Error(message);
+  }
+
+  return id;
+};
+
 const handleApiError = (error) => {
   throw error;
+};
+
+const getResponseData = (res) => {
+  return res?.data?.data ?? null;
 };
 
 /*
@@ -62,67 +61,50 @@ const handleApiError = (error) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get all tenancies.
- *
- * GET /api/tenancies
- */
 export const getTenancies = async (params = {}) => {
   try {
-    const response = await api.get(TENANCY_ENDPOINT, {
+    const res = await api.get(TENANCY_ENDPOINT, {
       params,
     });
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get one tenancy.
- *
- * GET /api/tenancies/{tenancy}
- */
 export const getTenancy = async (tenancyId) => {
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/${id}`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Create tenancy.
- *
- * POST /api/tenancies
- */
 export const createTenancy = async (data) => {
   try {
-    validateData(data, "Tenancy data is required.");
+    validateData(
+      data,
+      "Tenancy data is required."
+    );
 
-    const response = await api.post(
+    const res = await api.post(
       TENANCY_ENDPOINT,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Update tenancy.
- *
- * PUT /api/tenancies/{tenancy}
- */
 export const updateTenancy = async (
   tenancyId,
   data
@@ -130,24 +112,22 @@ export const updateTenancy = async (
   try {
     const id = validateTenancyId(tenancyId);
 
-    validateData(data, "Tenancy data is required.");
+    validateData(
+      data,
+      "Tenancy data is required."
+    );
 
-    const response = await api.put(
+    const res = await api.put(
       `${TENANCY_ENDPOINT}/${id}`,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Partially update tenancy.
- *
- * PATCH /api/tenancies/{tenancy}
- */
 export const patchTenancy = async (
   tenancyId,
   data
@@ -155,55 +135,48 @@ export const patchTenancy = async (
   try {
     const id = validateTenancyId(tenancyId);
 
-    validateData(data, "Tenancy data is required.");
+    validateData(
+      data,
+      "Tenancy data is required."
+    );
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}`,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Soft delete tenancy.
- *
- * DELETE /api/tenancies/{tenancy}
- */
 export const deleteTenancy = async (tenancyId) => {
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.delete(
+    const res = await api.delete(
       `${TENANCY_ENDPOINT}/${id}`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| SEARCH
+| Search
 |--------------------------------------------------------------------------
 */
 
-/**
- * Search tenancies.
- *
- * GET /api/tenancies/search
- */
 export const searchTenancies = async (
   search = "",
   params = {}
 ) => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/search`,
       {
         params: {
@@ -213,208 +186,147 @@ export const searchTenancies = async (
       }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| STATUS LISTS
+| Status Lists
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get active tenancies.
- *
- * GET /api/tenancies/active
- *
- * IMPORTANT:
- * Do not add status here.
- * The backend route already identifies this endpoint.
- */
 export const getActiveTenancies = async (
   params = {}
 ) => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/active`,
-      {
-        params,
-      }
+      { params }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get pending tenancies.
- *
- * GET /api/tenancies/pending
- */
 export const getPendingTenancies = async (
   params = {}
 ) => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/pending`,
-      {
-        params,
-      }
+      { params }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get expired tenancies.
- *
- * GET /api/tenancies/expired
- */
 export const getExpiredTenancies = async (
   params = {}
 ) => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/expired`,
-      {
-        params,
-      }
+      { params }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get terminated tenancies.
- *
- * GET /api/tenancies/terminated
- */
 export const getTerminatedTenancies = async (
   params = {}
 ) => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/terminated`,
-      {
-        params,
-      }
+      { params }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get cancelled tenancies.
- *
- * GET /api/tenancies/cancelled
- */
 export const getCancelledTenancies = async (
   params = {}
 ) => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/cancelled`,
-      {
-        params,
-      }
+      { params }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| STATISTICS
+| Statistics
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get tenancy statistics.
- *
- * GET /api/tenancies/statistics
- */
 export const getTenancyStatistics = async () => {
   try {
-    const response = await api.get(
+    const res = await api.get(
       `${TENANCY_ENDPOINT}/statistics`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| STATUS MANAGEMENT
+| Status Management
 |--------------------------------------------------------------------------
 */
 
-/**
- * Activate tenancy.
- *
- * PATCH /api/tenancies/{tenancy}/activate
- */
-export const activateTenancy = async (
-  tenancyId
-) => {
+export const activateTenancy = async (tenancyId) => {
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}/activate`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Deactivate tenancy.
- *
- * PATCH /api/tenancies/{tenancy}/deactivate
- */
 export const deactivateTenancy = async (
   tenancyId
 ) => {
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}/deactivate`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Renew tenancy.
- *
- * PATCH /api/tenancies/{tenancy}/renew
- */
 export const renewTenancy = async (
   tenancyId,
   data = {}
@@ -422,22 +334,17 @@ export const renewTenancy = async (
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}/renew`,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Terminate tenancy.
- *
- * PATCH /api/tenancies/{tenancy}/terminate
- */
 export const terminateTenancy = async (
   tenancyId,
   data = {}
@@ -445,22 +352,17 @@ export const terminateTenancy = async (
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}/terminate`,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Cancel tenancy.
- *
- * PATCH /api/tenancies/{tenancy}/cancel
- */
 export const cancelTenancy = async (
   tenancyId,
   data = {}
@@ -468,241 +370,199 @@ export const cancelTenancy = async (
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}/cancel`,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| UNIT ASSIGNMENT
+| Unit Assignment
 |--------------------------------------------------------------------------
 */
 
-/**
- * Assign unit to tenant.
- *
- * POST /api/tenancies/assign-unit
- */
-export const assignUnitToTenant = async (
-  data
-) => {
+export const assignUnitToTenant = async (data) => {
   try {
-    validateData(data, "Assignment data is required.");
+    validateData(
+      data,
+      "Assignment data is required."
+    );
 
-    const response = await api.post(
+    const res = await api.post(
       `${TENANCY_ENDPOINT}/assign-unit`,
       data
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| RESTORE
+| Restore / Force Delete
 |--------------------------------------------------------------------------
 */
 
-/**
- * Restore soft-deleted tenancy.
- *
- * PATCH /api/tenancies/{id}/restore
- */
-export const restoreTenancy = async (
-  tenancyId
-) => {
+export const restoreTenancy = async (tenancyId) => {
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.patch(
+    const res = await api.patch(
       `${TENANCY_ENDPOINT}/${id}/restore`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/*
-|--------------------------------------------------------------------------
-| FORCE DELETE
-|--------------------------------------------------------------------------
-*/
-
-/**
- * Permanently delete tenancy.
- *
- * DELETE /api/tenancies/{id}/force
- */
 export const forceDeleteTenancy = async (
   tenancyId
 ) => {
   try {
     const id = validateTenancyId(tenancyId);
 
-    const response = await api.delete(
+    const res = await api.delete(
       `${TENANCY_ENDPOINT}/${id}/force`
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| CONVENIENCE FILTERS
+| Convenience Filters
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get tenancies by tenant.
- */
 export const getTenanciesByTenant = async (
   tenantId,
   params = {}
 ) => {
   try {
-    if (
-      tenantId === undefined ||
-      tenantId === null ||
-      tenantId === ""
-    ) {
-      throw new Error("Tenant ID is required.");
-    }
+    const id = validateFilterId(
+      tenantId,
+      "Tenant ID is required."
+    );
 
-    const response = await api.get(
+    const res = await api.get(
       TENANCY_ENDPOINT,
       {
         params: {
           ...params,
-          tenant_id: tenantId,
+          tenant_id: id,
         },
       }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get tenancies by property.
- */
 export const getTenanciesByProperty = async (
   propertyId,
   params = {}
 ) => {
   try {
-    if (
-      propertyId === undefined ||
-      propertyId === null ||
-      propertyId === ""
-    ) {
-      throw new Error("Property ID is required.");
-    }
+    const id = validateFilterId(
+      propertyId,
+      "Property ID is required."
+    );
 
-    const response = await api.get(
+    const res = await api.get(
       TENANCY_ENDPOINT,
       {
         params: {
           ...params,
-          property_id: propertyId,
+          property_id: id,
         },
       }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get tenancies by apartment.
- */
 export const getTenanciesByApartment = async (
   apartmentId,
   params = {}
 ) => {
   try {
-    if (
-      apartmentId === undefined ||
-      apartmentId === null ||
-      apartmentId === ""
-    ) {
-      throw new Error("Apartment ID is required.");
-    }
+    const id = validateFilterId(
+      apartmentId,
+      "Apartment ID is required."
+    );
 
-    const response = await api.get(
+    const res = await api.get(
       TENANCY_ENDPOINT,
       {
         params: {
           ...params,
-          apartment_id: apartmentId,
+          apartment_id: id,
         },
       }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
-/**
- * Get tenancies by unit.
- */
 export const getTenanciesByUnit = async (
   unitId,
   params = {}
 ) => {
   try {
-    if (
-      unitId === undefined ||
-      unitId === null ||
-      unitId === ""
-    ) {
-      throw new Error("Unit ID is required.");
-    }
+    const id = validateFilterId(
+      unitId,
+      "Unit ID is required."
+    );
 
-    const response = await api.get(
+    const res = await api.get(
       TENANCY_ENDPOINT,
       {
         params: {
           ...params,
-          unit_id: unitId,
+          unit_id: id,
         },
       }
     );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
+    return getResponseData(res);
+  } catch (err) {
+    return handleApiError(err);
   }
 };
 
 /*
 |--------------------------------------------------------------------------
-| DEFAULT EXPORT
+| Default Export
 |--------------------------------------------------------------------------
 */
 
 const tenancyApi = {
-  // CRUD
+  /*
+  |----------------------------------------------------------------------
+  | CRUD
+  |----------------------------------------------------------------------
+  */
   getTenancies,
   getTenancy,
   createTenancy,
@@ -710,34 +570,62 @@ const tenancyApi = {
   patchTenancy,
   deleteTenancy,
 
-  // Search
+  /*
+  |----------------------------------------------------------------------
+  | Search
+  |----------------------------------------------------------------------
+  */
   searchTenancies,
 
-  // Status lists
+  /*
+  |----------------------------------------------------------------------
+  | Status Lists
+  |----------------------------------------------------------------------
+  */
   getActiveTenancies,
   getPendingTenancies,
   getExpiredTenancies,
   getTerminatedTenancies,
   getCancelledTenancies,
 
-  // Statistics
+  /*
+  |----------------------------------------------------------------------
+  | Statistics
+  |----------------------------------------------------------------------
+  */
   getTenancyStatistics,
 
-  // Status management
+  /*
+  |----------------------------------------------------------------------
+  | Status Management
+  |----------------------------------------------------------------------
+  */
   activateTenancy,
   deactivateTenancy,
   renewTenancy,
   terminateTenancy,
   cancelTenancy,
 
-  // Assignment
+  /*
+  |----------------------------------------------------------------------
+  | Unit Assignment
+  |----------------------------------------------------------------------
+  */
   assignUnitToTenant,
 
-  // Restore / force delete
+  /*
+  |----------------------------------------------------------------------
+  | Restore / Force Delete
+  |----------------------------------------------------------------------
+  */
   restoreTenancy,
   forceDeleteTenancy,
 
-  // Convenience filters
+  /*
+  |----------------------------------------------------------------------
+  | Convenience Filters
+  |----------------------------------------------------------------------
+  */
   getTenanciesByTenant,
   getTenanciesByProperty,
   getTenanciesByApartment,

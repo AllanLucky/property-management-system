@@ -7,23 +7,393 @@ import {
   X,
 } from "lucide-react";
 
+/*
+|--------------------------------------------------------------------------
+| Constants
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_FILTERS = {
+  search: "",
+  status: "",
+  property_id: "",
+  apartment_id: "",
+  unit_id: "",
+  tenant_id: "",
+  payment_frequency: "",
+  start_date: "",
+  end_date: "",
+  per_page: 15,
+  sort_by: "created_at",
+  sort_direction: "desc",
+};
+
+/*
+|--------------------------------------------------------------------------
+| Helpers
+|--------------------------------------------------------------------------
+*/
+
 /**
- * TenancyFilters
- *
- * Reusable filters for the tenancy listing.
- *
- * Props:
- * - filters
- * - onChange
- * - onReset
- * - onApply
- * - loading
- * - properties
- * - apartments
- * - units
- * - tenants
- * - showAdvanced
+ * Safely convert a value into a string.
  */
+const safeText = (value, fallback = "") => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  if (typeof value === "object") {
+    return fallback;
+  }
+
+  return String(value);
+};
+
+/**
+ * Get the first valid primitive value.
+ */
+const firstText = (...values) => {
+  for (const value of values) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      typeof value !== "object"
+    ) {
+      return String(value);
+    }
+  }
+
+  return "";
+};
+
+/**
+ * Safely normalize an ID.
+ */
+const normalizeId = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "";
+  }
+
+  if (typeof value === "object") {
+    return "";
+  }
+
+  return String(value);
+};
+
+/**
+ * Build a readable status label.
+ */
+const formatStatusLabel = (value) => {
+  const text = firstText(value);
+
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase()
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Property Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get property ID.
+ */
+const getPropertyId = (property) => {
+  return normalizeId(
+    property?.id ??
+      property?.property_id ??
+      property?.property?.id
+  );
+};
+
+/**
+ * Get property name.
+ */
+const getPropertyName = (property) => {
+  return (
+    firstText(
+      property?.title,
+      property?.name,
+      property?.property_name,
+      property?.property_title,
+      property?.property_code,
+      property?.property_number
+    ) ||
+    (property?.id
+      ? `Property #${property.id}`
+      : "Property")
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Apartment Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get apartment ID.
+ */
+const getApartmentId = (apartment) => {
+  return normalizeId(
+    apartment?.id ??
+      apartment?.apartment_id
+  );
+};
+
+/**
+ * Get apartment property ID.
+ */
+const getApartmentPropertyId = (apartment) => {
+  return normalizeId(
+    apartment?.property_id ??
+      apartment?.property?.id ??
+      apartment?.property?.property_id
+  );
+};
+
+/**
+ * Get apartment name.
+ */
+const getApartmentName = (apartment) => {
+  return (
+    firstText(
+      apartment?.full_name,
+      apartment?.name,
+      apartment?.apartment_name,
+      apartment?.apartment_number,
+      apartment?.number,
+      apartment?.code
+    ) ||
+    (apartment?.id
+      ? `Apartment #${apartment.id}`
+      : "Apartment")
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Unit Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get unit ID.
+ */
+const getUnitId = (unit) => {
+  return normalizeId(
+    unit?.id ??
+      unit?.unit_id
+  );
+};
+
+/**
+ * Get unit apartment ID.
+ */
+const getUnitApartmentId = (unit) => {
+  return normalizeId(
+    unit?.apartment_id ??
+      unit?.apartment?.id ??
+      unit?.apartment?.apartment_id
+  );
+};
+
+/**
+ * Get unit property ID.
+ */
+const getUnitPropertyId = (unit) => {
+  return normalizeId(
+    unit?.property_id ??
+      unit?.property?.id ??
+      unit?.apartment?.property_id ??
+      unit?.apartment?.property?.id
+  );
+};
+
+/**
+ * Get unit name.
+ */
+const getUnitName = (unit) => {
+  return (
+    firstText(
+      unit?.unit_number,
+      unit?.name,
+      unit?.unit_name,
+      unit?.number,
+      unit?.code
+    ) ||
+    (unit?.id
+      ? `Unit #${unit.id}`
+      : "Unit")
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Tenant Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get tenant ID.
+ */
+const getTenantId = (tenant) => {
+  return normalizeId(
+    tenant?.id ??
+      tenant?.tenant_id
+  );
+};
+
+/**
+ * Get tenant display name.
+ */
+const getTenantName = (tenant) => {
+  const directName = firstText(
+    tenant?.full_name,
+    tenant?.name,
+    tenant?.tenant_name
+  );
+
+  if (directName) {
+    return directName;
+  }
+
+  const fullName = [
+    tenant?.first_name,
+    tenant?.other_names,
+    tenant?.middle_name,
+    tenant?.last_name,
+  ]
+    .filter(
+      (value) =>
+        value !== null &&
+        value !== undefined &&
+        value !== "" &&
+        typeof value !== "object"
+    )
+    .join(" ")
+    .trim();
+
+  if (fullName) {
+    return fullName;
+  }
+
+  return (
+    firstText(
+      tenant?.tenant_number,
+      tenant?.number
+    ) ||
+    (tenant?.id
+      ? `Tenant #${tenant.id}`
+      : "Tenant")
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Filter Normalization
+|--------------------------------------------------------------------------
+*/
+
+const normalizeFilters = (filters) => {
+  const source =
+    filters &&
+    typeof filters === "object"
+      ? filters
+      : {};
+
+  return {
+    ...DEFAULT_FILTERS,
+
+    ...source,
+
+    search: safeText(
+      source.search,
+      ""
+    ),
+
+    status: safeText(
+      source.status,
+      ""
+    ),
+
+    property_id: normalizeId(
+      source.property_id
+    ),
+
+    apartment_id: normalizeId(
+      source.apartment_id
+    ),
+
+    unit_id: normalizeId(
+      source.unit_id
+    ),
+
+    tenant_id: normalizeId(
+      source.tenant_id
+    ),
+
+    payment_frequency: safeText(
+      source.payment_frequency,
+      ""
+    ),
+
+    start_date: safeText(
+      source.start_date,
+      ""
+    ),
+
+    end_date: safeText(
+      source.end_date,
+      ""
+    ),
+
+    per_page:
+      Number(source.per_page) > 0
+        ? Number(source.per_page)
+        : DEFAULT_FILTERS.per_page,
+
+    sort_by:
+      safeText(
+        source.sort_by,
+        DEFAULT_FILTERS.sort_by
+      ) || DEFAULT_FILTERS.sort_by,
+
+    sort_direction:
+      safeText(
+        source.sort_direction,
+        DEFAULT_FILTERS.sort_direction
+      ) || DEFAULT_FILTERS.sort_direction,
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| Tenancy Filters
+|--------------------------------------------------------------------------
+*/
+
 const TenancyFilters = ({
   filters = {},
   onChange,
@@ -40,44 +410,44 @@ const TenancyFilters = ({
 }) => {
   /*
   |--------------------------------------------------------------------------
-  | NORMALIZE FILTERS
+  | Normalize Current Filters
   |--------------------------------------------------------------------------
   */
 
-  const currentFilters = {
-    search: "",
-    status: "",
-    property_id: "",
-    apartment_id: "",
-    unit_id: "",
-    tenant_id: "",
-    payment_frequency: "",
-    start_date: "",
-    end_date: "",
-    per_page: 15,
-    sort_by: "created_at",
-    sort_direction: "desc",
-    ...filters,
-  };
+  const currentFilters =
+    normalizeFilters(filters);
 
   /*
   |--------------------------------------------------------------------------
-  | HANDLE CHANGE
+  | Handle Change
   |--------------------------------------------------------------------------
   */
 
-  const handleChange = (field, value) => {
-    if (typeof onChange !== "function") {
+  const handleChange = (
+    field,
+    value
+  ) => {
+    if (
+      typeof onChange !== "function"
+    ) {
       return;
     }
 
+    const normalizedValue =
+      field === "per_page"
+        ? Number(value) || 15
+        : safeText(value, "");
+
     /*
-     * Changing a parent filter should clear dependent filters.
+     * Property controls apartment and unit.
      */
-    if (field === "property_id") {
+    if (
+      field === "property_id"
+    ) {
       onChange({
         ...currentFilters,
-        property_id: value,
+        property_id:
+          normalizedValue,
         apartment_id: "",
         unit_id: "",
       });
@@ -85,11 +455,35 @@ const TenancyFilters = ({
       return;
     }
 
-    if (field === "apartment_id") {
+    /*
+     * Apartment controls unit.
+     */
+    if (
+      field === "apartment_id"
+    ) {
       onChange({
         ...currentFilters,
-        apartment_id: value,
+        apartment_id:
+          normalizedValue,
         unit_id: "",
+      });
+
+      return;
+    }
+
+    /*
+     * Changing page size should normally
+     * reset pagination to page one.
+     */
+    if (
+      field === "per_page"
+    ) {
+      onChange({
+        ...currentFilters,
+        per_page:
+          Number(normalizedValue) ||
+          15,
+        page: 1,
       });
 
       return;
@@ -97,59 +491,92 @@ const TenancyFilters = ({
 
     onChange({
       ...currentFilters,
-      [field]: value,
+      [field]: normalizedValue,
     });
   };
 
   /*
   |--------------------------------------------------------------------------
-  | HANDLE RESET
+  | Handle Reset
   |--------------------------------------------------------------------------
   */
 
   const handleReset = () => {
-    if (typeof onReset === "function") {
+    if (
+      typeof onReset === "function"
+    ) {
       onReset();
       return;
     }
 
-    if (typeof onChange === "function") {
+    if (
+      typeof onChange === "function"
+    ) {
       onChange({
-        search: "",
-        status: "",
-        property_id: "",
-        apartment_id: "",
-        unit_id: "",
-        tenant_id: "",
-        payment_frequency: "",
-        start_date: "",
-        end_date: "",
-        per_page: 15,
-        sort_by: "created_at",
-        sort_direction: "desc",
+        ...DEFAULT_FILTERS,
       });
     }
   };
 
   /*
   |--------------------------------------------------------------------------
-  | HANDLE APPLY
+  | Handle Apply
   |--------------------------------------------------------------------------
   */
 
   const handleApply = () => {
-    if (typeof onApply === "function") {
-      onApply(currentFilters);
+    if (
+      typeof onApply !== "function"
+    ) {
+      return;
     }
+
+    /*
+     * Do not send UI-only or invalid values.
+     */
+    const payload = {
+      ...currentFilters,
+      search:
+        currentFilters.search.trim(),
+      status:
+        currentFilters.status || "",
+      property_id:
+        currentFilters.property_id || "",
+      apartment_id:
+        currentFilters.apartment_id || "",
+      unit_id:
+        currentFilters.unit_id || "",
+      tenant_id:
+        currentFilters.tenant_id || "",
+      payment_frequency:
+        currentFilters.payment_frequency ||
+        "",
+      start_date:
+        currentFilters.start_date || "",
+      end_date:
+        currentFilters.end_date || "",
+      per_page:
+        Number(currentFilters.per_page) ||
+        15,
+      sort_by:
+        currentFilters.sort_by ||
+        "created_at",
+      sort_direction:
+        currentFilters.sort_direction ||
+        "desc",
+    };
+
+    onApply(payload);
   };
 
   /*
   |--------------------------------------------------------------------------
-  | ACTIVE FILTER COUNT
+  | Active Filter Count
   |--------------------------------------------------------------------------
   */
 
   const activeFilterCount = [
+    currentFilters.search,
     currentFilters.status,
     currentFilters.property_id,
     currentFilters.apartment_id,
@@ -158,75 +585,154 @@ const TenancyFilters = ({
     currentFilters.payment_frequency,
     currentFilters.start_date,
     currentFilters.end_date,
-  ].filter(Boolean).length;
+  ].filter(
+    (value) =>
+      value !== null &&
+      value !== undefined &&
+      String(value).trim() !== ""
+  ).length;
 
   /*
   |--------------------------------------------------------------------------
-  | FILTERED APARTMENTS
+  | Safe Arrays
   |--------------------------------------------------------------------------
   */
 
-  const filteredApartments = Array.isArray(apartments)
-    ? apartments.filter((apartment) => {
-      if (!currentFilters.property_id) {
-        return true;
-      }
+  const propertyOptions =
+    Array.isArray(properties)
+      ? properties.filter(
+          (item) =>
+            item &&
+            typeof item === "object"
+        )
+      : [];
 
-      return (
-        String(apartment.property_id) ===
-        String(currentFilters.property_id)
-      );
-    })
-    : [];
+  const apartmentOptions =
+    Array.isArray(apartments)
+      ? apartments.filter(
+          (item) =>
+            item &&
+            typeof item === "object"
+        )
+      : [];
+
+  const unitOptions =
+    Array.isArray(units)
+      ? units.filter(
+          (item) =>
+            item &&
+            typeof item === "object"
+        )
+      : [];
+
+  const tenantOptions =
+    Array.isArray(tenants)
+      ? tenants.filter(
+          (item) =>
+            item &&
+            typeof item === "object"
+        )
+      : [];
 
   /*
   |--------------------------------------------------------------------------
-  | FILTERED UNITS
+  | Filter Apartments
   |--------------------------------------------------------------------------
   */
 
-  const filteredUnits = Array.isArray(units)
-    ? units.filter((unit) => {
-      if (currentFilters.apartment_id) {
+  const filteredApartments =
+    apartmentOptions.filter(
+      (apartment) => {
+        if (
+          !currentFilters.property_id
+        ) {
+          return true;
+        }
+
         return (
-          String(unit.apartment_id) ===
-          String(currentFilters.apartment_id)
+          getApartmentPropertyId(
+            apartment
+          ) ===
+          String(
+            currentFilters.property_id
+          )
+        );
+      }
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Filter Units
+  |--------------------------------------------------------------------------
+  */
+
+  const filteredUnits =
+    unitOptions.filter((unit) => {
+      if (
+        currentFilters.apartment_id
+      ) {
+        return (
+          getUnitApartmentId(unit) ===
+          String(
+            currentFilters.apartment_id
+          )
         );
       }
 
-      if (currentFilters.property_id) {
+      if (
+        currentFilters.property_id
+      ) {
         return (
-          String(unit.property_id) ===
-          String(currentFilters.property_id)
+          getUnitPropertyId(unit) ===
+          String(
+            currentFilters.property_id
+          )
         );
       }
 
       return true;
-    })
-    : [];
+    });
 
   /*
   |--------------------------------------------------------------------------
-  | SAFE ARRAYS
+  | Current Selected Dependencies
   |--------------------------------------------------------------------------
+  |
+  | If the selected apartment/unit no longer exists after filtering,
+  | the select still displays its current value instead of unexpectedly
+  | changing state during render.
+  |
   */
 
-  const propertyOptions = Array.isArray(properties)
-    ? properties
-    : [];
+  const selectedApartment =
+    filteredApartments.find(
+      (apartment) =>
+        getApartmentId(apartment) ===
+        String(
+          currentFilters.apartment_id
+        )
+    );
 
-  const apartmentOptions = filteredApartments;
+  const selectedUnit =
+    filteredUnits.find(
+      (unit) =>
+        getUnitId(unit) ===
+        String(
+          currentFilters.unit_id
+        )
+    );
 
-  const unitOptions = filteredUnits;
-
-  const tenantOptions = Array.isArray(tenants)
-    ? tenants
-    : [];
+  /*
+  |--------------------------------------------------------------------------
+  | Render
+  |--------------------------------------------------------------------------
+  */
 
   return (
     <div
       className="
         mb-6
+        overflow-hidden
         rounded-xl
         border
         border-gray-200
@@ -261,6 +767,7 @@ const TenancyFilters = ({
               flex
               h-9
               w-9
+              shrink-0
               items-center
               justify-center
               rounded-lg
@@ -273,17 +780,41 @@ const TenancyFilters = ({
             <Filter size={18} />
           </div>
 
-          <div>
-            <h2
-              className="
-                text-sm
-                font-semibold
-                text-gray-900
-                dark:text-white
-              "
-            >
-              Filter Tenancies
-            </h2>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2
+                className="
+                  text-sm
+                  font-semibold
+                  text-gray-900
+                  dark:text-white
+                "
+              >
+                Filter Tenancies
+              </h2>
+
+              {activeFilterCount > 0 && (
+                <span
+                  className="
+                    inline-flex
+                    min-w-6
+                    items-center
+                    justify-center
+                    rounded-full
+                    bg-indigo-100
+                    px-2
+                    py-1
+                    text-xs
+                    font-semibold
+                    text-indigo-700
+                    dark:bg-indigo-950/60
+                    dark:text-indigo-300
+                  "
+                >
+                  {activeFilterCount}
+                </span>
+              )}
+            </div>
 
             <p
               className="
@@ -292,31 +823,10 @@ const TenancyFilters = ({
                 dark:text-gray-400
               "
             >
-              Search and filter tenancy records.
+              Search and filter tenancy
+              records.
             </p>
           </div>
-
-          {activeFilterCount > 0 && (
-            <span
-              className="
-                inline-flex
-                min-w-6
-                items-center
-                justify-center
-                rounded-full
-                bg-indigo-100
-                px-2
-                py-1
-                text-xs
-                font-semibold
-                text-indigo-700
-                dark:bg-indigo-950/60
-                dark:text-indigo-300
-              "
-            >
-              {activeFilterCount}
-            </span>
-          )}
         </div>
 
         {activeFilterCount > 0 && (
@@ -388,15 +898,21 @@ const TenancyFilters = ({
             <input
               id="tenancy-search"
               type="search"
-              value={currentFilters.search ?? ""}
+              value={
+                currentFilters.search
+              }
               onChange={(event) =>
                 handleChange(
                   "search",
                   event.target.value
                 )
               }
-              placeholder="Search tenancy number, tenant name, email, phone..."
+              placeholder="
+                Search tenancy number, tenant name,
+                email, phone...
+              "
               disabled={loading}
+              autoComplete="off"
               className="
                 h-11
                 w-full
@@ -428,7 +944,10 @@ const TenancyFilters = ({
               <button
                 type="button"
                 onClick={() =>
-                  handleChange("search", "")
+                  handleChange(
+                    "search",
+                    ""
+                  )
                 }
                 disabled={loading}
                 aria-label="Clear search"
@@ -440,6 +959,7 @@ const TenancyFilters = ({
                   text-gray-400
                   transition
                   hover:text-gray-700
+                  disabled:cursor-not-allowed
                   disabled:opacity-50
                   dark:hover:text-white
                 "
@@ -464,92 +984,223 @@ const TenancyFilters = ({
           "
         >
           {/* STATUS */}
+
           <FilterSelect
             label="Status"
-            value={currentFilters.status}
+            value={
+              currentFilters.status
+            }
             onChange={(value) =>
-              handleChange("status", value)
+              handleChange(
+                "status",
+                value
+              )
             }
             disabled={loading}
           >
-            <option value="">All statuses</option>
-            <option value="active">Active</option>
-            <option value="pending">Pending</option>
-            <option value="expired">Expired</option>
-            <option value="terminated">Terminated</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="inactive">Inactive</option>
+            <option value="">
+              All statuses
+            </option>
+
+            <option value="active">
+              Active
+            </option>
+
+            <option value="pending">
+              Pending
+            </option>
+
+            <option value="expired">
+              Expired
+            </option>
+
+            <option value="terminated">
+              Terminated
+            </option>
+
+            <option value="cancelled">
+              Cancelled
+            </option>
+
+            <option value="canceled">
+              Canceled
+            </option>
+
+            <option value="inactive">
+              Inactive
+            </option>
+
+            <option value="renewed">
+              Renewed
+            </option>
+
+            <option value="draft">
+              Draft
+            </option>
           </FilterSelect>
 
           {/* PROPERTY */}
+
           <FilterSelect
             label="Property"
-            value={currentFilters.property_id}
+            value={
+              currentFilters.property_id
+            }
             onChange={(value) =>
-              handleChange("property_id", value)
+              handleChange(
+                "property_id",
+                value
+              )
             }
             disabled={loading}
           >
-            <option value="">All properties</option>
+            <option value="">
+              All properties
+            </option>
 
-            {propertyOptions.map((property) => (
-              <option
-                key={property.id}
-                value={property.id}
-              >
-                {property.title ||
-                  property.name ||
-                  property.property_code ||
-                  `Property #${property.id}`}
-              </option>
-            ))}
+            {propertyOptions.map(
+              (property) => {
+                const id =
+                  getPropertyId(
+                    property
+                  );
+
+                if (!id) {
+                  return null;
+                }
+
+                return (
+                  <option
+                    key={id}
+                    value={id}
+                  >
+                    {getPropertyName(
+                      property
+                    )}
+                  </option>
+                );
+              }
+            )}
           </FilterSelect>
 
           {/* APARTMENT */}
+
           <FilterSelect
             label="Apartment"
-            value={currentFilters.apartment_id}
-            onChange={(value) =>
-              handleChange("apartment_id", value)
+            value={
+              currentFilters.apartment_id
             }
-            disabled={loading}
+            onChange={(value) =>
+              handleChange(
+                "apartment_id",
+                value
+              )
+            }
+            disabled={
+              loading ||
+              Boolean(
+                currentFilters.property_id
+              ) &&
+                filteredApartments.length ===
+                  0
+            }
           >
-            <option value="">All apartments</option>
+            <option value="">
+              All apartments
+            </option>
 
-            {apartmentOptions.map((apartment) => (
-              <option
-                key={apartment.id}
-                value={apartment.id}
-              >
-                {apartment.name ||
-                  apartment.full_name ||
-                  apartment.apartment_number ||
-                  `Apartment #${apartment.id}`}
-              </option>
-            ))}
+            {filteredApartments.map(
+              (apartment) => {
+                const id =
+                  getApartmentId(
+                    apartment
+                  );
+
+                if (!id) {
+                  return null;
+                }
+
+                return (
+                  <option
+                    key={id}
+                    value={id}
+                  >
+                    {getApartmentName(
+                      apartment
+                    )}
+                  </option>
+                );
+              }
+            )}
+
+            {currentFilters.apartment_id &&
+              !selectedApartment && (
+                <option
+                  value={
+                    currentFilters.apartment_id
+                  }
+                >
+                  Selected apartment
+                </option>
+              )}
           </FilterSelect>
 
           {/* UNIT */}
+
           <FilterSelect
             label="Unit"
-            value={currentFilters.unit_id}
-            onChange={(value) =>
-              handleChange("unit_id", value)
+            value={
+              currentFilters.unit_id
             }
-            disabled={loading}
+            onChange={(value) =>
+              handleChange(
+                "unit_id",
+                value
+              )
+            }
+            disabled={
+              loading ||
+              Boolean(
+                currentFilters.apartment_id ||
+                currentFilters.property_id
+              ) &&
+                filteredUnits.length === 0
+            }
           >
-            <option value="">All units</option>
+            <option value="">
+              All units
+            </option>
 
-            {unitOptions.map((unit) => (
-              <option
-                key={unit.id}
-                value={unit.id}
-              >
-                {unit.unit_number ||
-                  unit.name ||
-                  `Unit #${unit.id}`}
-              </option>
-            ))}
+            {filteredUnits.map(
+              (unit) => {
+                const id =
+                  getUnitId(unit);
+
+                if (!id) {
+                  return null;
+                }
+
+                return (
+                  <option
+                    key={id}
+                    value={id}
+                  >
+                    {getUnitName(unit)}
+                  </option>
+                );
+              }
+            )}
+
+            {currentFilters.unit_id &&
+              !selectedUnit && (
+                <option
+                  value={
+                    currentFilters.unit_id
+                  }
+                >
+                  Selected unit
+                </option>
+              )}
           </FilterSelect>
         </div>
 
@@ -570,7 +1221,10 @@ const TenancyFilters = ({
             <div className="mb-4 flex items-center gap-2">
               <SlidersHorizontal
                 size={16}
-                className="text-gray-500 dark:text-gray-400"
+                className="
+                  text-gray-500
+                  dark:text-gray-400
+                "
               />
 
               <h3
@@ -595,36 +1249,51 @@ const TenancyFilters = ({
               "
             >
               {/* TENANT */}
+
               <FilterSelect
                 label="Tenant"
-                value={currentFilters.tenant_id}
+                value={
+                  currentFilters.tenant_id
+                }
                 onChange={(value) =>
-                  handleChange("tenant_id", value)
+                  handleChange(
+                    "tenant_id",
+                    value
+                  )
                 }
                 disabled={loading}
               >
-                <option value="">All tenants</option>
+                <option value="">
+                  All tenants
+                </option>
 
-                {tenantOptions.map((tenant) => (
-                  <option
-                    key={tenant.id}
-                    value={tenant.id}
-                  >
-                    {tenant.full_name ||
-                      [
-                        tenant.first_name,
-                        tenant.last_name,
-                        tenant.other_names,
-                      ]
-                        .filter(Boolean)
-                        .join(" ") ||
-                      tenant.tenant_number ||
-                      `Tenant #${tenant.id}`}
-                  </option>
-                ))}
+                {tenantOptions.map(
+                  (tenant) => {
+                    const id =
+                      getTenantId(
+                        tenant
+                      );
+
+                    if (!id) {
+                      return null;
+                    }
+
+                    return (
+                      <option
+                        key={id}
+                        value={id}
+                      >
+                        {getTenantName(
+                          tenant
+                        )}
+                      </option>
+                    );
+                  }
+                )}
               </FilterSelect>
 
               {/* PAYMENT FREQUENCY */}
+
               <FilterSelect
                 label="Payment Frequency"
                 value={
@@ -660,9 +1329,12 @@ const TenancyFilters = ({
               </FilterSelect>
 
               {/* START DATE */}
+
               <DateFilter
                 label="Start Date"
-                value={currentFilters.start_date}
+                value={
+                  currentFilters.start_date
+                }
                 onChange={(value) =>
                   handleChange(
                     "start_date",
@@ -670,12 +1342,19 @@ const TenancyFilters = ({
                   )
                 }
                 disabled={loading}
+                max={
+                  currentFilters.end_date ||
+                  undefined
+                }
               />
 
               {/* END DATE */}
+
               <DateFilter
                 label="End Date"
-                value={currentFilters.end_date}
+                value={
+                  currentFilters.end_date
+                }
                 onChange={(value) =>
                   handleChange(
                     "end_date",
@@ -683,6 +1362,10 @@ const TenancyFilters = ({
                   )
                 }
                 disabled={loading}
+                min={
+                  currentFilters.start_date ||
+                  undefined
+                }
               />
             </div>
           </div>
@@ -711,11 +1394,17 @@ const TenancyFilters = ({
             "
           >
             {/* SORT BY */}
+
             <FilterSelect
               label="Sort By"
-              value={currentFilters.sort_by}
+              value={
+                currentFilters.sort_by
+              }
               onChange={(value) =>
-                handleChange("sort_by", value)
+                handleChange(
+                  "sort_by",
+                  value
+                )
               }
               disabled={loading}
             >
@@ -745,9 +1434,12 @@ const TenancyFilters = ({
             </FilterSelect>
 
             {/* SORT DIRECTION */}
+
             <FilterSelect
               label="Sort Direction"
-              value={currentFilters.sort_direction}
+              value={
+                currentFilters.sort_direction
+              }
               onChange={(value) =>
                 handleChange(
                   "sort_direction",
@@ -766,25 +1458,43 @@ const TenancyFilters = ({
             </FilterSelect>
 
             {/* PER PAGE */}
+
             <FilterSelect
               label="Per Page"
-              value={currentFilters.per_page}
+              value={
+                currentFilters.per_page
+              }
               onChange={(value) =>
                 handleChange(
                   "per_page",
-                  Number(value)
+                  value
                 )
               }
               disabled={loading}
             >
-              <option value={10}>10</option>
-              <option value={15}>15</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
+              <option value="10">
+                10
+              </option>
+
+              <option value="15">
+                15
+              </option>
+
+              <option value="25">
+                25
+              </option>
+
+              <option value="50">
+                50
+              </option>
+
+              <option value="100">
+                100
+              </option>
             </FilterSelect>
 
             {/* APPLY */}
+
             <div className="flex items-end">
               <button
                 type="button"
@@ -850,7 +1560,7 @@ const TenancyFilters = ({
 
 /*
 |--------------------------------------------------------------------------
-| FILTER SELECT
+| Filter Select
 |--------------------------------------------------------------------------
 */
 
@@ -863,7 +1573,8 @@ const FilterSelect = ({
 }) => {
   const id = `tenancy-filter-${label
     .toLowerCase()
-    .replace(/\s+/g, "-")}`;
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
 
   return (
     <div>
@@ -883,9 +1594,16 @@ const FilterSelect = ({
 
       <select
         id={id}
-        value={value ?? ""}
+        value={
+          value === null ||
+          value === undefined
+            ? ""
+            : String(value)
+        }
         onChange={(event) =>
-          onChange(event.target.value)
+          onChange(
+            event.target.value
+          )
         }
         disabled={disabled}
         className="
@@ -919,7 +1637,7 @@ const FilterSelect = ({
 
 /*
 |--------------------------------------------------------------------------
-| DATE FILTER
+| Date Filter
 |--------------------------------------------------------------------------
 */
 
@@ -928,10 +1646,13 @@ const DateFilter = ({
   value,
   onChange,
   disabled = false,
+  min,
+  max,
 }) => {
   const id = `tenancy-date-${label
     .toLowerCase()
-    .replace(/\s+/g, "-")}`;
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
 
   return (
     <div>
@@ -966,8 +1687,12 @@ const DateFilter = ({
           id={id}
           type="date"
           value={value ?? ""}
+          min={min}
+          max={max}
           onChange={(event) =>
-            onChange(event.target.value)
+            onChange(
+              event.target.value
+            )
           }
           disabled={disabled}
           className="

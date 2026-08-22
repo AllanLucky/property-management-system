@@ -2,23 +2,73 @@ import { useCallback, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 
 import {
+    /*
+    |--------------------------------------------------------------------------
+    | CRUD
+    |--------------------------------------------------------------------------
+    */
     fetchTenancies,
     fetchTenancy,
     createTenancy,
     updateTenancy,
+    patchTenancy,
     deleteTenancy,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    */
+    searchTenancies,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Restore / Force Delete
+    |--------------------------------------------------------------------------
+    */
     restoreTenancy,
     forceDeleteTenancy,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Status Management
+    |--------------------------------------------------------------------------
+    */
     activateTenancy,
     deactivateTenancy,
     renewTenancy,
+    terminateTenancy,
+    cancelTenancy,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Unit Assignment
+    |--------------------------------------------------------------------------
+    */
     assignUnit,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Statistics
+    |--------------------------------------------------------------------------
+    */
     fetchTenancyStatistics,
+
+    /*
+    |--------------------------------------------------------------------------
+    | State Management
+    |--------------------------------------------------------------------------
+    */
     clearTenancyError,
     setTenancyFilters,
 } from "../store/tenancySlice";
 
 import {
+    /*
+    |--------------------------------------------------------------------------
+    | Selectors
+    |--------------------------------------------------------------------------
+    */
     selectTenancies,
     selectTenancy,
     selectTenancyPagination,
@@ -35,18 +85,22 @@ import {
 |
 | Centralized React hook for tenancy management.
 |
-| This hook provides:
+| Provides:
 |
 | - Tenancy listing
 | - Tenancy details
+| - Search
 | - Create
 | - Update
+| - Patch
 | - Delete
 | - Restore
 | - Force delete
 | - Activate
 | - Deactivate
 | - Renew
+| - Terminate
+| - Cancel
 | - Unit assignment
 | - Statistics
 | - Filters
@@ -63,9 +117,13 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
-    const tenancies = useSelector(selectTenancies);
+    const tenancies = useSelector(
+        selectTenancies
+    );
 
-    const tenancy = useSelector(selectTenancy);
+    const tenancy = useSelector(
+        selectTenancy
+    );
 
     const pagination = useSelector(
         selectTenancyPagination
@@ -122,9 +180,8 @@ const useTenancy = () => {
     /**
      * Number of currently loaded tenancies.
      *
-     * NOTE:
-     * This is the number of records currently loaded in Redux,
-     * not necessarily the total number of records in the database.
+     * This is the number currently stored in Redux,
+     * not necessarily the database total.
      */
     const tenancyCount = useMemo(
         () =>
@@ -136,6 +193,41 @@ const useTenancy = () => {
 
     /*
     |--------------------------------------------------------------------------
+    | Internal Validation Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    const validateId = useCallback((id) => {
+        if (
+            id === undefined ||
+            id === null ||
+            id === ""
+        ) {
+            return new Error(
+                "Tenancy ID is required."
+            );
+        }
+
+        return null;
+    }, []);
+
+    const validateObject = useCallback(
+        (data, message) => {
+            if (
+                !data ||
+                typeof data !== "object" ||
+                Array.isArray(data)
+            ) {
+                return new Error(message);
+            }
+
+            return null;
+        },
+        []
+    );
+
+    /*
+    |--------------------------------------------------------------------------
     | Fetch Tenancies
     |--------------------------------------------------------------------------
     */
@@ -143,7 +235,16 @@ const useTenancy = () => {
     /**
      * Fetch paginated tenancies.
      *
-     * Merges current Redux filters with optional parameters.
+     * Current Redux filters are merged with
+     * optional parameters.
+     *
+     * Example:
+     *
+     * getTenancies({
+     *     page: 1,
+     *     search: "John",
+     *     status: "active"
+     * });
      */
     const getTenancies = useCallback(
         (params = {}) => {
@@ -164,24 +265,45 @@ const useTenancy = () => {
     */
 
     /**
-     * Fetch a single tenancy.
+     * Fetch one tenancy.
      */
     const getTenancy = useCallback(
         (id) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const validationError =
+                validateId(id);
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    validationError
                 );
             }
 
             return dispatch(
                 fetchTenancy(id)
+            );
+        },
+        [dispatch, validateId]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Search tenancies.
+     *
+     * This uses the Redux searchTenancies thunk
+     * when available.
+     */
+    const search = useCallback(
+        (searchTerm = "", params = {}) => {
+            return dispatch(
+                searchTenancies({
+                    search: searchTerm,
+                    ...params,
+                })
             );
         },
         [dispatch]
@@ -198,15 +320,15 @@ const useTenancy = () => {
      */
     const addTenancy = useCallback(
         (data) => {
-            if (
-                !data ||
-                typeof data !== "object" ||
-                Array.isArray(data)
-            ) {
+            const validationError =
+                validateObject(
+                    data,
+                    "Tenancy data is required."
+                );
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy data is required."
-                    )
+                    validationError
                 );
             }
 
@@ -214,7 +336,7 @@ const useTenancy = () => {
                 createTenancy(data)
             );
         },
-        [dispatch]
+        [dispatch, validateObject]
     );
 
     /*
@@ -228,27 +350,24 @@ const useTenancy = () => {
      */
     const editTenancy = useCallback(
         (id, data) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const idError =
+                validateId(id);
+
+            if (idError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    idError
                 );
             }
 
-            if (
-                !data ||
-                typeof data !== "object" ||
-                Array.isArray(data)
-            ) {
+            const dataError =
+                validateObject(
+                    data,
+                    "Tenancy data is required."
+                );
+
+            if (dataError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy data is required."
-                    )
+                    dataError
                 );
             }
 
@@ -259,7 +378,57 @@ const useTenancy = () => {
                 })
             );
         },
-        [dispatch]
+        [
+            dispatch,
+            validateId,
+            validateObject,
+        ]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | PATCH
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Partially update an existing tenancy.
+     */
+    const patch = useCallback(
+        (id, data) => {
+            const idError =
+                validateId(id);
+
+            if (idError) {
+                return Promise.reject(
+                    idError
+                );
+            }
+
+            const dataError =
+                validateObject(
+                    data,
+                    "Tenancy data is required."
+                );
+
+            if (dataError) {
+                return Promise.reject(
+                    dataError
+                );
+            }
+
+            return dispatch(
+                patchTenancy({
+                    id,
+                    data,
+                })
+            );
+        },
+        [
+            dispatch,
+            validateId,
+            validateObject,
+        ]
     );
 
     /*
@@ -269,19 +438,16 @@ const useTenancy = () => {
     */
 
     /**
-     * Soft delete a tenancy.
+     * Soft delete tenancy.
      */
     const removeTenancy = useCallback(
         (id) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const validationError =
+                validateId(id);
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    validationError
                 );
             }
 
@@ -289,7 +455,7 @@ const useTenancy = () => {
                 deleteTenancy(id)
             );
         },
-        [dispatch]
+        [dispatch, validateId]
     );
 
     /*
@@ -303,15 +469,12 @@ const useTenancy = () => {
      */
     const restore = useCallback(
         (id) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const validationError =
+                validateId(id);
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    validationError
                 );
             }
 
@@ -319,7 +482,7 @@ const useTenancy = () => {
                 restoreTenancy(id)
             );
         },
-        [dispatch]
+        [dispatch, validateId]
     );
 
     /*
@@ -329,19 +492,16 @@ const useTenancy = () => {
     */
 
     /**
-     * Permanently delete a tenancy.
+     * Permanently delete tenancy.
      */
     const forceDelete = useCallback(
         (id) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const validationError =
+                validateId(id);
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    validationError
                 );
             }
 
@@ -349,7 +509,7 @@ const useTenancy = () => {
                 forceDeleteTenancy(id)
             );
         },
-        [dispatch]
+        [dispatch, validateId]
     );
 
     /*
@@ -359,19 +519,16 @@ const useTenancy = () => {
     */
 
     /**
-     * Activate a tenancy.
+     * Activate tenancy.
      */
     const activate = useCallback(
         (id) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const validationError =
+                validateId(id);
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    validationError
                 );
             }
 
@@ -379,7 +536,7 @@ const useTenancy = () => {
                 activateTenancy(id)
             );
         },
-        [dispatch]
+        [dispatch, validateId]
     );
 
     /*
@@ -389,19 +546,16 @@ const useTenancy = () => {
     */
 
     /**
-     * Deactivate a tenancy.
+     * Deactivate tenancy.
      */
     const deactivate = useCallback(
         (id) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const validationError =
+                validateId(id);
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    validationError
                 );
             }
 
@@ -409,7 +563,7 @@ const useTenancy = () => {
                 deactivateTenancy(id)
             );
         },
-        [dispatch]
+        [dispatch, validateId]
     );
 
     /*
@@ -419,37 +573,34 @@ const useTenancy = () => {
     */
 
     /**
-     * Renew an existing tenancy.
+     * Renew tenancy.
      *
-     * Expected data:
+     * Example:
      *
-     * {
-     *     end_date: "YYYY-MM-DD"
-     * }
+     * renew(id, {
+     *     end_date: "2027-03-18"
+     * });
      */
     const renew = useCallback(
         (id, data) => {
-            if (
-                id === undefined ||
-                id === null ||
-                id === ""
-            ) {
+            const idError =
+                validateId(id);
+
+            if (idError) {
                 return Promise.reject(
-                    new Error(
-                        "Tenancy ID is required."
-                    )
+                    idError
                 );
             }
 
-            if (
-                !data ||
-                typeof data !== "object" ||
-                Array.isArray(data)
-            ) {
+            const dataError =
+                validateObject(
+                    data,
+                    "Renewal data is required."
+                );
+
+            if (dataError) {
                 return Promise.reject(
-                    new Error(
-                        "Renewal data is required."
-                    )
+                    dataError
                 );
             }
 
@@ -460,7 +611,110 @@ const useTenancy = () => {
                 })
             );
         },
-        [dispatch]
+        [
+            dispatch,
+            validateId,
+            validateObject,
+        ]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | TERMINATE
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Terminate tenancy.
+     *
+     * Example:
+     *
+     * terminate(id, {
+     *     termination_date: "2026-08-22",
+     *     reason: "Tenant moved out"
+     * });
+     */
+    const terminate = useCallback(
+        (id, data = {}) => {
+            const idError =
+                validateId(id);
+
+            if (idError) {
+                return Promise.reject(
+                    idError
+                );
+            }
+
+            const dataError =
+                validateObject(
+                    data,
+                    "Termination data is required."
+                );
+
+            if (dataError) {
+                return Promise.reject(
+                    dataError
+                );
+            }
+
+            return dispatch(
+                terminateTenancy({
+                    id,
+                    data,
+                })
+            );
+        },
+        [
+            dispatch,
+            validateId,
+            validateObject,
+        ]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | CANCEL
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Cancel tenancy.
+     */
+    const cancel = useCallback(
+        (id, data = {}) => {
+            const idError =
+                validateId(id);
+
+            if (idError) {
+                return Promise.reject(
+                    idError
+                );
+            }
+
+            const dataError =
+                validateObject(
+                    data,
+                    "Cancellation data is required."
+                );
+
+            if (dataError) {
+                return Promise.reject(
+                    dataError
+                );
+            }
+
+            return dispatch(
+                cancelTenancy({
+                    id,
+                    data,
+                })
+            );
+        },
+        [
+            dispatch,
+            validateId,
+            validateObject,
+        ]
     );
 
     /*
@@ -472,28 +726,28 @@ const useTenancy = () => {
     /**
      * Assign a unit to a tenant.
      *
-     * Expected data:
+     * Example:
      *
-     * {
-     *     tenant_id,
-     *     unit_id,
-     *     start_date,
-     *     end_date,
-     *     rent_amount,
-     *     deposit_amount
-     * }
+     * assign({
+     *     tenant_id: 2,
+     *     unit_id: 344,
+     *     start_date: "2026-08-22",
+     *     end_date: "2027-08-22",
+     *     rent_amount: 25000,
+     *     deposit_amount: 50000
+     * });
      */
     const assign = useCallback(
         (data) => {
-            if (
-                !data ||
-                typeof data !== "object" ||
-                Array.isArray(data)
-            ) {
+            const validationError =
+                validateObject(
+                    data,
+                    "Assignment data is required."
+                );
+
+            if (validationError) {
                 return Promise.reject(
-                    new Error(
-                        "Assignment data is required."
-                    )
+                    validationError
                 );
             }
 
@@ -501,7 +755,7 @@ const useTenancy = () => {
                 assignUnit(data)
             );
         },
-        [dispatch]
+        [dispatch, validateObject]
     );
 
     /*
@@ -530,6 +784,13 @@ const useTenancy = () => {
 
     /**
      * Update tenancy filters.
+     *
+     * Example:
+     *
+     * updateFilters({
+     *     search: "John",
+     *     status: "active"
+     * });
      */
     const updateFilters = useCallback(
         (newFilters) => {
@@ -545,6 +806,32 @@ const useTenancy = () => {
                 setTenancyFilters(
                     newFilters
                 )
+            );
+        },
+        [dispatch]
+    );
+
+    /**
+     * Clear all tenancy filters.
+     */
+    const clearFilters = useCallback(
+        () => {
+            dispatch(
+                setTenancyFilters({
+                    search: "",
+                    status: "",
+                    property_id: "",
+                    apartment_id: "",
+                    unit_id: "",
+                    tenant_id: "",
+                    payment_frequency: "",
+                    start_date: "",
+                    end_date: "",
+                    page: 1,
+                    per_page: 10,
+                    sort_by: "",
+                    sort_order: "",
+                })
             );
         },
         [dispatch]
@@ -601,7 +888,7 @@ const useTenancy = () => {
 
         /*
         |----------------------------------------------------------------------
-        | Derived
+        | Derived State
         |----------------------------------------------------------------------
         */
 
@@ -618,7 +905,16 @@ const useTenancy = () => {
         getTenancy,
         addTenancy,
         editTenancy,
+        patch,
         removeTenancy,
+
+        /*
+        |----------------------------------------------------------------------
+        | Search
+        |----------------------------------------------------------------------
+        */
+
+        search,
 
         /*
         |----------------------------------------------------------------------
@@ -631,13 +927,15 @@ const useTenancy = () => {
 
         /*
         |----------------------------------------------------------------------
-        | Status
+        | Status Management
         |----------------------------------------------------------------------
         */
 
         activate,
         deactivate,
         renew,
+        terminate,
+        cancel,
 
         /*
         |----------------------------------------------------------------------
@@ -657,11 +955,19 @@ const useTenancy = () => {
 
         /*
         |----------------------------------------------------------------------
-        | Filters / Errors
+        | Filters
         |----------------------------------------------------------------------
         */
 
         updateFilters,
+        clearFilters,
+
+        /*
+        |----------------------------------------------------------------------
+        | Error
+        |----------------------------------------------------------------------
+        */
+
         clearError,
     };
 };
