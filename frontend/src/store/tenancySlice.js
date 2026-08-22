@@ -1,7 +1,63 @@
 // frontend/src/store/tenancySlice.js
 
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
-import tenancyService from "../services/tenancy.service"
+import tenancyService from "../services/tenancy.service";
+
+/*
+|--------------------------------------------------------------------------
+| Stable Default References
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| Do not use [] or {} directly inside selectors.
+|
+| Example of what NOT to do:
+|
+| state.tenancy?.tenancies || []
+|
+| The [] creates a new reference every time the selector runs.
+|
+*/
+
+const EMPTY_ARRAY = [];
+const EMPTY_OBJECT = {};
+
+/*
+|--------------------------------------------------------------------------
+| Default Filters
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_FILTERS = {
+  search: "",
+  status: "",
+  property_id: "",
+  apartment_id: "",
+  unit_id: "",
+  tenant_id: "",
+  payment_frequency: "",
+  start_date: "",
+  end_date: "",
+  sort_by: "",
+  sort_order: "",
+  page: 1,
+  per_page: 15,
+};
+
+/*
+|--------------------------------------------------------------------------
+| Default Pagination
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_PAGINATION = {
+  current_page: 1,
+  last_page: 1,
+  per_page: 15,
+  total: 0,
+  from: 0,
+  to: 0,
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -14,26 +70,11 @@ const initialState = {
   tenancy: null,
 
   pagination: {
-    current_page: 1,
-    last_page: 1,
-    per_page: 15,
-    total: 0,
-    from: 0,
-    to: 0,
+    ...DEFAULT_PAGINATION,
   },
 
   filters: {
-    search: "",
-    status: "",
-    property_id: "",
-    apartment_id: "",
-    unit_id: "",
-    tenant_id: "",
-    payment_frequency: "",
-    sort_by: "",
-    sort_direction: "",
-    page: 1,
-    per_page: 15,
+    ...DEFAULT_FILTERS,
   },
 
   statistics: null,
@@ -47,6 +88,7 @@ const initialState = {
   actionLoading: false,
 
   error: null,
+  errorDetails: null,
 
   success: null,
 };
@@ -58,7 +100,7 @@ const initialState = {
 */
 
 /**
- * Extract a clean error message from Axios/Laravel errors.
+ * Extract a useful error message from Axios/Laravel errors.
  */
 const getErrorMessage = (
   error,
@@ -74,13 +116,10 @@ const getErrorMessage = (
 };
 
 /**
- * Extract validation errors.
+ * Extract Laravel validation errors.
  */
 const getValidationErrors = (error) => {
-  return (
-    error?.response?.data?.errors ||
-    {}
-  );
+  return error?.response?.data?.errors || EMPTY_OBJECT;
 };
 
 /**
@@ -95,63 +134,171 @@ const getResponseData = (response) => {
 };
 
 /**
- * Extract pagination from Laravel API response.
+ * Extract tenancy array from supported response shapes.
  */
-const getPagination = (response) => {
-  const data = response?.data;
+const extractTenancies = (response) => {
+  if (!response) {
+    return EMPTY_ARRAY;
+  }
 
   /*
-   * Supports:
+   * Normal Laravel API:
    *
    * {
-   *   data: [...],
-   *   meta: {...}
+   *   status: true,
+   *   data: [...]
    * }
-   *
-   * and:
+   */
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  /*
+   * Nested pagination:
    *
    * {
    *   data: {
-   *      data: [...],
-   *      meta: {...}
+   *     data: [...]
    *   }
    * }
    */
+  if (Array.isArray(response?.data?.data)) {
+    return response.data.data;
+  }
 
+  /*
+   * Direct array.
+   */
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  /*
+   * Nested items.
+   */
+  if (Array.isArray(response?.data?.items)) {
+    return response.data.items;
+  }
+
+  if (Array.isArray(response?.items)) {
+    return response.items;
+  }
+
+  return EMPTY_ARRAY;
+};
+
+/**
+ * Extract pagination information.
+ */
+const extractPagination = (response, currentState) => {
   const meta =
     response?.meta ||
-    data?.meta ||
+    response?.data?.meta ||
     null;
 
-  if (!meta) {
+  const data =
+    response?.data &&
+      typeof response.data === "object" &&
+      !Array.isArray(response.data)
+      ? response.data
+      : {};
+
+  const currentPage =
+    meta?.current_page ??
+    data?.current_page ??
+    response?.current_page ??
+    currentState?.current_page ??
+    1;
+
+  const lastPage =
+    meta?.last_page ??
+    data?.last_page ??
+    response?.last_page ??
+    currentState?.last_page ??
+    1;
+
+  const perPage =
+    meta?.per_page ??
+    data?.per_page ??
+    response?.per_page ??
+    currentState?.per_page ??
+    15;
+
+  const total =
+    meta?.total ??
+    data?.total ??
+    response?.total ??
+    currentState?.total ??
+    0;
+
+  const from =
+    meta?.from ??
+    data?.from ??
+    response?.from ??
+    0;
+
+  const to =
+    meta?.to ??
+    data?.to ??
+    response?.to ??
+    0;
+
+  return {
+    current_page: Number(currentPage) || 1,
+    last_page: Number(lastPage) || 1,
+    per_page: Number(perPage) || 15,
+    total: Number(total) || 0,
+    from: Number(from) || 0,
+    to: Number(to) || 0,
+  };
+};
+
+/**
+ * Safely replace or update a tenancy in the list.
+ */
+const updateTenancyInList = (state, tenancy) => {
+  if (!tenancy?.id) {
+    return;
+  }
+
+  const index = state.tenancies.findIndex(
+    (item) =>
+      Number(item?.id) === Number(tenancy.id)
+  );
+
+  if (index !== -1) {
+    state.tenancies[index] = tenancy;
+  } else {
+    state.tenancies.unshift(tenancy);
+  }
+};
+
+/**
+ * Remove tenancy from list.
+ */
+const removeTenancyFromList = (
+  state,
+  tenancyId
+) => {
+  state.tenancies = state.tenancies.filter(
+    (item) =>
+      Number(item?.id) !== Number(tenancyId)
+  );
+};
+
+/**
+ * Convert a value to a safe ID.
+ */
+const normalizeId = (id) => {
+  if (
+    id === undefined ||
+    id === null ||
+    id === ""
+  ) {
     return null;
   }
 
-  return {
-    current_page:
-      meta.current_page ??
-      1,
-
-    last_page:
-      meta.last_page ??
-      1,
-
-    per_page:
-      meta.per_page ??
-      15,
-
-    total:
-      meta.total ??
-      0,
-
-    from:
-      meta.from ??
-      0,
-
-    to:
-      meta.to ??
-      0,
-  };
+  return id;
 };
 
 /*
@@ -223,9 +370,19 @@ export const searchTenancies = createAsyncThunk(
 export const fetchTenancy = createAsyncThunk(
   "tenancy/fetchTenancy",
   async (id, { rejectWithValue }) => {
+    const tenancyId = normalizeId(id);
+
+    if (!tenancyId) {
+      return rejectWithValue({
+        message: "Tenancy ID is required.",
+        errors: EMPTY_OBJECT,
+        status: 422,
+      });
+    }
+
     try {
       const response =
-        await tenancyService.getTenancy(id);
+        await tenancyService.getTenancy(tenancyId);
 
       return response;
     } catch (error) {
@@ -282,18 +439,22 @@ export const createTenancy = createAsyncThunk(
 
 export const updateTenancy = createAsyncThunk(
   "tenancy/updateTenancy",
-  async (
-    { id, data },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenancyService.updateTenancy(
-          id,
-          data
-        );
+  async ({ id, data }, { rejectWithValue }) => {
+    const tenancyId = normalizeId(id);
 
-      return response;
+    if (!tenancyId) {
+      return rejectWithValue({
+        message: "Tenancy ID is required.",
+        errors: EMPTY_OBJECT,
+        status: 422,
+      });
+    }
+
+    try {
+      return await tenancyService.updateTenancy(
+        tenancyId,
+        data
+      );
     } catch (error) {
       return rejectWithValue({
         message: getErrorMessage(
@@ -318,18 +479,22 @@ export const updateTenancy = createAsyncThunk(
 
 export const patchTenancy = createAsyncThunk(
   "tenancy/patchTenancy",
-  async (
-    { id, data },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenancyService.patchTenancy(
-          id,
-          data
-        );
+  async ({ id, data }, { rejectWithValue }) => {
+    const tenancyId = normalizeId(id);
 
-      return response;
+    if (!tenancyId) {
+      return rejectWithValue({
+        message: "Tenancy ID is required.",
+        errors: EMPTY_OBJECT,
+        status: 422,
+      });
+    }
+
+    try {
+      return await tenancyService.patchTenancy(
+        tenancyId,
+        data
+      );
     } catch (error) {
       return rejectWithValue({
         message: getErrorMessage(
@@ -350,42 +515,44 @@ export const patchTenancy = createAsyncThunk(
 |--------------------------------------------------------------------------
 | DELETE TENANCY
 |--------------------------------------------------------------------------
-|
-| Soft delete.
-|
-| If the tenancy does not exist:
-|
-| HTTP 404
-| "Tenancy not found."
-|
 */
 
 export const deleteTenancy = createAsyncThunk(
   "tenancy/deleteTenancy",
   async (id, { rejectWithValue }) => {
+    const tenancyId = normalizeId(id);
+
+    if (!tenancyId) {
+      return rejectWithValue({
+        id,
+        message: "Tenancy ID is required.",
+        errors: EMPTY_OBJECT,
+        status: 422,
+      });
+    }
+
     try {
       const response =
-        await tenancyService.deleteTenancy(id);
+        await tenancyService.deleteTenancy(
+          tenancyId
+        );
 
       return {
-        id,
+        id: tenancyId,
         response,
       };
     } catch (error) {
       return rejectWithValue({
-        id,
-
-        message:
-          tenancyService.getErrorMessage(error) ||
-          `Tenancy ${id} was not found.`,
-
-        errors:
-          getValidationErrors(error),
-
+        id: tenancyId,
+        message: getErrorMessage(
+          error,
+          "Failed to delete tenancy."
+        ),
+        errors: getValidationErrors(error),
         status:
-          error?.status ||
           error?.response?.status ||
-          404,
+          error?.status ||
+          null,
       });
     }
   }
@@ -400,26 +567,32 @@ export const deleteTenancy = createAsyncThunk(
 export const restoreTenancy = createAsyncThunk(
   "tenancy/restoreTenancy",
   async (id, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenancyService.restoreTenancy(id);
+    const tenancyId = normalizeId(id);
 
-      return response;
-    } catch (error) {
+    if (!tenancyId) {
       return rejectWithValue({
         id,
+        message: "Tenancy ID is required.",
+        errors: EMPTY_OBJECT,
+        status: 422,
+      });
+    }
 
+    try {
+      return await tenancyService.restoreTenancy(
+        tenancyId
+      );
+    } catch (error) {
+      return rejectWithValue({
+        id: tenancyId,
         message: getErrorMessage(
           error,
-          "Tenancy not found."
+          "Failed to restore tenancy."
         ),
-
-        errors:
-          getValidationErrors(error),
-
+        errors: getValidationErrors(error),
         status:
-          error?.status ||
           error?.response?.status ||
+          error?.status ||
           null,
       });
     }
@@ -432,37 +605,47 @@ export const restoreTenancy = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const forceDeleteTenancy = createAsyncThunk(
-  "tenancy/forceDeleteTenancy",
-  async (id, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenancyService.forceDeleteTenancy(id);
+export const forceDeleteTenancy =
+  createAsyncThunk(
+    "tenancy/forceDeleteTenancy",
+    async (id, { rejectWithValue }) => {
+      const tenancyId = normalizeId(id);
 
-      return {
-        id,
-        response,
-      };
-    } catch (error) {
-      return rejectWithValue({
-        id,
+      if (!tenancyId) {
+        return rejectWithValue({
+          id,
+          message: "Tenancy ID is required.",
+          errors: EMPTY_OBJECT,
+          status: 422,
+        });
+      }
 
-        message: getErrorMessage(
-          error,
-          "Tenancy not found."
-        ),
+      try {
+        const response =
+          await tenancyService.forceDeleteTenancy(
+            tenancyId
+          );
 
-        errors:
-          getValidationErrors(error),
-
-        status:
-          error?.status ||
-          error?.response?.status ||
-          null,
-      });
+        return {
+          id: tenancyId,
+          response,
+        };
+      } catch (error) {
+        return rejectWithValue({
+          id: tenancyId,
+          message: getErrorMessage(
+            error,
+            "Failed to permanently delete tenancy."
+          ),
+          errors: getValidationErrors(error),
+          status:
+            error?.response?.status ||
+            error?.status ||
+            null,
+        });
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -470,29 +653,39 @@ export const forceDeleteTenancy = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const activateTenancy = createAsyncThunk(
-  "tenancy/activateTenancy",
-  async (id, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenancyService.activateTenancy(id);
+export const activateTenancy =
+  createAsyncThunk(
+    "tenancy/activateTenancy",
+    async (id, { rejectWithValue }) => {
+      const tenancyId = normalizeId(id);
 
-      return response;
-    } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(
-          error,
-          "Failed to activate tenancy."
-        ),
-        errors: getValidationErrors(error),
-        status:
-          error?.response?.status ||
-          error?.status ||
-          null,
-      });
+      if (!tenancyId) {
+        return rejectWithValue({
+          message: "Tenancy ID is required.",
+          errors: EMPTY_OBJECT,
+          status: 422,
+        });
+      }
+
+      try {
+        return await tenancyService.activateTenancy(
+          tenancyId
+        );
+      } catch (error) {
+        return rejectWithValue({
+          message: getErrorMessage(
+            error,
+            "Failed to activate tenancy."
+          ),
+          errors: getValidationErrors(error),
+          status:
+            error?.response?.status ||
+            error?.status ||
+            null,
+        });
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -500,29 +693,39 @@ export const activateTenancy = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const deactivateTenancy = createAsyncThunk(
-  "tenancy/deactivateTenancy",
-  async (id, { rejectWithValue }) => {
-    try {
-      const response =
-        await tenancyService.deactivateTenancy(id);
+export const deactivateTenancy =
+  createAsyncThunk(
+    "tenancy/deactivateTenancy",
+    async (id, { rejectWithValue }) => {
+      const tenancyId = normalizeId(id);
 
-      return response;
-    } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(
-          error,
-          "Failed to deactivate tenancy."
-        ),
-        errors: getValidationErrors(error),
-        status:
-          error?.response?.status ||
-          error?.status ||
-          null,
-      });
+      if (!tenancyId) {
+        return rejectWithValue({
+          message: "Tenancy ID is required.",
+          errors: EMPTY_OBJECT,
+          status: 422,
+        });
+      }
+
+      try {
+        return await tenancyService.deactivateTenancy(
+          tenancyId
+        );
+      } catch (error) {
+        return rejectWithValue({
+          message: getErrorMessage(
+            error,
+            "Failed to deactivate tenancy."
+          ),
+          errors: getValidationErrors(error),
+          status:
+            error?.response?.status ||
+            error?.status ||
+            null,
+        });
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -532,18 +735,22 @@ export const deactivateTenancy = createAsyncThunk(
 
 export const renewTenancy = createAsyncThunk(
   "tenancy/renewTenancy",
-  async (
-    { id, data },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenancyService.renewTenancy(
-          id,
-          data
-        );
+  async ({ id, data }, { rejectWithValue }) => {
+    const tenancyId = normalizeId(id);
 
-      return response;
+    if (!tenancyId) {
+      return rejectWithValue({
+        message: "Tenancy ID is required.",
+        errors: EMPTY_OBJECT,
+        status: 422,
+      });
+    }
+
+    try {
+      return await tenancyService.renewTenancy(
+        tenancyId,
+        data
+      );
     } catch (error) {
       return rejectWithValue({
         message: getErrorMessage(
@@ -566,35 +773,43 @@ export const renewTenancy = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const terminateTenancy = createAsyncThunk(
-  "tenancy/terminateTenancy",
-  async (
-    { id, data = {} },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenancyService.terminateTenancy(
-          id,
+export const terminateTenancy =
+  createAsyncThunk(
+    "tenancy/terminateTenancy",
+    async (
+      { id, data = {} },
+      { rejectWithValue }
+    ) => {
+      const tenancyId = normalizeId(id);
+
+      if (!tenancyId) {
+        return rejectWithValue({
+          message: "Tenancy ID is required.",
+          errors: EMPTY_OBJECT,
+          status: 422,
+        });
+      }
+
+      try {
+        return await tenancyService.terminateTenancy(
+          tenancyId,
           data
         );
-
-      return response;
-    } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(
-          error,
-          "Failed to terminate tenancy."
-        ),
-        errors: getValidationErrors(error),
-        status:
-          error?.response?.status ||
-          error?.status ||
-          null,
-      });
+      } catch (error) {
+        return rejectWithValue({
+          message: getErrorMessage(
+            error,
+            "Failed to terminate tenancy."
+          ),
+          errors: getValidationErrors(error),
+          status:
+            error?.response?.status ||
+            error?.status ||
+            null,
+        });
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -602,35 +817,43 @@ export const terminateTenancy = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const cancelTenancy = createAsyncThunk(
-  "tenancy/cancelTenancy",
-  async (
-    { id, data = {} },
-    { rejectWithValue }
-  ) => {
-    try {
-      const response =
-        await tenancyService.cancelTenancy(
-          id,
+export const cancelTenancy =
+  createAsyncThunk(
+    "tenancy/cancelTenancy",
+    async (
+      { id, data = {} },
+      { rejectWithValue }
+    ) => {
+      const tenancyId = normalizeId(id);
+
+      if (!tenancyId) {
+        return rejectWithValue({
+          message: "Tenancy ID is required.",
+          errors: EMPTY_OBJECT,
+          status: 422,
+        });
+      }
+
+      try {
+        return await tenancyService.cancelTenancy(
+          tenancyId,
           data
         );
-
-      return response;
-    } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(
-          error,
-          "Failed to cancel tenancy."
-        ),
-        errors: getValidationErrors(error),
-        status:
-          error?.response?.status ||
-          error?.status ||
-          null,
-      });
+      } catch (error) {
+        return rejectWithValue({
+          message: getErrorMessage(
+            error,
+            "Failed to cancel tenancy."
+          ),
+          errors: getValidationErrors(error),
+          status:
+            error?.response?.status ||
+            error?.status ||
+            null,
+        });
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -642,10 +865,7 @@ export const assignUnit = createAsyncThunk(
   "tenancy/assignUnit",
   async (data, { rejectWithValue }) => {
     try {
-      const response =
-        await tenancyService.assignUnit(data);
-
-      return response;
+      return await tenancyService.assignUnit(data);
     } catch (error) {
       return rejectWithValue({
         message: getErrorMessage(
@@ -673,10 +893,7 @@ export const fetchTenancyStatistics =
     "tenancy/fetchTenancyStatistics",
     async (_, { rejectWithValue }) => {
       try {
-        const response =
-          await tenancyService.getStatistics();
-
-        return response;
+        return await tenancyService.getStatistics();
       } catch (error) {
         return rejectWithValue({
           message: getErrorMessage(
@@ -712,19 +929,18 @@ const tenancySlice = createSlice({
     */
 
     setTenancyFilters: (state, action) => {
+      const payload = action.payload || {};
+
       state.filters = {
         ...state.filters,
-        ...(action.payload || {}),
+        ...payload,
       };
 
       /*
-       * Reset page when filters change unless
-       * the caller explicitly provides a page.
+       * Reset to page 1 when filters change,
+       * unless a page was explicitly supplied.
        */
-      if (
-        action.payload &&
-        action.payload.page === undefined
-      ) {
+      if (payload.page === undefined) {
         state.filters.page = 1;
       }
     },
@@ -737,17 +953,7 @@ const tenancySlice = createSlice({
 
     clearTenancyFilters: (state) => {
       state.filters = {
-        search: "",
-        status: "",
-        property_id: "",
-        apartment_id: "",
-        unit_id: "",
-        tenant_id: "",
-        payment_frequency: "",
-        sort_by: "",
-        sort_direction: "",
-        page: 1,
-        per_page: 15,
+        ...DEFAULT_FILTERS,
       };
     },
 
@@ -759,6 +965,7 @@ const tenancySlice = createSlice({
 
     clearTenancyError: (state) => {
       state.error = null;
+      state.errorDetails = null;
     },
 
     /*
@@ -783,13 +990,21 @@ const tenancySlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Clear Everything
+    | Reset State
     |--------------------------------------------------------------------------
     */
 
-    resetTenancyState: () => {
-      return initialState;
-    },
+    resetTenancyState: () => ({
+      ...initialState,
+
+      filters: {
+        ...DEFAULT_FILTERS,
+      },
+
+      pagination: {
+        ...DEFAULT_PAGINATION,
+      },
+    }),
   },
 
   extraReducers: (builder) => {
@@ -805,6 +1020,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.loading = true;
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -813,49 +1029,24 @@ const tenancySlice = createSlice({
         (state, action) => {
           state.loading = false;
 
-          const response =
-            action.payload;
+          const response = action.payload;
 
-          const responseData =
-            response?.data;
+          const tenancies =
+            extractTenancies(response);
 
-          /*
-           * Laravel paginated response:
-           *
-           * data: [...]
-           */
-          if (Array.isArray(responseData)) {
-            state.tenancies =
-              responseData;
-          }
+          state.tenancies =
+            Array.isArray(tenancies)
+              ? tenancies
+              : [];
 
-          /*
-           * Handle nested pagination:
-           *
-           * data: {
-           *   data: [...]
-           * }
-           */
-          else if (
-            Array.isArray(
-              responseData?.data
-            )
-          ) {
-            state.tenancies =
-              responseData.data;
-          } else {
-            state.tenancies = [];
-          }
-
-          const pagination =
-            getPagination(response);
-
-          if (pagination) {
-            state.pagination =
-              pagination;
-          }
+          state.pagination =
+            extractPagination(
+              response,
+              state.pagination
+            );
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -869,20 +1060,15 @@ const tenancySlice = createSlice({
             action.error?.message ||
             "Failed to fetch tenancies.";
 
-          state.tenancies = [];
-
-          if (
-            action.payload?.errors
-          ) {
-            state.errorDetails =
-              action.payload.errors;
-          }
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
         }
       );
 
     /*
     |--------------------------------------------------------------------------
-    | SEARCH
+    | SEARCH TENANCIES
     |--------------------------------------------------------------------------
     */
 
@@ -892,6 +1078,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.loading = true;
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -900,35 +1087,19 @@ const tenancySlice = createSlice({
         (state, action) => {
           state.loading = false;
 
-          const response =
-            action.payload;
+          const response = action.payload;
 
-          const responseData =
-            response?.data;
+          state.tenancies =
+            extractTenancies(response);
 
-          if (Array.isArray(responseData)) {
-            state.tenancies =
-              responseData;
-          } else if (
-            Array.isArray(
-              responseData?.data
-            )
-          ) {
-            state.tenancies =
-              responseData.data;
-          } else {
-            state.tenancies = [];
-          }
-
-          const pagination =
-            getPagination(response);
-
-          if (pagination) {
-            state.pagination =
-              pagination;
-          }
+          state.pagination =
+            extractPagination(
+              response,
+              state.pagination
+            );
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -941,6 +1112,10 @@ const tenancySlice = createSlice({
             action.payload?.message ||
             action.error?.message ||
             "Failed to search tenancies.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
         }
       );
 
@@ -956,6 +1131,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.loading = true;
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -964,13 +1140,13 @@ const tenancySlice = createSlice({
         (state, action) => {
           state.loading = false;
 
-          const response =
-            action.payload;
-
           state.tenancy =
-            getResponseData(response);
+            getResponseData(
+              action.payload
+            );
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -978,13 +1154,16 @@ const tenancySlice = createSlice({
         fetchTenancy.rejected,
         (state, action) => {
           state.loading = false;
-
           state.tenancy = null;
 
           state.error =
             action.payload?.message ||
             action.error?.message ||
             "Tenancy not found.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
         }
       );
 
@@ -999,8 +1178,8 @@ const tenancySlice = createSlice({
         createTenancy.pending,
         (state) => {
           state.creating = true;
-          state.loading = true;
           state.error = null;
+          state.errorDetails = null;
           state.success = null;
         }
       )
@@ -1009,30 +1188,23 @@ const tenancySlice = createSlice({
         createTenancy.fulfilled,
         (state, action) => {
           state.creating = false;
-          state.loading = false;
 
           const tenancy =
             getResponseData(
               action.payload
             );
 
-          if (tenancy) {
-            state.tenancy =
-              tenancy;
+          if (
+            tenancy &&
+            typeof tenancy === "object" &&
+            !Array.isArray(tenancy)
+          ) {
+            state.tenancy = tenancy;
 
-            /*
-             * Add new tenancy to the
-             * current list.
-             */
-            if (
-              Array.isArray(
-                state.tenancies
-              )
-            ) {
-              state.tenancies.unshift(
-                tenancy
-              );
-            }
+            updateTenancyInList(
+              state,
+              tenancy
+            );
           }
 
           state.success =
@@ -1040,6 +1212,7 @@ const tenancySlice = createSlice({
             "Tenancy created successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1047,12 +1220,15 @@ const tenancySlice = createSlice({
         createTenancy.rejected,
         (state, action) => {
           state.creating = false;
-          state.loading = false;
 
           state.error =
             action.payload?.message ||
             action.error?.message ||
             "Failed to create tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
 
           state.success = null;
         }
@@ -1069,8 +1245,8 @@ const tenancySlice = createSlice({
         updateTenancy.pending,
         (state) => {
           state.updating = true;
-          state.loading = true;
           state.error = null;
+          state.errorDetails = null;
           state.success = null;
         }
       )
@@ -1079,28 +1255,22 @@ const tenancySlice = createSlice({
         updateTenancy.fulfilled,
         (state, action) => {
           state.updating = false;
-          state.loading = false;
 
-          const updatedTenancy =
+          const updated =
             getResponseData(
               action.payload
             );
 
-          if (updatedTenancy) {
-            state.tenancy =
-              updatedTenancy;
+          if (
+            updated &&
+            typeof updated === "object"
+          ) {
+            state.tenancy = updated;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(updatedTenancy.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                updatedTenancy;
-            }
+            updateTenancyInList(
+              state,
+              updated
+            );
           }
 
           state.success =
@@ -1108,6 +1278,7 @@ const tenancySlice = createSlice({
             "Tenancy updated successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1115,12 +1286,15 @@ const tenancySlice = createSlice({
         updateTenancy.rejected,
         (state, action) => {
           state.updating = false;
-          state.loading = false;
 
           state.error =
             action.payload?.message ||
             action.error?.message ||
             "Failed to update tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
 
           state.success = null;
         }
@@ -1137,8 +1311,9 @@ const tenancySlice = createSlice({
         patchTenancy.pending,
         (state) => {
           state.updating = true;
-          state.loading = true;
           state.error = null;
+          state.errorDetails = null;
+          state.success = null;
         }
       )
 
@@ -1146,28 +1321,22 @@ const tenancySlice = createSlice({
         patchTenancy.fulfilled,
         (state, action) => {
           state.updating = false;
-          state.loading = false;
 
-          const updatedTenancy =
+          const updated =
             getResponseData(
               action.payload
             );
 
-          if (updatedTenancy) {
-            state.tenancy =
-              updatedTenancy;
+          if (
+            updated &&
+            typeof updated === "object"
+          ) {
+            state.tenancy = updated;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(updatedTenancy.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                updatedTenancy;
-            }
+            updateTenancyInList(
+              state,
+              updated
+            );
           }
 
           state.success =
@@ -1175,6 +1344,7 @@ const tenancySlice = createSlice({
             "Tenancy updated successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1182,12 +1352,17 @@ const tenancySlice = createSlice({
         patchTenancy.rejected,
         (state, action) => {
           state.updating = false;
-          state.loading = false;
 
           state.error =
             action.payload?.message ||
             action.error?.message ||
             "Failed to update tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
+
+          state.success = null;
         }
       );
 
@@ -1204,6 +1379,7 @@ const tenancySlice = createSlice({
           state.deleting = true;
           state.actionLoading = true;
           state.error = null;
+          state.errorDetails = null;
           state.success = null;
         }
       )
@@ -1217,23 +1393,11 @@ const tenancySlice = createSlice({
           const deletedId =
             action.payload?.id;
 
-          /*
-           * Remove the tenancy from Redux
-           * immediately after successful
-           * deletion.
-           */
-          state.tenancies =
-            state.tenancies.filter(
-              (item) =>
-                Number(item.id) !==
-                Number(deletedId)
-            );
+          removeTenancyFromList(
+            state,
+            deletedId
+          );
 
-          /*
-           * If the deleted tenancy is
-           * currently being viewed,
-           * clear it.
-           */
           if (
             state.tenancy &&
             Number(state.tenancy.id) ===
@@ -1242,12 +1406,7 @@ const tenancySlice = createSlice({
             state.tenancy = null;
           }
 
-          /*
-           * Update pagination total.
-           */
-          if (
-            state.pagination.total > 0
-          ) {
+          if (state.pagination.total > 0) {
             state.pagination.total -= 1;
           }
 
@@ -1256,6 +1415,7 @@ const tenancySlice = createSlice({
             "Tenancy deleted successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1265,21 +1425,13 @@ const tenancySlice = createSlice({
           state.deleting = false;
           state.actionLoading = false;
 
-          /*
-           * This is the important part.
-           *
-           * If ID 3 does not exist:
-           *
-           * "Tenancy not found."
-           *
-           * instead of exposing:
-           *
-           * No query results for model
-           * [App\Models\Tenancy] 3
-           */
           state.error =
             action.payload?.message ||
-            "Tenancy not found.";
+            "Failed to delete tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
 
           state.success = null;
         }
@@ -1298,6 +1450,7 @@ const tenancySlice = createSlice({
           state.restoring = true;
           state.actionLoading = true;
           state.error = null;
+          state.errorDetails = null;
           state.success = null;
         }
       )
@@ -1313,25 +1466,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (restored) {
-            state.tenancy =
-              restored;
+          if (
+            restored &&
+            typeof restored === "object"
+          ) {
+            state.tenancy = restored;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(restored.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                restored;
-            } else {
-              state.tenancies.unshift(
-                restored
-              );
-            }
+            updateTenancyInList(
+              state,
+              restored
+            );
           }
 
           state.success =
@@ -1339,6 +1483,7 @@ const tenancySlice = createSlice({
             "Tenancy restored successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1350,7 +1495,11 @@ const tenancySlice = createSlice({
 
           state.error =
             action.payload?.message ||
-            "Tenancy not found.";
+            "Failed to restore tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
 
           state.success = null;
         }
@@ -1369,6 +1518,7 @@ const tenancySlice = createSlice({
           state.forceDeleting = true;
           state.actionLoading = true;
           state.error = null;
+          state.errorDetails = null;
           state.success = null;
         }
       )
@@ -1382,12 +1532,10 @@ const tenancySlice = createSlice({
           const deletedId =
             action.payload?.id;
 
-          state.tenancies =
-            state.tenancies.filter(
-              (item) =>
-                Number(item.id) !==
-                Number(deletedId)
-            );
+          removeTenancyFromList(
+            state,
+            deletedId
+          );
 
           if (
             state.tenancy &&
@@ -1402,6 +1550,7 @@ const tenancySlice = createSlice({
             "Tenancy permanently deleted.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1413,7 +1562,11 @@ const tenancySlice = createSlice({
 
           state.error =
             action.payload?.message ||
-            "Tenancy not found.";
+            "Failed to permanently delete tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
 
           state.success = null;
         }
@@ -1431,6 +1584,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.actionLoading = true;
           state.error = null;
+          state.success = null;
         }
       )
 
@@ -1444,21 +1598,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (activated) {
-            state.tenancy =
-              activated;
+          if (
+            activated &&
+            typeof activated === "object"
+          ) {
+            state.tenancy = activated;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(activated.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                activated;
-            }
+            updateTenancyInList(
+              state,
+              activated
+            );
           }
 
           state.success =
@@ -1466,6 +1615,7 @@ const tenancySlice = createSlice({
             "Tenancy activated successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1477,6 +1627,12 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to activate tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
+
+          state.success = null;
         }
       );
 
@@ -1492,6 +1648,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.actionLoading = true;
           state.error = null;
+          state.success = null;
         }
       )
 
@@ -1505,21 +1662,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (deactivated) {
-            state.tenancy =
-              deactivated;
+          if (
+            deactivated &&
+            typeof deactivated === "object"
+          ) {
+            state.tenancy = deactivated;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(deactivated.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                deactivated;
-            }
+            updateTenancyInList(
+              state,
+              deactivated
+            );
           }
 
           state.success =
@@ -1527,6 +1679,7 @@ const tenancySlice = createSlice({
             "Tenancy deactivated successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1538,6 +1691,12 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to deactivate tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
+
+          state.success = null;
         }
       );
 
@@ -1553,6 +1712,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.actionLoading = true;
           state.error = null;
+          state.success = null;
         }
       )
 
@@ -1566,21 +1726,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (renewed) {
-            state.tenancy =
-              renewed;
+          if (
+            renewed &&
+            typeof renewed === "object"
+          ) {
+            state.tenancy = renewed;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(renewed.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                renewed;
-            }
+            updateTenancyInList(
+              state,
+              renewed
+            );
           }
 
           state.success =
@@ -1588,6 +1743,7 @@ const tenancySlice = createSlice({
             "Tenancy renewed successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1599,6 +1755,12 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to renew tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
+
+          state.success = null;
         }
       );
 
@@ -1614,6 +1776,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.actionLoading = true;
           state.error = null;
+          state.success = null;
         }
       )
 
@@ -1627,21 +1790,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (terminated) {
-            state.tenancy =
-              terminated;
+          if (
+            terminated &&
+            typeof terminated === "object"
+          ) {
+            state.tenancy = terminated;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(terminated.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                terminated;
-            }
+            updateTenancyInList(
+              state,
+              terminated
+            );
           }
 
           state.success =
@@ -1649,6 +1807,7 @@ const tenancySlice = createSlice({
             "Tenancy terminated successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1660,6 +1819,12 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to terminate tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
+
+          state.success = null;
         }
       );
 
@@ -1675,6 +1840,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.actionLoading = true;
           state.error = null;
+          state.success = null;
         }
       )
 
@@ -1688,21 +1854,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (cancelled) {
-            state.tenancy =
-              cancelled;
+          if (
+            cancelled &&
+            typeof cancelled === "object"
+          ) {
+            state.tenancy = cancelled;
 
-            const index =
-              state.tenancies.findIndex(
-                (item) =>
-                  Number(item.id) ===
-                  Number(cancelled.id)
-              );
-
-            if (index !== -1) {
-              state.tenancies[index] =
-                cancelled;
-            }
+            updateTenancyInList(
+              state,
+              cancelled
+            );
           }
 
           state.success =
@@ -1710,6 +1871,7 @@ const tenancySlice = createSlice({
             "Tenancy cancelled successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1721,6 +1883,12 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to cancel tenancy.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
+
+          state.success = null;
         }
       );
 
@@ -1750,26 +1918,16 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          if (assigned) {
-            state.tenancy =
-              assigned;
+          if (
+            assigned &&
+            typeof assigned === "object"
+          ) {
+            state.tenancy = assigned;
 
-            /*
-             * Do not duplicate the tenancy
-             * if it already exists.
-             */
-            const exists =
-              state.tenancies.some(
-                (item) =>
-                  Number(item.id) ===
-                  Number(assigned.id)
-              );
-
-            if (!exists) {
-              state.tenancies.unshift(
-                assigned
-              );
-            }
+            updateTenancyInList(
+              state,
+              assigned
+            );
           }
 
           state.success =
@@ -1777,6 +1935,7 @@ const tenancySlice = createSlice({
             "Unit assigned to tenant successfully.";
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1788,6 +1947,10 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to assign unit.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
 
           state.success = null;
         }
@@ -1805,6 +1968,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.loading = true;
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1819,6 +1983,7 @@ const tenancySlice = createSlice({
             );
 
           state.error = null;
+          state.errorDetails = null;
         }
       )
 
@@ -1832,6 +1997,10 @@ const tenancySlice = createSlice({
           state.error =
             action.payload?.message ||
             "Failed to fetch tenancy statistics.";
+
+          state.errorDetails =
+            action.payload?.errors ||
+            null;
         }
       );
   },
@@ -1856,68 +2025,155 @@ export const {
 |--------------------------------------------------------------------------
 | Selectors
 |--------------------------------------------------------------------------
+|
+| IMPORTANT FIX:
+|
+| These selectors NEVER create a new [] or {} fallback.
+|
+| This prevents React-Redux from reporting:
+|
+| "Selector selectTenancies returned a different result
+|  when called with the same parameters."
+|
 */
 
-export const selectTenancies = (state) =>
-  state.tenancy?.tenancies || [];
+/**
+ * Tenancies list.
+ */
+export const selectTenancies = (state) => {
+  const tenancies =
+    state?.tenancy?.tenancies;
 
+  return Array.isArray(tenancies)
+    ? tenancies
+    : EMPTY_ARRAY;
+};
+
+/**
+ * Current tenancy.
+ */
 export const selectTenancy = (state) =>
-  state.tenancy?.tenancy || null;
+  state?.tenancy?.tenancy ?? null;
 
-export const selectTenancyPagination = (state) =>
-  state.tenancy?.pagination || {
-    current_page: 1,
-    last_page: 1,
-    per_page: 15,
-    total: 0,
-    from: 0,
-    to: 0,
-  };
+/**
+ * Pagination.
+ */
+export const selectTenancyPagination = (
+  state
+) =>
+  state?.tenancy?.pagination ??
+  DEFAULT_PAGINATION;
 
-export const selectTenancyFilters = (state) =>
-  state.tenancy?.filters || {
-    search: "",
-    status: "",
-    property_id: "",
-    apartment_id: "",
-    unit_id: "",
-    tenant_id: "",
-    payment_frequency: "",
-    sort_by: "",
-    sort_direction: "",
-    page: 1,
-    per_page: 15,
-  };
+/**
+ * Filters.
+ */
+export const selectTenancyFilters = (
+  state
+) =>
+  state?.tenancy?.filters ??
+  DEFAULT_FILTERS;
 
-export const selectTenancyLoading = (state) =>
-  Boolean(state.tenancy?.loading);
+/**
+ * Loading.
+ */
+export const selectTenancyLoading = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.loading
+  );
 
-export const selectTenancyCreating = (state) =>
-  Boolean(state.tenancy?.creating);
+/**
+ * Creating.
+ */
+export const selectTenancyCreating = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.creating
+  );
 
-export const selectTenancyUpdating = (state) =>
-  Boolean(state.tenancy?.updating);
+/**
+ * Updating.
+ */
+export const selectTenancyUpdating = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.updating
+  );
 
-export const selectTenancyDeleting = (state) =>
-  Boolean(state.tenancy?.deleting);
+/**
+ * Deleting.
+ */
+export const selectTenancyDeleting = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.deleting
+  );
 
-export const selectTenancyRestoring = (state) =>
-  Boolean(state.tenancy?.restoring);
+/**
+ * Restoring.
+ */
+export const selectTenancyRestoring = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.restoring
+  );
 
-export const selectTenancyForceDeleting = (state) =>
-  Boolean(state.tenancy?.forceDeleting);
+/**
+ * Force deleting.
+ */
+export const selectTenancyForceDeleting = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.forceDeleting
+  );
 
-export const selectTenancyActionLoading = (state) =>
-  Boolean(state.tenancy?.actionLoading);
+/**
+ * Action loading.
+ */
+export const selectTenancyActionLoading = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.actionLoading
+  );
 
-export const selectTenancyError = (state) =>
-  state.tenancy?.error || null;
+/**
+ * Error.
+ */
+export const selectTenancyError = (
+  state
+) =>
+  state?.tenancy?.error ?? null;
 
-export const selectTenancySuccess = (state) =>
-  state.tenancy?.success || null;
+/**
+ * Error details.
+ */
+export const selectTenancyErrorDetails = (
+  state
+) =>
+  state?.tenancy?.errorDetails ?? null;
 
-export const selectTenancyStatistics = (state) =>
-  state.tenancy?.statistics || null;
+/**
+ * Success.
+ */
+export const selectTenancySuccess = (
+  state
+) =>
+  state?.tenancy?.success ?? null;
+
+/**
+ * Statistics.
+ */
+export const selectTenancyStatistics = (
+  state
+) =>
+  state?.tenancy?.statistics ?? null;
 
 /*
 |--------------------------------------------------------------------------
@@ -1925,24 +2181,74 @@ export const selectTenancyStatistics = (state) =>
 |--------------------------------------------------------------------------
 */
 
-export const selectHasTenancies = (state) =>
-  Array.isArray(
-    state.tenancy?.tenancies
-  ) &&
-  state.tenancy.tenancies.length > 0;
+/**
+ * Whether there are tenancies.
+ */
+export const selectHasTenancies = (
+  state
+) => {
+  const tenancies =
+    state?.tenancy?.tenancies;
 
-export const selectTenancyCount = (state) =>
-  Array.isArray(
-    state.tenancy?.tenancies
-  )
-    ? state.tenancy.tenancies.length
+  return (
+    Array.isArray(tenancies) &&
+    tenancies.length > 0
+  );
+};
+
+/**
+ * Number of loaded tenancies.
+ */
+export const selectTenancyCount = (
+  state
+) => {
+  const tenancies =
+    state?.tenancy?.tenancies;
+
+  return Array.isArray(tenancies)
+    ? tenancies.length
     : 0;
+};
 
-export const selectIsDeletingTenancy = (state) =>
-  Boolean(state.tenancy?.deleting);
+/**
+ * Whether tenancy deletion is running.
+ */
+export const selectIsDeletingTenancy = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.deleting
+  );
 
-export const selectIsUpdatingTenancy = (state) =>
-  Boolean(state.tenancy?.updating);
+/**
+ * Whether tenancy update is running.
+ */
+export const selectIsUpdatingTenancy = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.updating
+  );
+
+/**
+ * Whether tenancy creation is running.
+ */
+export const selectIsCreatingTenancy = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.creating
+  );
+
+/**
+ * Whether tenancy list loading is running.
+ */
+export const selectIsLoadingTenancies = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.loading
+  );
 
 /*
 |--------------------------------------------------------------------------
