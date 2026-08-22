@@ -1,17 +1,5 @@
 import api from "../api/axios";
 
-/*
-|--------------------------------------------------------------------------
-| Tenancy Service
-|--------------------------------------------------------------------------
-|
-| Centralized API service for tenancy management.
-|
-| Backend base endpoint:
-| /api/tenancies
-|
-*/
-
 const BASE_URL = "/tenancies";
 
 /*
@@ -36,6 +24,24 @@ const validateId = (id) => {
 };
 
 /**
+ * Validate generic ID.
+ */
+const validateRelatedId = (
+  id,
+  message
+) => {
+  if (
+    id === undefined ||
+    id === null ||
+    id === ""
+  ) {
+    throw new Error(message);
+  }
+
+  return id;
+};
+
+/**
  * Validate request data.
  */
 const validateData = (
@@ -51,6 +57,32 @@ const validateData = (
   }
 
   return data;
+};
+
+/**
+ * Return normalized API data.
+ *
+ * Laravel responses normally look like:
+ *
+ * {
+ *   status: true,
+ *   code: 200,
+ *   message: "...",
+ *   data: [...]
+ * }
+ *
+ * The service returns the complete response object
+ * so Redux can access:
+ *
+ * response.data
+ * response.message
+ * response.status
+ * response.code
+ *
+ * This is intentional for pagination and metadata.
+ */
+const normalizeResponse = (response) => {
+  return response?.data ?? null;
 };
 
 /*
@@ -71,7 +103,7 @@ const tenancyService = {
    *
    * GET /api/tenancies
    *
-   * Supported parameters can include:
+   * Supported parameters:
    *
    * - page
    * - per_page
@@ -95,7 +127,7 @@ const tenancyService = {
       }
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -116,7 +148,7 @@ const tenancyService = {
       `${BASE_URL}/${tenancyId}`
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -141,7 +173,7 @@ const tenancyService = {
       data
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -168,18 +200,13 @@ const tenancyService = {
       data
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /**
    * Partially update a tenancy.
    *
    * PATCH /api/tenancies/{tenancy}
-   *
-   * NOTE:
-   * This method is kept for frontend flexibility.
-   * Make sure your Laravel routes include a PATCH route
-   * for the tenancy if you intend to use it.
    */
   async patchTenancy(id, data) {
     const tenancyId = validateId(id);
@@ -194,7 +221,7 @@ const tenancyService = {
       data
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -215,7 +242,129 @@ const tenancyService = {
       `${BASE_URL}/${tenancyId}`
     );
 
-    return response.data;
+    return normalizeResponse(response);
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | SEARCH
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Search tenancies.
+   *
+   * GET /api/tenancies/search
+   *
+   * Example:
+   *
+   * tenancyService.searchTenancies("TEN-123");
+   */
+  async searchTenancies(
+    search = "",
+    params = {}
+  ) {
+    const response = await api.get(
+      `${BASE_URL}/search`,
+      {
+        params: {
+          ...params,
+          search,
+        },
+      }
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | STATUS LISTS
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Fetch active tenancies.
+   *
+   * GET /api/tenancies/active
+   */
+  async getActiveTenancies(params = {}) {
+    const response = await api.get(
+      `${BASE_URL}/active`,
+      {
+        params,
+      }
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Fetch pending tenancies.
+   *
+   * GET /api/tenancies/pending
+   */
+  async getPendingTenancies(params = {}) {
+    const response = await api.get(
+      `${BASE_URL}/pending`,
+      {
+        params,
+      }
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Fetch expired tenancies.
+   *
+   * GET /api/tenancies/expired
+   */
+  async getExpiredTenancies(params = {}) {
+    const response = await api.get(
+      `${BASE_URL}/expired`,
+      {
+        params,
+      }
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Fetch terminated tenancies.
+   *
+   * GET /api/tenancies/terminated
+   */
+  async getTerminatedTenancies(
+    params = {}
+  ) {
+    const response = await api.get(
+      `${BASE_URL}/terminated`,
+      {
+        params,
+      }
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Fetch cancelled tenancies.
+   *
+   * GET /api/tenancies/cancelled
+   */
+  async getCancelledTenancies(
+    params = {}
+  ) {
+    const response = await api.get(
+      `${BASE_URL}/cancelled`,
+      {
+        params,
+      }
+    );
+
+    return normalizeResponse(response);
   },
 
   /*
@@ -236,7 +385,7 @@ const tenancyService = {
       `${BASE_URL}/${tenancyId}/restore`
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -257,7 +406,7 @@ const tenancyService = {
       `${BASE_URL}/${tenancyId}/force`
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -278,7 +427,7 @@ const tenancyService = {
       `${BASE_URL}/${tenancyId}/activate`
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /**
@@ -293,7 +442,7 @@ const tenancyService = {
       `${BASE_URL}/${tenancyId}/deactivate`
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /*
@@ -306,15 +455,11 @@ const tenancyService = {
    * Renew tenancy.
    *
    * PATCH /api/tenancies/{tenancy}/renew
-   *
-   * Controller validation:
-   *
-   * end_date:
-   * - required
-   * - date
-   * - after:today
    */
-  async renewTenancy(id, data) {
+  async renewTenancy(
+    id,
+    data = {}
+  ) {
     const tenancyId = validateId(id);
 
     validateData(
@@ -327,7 +472,67 @@ const tenancyService = {
       data
     );
 
-    return response.data;
+    return normalizeResponse(response);
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | TERMINATE
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Terminate tenancy.
+   *
+   * PATCH /api/tenancies/{tenancy}/terminate
+   */
+  async terminateTenancy(
+    id,
+    data = {}
+  ) {
+    const tenancyId = validateId(id);
+
+    validateData(
+      data,
+      "Termination data is required."
+    );
+
+    const response = await api.patch(
+      `${BASE_URL}/${tenancyId}/terminate`,
+      data
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | CANCEL
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Cancel tenancy.
+   *
+   * PATCH /api/tenancies/{tenancy}/cancel
+   */
+  async cancelTenancy(
+    id,
+    data = {}
+  ) {
+    const tenancyId = validateId(id);
+
+    validateData(
+      data,
+      "Cancellation data is required."
+    );
+
+    const response = await api.patch(
+      `${BASE_URL}/${tenancyId}/cancel`,
+      data
+    );
+
+    return normalizeResponse(response);
   },
 
   /*
@@ -363,7 +568,26 @@ const tenancyService = {
       data
     );
 
-    return response.data;
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Alias used by some Redux/component code.
+   *
+   * POST /api/tenancies/assign-unit
+   */
+  async assignUnitToTenant(data) {
+    validateData(
+      data,
+      "Assignment data is required."
+    );
+
+    const response = await api.post(
+      `${BASE_URL}/assign-unit`,
+      data
+    );
+
+    return normalizeResponse(response);
   },
 
   /*
@@ -382,7 +606,18 @@ const tenancyService = {
       `${BASE_URL}/statistics`
     );
 
-    return response.data;
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Alias for Redux/component compatibility.
+   */
+  async getTenancyStatistics() {
+    const response = await api.get(
+      `${BASE_URL}/statistics`
+    );
+
+    return normalizeResponse(response);
   },
 
   /*
@@ -400,27 +635,22 @@ const tenancyService = {
     tenantId,
     params = {}
   ) {
-    if (
-      tenantId === undefined ||
-      tenantId === null ||
-      tenantId === ""
-    ) {
-      throw new Error(
-        "Tenant ID is required."
-      );
-    }
+    const id = validateRelatedId(
+      tenantId,
+      "Tenant ID is required."
+    );
 
     const response = await api.get(
       BASE_URL,
       {
         params: {
           ...params,
-          tenant_id: tenantId,
+          tenant_id: id,
         },
       }
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /**
@@ -432,27 +662,22 @@ const tenancyService = {
     propertyId,
     params = {}
   ) {
-    if (
-      propertyId === undefined ||
-      propertyId === null ||
-      propertyId === ""
-    ) {
-      throw new Error(
-        "Property ID is required."
-      );
-    }
+    const id = validateRelatedId(
+      propertyId,
+      "Property ID is required."
+    );
 
     const response = await api.get(
       BASE_URL,
       {
         params: {
           ...params,
-          property_id: propertyId,
+          property_id: id,
         },
       }
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /**
@@ -464,27 +689,22 @@ const tenancyService = {
     apartmentId,
     params = {}
   ) {
-    if (
-      apartmentId === undefined ||
-      apartmentId === null ||
-      apartmentId === ""
-    ) {
-      throw new Error(
-        "Apartment ID is required."
-      );
-    }
+    const id = validateRelatedId(
+      apartmentId,
+      "Apartment ID is required."
+    );
 
     const response = await api.get(
       BASE_URL,
       {
         params: {
           ...params,
-          apartment_id: apartmentId,
+          apartment_id: id,
         },
       }
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 
   /**
@@ -496,27 +716,22 @@ const tenancyService = {
     unitId,
     params = {}
   ) {
-    if (
-      unitId === undefined ||
-      unitId === null ||
-      unitId === ""
-    ) {
-      throw new Error(
-        "Unit ID is required."
-      );
-    }
+    const id = validateRelatedId(
+      unitId,
+      "Unit ID is required."
+    );
 
     const response = await api.get(
       BASE_URL,
       {
         params: {
           ...params,
-          unit_id: unitId,
+          unit_id: id,
         },
       }
     );
 
-    return response.data;
+    return normalizeResponse(response);
   },
 };
 
