@@ -20,7 +20,7 @@ import tenantAPI from "../api/tenant.api";
  *   }
  * }
  *
- * And direct API response:
+ * And direct Laravel response:
  *
  * {
  *   status: true,
@@ -30,6 +30,10 @@ import tenantAPI from "../api/tenant.api";
  * }
  */
 const unwrapResponse = (response) => {
+  if (!response) {
+    return null;
+  }
+
   /*
    * Axios response
    */
@@ -47,30 +51,25 @@ const unwrapResponse = (response) => {
   }
 
   /*
-   * Already-unwrapped Laravel response
+   * Already unwrapped Laravel response
    */
-  return response ?? null;
+  return response;
+};
+
+
+/**
+ * Get Laravel response envelope.
+ */
+const getResponseEnvelope = (response) => {
+  return unwrapResponse(response) ?? {};
 };
 
 
 /**
  * Get Laravel response data.
- *
- * Example:
- *
- * {
- *   status: true,
- *   code: 200,
- *   message: "Success",
- *   data: {...}
- * }
- *
- * returns:
- *
- * {...}
  */
 const getResponseData = (response) => {
-  const payload = unwrapResponse(response);
+  const payload = getResponseEnvelope(response);
 
   if (
     payload &&
@@ -85,15 +84,7 @@ const getResponseData = (response) => {
 
 
 /**
- * Get Laravel response envelope.
- */
-const getResponseEnvelope = (response) => {
-  return unwrapResponse(response) ?? {};
-};
-
-
-/**
- * Get response message.
+ * Get Laravel response message.
  */
 const getResponseMessage = (
   response,
@@ -103,13 +94,14 @@ const getResponseMessage = (
 
   return (
     payload?.message ||
+    payload?.data?.message ||
     fallback
   );
 };
 
 
 /**
- * Get response status.
+ * Get Laravel response status.
  */
 const getResponseStatus = (response) => {
   const payload = getResponseEnvelope(response);
@@ -119,32 +111,55 @@ const getResponseStatus = (response) => {
 
 
 /**
+ * Get Laravel response code.
+ */
+const getResponseCode = (response) => {
+  const payload = getResponseEnvelope(response);
+
+  return (
+    payload?.code ??
+    payload?.status_code ??
+    null
+  );
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| COLLECTION HELPERS
+|--------------------------------------------------------------------------
+*/
+
+/**
  * Get collection data.
  *
  * Supports:
  *
- * data: []
+ * 1. data: []
  *
- * data: {
- *   data: []
- * }
+ * 2. data: {
+ *      data: []
+ *    }
  *
- * Laravel pagination:
+ * 3. direct []
  *
- * data: {
- *   data: [],
- *   current_page: 1,
- *   ...
- * }
+ * 4. Laravel paginator.
  */
 const getCollectionData = (response) => {
   const payload = getResponseEnvelope(response);
 
   /*
-   * Direct:
+   * Direct array.
+   */
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  /*
+   * Laravel:
    *
    * {
-   *   data: [...]
+   *   data: []
    * }
    */
   if (Array.isArray(payload?.data)) {
@@ -152,11 +167,11 @@ const getCollectionData = (response) => {
   }
 
   /*
-   * Nested:
+   * Nested paginator:
    *
    * {
    *   data: {
-   *     data: [...]
+   *     data: []
    *   }
    * }
    */
@@ -165,10 +180,20 @@ const getCollectionData = (response) => {
   }
 
   /*
-   * Already an array.
+   * Sometimes response may itself contain:
+   *
+   * {
+   *   data: {
+   *     tenants: []
+   *   }
+   * }
    */
-  if (Array.isArray(payload)) {
-    return payload;
+  if (Array.isArray(payload?.data?.tenants)) {
+    return payload.data.tenants;
+  }
+
+  if (Array.isArray(payload?.tenants)) {
+    return payload.tenants;
   }
 
   return [];
@@ -182,29 +207,95 @@ const getPagination = (response) => {
   const payload = getResponseEnvelope(response);
 
   /*
-   * Laravel resource/paginator:
-   *
-   * {
-   *   data: [],
-   *   meta: {}
-   * }
+   * Laravel Resource pagination.
    */
   if (payload?.meta) {
-    return payload.meta;
+    return {
+      current_page:
+        Number(
+          payload.meta.current_page ??
+          payload.meta.currentPage ??
+          1
+        ),
+
+      last_page:
+        Number(
+          payload.meta.last_page ??
+          payload.meta.lastPage ??
+          1
+        ),
+
+      per_page:
+        Number(
+          payload.meta.per_page ??
+          payload.meta.perPage ??
+          15
+        ),
+
+      total:
+        Number(
+          payload.meta.total ??
+          0
+        ),
+
+      from:
+        Number(
+          payload.meta.from ??
+          0
+        ),
+
+      to:
+        Number(
+          payload.meta.to ??
+          0
+        ),
+    };
   }
 
   /*
-   * Nested paginator:
-   *
-   * {
-   *   data: {
-   *     data: [],
-   *     meta: {}
-   *   }
-   * }
+   * Nested Laravel paginator.
    */
   if (payload?.data?.meta) {
-    return payload.data.meta;
+    return {
+      current_page:
+        Number(
+          payload.data.meta.current_page ??
+          payload.data.meta.currentPage ??
+          1
+        ),
+
+      last_page:
+        Number(
+          payload.data.meta.last_page ??
+          payload.data.meta.lastPage ??
+          1
+        ),
+
+      per_page:
+        Number(
+          payload.data.meta.per_page ??
+          payload.data.meta.perPage ??
+          15
+        ),
+
+      total:
+        Number(
+          payload.data.meta.total ??
+          0
+        ),
+
+      from:
+        Number(
+          payload.data.meta.from ??
+          0
+        ),
+
+      to:
+        Number(
+          payload.data.meta.to ??
+          0
+        ),
+    };
   }
 
   /*
@@ -217,22 +308,40 @@ const getPagination = (response) => {
   ) {
     return {
       current_page:
-        payload.current_page ?? 1,
+        Number(
+          payload.current_page ??
+          1
+        ),
 
       last_page:
-        payload.last_page ?? 1,
+        Number(
+          payload.last_page ??
+          1
+        ),
 
       per_page:
-        payload.per_page ?? 15,
+        Number(
+          payload.per_page ??
+          15
+        ),
 
       total:
-        payload.total ?? 0,
+        Number(
+          payload.total ??
+          0
+        ),
 
       from:
-        payload.from ?? 0,
+        Number(
+          payload.from ??
+          0
+        ),
 
       to:
-        payload.to ?? 0,
+        Number(
+          payload.to ??
+          0
+        ),
     };
   }
 
@@ -245,22 +354,40 @@ const getPagination = (response) => {
   ) {
     return {
       current_page:
-        payload.data.current_page ?? 1,
+        Number(
+          payload.data.current_page ??
+          1
+        ),
 
       last_page:
-        payload.data.last_page ?? 1,
+        Number(
+          payload.data.last_page ??
+          1
+        ),
 
       per_page:
-        payload.data.per_page ?? 15,
+        Number(
+          payload.data.per_page ??
+          15
+        ),
 
       total:
-        payload.data.total ?? 0,
+        Number(
+          payload.data.total ??
+          0
+        ),
 
       from:
-        payload.data.from ?? 0,
+        Number(
+          payload.data.from ??
+          0
+        ),
 
       to:
-        payload.data.to ?? 0,
+        Number(
+          payload.data.to ??
+          0
+        ),
     };
   }
 
@@ -277,38 +404,162 @@ const getPagination = (response) => {
 
 /*
 |--------------------------------------------------------------------------
+| ID HELPERS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Extract tenant ID from either:
+ *
+ * deleteTenant(15)
+ *
+ * or:
+ *
+ * deleteTenant({
+ *   id: 15,
+ *   tenant_number: "TNT-000015"
+ * })
+ */
+const getTenantId = (tenantOrId) => {
+  if (
+    tenantOrId === null ||
+    tenantOrId === undefined
+  ) {
+    return null;
+  }
+
+  /*
+   * Object.
+   */
+  if (
+    typeof tenantOrId === "object"
+  ) {
+    return (
+      tenantOrId?.id ??
+      tenantOrId?.tenant_id ??
+      tenantOrId?.tenant?.id ??
+      null
+    );
+  }
+
+  /*
+   * Primitive ID.
+   */
+  return tenantOrId;
+};
+
+
+/**
+ * Validate tenant ID.
+ */
+const requireTenantId = (tenantOrId) => {
+  const tenantId =
+    getTenantId(tenantOrId);
+
+  if (
+    tenantId === null ||
+    tenantId === undefined ||
+    tenantId === ""
+  ) {
+    throw new Error(
+      "Tenant ID is required."
+    );
+  }
+
+  return tenantId;
+};
+
+
+/*
+|--------------------------------------------------------------------------
 | ERROR NORMALIZATION
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Normalize Axios/Laravel errors.
+ *
+ * IMPORTANT:
+ * Keeps the actual Laravel error details so the UI
+ * does not only show "Failed to delete tenant."
+ */
 const normalizeError = (error) => {
-  const response = error?.response;
-  const responseData = response?.data;
+  /*
+   * Already normalized error.
+   */
+  if (
+    error &&
+    typeof error === "object" &&
+    error.raw &&
+    error.message
+  ) {
+    return error;
+  }
 
-  return {
-    message:
-      responseData?.message ||
-      responseData?.error ||
-      error?.message ||
-      "Something went wrong.",
+  const response =
+    error?.response;
 
-    status:
-      response?.status ??
-      responseData?.code ??
-      null,
+  const responseData =
+    response?.data;
 
-    code:
-      responseData?.code ??
-      response?.status ??
-      null,
+  const nestedData =
+    responseData?.data;
 
-    errors:
-      responseData?.errors ??
-      responseData?.data?.errors ??
-      null,
+  const errors =
+    responseData?.errors ??
+    nestedData?.errors ??
+    null;
 
-    raw: error,
-  };
+  /*
+   * Laravel may return:
+   *
+   * {
+   *   message: "...",
+   *   errors: {
+   *      error: "..."
+   *   }
+   * }
+   */
+  const serverError =
+    errors?.error ??
+    errors?.message ??
+    responseData?.error ??
+    nestedData?.error ??
+    null;
+
+  const message =
+    responseData?.message ??
+    serverError ??
+    error?.message ??
+    "Something went wrong while processing the tenant request.";
+
+  const normalized = new Error(
+    String(message)
+  );
+
+  /*
+   * Preserve useful properties.
+   */
+  normalized.status =
+    response?.status ??
+    responseData?.code ??
+    null;
+
+  normalized.code =
+    responseData?.code ??
+    response?.status ??
+    null;
+
+  normalized.errors =
+    errors;
+
+  normalized.response =
+    response;
+
+  normalized.raw =
+    error;
+
+  return normalized;
 };
 
 
@@ -318,6 +569,9 @@ const normalizeError = (error) => {
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Normalize a single tenant.
+ */
 const normalizeTenant = (tenant) => {
   if (!tenant) {
     return null;
@@ -334,74 +588,148 @@ const normalizeTenant = (tenant) => {
     tenant = tenant.data;
   }
 
+  const firstName =
+    tenant?.first_name ??
+    tenant?.user?.first_name ??
+    "";
+
+  const lastName =
+    tenant?.last_name ??
+    tenant?.user?.last_name ??
+    "";
+
+  const otherNames =
+    tenant?.other_names ??
+    tenant?.user?.other_names ??
+    "";
+
+  const email =
+    tenant?.email ??
+    tenant?.user?.email ??
+    "";
+
+  const phone =
+    tenant?.phone ??
+    tenant?.user?.phone ??
+    "";
+
+  const fullName =
+    tenant?.full_name ??
+    tenant?.user?.full_name ??
+    [
+      firstName,
+      otherNames,
+      lastName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
   return {
     ...tenant,
 
     id:
-      tenant.id ??
+      tenant?.id ??
       null,
 
     tenant_number:
-      tenant.tenant_number ??
+      tenant?.tenant_number ??
       "",
 
     user_id:
-      tenant.user_id ??
+      tenant?.user_id ??
+      tenant?.user?.id ??
       null,
 
     first_name:
-      tenant.first_name ??
-      "",
+      firstName,
 
     last_name:
-      tenant.last_name ??
-      "",
+      lastName,
 
     other_names:
-      tenant.other_names ??
-      "",
+      otherNames,
 
     full_name:
-      tenant.full_name ||
-      [
-        tenant.first_name,
-        tenant.other_names,
-        tenant.last_name,
-      ]
-        .filter(Boolean)
-        .join(" "),
+      fullName ||
+      "Unknown Tenant",
 
-    email:
-      tenant.email ??
-      "",
+    email,
 
-    phone:
-      tenant.phone ??
-      "",
+    phone,
 
     status:
-      tenant.status ??
+      tenant?.status ??
+      tenant?.tenant_status ??
+      tenant?.account_status ??
       "",
 
+    /*
+     * Do NOT assume is_active exists in the database.
+     *
+     * The backend recently showed that tenants does not
+     * have an is_active column.
+     *
+     * Therefore this is only derived from the returned
+     * status when necessary.
+     */
     is_active:
-      Boolean(
-        tenant.is_active
-      ),
+      tenant?.is_active !== undefined
+        ? Boolean(tenant.is_active)
+        : String(
+            tenant?.status ??
+            ""
+          ).toLowerCase() === "active",
 
     is_verified:
       Boolean(
-        tenant.is_verified
+        tenant?.is_verified ??
+        false
+      ),
+
+    verification_status:
+      tenant?.verification_status ??
+      "",
+
+    status_label:
+      tenant?.status_label ??
+      "",
+
+    tenancies:
+      Array.isArray(
+        tenant?.tenancies
+      )
+        ? tenant.tenancies
+        : [],
+
+    tenancy_count:
+      Number(
+        tenant?.tenancy_count ??
+        (
+          Array.isArray(
+            tenant?.tenancies
+          )
+            ? tenant.tenancies.length
+            : 0
+        )
       ),
   };
 };
 
 
-const normalizeTenants = (tenants) => {
-  return Array.isArray(tenants)
-    ? tenants
-      .map(normalizeTenant)
-      .filter(Boolean)
-    : [];
+/**
+ * Normalize tenant collection.
+ */
+const normalizeTenants = (
+  tenants
+) => {
+  if (!Array.isArray(tenants)) {
+    return [];
+  }
+
+  return tenants
+    .map(normalizeTenant)
+    .filter(Boolean);
 };
 
 
@@ -416,15 +744,22 @@ export const getTenants = async (
 ) => {
   try {
     const response =
-      await tenantAPI.getTenants(params);
+      await tenantAPI.getTenants(
+        params
+      );
 
     return {
-      data: normalizeTenants(
-        getCollectionData(response)
-      ),
+      data:
+        normalizeTenants(
+          getCollectionData(
+            response
+          )
+        ),
 
       pagination:
-        getPagination(response),
+        getPagination(
+          response
+        ),
 
       message:
         getResponseMessage(
@@ -433,10 +768,19 @@ export const getTenants = async (
         ),
 
       status:
-        getResponseStatus(response),
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
     };
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -451,21 +795,23 @@ export const getTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
-      );
-    }
-
-    const response =
-      await tenantAPI.getTenant(
+    const id =
+      requireTenantId(
         tenantId
       );
 
+    const response =
+      await tenantAPI.getTenant(
+        id
+      );
+
     return {
-      data: normalizeTenant(
-        getResponseData(response)
-      ),
+      data:
+        normalizeTenant(
+          getResponseData(
+            response
+          )
+        ),
 
       message:
         getResponseMessage(
@@ -474,10 +820,19 @@ export const getTenant = async (
         ),
 
       status:
-        getResponseStatus(response),
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
     };
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -492,7 +847,10 @@ export const createTenant = async (
   tenantData
 ) => {
   try {
-    if (!tenantData) {
+    if (
+      !tenantData ||
+      typeof tenantData !== "object"
+    ) {
       throw new Error(
         "Tenant data is required."
       );
@@ -504,9 +862,12 @@ export const createTenant = async (
       );
 
     return {
-      data: normalizeTenant(
-        getResponseData(response)
-      ),
+      data:
+        normalizeTenant(
+          getResponseData(
+            response
+          )
+        ),
 
       message:
         getResponseMessage(
@@ -515,10 +876,19 @@ export const createTenant = async (
         ),
 
       status:
-        getResponseStatus(response),
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
     };
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -534,13 +904,15 @@ export const updateTenant = async (
   tenantData
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
-    if (!tenantData) {
+    if (
+      !tenantData ||
+      typeof tenantData !== "object"
+    ) {
       throw new Error(
         "Tenant data is required."
       );
@@ -548,14 +920,17 @@ export const updateTenant = async (
 
     const response =
       await tenantAPI.updateTenant(
-        tenantId,
+        id,
         tenantData
       );
 
     return {
-      data: normalizeTenant(
-        getResponseData(response)
-      ),
+      data:
+        normalizeTenant(
+          getResponseData(
+            response
+          )
+        ),
 
       message:
         getResponseMessage(
@@ -564,10 +939,19 @@ export const updateTenant = async (
         ),
 
       status:
-        getResponseStatus(response),
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
     };
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -578,26 +962,56 @@ export const updateTenant = async (
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Soft delete tenant.
+ *
+ * Supports both:
+ *
+ * deleteTenant(15)
+ *
+ * and:
+ *
+ * deleteTenant(tenant)
+ *
+ * The API request is always:
+ *
+ * DELETE /tenants/{id}
+ */
 export const deleteTenant = async (
-  tenantId
+  tenantOrId
 ) => {
+  const tenantId =
+    requireTenantId(
+      tenantOrId
+    );
+
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
-      );
-    }
+    console.log(
+      "[TenantService] Deleting tenant:",
+      {
+        tenantId,
+        endpoint:
+          `/tenants/${tenantId}`,
+      }
+    );
 
     const response =
       await tenantAPI.deleteTenant(
         tenantId
       );
 
+    console.log(
+      "[TenantService] Tenant delete response:",
+      response
+    );
+
     return {
       tenantId,
 
       data:
-        getResponseData(response),
+        getResponseData(
+          response
+        ),
 
       message:
         getResponseMessage(
@@ -606,10 +1020,39 @@ export const deleteTenant = async (
         ),
 
       status:
-        getResponseStatus(response),
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
     };
   } catch (error) {
-    throw normalizeError(error);
+    const normalized =
+      normalizeError(
+        error
+      );
+
+    console.error(
+      "[TenantService] Failed to delete tenant:",
+      {
+        tenantId,
+        message:
+          normalized.message,
+        status:
+          normalized.status,
+        code:
+          normalized.code,
+        errors:
+          normalized.errors,
+        response:
+          normalized.response?.data,
+      }
+    );
+
+    throw normalized;
   }
 };
 
@@ -625,21 +1068,28 @@ export const searchTenants = async (
   limit = 20
 ) => {
   try {
-    if (!search?.trim()) {
+    if (
+      !search ||
+      !String(search).trim()
+    ) {
       return [];
     }
 
     const response =
       await tenantAPI.searchTenants(
-        search.trim(),
+        String(search).trim(),
         limit
       );
 
     return normalizeTenants(
-      getCollectionData(response)
+      getCollectionData(
+        response
+      )
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -650,6 +1100,9 @@ export const searchTenants = async (
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Get active tenants.
+ */
 export const getActiveTenants =
   async () => {
     try {
@@ -657,14 +1110,21 @@ export const getActiveTenants =
         await tenantAPI.getActiveTenants();
 
       return normalizeTenants(
-        getCollectionData(response)
+        getCollectionData(
+          response
+        )
       );
     } catch (error) {
-      throw normalizeError(error);
+      throw normalizeError(
+        error
+      );
     }
   };
 
 
+/**
+ * Get pending tenants.
+ */
 export const getPendingTenants =
   async () => {
     try {
@@ -672,14 +1132,21 @@ export const getPendingTenants =
         await tenantAPI.getPendingTenants();
 
       return normalizeTenants(
-        getCollectionData(response)
+        getCollectionData(
+          response
+        )
       );
     } catch (error) {
-      throw normalizeError(error);
+      throw normalizeError(
+        error
+      );
     }
   };
 
 
+/**
+ * Get inactive tenants.
+ */
 export const getInactiveTenants =
   async () => {
     try {
@@ -687,14 +1154,21 @@ export const getInactiveTenants =
         await tenantAPI.getInactiveTenants();
 
       return normalizeTenants(
-        getCollectionData(response)
+        getCollectionData(
+          response
+        )
       );
     } catch (error) {
-      throw normalizeError(error);
+      throw normalizeError(
+        error
+      );
     }
   };
 
 
+/**
+ * Get blacklisted tenants.
+ */
 export const getBlacklistedTenants =
   async () => {
     try {
@@ -702,17 +1176,21 @@ export const getBlacklistedTenants =
         await tenantAPI.getBlacklistedTenants();
 
       return normalizeTenants(
-        getCollectionData(response)
+        getCollectionData(
+          response
+        )
       );
     } catch (error) {
-      throw normalizeError(error);
+      throw normalizeError(
+        error
+      );
     }
   };
 
 
 /*
 |--------------------------------------------------------------------------
-| TENANT STATUS ACTION RESPONSE
+| TENANT ACTION RESPONSE
 |--------------------------------------------------------------------------
 */
 
@@ -723,7 +1201,14 @@ const normalizeTenantActionResponse = (
   return {
     tenant:
       normalizeTenant(
-        getResponseData(response)
+        getResponseData(
+          response
+        )
+      ),
+
+    data:
+      getResponseData(
+        response
       ),
 
     message:
@@ -733,7 +1218,14 @@ const normalizeTenantActionResponse = (
       ),
 
     status:
-      getResponseStatus(response),
+      getResponseStatus(
+        response
+      ),
+
+    code:
+      getResponseCode(
+        response
+      ),
   };
 };
 
@@ -748,15 +1240,14 @@ export const activateTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.activateTenant(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -764,7 +1255,9 @@ export const activateTenant = async (
       "Tenant activated successfully."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -779,15 +1272,14 @@ export const deactivateTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.deactivateTenant(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -795,7 +1287,9 @@ export const deactivateTenant = async (
       "Tenant deactivated successfully."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -810,15 +1304,14 @@ export const blacklistTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.blacklistTenant(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -826,7 +1319,9 @@ export const blacklistTenant = async (
       "Tenant blacklisted successfully."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -841,15 +1336,14 @@ export const setTenantPending = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.setTenantPending(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -857,7 +1351,9 @@ export const setTenantPending = async (
       "Tenant status changed to pending."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -872,15 +1368,14 @@ export const verifyTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.verifyTenant(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -888,7 +1383,9 @@ export const verifyTenant = async (
       "Tenant verified successfully."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -903,15 +1400,14 @@ export const unverifyTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.unverifyTenant(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -919,7 +1415,9 @@ export const unverifyTenant = async (
       "Tenant verification removed successfully."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -936,44 +1434,64 @@ export const getTenantStatistics =
       const response =
         await tenantAPI.getTenantStatistics();
 
-      /*
-       * IMPORTANT
-       * ---------------------------------------------------------------
-       * Return the actual statistics object.
-       *
-       * Expected Laravel response:
-       *
-       * {
-       *   status: true,
-       *   code: 200,
-       *   message: "Tenant statistics fetched successfully.",
-       *   data: {
-       *     total: 100,
-       *     active: 70,
-       *     pending: 10,
-       *     inactive: 15,
-       *     blacklisted: 5,
-       *     verified: 80,
-       *     unverified: 20
-       *   }
-       * }
-       *
-       * This returns:
-       *
-       * {
-       *   total: 100,
-       *   active: 70,
-       *   ...
-       * }
-       */
       const statistics =
-        getResponseData(response);
+        getResponseData(
+          response
+        );
 
       if (
         statistics &&
-        typeof statistics === "object"
+        typeof statistics === "object" &&
+        !Array.isArray(statistics)
       ) {
-        return statistics;
+        return {
+          ...statistics,
+
+          /*
+           * Safe defaults.
+           */
+          total:
+            Number(
+              statistics.total ??
+              0
+            ),
+
+          active:
+            Number(
+              statistics.active ??
+              0
+            ),
+
+          pending:
+            Number(
+              statistics.pending ??
+              0
+            ),
+
+          inactive:
+            Number(
+              statistics.inactive ??
+              0
+            ),
+
+          blacklisted:
+            Number(
+              statistics.blacklisted ??
+              0
+            ),
+
+          verified:
+            Number(
+              statistics.verified ??
+              0
+            ),
+
+          unverified:
+            Number(
+              statistics.unverified ??
+              0
+            ),
+        };
       }
 
       return {
@@ -986,7 +1504,9 @@ export const getTenantStatistics =
         unverified: 0,
       };
     } catch (error) {
-      throw normalizeError(error);
+      throw normalizeError(
+        error
+      );
     }
   };
 
@@ -1001,15 +1521,14 @@ export const restoreTenant = async (
   tenantId
 ) => {
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
+    const id =
+      requireTenantId(
+        tenantId
       );
-    }
 
     const response =
       await tenantAPI.restoreTenant(
-        tenantId
+        id
       );
 
     return normalizeTenantActionResponse(
@@ -1017,7 +1536,9 @@ export const restoreTenant = async (
       "Tenant restored successfully."
     );
   } catch (error) {
-    throw normalizeError(error);
+    throw normalizeError(
+      error
+    );
   }
 };
 
@@ -1028,15 +1549,34 @@ export const restoreTenant = async (
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Permanently delete tenant.
+ *
+ * Supports:
+ *
+ * forceDeleteTenant(15)
+ *
+ * or:
+ *
+ * forceDeleteTenant(tenant)
+ */
 export const forceDeleteTenant = async (
-  tenantId
+  tenantOrId
 ) => {
+  const tenantId =
+    requireTenantId(
+      tenantOrId
+    );
+
   try {
-    if (!tenantId) {
-      throw new Error(
-        "Tenant ID is required."
-      );
-    }
+    console.log(
+      "[TenantService] Permanently deleting tenant:",
+      {
+        tenantId,
+        endpoint:
+          `/tenants/${tenantId}/force`,
+      }
+    );
 
     const response =
       await tenantAPI.forceDeleteTenant(
@@ -1047,7 +1587,9 @@ export const forceDeleteTenant = async (
       tenantId,
 
       data:
-        getResponseData(response),
+        getResponseData(
+          response
+        ),
 
       message:
         getResponseMessage(
@@ -1056,10 +1598,39 @@ export const forceDeleteTenant = async (
         ),
 
       status:
-        getResponseStatus(response),
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
     };
   } catch (error) {
-    throw normalizeError(error);
+    const normalized =
+      normalizeError(
+        error
+      );
+
+    console.error(
+      "[TenantService] Failed to permanently delete tenant:",
+      {
+        tenantId,
+        message:
+          normalized.message,
+        status:
+          normalized.status,
+        code:
+          normalized.code,
+        errors:
+          normalized.errors,
+        response:
+          normalized.response?.data,
+      }
+    );
+
+    throw normalized;
   }
 };
 
