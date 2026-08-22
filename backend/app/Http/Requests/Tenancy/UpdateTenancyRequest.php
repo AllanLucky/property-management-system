@@ -17,22 +17,41 @@ class UpdateTenancyRequest extends FormRequest
     }
 
     /**
+     * Get the tenancy being updated.
+     */
+    protected function tenancy(): ?Tenancy
+    {
+        $tenancy = $this->route('tenancy');
+
+        if ($tenancy instanceof Tenancy) {
+            return $tenancy;
+        }
+
+        if (is_numeric($tenancy)) {
+            return Tenancy::find($tenancy);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the tenancy ID safely.
+     */
+    protected function tenancyId(): mixed
+    {
+        $tenancy = $this->route('tenancy');
+
+        return $tenancy instanceof Tenancy
+            ? $tenancy->id
+            : $tenancy;
+    }
+
+    /**
      * Validation rules.
      */
     public function rules(): array
     {
-        /*
-         * Get tenancy ID from the route.
-         *
-         * Supports:
-         * /tenancies/{id}
-         */
-
-        $tenancy = $this->route('tenancy');
-
-        $tenancyId = $tenancy instanceof Tenancy
-            ? $tenancy->id
-            : $tenancy;
+        $tenancyId = $this->tenancyId();
 
         return [
 
@@ -158,7 +177,13 @@ class UpdateTenancyRequest extends FormRequest
             'payment_frequency' => [
                 'sometimes',
                 'string',
-                'in:daily,weekly,monthly,quarterly,yearly',
+                Rule::in([
+                    'daily',
+                    'weekly',
+                    'monthly',
+                    'quarterly',
+                    'yearly',
+                ]),
             ],
 
             'due_day' => [
@@ -223,16 +248,13 @@ class UpdateTenancyRequest extends FormRequest
 
     /**
      * Prepare data before validation.
+     *
+     * Empty strings are converted to null only for fields
+     * that explicitly allow null.
      */
     protected function prepareForValidation(): void
     {
         $data = [];
-
-        /*
-         * Only convert fields that were actually supplied.
-         *
-         * This is important for PATCH requests.
-         */
 
         $nullableFields = [
             'apartment_id',
@@ -249,11 +271,33 @@ class UpdateTenancyRequest extends FormRequest
         ];
 
         foreach ($nullableFields as $field) {
-            if ($this->has($field) && $this->input($field) === '') {
+            if (
+                $this->has($field) &&
+                $this->input($field) === ''
+            ) {
                 $data[$field] = null;
             }
         }
 
+        /*
+         * Normalize boolean values commonly sent by
+         * Postman/frontend clients as strings.
+         */
+        if ($this->has('is_active')) {
+            $value = $this->input('is_active');
+
+            if ($value === 'true' || $value === '1') {
+                $data['is_active'] = true;
+            }
+
+            if ($value === 'false' || $value === '0') {
+                $data['is_active'] = false;
+            }
+        }
+
+        /*
+         * Normalize numeric fields sent as empty strings.
+         */
         if (!empty($data)) {
             $this->merge($data);
         }
@@ -265,20 +309,78 @@ class UpdateTenancyRequest extends FormRequest
     public function messages(): array
     {
         return [
+
+            /*
+            |----------------------------------------------------------------------
+            | Property
+            |----------------------------------------------------------------------
+            */
+
+            'property_id.integer' =>
+                'The property ID must be a valid number.',
+
             'property_id.exists' =>
                 'The selected property does not exist.',
+
+            /*
+            |----------------------------------------------------------------------
+            | Apartment
+            |----------------------------------------------------------------------
+            */
+
+            'apartment_id.integer' =>
+                'The apartment ID must be a valid number.',
 
             'apartment_id.exists' =>
                 'The selected apartment does not exist.',
 
+            /*
+            |----------------------------------------------------------------------
+            | Unit
+            |----------------------------------------------------------------------
+            */
+
+            'unit_id.integer' =>
+                'The unit ID must be a valid number.',
+
             'unit_id.exists' =>
                 'The selected unit does not exist.',
+
+            /*
+            |----------------------------------------------------------------------
+            | Tenant
+            |----------------------------------------------------------------------
+            */
+
+            'tenant_id.integer' =>
+                'The tenant ID must be a valid number.',
 
             'tenant_id.exists' =>
                 'The selected tenant does not exist.',
 
+            /*
+            |----------------------------------------------------------------------
+            | Tenancy Number
+            |----------------------------------------------------------------------
+            */
+
+            'tenancy_number.string' =>
+                'The tenancy number must be a valid string.',
+
+            'tenancy_number.max' =>
+                'The tenancy number may not exceed 255 characters.',
+
             'tenancy_number.unique' =>
                 'The tenancy number already exists.',
+
+            /*
+            |----------------------------------------------------------------------
+            | Dates
+            |----------------------------------------------------------------------
+            */
+
+            'start_date.date' =>
+                'The start date must be a valid date.',
 
             'end_date.date' =>
                 'The end date must be a valid date.',
@@ -289,20 +391,47 @@ class UpdateTenancyRequest extends FormRequest
             'move_out_date.date' =>
                 'The move-out date must be a valid date.',
 
+            /*
+            |----------------------------------------------------------------------
+            | Financial
+            |----------------------------------------------------------------------
+            */
+
             'rent_amount.numeric' =>
                 'Rent amount must be a valid number.',
+
+            'rent_amount.min' =>
+                'Rent amount cannot be negative.',
 
             'deposit_amount.numeric' =>
                 'Deposit amount must be a valid number.',
 
+            'deposit_amount.min' =>
+                'Deposit amount cannot be negative.',
+
             'service_charge.numeric' =>
                 'Service charge must be a valid number.',
+
+            'service_charge.min' =>
+                'Service charge cannot be negative.',
 
             'late_fee.numeric' =>
                 'Late fee must be a valid number.',
 
+            'late_fee.min' =>
+                'Late fee cannot be negative.',
+
+            /*
+            |----------------------------------------------------------------------
+            | Payment
+            |----------------------------------------------------------------------
+            */
+
             'payment_frequency.in' =>
                 'The selected payment frequency is invalid.',
+
+            'due_day.integer' =>
+                'Due day must be a valid number.',
 
             'due_day.min' =>
                 'Due day must be between 1 and 31.',
@@ -310,33 +439,101 @@ class UpdateTenancyRequest extends FormRequest
             'due_day.max' =>
                 'Due day must be between 1 and 31.',
 
+            /*
+            |----------------------------------------------------------------------
+            | Status
+            |----------------------------------------------------------------------
+            */
+
             'status.in' =>
                 'The selected tenancy status is invalid.',
+
+            'is_active.boolean' =>
+                'The active status must be true or false.',
+
+            /*
+            |----------------------------------------------------------------------
+            | Agreement
+            |----------------------------------------------------------------------
+            */
+
+            'agreement_file.string' =>
+                'The agreement file must be a valid string.',
+
+            'agreement_file.max' =>
+                'The agreement file may not exceed 2048 characters.',
+
+            'agreement_public_id.string' =>
+                'The agreement public ID must be a valid string.',
+
+            'agreement_public_id.max' =>
+                'The agreement public ID may not exceed 255 characters.',
+
+            /*
+            |----------------------------------------------------------------------
+            | Notes
+            |----------------------------------------------------------------------
+            */
+
+            'notes.string' =>
+                'Notes must be a valid string.',
+
+            'notes.max' =>
+                'Notes may not exceed 5000 characters.',
         ];
     }
 
     /**
-     * Additional validation after normal rules.
+     * Additional validation after normal validation.
      */
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
 
+            $tenancy = $this->tenancy();
+
             /*
-             * Validate end date against supplied start date.
-             */
+            |--------------------------------------------------------------------------
+            | Determine effective dates
+            |--------------------------------------------------------------------------
+            |
+            | During an update, the user may only submit one date.
+            |
+            | Example:
+            |
+            | start_date is supplied
+            | end_date is not supplied
+            |
+            | In that case, compare the new start_date with the
+            | existing end_date.
+            |
+            */
+
+            $startDate = $this->has('start_date')
+                ? $this->input('start_date')
+                : $tenancy?->start_date;
+
+            $endDate = $this->has('end_date')
+                ? $this->input('end_date')
+                : $tenancy?->end_date;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Start Date / End Date
+            |--------------------------------------------------------------------------
+            */
 
             if (
-                $this->filled('start_date') &&
-                $this->filled('end_date')
+                !empty($startDate) &&
+                !empty($endDate)
             ) {
-                $startDate = strtotime($this->start_date);
-                $endDate = strtotime($this->end_date);
+                $startTimestamp = strtotime($startDate);
+                $endTimestamp = strtotime($endDate);
 
                 if (
-                    $startDate !== false &&
-                    $endDate !== false &&
-                    $endDate < $startDate
+                    $startTimestamp !== false &&
+                    $endTimestamp !== false &&
+                    $endTimestamp < $startTimestamp
                 ) {
                     $validator->errors()->add(
                         'end_date',
@@ -346,26 +543,153 @@ class UpdateTenancyRequest extends FormRequest
             }
 
             /*
-             * Validate move-out date against move-in date.
-             */
+            |--------------------------------------------------------------------------
+            | Move-In / Move-Out Dates
+            |--------------------------------------------------------------------------
+            */
+
+            $moveInDate = $this->has('move_in_date')
+                ? $this->input('move_in_date')
+                : $tenancy?->move_in_date;
+
+            $moveOutDate = $this->has('move_out_date')
+                ? $this->input('move_out_date')
+                : $tenancy?->move_out_date;
 
             if (
-                $this->filled('move_in_date') &&
-                $this->filled('move_out_date')
+                !empty($moveInDate) &&
+                !empty($moveOutDate)
             ) {
-                $moveInDate = strtotime($this->move_in_date);
-                $moveOutDate = strtotime($this->move_out_date);
+                $moveInTimestamp = strtotime($moveInDate);
+                $moveOutTimestamp = strtotime($moveOutDate);
 
                 if (
-                    $moveInDate !== false &&
-                    $moveOutDate !== false &&
-                    $moveOutDate < $moveInDate
+                    $moveInTimestamp !== false &&
+                    $moveOutTimestamp !== false &&
+                    $moveOutTimestamp < $moveInTimestamp
                 ) {
                     $validator->errors()->add(
                         'move_out_date',
                         'The move-out date must be on or after the move-in date.'
                     );
                 }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Move-In Date vs Tenancy Start Date
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                !empty($moveInDate) &&
+                !empty($startDate)
+            ) {
+                $moveInTimestamp = strtotime($moveInDate);
+                $startTimestamp = strtotime($startDate);
+
+                if (
+                    $moveInTimestamp !== false &&
+                    $startTimestamp !== false &&
+                    $moveInTimestamp < $startTimestamp
+                ) {
+                    $validator->errors()->add(
+                        'move_in_date',
+                        'The move-in date cannot be before the tenancy start date.'
+                    );
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Move-Out Date vs Tenancy End Date
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                !empty($moveOutDate) &&
+                !empty($endDate)
+            ) {
+                $moveOutTimestamp = strtotime($moveOutDate);
+                $endTimestamp = strtotime($endDate);
+
+                if (
+                    $moveOutTimestamp !== false &&
+                    $endTimestamp !== false &&
+                    $moveOutTimestamp > $endTimestamp
+                ) {
+                    $validator->errors()->add(
+                        'move_out_date',
+                        'The move-out date cannot be after the tenancy end date.'
+                    );
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Due Day Validation
+            |--------------------------------------------------------------------------
+            |
+            | Additional protection for monthly payments.
+            |
+            */
+
+            if (
+                $this->filled('payment_frequency') &&
+                $this->input('payment_frequency') === 'monthly' &&
+                $this->filled('due_day')
+            ) {
+                $dueDay = (int) $this->input('due_day');
+
+                if ($dueDay < 1 || $dueDay > 31) {
+                    $validator->errors()->add(
+                        'due_day',
+                        'For monthly payments, the due day must be between 1 and 31.'
+                    );
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Active Status Consistency
+            |--------------------------------------------------------------------------
+            |
+            | If status is explicitly changed to inactive/completed/terminated,
+            | is_active should normally not remain true.
+            |
+            | This is intentionally a validation warning only when the
+            | combination is clearly contradictory.
+            |
+            */
+
+            if (
+                $this->has('status') &&
+                $this->input('status') !== Tenancy::STATUS_ACTIVE &&
+                $this->has('is_active') &&
+                $this->boolean('is_active')
+            ) {
+                $validator->errors()->add(
+                    'is_active',
+                    'A tenancy with a non-active status cannot be marked as active.'
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Move-Out Status Consistency
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $this->has('move_out_date') &&
+                !empty($this->input('move_out_date')) &&
+                $this->has('is_active') &&
+                $this->boolean('is_active')
+            ) {
+                $validator->errors()->add(
+                    'is_active',
+                    'A tenancy with a move-out date cannot be marked as active.'
+                );
             }
         });
     }
