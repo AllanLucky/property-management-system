@@ -1,5 +1,3 @@
-// frontend/src/modules/super-admin/tenancies/TenancyTable.jsx
-
 import { useCallback, useMemo } from "react";
 import {
   Building2,
@@ -31,9 +29,7 @@ const safeText = (value, fallback = "—") => {
     return fallback;
   }
 
-  if (
-    typeof value === "object"
-  ) {
+  if (typeof value === "object") {
     return fallback;
   }
 
@@ -41,7 +37,25 @@ const safeText = (value, fallback = "—") => {
 };
 
 /**
- * Format date for Kenyan users.
+ * Safely get the first usable primitive text value.
+ */
+const firstText = (...values) => {
+  for (const value of values) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      typeof value !== "object"
+    ) {
+      return String(value);
+    }
+  }
+
+  return "";
+};
+
+/**
+ * Safely format a date.
  */
 const formatDate = (value) => {
   if (!value) {
@@ -75,7 +89,7 @@ const formatCurrency = (value) => {
 
   const numericValue = Number(value);
 
-  if (Number.isNaN(numericValue)) {
+  if (!Number.isFinite(numericValue)) {
     return "—";
   }
 
@@ -87,7 +101,7 @@ const formatCurrency = (value) => {
 };
 
 /**
- * Normalize status text.
+ * Normalize status text for display.
  */
 const formatStatus = (value) => {
   if (
@@ -105,6 +119,8 @@ const formatStatus = (value) => {
   return String(value)
     .replace(/_/g, " ")
     .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
     .replace(/\b\w/g, (letter) =>
       letter.toUpperCase()
     );
@@ -117,22 +133,41 @@ const formatStatus = (value) => {
 */
 
 /**
- * Get tenant from tenancy.
+ * Get tenant relationship.
  *
  * Supports:
- * tenancy.tenant
- * tenancy.tenant.user
+ * - tenancy.tenant
+ * - tenancy.tenant_details
  */
 const getTenant = (tenancy) => {
-  return tenancy?.tenant || null;
+  if (!tenancy || typeof tenancy !== "object") {
+    return null;
+  }
+
+  return (
+    tenancy?.tenant ||
+    tenancy?.tenant_details ||
+    null
+  );
 };
 
 /**
- * Get tenant user.
+ * Get tenant user relationship.
+ *
+ * Supports:
+ * - tenancy.tenant.user
+ * - tenancy.tenant_user
+ * - tenancy.user
  */
 const getTenantUser = (tenancy) => {
+  if (!tenancy || typeof tenancy !== "object") {
+    return null;
+  }
+
   return (
     tenancy?.tenant?.user ||
+    tenancy?.tenant_user ||
+    tenancy?.user ||
     null
   );
 };
@@ -145,27 +180,25 @@ const getTenantName = (tenancy) => {
   const user = getTenantUser(tenancy);
 
   /*
-   * Direct tenant full name.
+   * Direct full-name fields.
    */
-  if (
-    tenant?.full_name &&
-    typeof tenant.full_name === "string"
-  ) {
-    return tenant.full_name;
+  const directFullName = firstText(
+    tenant?.full_name,
+    tenant?.name,
+    tenant?.display_name,
+    user?.full_name,
+    user?.name,
+    user?.display_name,
+    tenancy?.tenant_name,
+    tenancy?.tenant_full_name
+  );
+
+  if (directFullName) {
+    return directFullName;
   }
 
   /*
-   * User full name.
-   */
-  if (
-    user?.full_name &&
-    typeof user.full_name === "string"
-  ) {
-    return user.full_name;
-  }
-
-  /*
-   * Direct tenant names.
+   * Tenant first / middle / last names.
    */
   const tenantName = [
     tenant?.first_name,
@@ -177,8 +210,11 @@ const getTenantName = (tenancy) => {
       (value) =>
         value !== null &&
         value !== undefined &&
-        value !== ""
+        value !== "" &&
+        typeof value !== "object"
     )
+    .map((value) => String(value).trim())
+    .filter(Boolean)
     .join(" ")
     .trim();
 
@@ -187,7 +223,7 @@ const getTenantName = (tenancy) => {
   }
 
   /*
-   * User names.
+   * User first / middle / last names.
    */
   const userName = [
     user?.first_name,
@@ -199,13 +235,29 @@ const getTenantName = (tenancy) => {
       (value) =>
         value !== null &&
         value !== undefined &&
-        value !== ""
+        value !== "" &&
+        typeof value !== "object"
     )
+    .map((value) => String(value).trim())
+    .filter(Boolean)
     .join(" ")
     .trim();
 
   if (userName) {
     return userName;
+  }
+
+  /*
+   * Some APIs may return a single name field directly
+   * on the tenancy.
+   */
+  const tenancyName = firstText(
+    tenancy?.name,
+    tenancy?.tenant_display_name
+  );
+
+  if (tenancyName) {
+    return tenancyName;
   }
 
   return "No tenant";
@@ -215,49 +267,27 @@ const getTenantName = (tenancy) => {
  * Get tenant initials.
  */
 const getTenantInitials = (tenancy) => {
-  const tenant = getTenant(tenancy);
-  const user = getTenantUser(tenancy);
-
-  const fullName =
-    tenant?.full_name ||
-    user?.full_name;
+  const tenantName = getTenantName(tenancy);
 
   if (
-    fullName &&
-    typeof fullName === "string"
+    tenantName &&
+    tenantName !== "No tenant"
   ) {
-    const initials = fullName
-      .split(" ")
+    const initials = tenantName
+      .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
       .map((name) =>
-        name.charAt(0)
+        name.charAt(0).toUpperCase()
       )
-      .join("")
-      .toUpperCase();
+      .join("");
 
     if (initials) {
       return initials;
     }
   }
 
-  const names = [
-    tenant?.first_name ||
-    user?.first_name,
-
-    tenant?.last_name ||
-    user?.last_name,
-  ].filter(Boolean);
-
-  const initials = names
-    .map((name) =>
-      String(name)
-        .charAt(0)
-        .toUpperCase()
-    )
-    .join("");
-
-  return initials || "T";
+  return "T";
 };
 
 /**
@@ -267,10 +297,13 @@ const getTenantPhone = (tenancy) => {
   const tenant = getTenant(tenancy);
   const user = getTenantUser(tenancy);
 
-  return (
-    tenant?.phone ||
-    user?.phone ||
-    ""
+  return firstText(
+    tenant?.phone,
+    tenant?.phone_number,
+    user?.phone,
+    user?.phone_number,
+    tenancy?.tenant_phone,
+    tenancy?.tenant_phone_number
   );
 };
 
@@ -278,10 +311,16 @@ const getTenantPhone = (tenancy) => {
  * Get tenant number.
  */
 const getTenantNumber = (tenancy) => {
+  const tenant = getTenant(tenancy);
+
   return (
-    tenancy?.tenant?.tenant_number ||
-    tenancy?.tenant_number ||
-    "Tenant"
+    firstText(
+      tenant?.tenant_number,
+      tenant?.number,
+      tenant?.tenant_code,
+      tenancy?.tenant_number,
+      tenancy?.tenant_code
+    ) || "Tenant"
   );
 };
 
@@ -293,13 +332,25 @@ const getTenantImage = (tenancy) => {
   const user = getTenantUser(tenancy);
 
   return (
-    tenant?.photo ||
-    tenant?.image ||
-    tenant?.avatar ||
-    user?.photo ||
-    user?.image ||
-    user?.avatar ||
-    null
+    firstText(
+      tenant?.photo_url,
+      tenant?.image_url,
+      tenant?.avatar_url,
+      tenant?.photo,
+      tenant?.image,
+      tenant?.avatar,
+
+      user?.photo_url,
+      user?.image_url,
+      user?.avatar_url,
+      user?.photo,
+      user?.image,
+      user?.avatar,
+
+      tenancy?.tenant_photo_url,
+      tenancy?.tenant_image_url,
+      tenancy?.tenant_avatar_url
+    ) || null
   );
 };
 
@@ -310,9 +361,13 @@ const getTenantImage = (tenancy) => {
 */
 
 /**
- * Get property.
+ * Get property relationship.
  */
 const getProperty = (tenancy) => {
+  if (!tenancy || typeof tenancy !== "object") {
+    return null;
+  }
+
   return (
     tenancy?.property ||
     tenancy?.apartment?.property ||
@@ -328,12 +383,19 @@ const getPropertyName = (tenancy) => {
   const property = getProperty(tenancy);
 
   return (
-    property?.title ||
-    property?.name ||
-    property?.property_name ||
-    tenancy?.property_name ||
-    tenancy?.apartment?.property_title ||
-    "No property"
+    firstText(
+      property?.title,
+      property?.name,
+      property?.property_name,
+      property?.display_name,
+
+      tenancy?.property_name,
+      tenancy?.property_title,
+      tenancy?.property_display_name,
+
+      tenancy?.apartment?.property_title,
+      tenancy?.apartment?.property_name
+    ) || "No property"
   );
 };
 
@@ -343,11 +405,14 @@ const getPropertyName = (tenancy) => {
 const getPropertyCode = (tenancy) => {
   const property = getProperty(tenancy);
 
-  return (
-    property?.property_code ||
-    property?.code ||
-    tenancy?.property_code ||
-    ""
+  return firstText(
+    property?.property_code,
+    property?.code,
+    property?.property_number,
+    property?.reference_number,
+
+    tenancy?.property_code,
+    tenancy?.property_number
   );
 };
 
@@ -357,12 +422,14 @@ const getPropertyCode = (tenancy) => {
 const getPropertyLocation = (tenancy) => {
   const property = getProperty(tenancy);
 
-  return (
-    property?.full_location ||
-    property?.location ||
-    property?.address ||
-    tenancy?.property_location ||
-    ""
+  return firstText(
+    property?.full_location,
+    property?.location,
+    property?.address,
+    property?.physical_address,
+
+    tenancy?.property_location,
+    tenancy?.property_address
   );
 };
 
@@ -373,9 +440,13 @@ const getPropertyLocation = (tenancy) => {
 */
 
 /**
- * Get apartment.
+ * Get apartment relationship.
  */
 const getApartment = (tenancy) => {
+  if (!tenancy || typeof tenancy !== "object") {
+    return null;
+  }
+
   return (
     tenancy?.apartment ||
     tenancy?.unit?.apartment ||
@@ -390,12 +461,18 @@ const getApartmentName = (tenancy) => {
   const apartment = getApartment(tenancy);
 
   return (
-    apartment?.full_name ||
-    apartment?.name ||
-    apartment?.apartment_number ||
-    apartment?.number ||
-    tenancy?.apartment_name ||
-    "No apartment"
+    firstText(
+      apartment?.full_name,
+      apartment?.name,
+      apartment?.apartment_name,
+      apartment?.apartment_number,
+      apartment?.number,
+      apartment?.code,
+
+      tenancy?.apartment_name,
+      tenancy?.apartment_number,
+      tenancy?.apartment_code
+    ) || "No apartment"
   );
 };
 
@@ -406,13 +483,14 @@ const getApartmentName = (tenancy) => {
 */
 
 /**
- * Get unit.
+ * Get unit relationship.
  */
 const getUnit = (tenancy) => {
-  return (
-    tenancy?.unit ||
-    null
-  );
+  if (!tenancy || typeof tenancy !== "object") {
+    return null;
+  }
+
+  return tenancy?.unit || null;
 };
 
 /**
@@ -422,12 +500,17 @@ const getUnitName = (tenancy) => {
   const unit = getUnit(tenancy);
 
   return (
-    unit?.unit_number ||
-    unit?.name ||
-    unit?.unit_name ||
-    unit?.number ||
-    tenancy?.unit_number ||
-    "No unit"
+    firstText(
+      unit?.unit_number,
+      unit?.name,
+      unit?.unit_name,
+      unit?.number,
+      unit?.code,
+
+      tenancy?.unit_number,
+      tenancy?.unit_name,
+      tenancy?.unit_code
+    ) || "No unit"
   );
 };
 
@@ -437,14 +520,15 @@ const getUnitName = (tenancy) => {
 const getUnitStatus = (tenancy) => {
   const unit = getUnit(tenancy);
 
-  const status =
-    unit?.status_label ||
-    unit?.status;
+  const status = firstText(
+    unit?.status_label,
+    unit?.status,
+    unit?.status_code,
+    tenancy?.unit_status_label,
+    tenancy?.unit_status
+  );
 
-  if (
-    !status ||
-    typeof status === "object"
-  ) {
+  if (!status) {
     return "";
   }
 
@@ -458,46 +542,80 @@ const getUnitStatus = (tenancy) => {
 */
 
 /**
- * Get tenancy status.
+ * Get raw tenancy status.
+ */
+const getRawStatus = (tenancy) => {
+  if (!tenancy || typeof tenancy !== "object") {
+    return "";
+  }
+
+  const value =
+    tenancy?.status_code ||
+    tenancy?.status ||
+    tenancy?.status_label ||
+    "";
+
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "object"
+  ) {
+    return "";
+  }
+
+  return String(value)
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .replace(/\s+/g, "_")
+    .trim();
+};
+
+/**
+ * Get tenancy status label.
  */
 const getStatus = (tenancy) => {
   return formatStatus(
     tenancy?.status_label ||
-    tenancy?.status ||
-    "unknown"
+      tenancy?.status ||
+      tenancy?.status_code ||
+      "unknown"
   );
 };
 
 /**
- * Get status classes.
+ * Get status badge classes.
  */
 const getStatusClasses = (tenancy) => {
-  const status = String(
-    tenancy?.status || ""
-  ).toLowerCase();
+  const status = getRawStatus(tenancy);
 
-  if (
+  const isActive =
     status === "active" ||
+    status === "current" ||
     tenancy?.is_currently_active === true ||
-    tenancy?.is_active === true
-  ) {
+    tenancy?.is_active === true;
+
+  if (isActive) {
     return "bg-green-50 text-green-700 ring-green-600/20";
   }
 
   if (
-    status === "pending"
+    status === "pending" ||
+    status === "draft" ||
+    status === "upcoming"
   ) {
     return "bg-yellow-50 text-yellow-700 ring-yellow-600/20";
   }
 
   if (
-    status === "expired"
+    status === "expired" ||
+    status === "expiring"
   ) {
     return "bg-orange-50 text-orange-700 ring-orange-600/20";
   }
 
   if (
-    status === "terminated"
+    status === "terminated" ||
+    status === "termination"
   ) {
     return "bg-red-50 text-red-700 ring-red-600/20";
   }
@@ -517,7 +635,8 @@ const getStatusClasses = (tenancy) => {
   }
 
   if (
-    status === "renewed"
+    status === "renewed" ||
+    status === "renewal"
   ) {
     return "bg-blue-50 text-blue-700 ring-blue-600/20";
   }
@@ -531,13 +650,86 @@ const getStatusClasses = (tenancy) => {
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Get tenancy number.
+ */
 const getTenancyNumber = (tenancy) => {
   return (
-    tenancy?.tenancy_number ||
-    tenancy?.number ||
+    firstText(
+      tenancy?.tenancy_number,
+      tenancy?.number,
+      tenancy?.code,
+      tenancy?.reference_number
+    ) ||
     (tenancy?.id
       ? `TEN-${tenancy.id}`
       : "TEN-—")
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Rent Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get tenancy rent.
+ */
+const getTenancyRent = (tenancy) => {
+  const unit = getUnit(tenancy);
+
+  return (
+    tenancy?.rent_amount ??
+    tenancy?.monthly_rent ??
+    tenancy?.rent ??
+    tenancy?.rent_price ??
+    tenancy?.amount ??
+
+    unit?.rent_amount ??
+    unit?.monthly_rent ??
+    unit?.price ??
+    unit?.rent ??
+    null
+  );
+};
+
+/**
+ * Get payment frequency.
+ */
+const getPaymentFrequency = (tenancy) => {
+  const value =
+    tenancy?.payment_frequency ||
+    tenancy?.rent_frequency ||
+    tenancy?.frequency;
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "object"
+  ) {
+    return "";
+  }
+
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .trim();
+};
+
+/**
+ * Get service charge.
+ */
+const getServiceCharge = (tenancy) => {
+  return (
+    tenancy?.service_charge ??
+    tenancy?.serviceCharge ??
+    tenancy?.service_charge_amount ??
+    tenancy?.monthly_service_charge ??
+    tenancy?.unit?.service_charge ??
+    tenancy?.unit?.serviceCharge ??
+    null
   );
 };
 
@@ -623,7 +815,6 @@ const TenancyTable = ({
   */
 
   hasFilters = false,
-  emptyMessage,
 }) => {
   /*
   |--------------------------------------------------------------------------
@@ -645,15 +836,13 @@ const TenancyTable = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Action Handlers
+  | Action handlers
   |--------------------------------------------------------------------------
   */
 
   const handleDelete = useCallback(
     async (id) => {
-      if (
-        typeof onDelete !== "function"
-      ) {
+      if (typeof onDelete !== "function") {
         return;
       }
 
@@ -664,9 +853,7 @@ const TenancyTable = ({
 
   const handleActivate = useCallback(
     async (id) => {
-      if (
-        typeof onActivate !== "function"
-      ) {
+      if (typeof onActivate !== "function") {
         return;
       }
 
@@ -677,9 +864,7 @@ const TenancyTable = ({
 
   const handleDeactivate = useCallback(
     async (id) => {
-      if (
-        typeof onDeactivate !== "function"
-      ) {
+      if (typeof onDeactivate !== "function") {
         return;
       }
 
@@ -689,10 +874,8 @@ const TenancyTable = ({
   );
 
   const handleRenew = useCallback(
-    async (id, data) => {
-      if (
-        typeof onRenew !== "function"
-      ) {
+    async (id, data = {}) => {
+      if (typeof onRenew !== "function") {
         return;
       }
 
@@ -702,10 +885,8 @@ const TenancyTable = ({
   );
 
   const handleTerminate = useCallback(
-    async (id, data) => {
-      if (
-        typeof onTerminate !== "function"
-      ) {
+    async (id, data = {}) => {
+      if (typeof onTerminate !== "function") {
         return;
       }
 
@@ -715,10 +896,8 @@ const TenancyTable = ({
   );
 
   const handleCancel = useCallback(
-    async (id, data) => {
-      if (
-        typeof onCancel !== "function"
-      ) {
+    async (id, data = {}) => {
+      if (typeof onCancel !== "function") {
         return;
       }
 
@@ -729,9 +908,7 @@ const TenancyTable = ({
 
   const handleRestore = useCallback(
     async (id) => {
-      if (
-        typeof onRestore !== "function"
-      ) {
+      if (typeof onRestore !== "function") {
         return;
       }
 
@@ -742,9 +919,7 @@ const TenancyTable = ({
 
   const handleForceDelete = useCallback(
     async (id) => {
-      if (
-        typeof onForceDelete !== "function"
-      ) {
+      if (typeof onForceDelete !== "function") {
         return;
       }
 
@@ -776,10 +951,7 @@ const TenancyTable = ({
   if (rows.length === 0) {
     return (
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <EmptyState
-          hasFilters={hasFilters}
-          message={emptyMessage}
-        />
+        <EmptyState hasFilters={hasFilters} />
       </div>
     );
   }
@@ -864,6 +1036,12 @@ const TenancyTable = ({
 
           <tbody className="divide-y divide-gray-100 bg-white">
             {rows.map((tenancy) => {
+              /*
+              |--------------------------------------------------------------------------
+              | Tenant
+              |--------------------------------------------------------------------------
+              */
+
               const tenantName =
                 getTenantName(tenancy);
 
@@ -879,6 +1057,12 @@ const TenancyTable = ({
               const tenantImage =
                 getTenantImage(tenancy);
 
+              /*
+              |--------------------------------------------------------------------------
+              | Property
+              |--------------------------------------------------------------------------
+              */
+
               const propertyName =
                 getPropertyName(tenancy);
 
@@ -886,14 +1070,16 @@ const TenancyTable = ({
                 getPropertyCode(tenancy);
 
               const propertyLocation =
-                getPropertyLocation(
-                  tenancy
-                );
+                getPropertyLocation(tenancy);
+
+              /*
+              |--------------------------------------------------------------------------
+              | Apartment / Unit
+              |--------------------------------------------------------------------------
+              */
 
               const apartmentName =
-                getApartmentName(
-                  tenancy
-                );
+                getApartmentName(tenancy);
 
               const unitName =
                 getUnitName(tenancy);
@@ -901,25 +1087,50 @@ const TenancyTable = ({
               const unitStatus =
                 getUnitStatus(tenancy);
 
+              /*
+              |--------------------------------------------------------------------------
+              | Status
+              |--------------------------------------------------------------------------
+              */
+
               const statusLabel =
                 getStatus(tenancy);
 
               const statusClasses =
-                getStatusClasses(
-                  tenancy
-                );
+                getStatusClasses(tenancy);
+
+              /*
+              |--------------------------------------------------------------------------
+              | Tenancy
+              |--------------------------------------------------------------------------
+              */
 
               const tenancyNumber =
-                getTenancyNumber(
-                  tenancy
-                );
+                getTenancyNumber(tenancy);
+
+              const rentAmount =
+                getTenancyRent(tenancy);
+
+              const paymentFrequency =
+                getPaymentFrequency(tenancy);
+
+              const serviceCharge =
+                getServiceCharge(tenancy);
+
+              /*
+              |--------------------------------------------------------------------------
+              | Key
+              |--------------------------------------------------------------------------
+              */
+
+              const rowKey =
+                tenancy?.id ??
+                tenancy?.tenancy_number ??
+                tenancyNumber;
 
               return (
                 <tr
-                  key={
-                    tenancy.id ??
-                    tenancy.tenancy_number
-                  }
+                  key={rowKey}
                   className="group transition-colors hover:bg-gray-50/70"
                 >
                   {/* Tenancy */}
@@ -938,7 +1149,7 @@ const TenancyTable = ({
                         </p>
 
                         <p className="mt-0.5 text-xs text-gray-500">
-                          {tenancy.id
+                          {tenancy?.id
                             ? `ID #${tenancy.id}`
                             : "No ID"}
                         </p>
@@ -955,9 +1166,31 @@ const TenancyTable = ({
                             src={tenantImage}
                             alt={tenantName}
                             className="h-full w-full object-cover"
+                            loading="lazy"
                             onError={(event) => {
                               event.currentTarget.style.display =
                                 "none";
+
+                              const parent =
+                                event.currentTarget.parentElement;
+
+                              if (
+                                parent &&
+                                !parent.dataset.fallback
+                              ) {
+                                parent.dataset.fallback =
+                                  "true";
+
+                                parent.classList.add(
+                                  "text-gray-600"
+                                );
+
+                                parent.appendChild(
+                                  document.createTextNode(
+                                    tenantInitials
+                                  )
+                                );
+                              }
                             }}
                           />
                         ) : (
@@ -970,7 +1203,10 @@ const TenancyTable = ({
                           <UserRound className="h-3.5 w-3.5 shrink-0 text-gray-400" />
 
                           <p className="truncate text-sm font-medium text-gray-900">
-                            {tenantName}
+                            {safeText(
+                              tenantName,
+                              "No tenant"
+                            )}
                           </p>
                         </div>
 
@@ -983,7 +1219,9 @@ const TenancyTable = ({
 
                         {tenantPhone && (
                           <p className="mt-0.5 truncate text-xs text-gray-400">
-                            {tenantPhone}
+                            {safeText(
+                              tenantPhone
+                            )}
                           </p>
                         )}
                       </div>
@@ -997,19 +1235,24 @@ const TenancyTable = ({
                         <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
 
                         <p className="truncate text-sm font-medium text-gray-900">
-                          {propertyName}
+                          {safeText(
+                            propertyName,
+                            "No property"
+                          )}
                         </p>
                       </div>
 
                       {propertyCode && (
                         <p className="mt-1 pl-6 text-xs text-gray-500">
-                          {propertyCode}
+                          {safeText(propertyCode)}
                         </p>
                       )}
 
                       {propertyLocation && (
                         <p className="mt-1 max-w-[220px] truncate pl-6 text-xs text-gray-400">
-                          {propertyLocation}
+                          {safeText(
+                            propertyLocation
+                          )}
                         </p>
                       )}
                     </div>
@@ -1022,17 +1265,23 @@ const TenancyTable = ({
                         <Home className="h-4 w-4 shrink-0 text-gray-400" />
 
                         <p className="truncate text-sm font-medium text-gray-900">
-                          {unitName}
+                          {safeText(
+                            unitName,
+                            "No unit"
+                          )}
                         </p>
                       </div>
 
                       <p className="mt-1 pl-6 text-xs text-gray-500">
-                        {apartmentName}
+                        {safeText(
+                          apartmentName,
+                          "No apartment"
+                        )}
                       </p>
 
                       {unitStatus && (
                         <p className="mt-1 pl-6 text-xs text-gray-400">
-                          {unitStatus}
+                          {safeText(unitStatus)}
                         </p>
                       )}
                     </div>
@@ -1047,20 +1296,20 @@ const TenancyTable = ({
                         <div>
                           <p className="text-sm font-medium text-gray-900">
                             {formatDate(
-                              tenancy.start_date
+                              tenancy?.start_date
                             )}
                           </p>
 
                           <p className="text-xs text-gray-500">
                             to{" "}
                             {formatDate(
-                              tenancy.end_date
+                              tenancy?.end_date
                             )}
                           </p>
                         </div>
                       </div>
 
-                      {tenancy.move_in_date && (
+                      {tenancy?.move_in_date && (
                         <p className="mt-1 pl-6 text-xs text-gray-400">
                           Move in:{" "}
                           {formatDate(
@@ -1069,7 +1318,7 @@ const TenancyTable = ({
                         </p>
                       )}
 
-                      {tenancy.move_out_date && (
+                      {tenancy?.move_out_date && (
                         <p className="mt-1 pl-6 text-xs text-gray-400">
                           Move out:{" "}
                           {formatDate(
@@ -1088,32 +1337,26 @@ const TenancyTable = ({
 
                         <p className="text-sm font-semibold text-gray-900">
                           {formatCurrency(
-                            tenancy.rent_amount ??
-                            tenancy.rent ??
-                            tenancy.monthly_rent
+                            rentAmount
                           )}
                         </p>
                       </div>
 
-                      {tenancy.payment_frequency && (
+                      {paymentFrequency && (
                         <p className="mt-1 pl-6 text-xs capitalize text-gray-500">
-                          {String(
-                            tenancy.payment_frequency
-                          ).replace(
-                            /_/g,
-                            " "
+                          {safeText(
+                            paymentFrequency
                           )}
                         </p>
                       )}
 
-                      {tenancy.service_charge !==
-                        null &&
-                        tenancy.service_charge !==
-                        undefined && (
+                      {serviceCharge !== null &&
+                        serviceCharge !== undefined &&
+                        serviceCharge !== "" && (
                           <p className="mt-1 pl-6 text-xs text-gray-400">
                             Service:{" "}
                             {formatCurrency(
-                              tenancy.service_charge
+                              serviceCharge
                             )}
                           </p>
                         )}
@@ -1131,31 +1374,34 @@ const TenancyTable = ({
                           statusClasses,
                         ].join(" ")}
                       >
-                        {statusLabel}
+                        {safeText(
+                          statusLabel,
+                          "Unknown"
+                        )}
                       </span>
 
-                      {tenancy.is_expired ===
+                      {tenancy?.is_expired ===
                         true && (
-                          <span className="text-xs text-orange-600">
-                            Expired
-                          </span>
-                        )}
+                        <span className="text-xs text-orange-600">
+                          Expired
+                        </span>
+                      )}
 
-                      {tenancy.has_moved_in ===
+                      {tenancy?.has_moved_in ===
                         true &&
-                        tenancy.has_moved_out !==
-                        true && (
+                        tenancy?.has_moved_out !==
+                          true && (
                           <span className="text-xs text-green-600">
                             Moved in
                           </span>
                         )}
 
-                      {tenancy.has_moved_out ===
+                      {tenancy?.has_moved_out ===
                         true && (
-                          <span className="text-xs text-gray-500">
-                            Moved out
-                          </span>
-                        )}
+                        <span className="text-xs text-gray-500">
+                          Moved out
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -1164,9 +1410,7 @@ const TenancyTable = ({
                     <TenancyActions
                       tenancy={tenancy}
                       onDelete={handleDelete}
-                      onActivate={
-                        handleActivate
-                      }
+                      onActivate={handleActivate}
                       onDeactivate={
                         handleDeactivate
                       }
@@ -1175,9 +1419,7 @@ const TenancyTable = ({
                         handleTerminate
                       }
                       onCancel={handleCancel}
-                      onRestore={
-                        handleRestore
-                      }
+                      onRestore={handleRestore}
                       onForceDelete={
                         handleForceDelete
                       }
