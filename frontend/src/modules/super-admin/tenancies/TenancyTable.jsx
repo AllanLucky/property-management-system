@@ -13,9 +13,29 @@ import TenancyActions from "./TenancyActions";
 
 /*
 |--------------------------------------------------------------------------
-| Helpers
+| Stable Constants
 |--------------------------------------------------------------------------
 */
+
+const EMPTY_ROWS = [];
+const EMPTY_OBJECT = {};
+
+/*
+|--------------------------------------------------------------------------
+| Primitive / Display Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Check whether a value is a usable primitive.
+ */
+const isPrimitive = (value) => {
+  return (
+    value !== null &&
+    value !== undefined &&
+    typeof value !== "object"
+  );
+};
 
 /**
  * Safely convert a value into a displayable string.
@@ -37,17 +57,15 @@ const safeText = (value, fallback = "—") => {
 };
 
 /**
- * Safely get the first usable primitive text value.
+ * Safely get the first usable primitive value.
  */
 const firstText = (...values) => {
   for (const value of values) {
     if (
-      value !== null &&
-      value !== undefined &&
-      value !== "" &&
-      typeof value !== "object"
+      isPrimitive(value) &&
+      String(value).trim() !== ""
     ) {
-      return String(value);
+      return String(value).trim();
     }
   }
 
@@ -55,10 +73,37 @@ const firstText = (...values) => {
 };
 
 /**
+ * Safely get the first non-null value.
+ */
+const firstValue = (...values) => {
+  for (const value of values) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      value !== ""
+    ) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Date Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
  * Safely format a date.
  */
 const formatDate = (value) => {
   if (!value) {
+    return "—";
+  }
+
+  if (typeof value === "object") {
     return "—";
   }
 
@@ -75,6 +120,12 @@ const formatDate = (value) => {
   }).format(date);
 };
 
+/*
+|--------------------------------------------------------------------------
+| Currency Helpers
+|--------------------------------------------------------------------------
+*/
+
 /**
  * Format currency as Kenyan Shillings.
  */
@@ -84,6 +135,10 @@ const formatCurrency = (value) => {
     value === undefined ||
     value === ""
   ) {
+    return "—";
+  }
+
+  if (typeof value === "object") {
     return "—";
   }
 
@@ -99,6 +154,12 @@ const formatCurrency = (value) => {
     maximumFractionDigits: 0,
   }).format(numericValue);
 };
+
+/*
+|--------------------------------------------------------------------------
+| Status Helpers
+|--------------------------------------------------------------------------
+*/
 
 /**
  * Normalize status text for display.
@@ -126,6 +187,26 @@ const formatStatus = (value) => {
     );
 };
 
+/**
+ * Normalize a status into a comparison-safe value.
+ */
+const normalizeStatus = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "object"
+  ) {
+    return "";
+  }
+
+  return String(value)
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .replace(/\s+/g, "_")
+    .trim();
+};
+
 /*
 |--------------------------------------------------------------------------
 | Tenant Helpers
@@ -135,9 +216,10 @@ const formatStatus = (value) => {
 /**
  * Get tenant relationship.
  *
- * Supports:
+ * Supported:
  * - tenancy.tenant
  * - tenancy.tenant_details
+ * - tenancy.tenant_data
  */
 const getTenant = (tenancy) => {
   if (!tenancy || typeof tenancy !== "object") {
@@ -147,6 +229,7 @@ const getTenant = (tenancy) => {
   return (
     tenancy?.tenant ||
     tenancy?.tenant_details ||
+    tenancy?.tenant_data ||
     null
   );
 };
@@ -154,7 +237,7 @@ const getTenant = (tenancy) => {
 /**
  * Get tenant user relationship.
  *
- * Supports:
+ * Supported:
  * - tenancy.tenant.user
  * - tenancy.tenant_user
  * - tenancy.user
@@ -180,17 +263,20 @@ const getTenantName = (tenancy) => {
   const user = getTenantUser(tenancy);
 
   /*
-   * Direct full-name fields.
+   * Direct full-name values.
    */
   const directFullName = firstText(
     tenant?.full_name,
     tenant?.name,
     tenant?.display_name,
+
     user?.full_name,
     user?.name,
     user?.display_name,
+
     tenancy?.tenant_name,
-    tenancy?.tenant_full_name
+    tenancy?.tenant_full_name,
+    tenancy?.tenant_display_name
   );
 
   if (directFullName) {
@@ -198,21 +284,15 @@ const getTenantName = (tenancy) => {
   }
 
   /*
-   * Tenant first / middle / last names.
+   * Tenant first / middle / other / last names.
    */
   const tenantName = [
     tenant?.first_name,
-    tenant?.other_names,
     tenant?.middle_name,
+    tenant?.other_names,
     tenant?.last_name,
   ]
-    .filter(
-      (value) =>
-        value !== null &&
-        value !== undefined &&
-        value !== "" &&
-        typeof value !== "object"
-    )
+    .filter(isPrimitive)
     .map((value) => String(value).trim())
     .filter(Boolean)
     .join(" ")
@@ -223,21 +303,15 @@ const getTenantName = (tenancy) => {
   }
 
   /*
-   * User first / middle / last names.
+   * User first / middle / other / last names.
    */
   const userName = [
     user?.first_name,
-    user?.other_names,
     user?.middle_name,
+    user?.other_names,
     user?.last_name,
   ]
-    .filter(
-      (value) =>
-        value !== null &&
-        value !== undefined &&
-        value !== "" &&
-        typeof value !== "object"
-    )
+    .filter(isPrimitive)
     .map((value) => String(value).trim())
     .filter(Boolean)
     .join(" ")
@@ -248,11 +322,11 @@ const getTenantName = (tenancy) => {
   }
 
   /*
-   * Some APIs may return a single name field directly
-   * on the tenancy.
+   * Direct tenancy-level name.
    */
   const tenancyName = firstText(
     tenancy?.name,
+    tenancy?.tenant_name,
     tenancy?.tenant_display_name
   );
 
@@ -300,8 +374,14 @@ const getTenantPhone = (tenancy) => {
   return firstText(
     tenant?.phone,
     tenant?.phone_number,
+    tenant?.mobile,
+    tenant?.mobile_number,
+
     user?.phone,
     user?.phone_number,
+    user?.mobile,
+    user?.mobile_number,
+
     tenancy?.tenant_phone,
     tenancy?.tenant_phone_number
   );
@@ -318,9 +398,24 @@ const getTenantNumber = (tenancy) => {
       tenant?.tenant_number,
       tenant?.number,
       tenant?.tenant_code,
+
       tenancy?.tenant_number,
       tenancy?.tenant_code
     ) || "Tenant"
+  );
+};
+
+/**
+ * Get tenant email.
+ */
+const getTenantEmail = (tenancy) => {
+  const tenant = getTenant(tenancy);
+  const user = getTenantUser(tenancy);
+
+  return firstText(
+    tenant?.email,
+    user?.email,
+    tenancy?.tenant_email
   );
 };
 
@@ -339,6 +434,7 @@ const getTenantImage = (tenancy) => {
       tenant?.photo,
       tenant?.image,
       tenant?.avatar,
+      tenant?.profile_photo,
 
       user?.photo_url,
       user?.image_url,
@@ -346,6 +442,7 @@ const getTenantImage = (tenancy) => {
       user?.photo,
       user?.image,
       user?.avatar,
+      user?.profile_photo,
 
       tenancy?.tenant_photo_url,
       tenancy?.tenant_image_url,
@@ -524,6 +621,7 @@ const getUnitStatus = (tenancy) => {
     unit?.status_label,
     unit?.status,
     unit?.status_code,
+
     tenancy?.unit_status_label,
     tenancy?.unit_status
   );
@@ -537,7 +635,7 @@ const getUnitStatus = (tenancy) => {
 
 /*
 |--------------------------------------------------------------------------
-| Status Helpers
+| Tenancy Status
 |--------------------------------------------------------------------------
 */
 
@@ -549,36 +647,39 @@ const getRawStatus = (tenancy) => {
     return "";
   }
 
-  const value =
-    tenancy?.status_code ||
-    tenancy?.status ||
-    tenancy?.status_label ||
-    "";
-
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "object"
-  ) {
-    return "";
-  }
-
-  return String(value)
-    .toLowerCase()
-    .replace(/-/g, "_")
-    .replace(/\s+/g, "_")
-    .trim();
+  return normalizeStatus(
+    firstValue(
+      tenancy?.status_code,
+      tenancy?.status,
+      tenancy?.status_label
+    )
+  );
 };
 
 /**
  * Get tenancy status label.
  */
 const getStatus = (tenancy) => {
-  return formatStatus(
-    tenancy?.status_label ||
-      tenancy?.status ||
-      tenancy?.status_code ||
-      "unknown"
+  const value = firstValue(
+    tenancy?.status_label,
+    tenancy?.status,
+    tenancy?.status_code
+  );
+
+  return formatStatus(value || "unknown");
+};
+
+/**
+ * Determine whether tenancy is active.
+ */
+const isTenancyActive = (tenancy) => {
+  const status = getRawStatus(tenancy);
+
+  return (
+    status === "active" ||
+    status === "current" ||
+    tenancy?.is_currently_active === true ||
+    tenancy?.is_active === true
   );
 };
 
@@ -588,13 +689,7 @@ const getStatus = (tenancy) => {
 const getStatusClasses = (tenancy) => {
   const status = getRawStatus(tenancy);
 
-  const isActive =
-    status === "active" ||
-    status === "current" ||
-    tenancy?.is_currently_active === true ||
-    tenancy?.is_active === true;
-
-  if (isActive) {
+  if (isTenancyActive(tenancy)) {
     return "bg-green-50 text-green-700 ring-green-600/20";
   }
 
@@ -654,17 +749,20 @@ const getStatusClasses = (tenancy) => {
  * Get tenancy number.
  */
 const getTenancyNumber = (tenancy) => {
-  return (
-    firstText(
-      tenancy?.tenancy_number,
-      tenancy?.number,
-      tenancy?.code,
-      tenancy?.reference_number
-    ) ||
-    (tenancy?.id
-      ? `TEN-${tenancy.id}`
-      : "TEN-—")
+  const number = firstText(
+    tenancy?.tenancy_number,
+    tenancy?.number,
+    tenancy?.code,
+    tenancy?.reference_number
   );
+
+  if (number) {
+    return number;
+  }
+
+  return tenancy?.id
+    ? `TEN-${tenancy.id}`
+    : "TEN-—";
 };
 
 /*
@@ -675,22 +773,25 @@ const getTenancyNumber = (tenancy) => {
 
 /**
  * Get tenancy rent.
+ *
+ * Priority:
+ * 1. Tenancy rent fields
+ * 2. Unit rent fields
  */
 const getTenancyRent = (tenancy) => {
   const unit = getUnit(tenancy);
 
-  return (
-    tenancy?.rent_amount ??
-    tenancy?.monthly_rent ??
-    tenancy?.rent ??
-    tenancy?.rent_price ??
-    tenancy?.amount ??
+  return firstValue(
+    tenancy?.rent_amount,
+    tenancy?.monthly_rent,
+    tenancy?.rent,
+    tenancy?.rent_price,
+    tenancy?.amount,
 
-    unit?.rent_amount ??
-    unit?.monthly_rent ??
-    unit?.price ??
-    unit?.rent ??
-    null
+    unit?.rent_amount,
+    unit?.monthly_rent,
+    unit?.price,
+    unit?.rent
   );
 };
 
@@ -698,23 +799,20 @@ const getTenancyRent = (tenancy) => {
  * Get payment frequency.
  */
 const getPaymentFrequency = (tenancy) => {
-  const value =
-    tenancy?.payment_frequency ||
-    tenancy?.rent_frequency ||
-    tenancy?.frequency;
+  const value = firstText(
+    tenancy?.payment_frequency,
+    tenancy?.rent_frequency,
+    tenancy?.frequency
+  );
 
-  if (
-    value === null ||
-    value === undefined ||
-    value === "" ||
-    typeof value === "object"
-  ) {
+  if (!value) {
     return "";
   }
 
-  return String(value)
+  return value
     .replace(/_/g, " ")
     .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 };
 
@@ -722,14 +820,68 @@ const getPaymentFrequency = (tenancy) => {
  * Get service charge.
  */
 const getServiceCharge = (tenancy) => {
-  return (
-    tenancy?.service_charge ??
-    tenancy?.serviceCharge ??
-    tenancy?.service_charge_amount ??
-    tenancy?.monthly_service_charge ??
-    tenancy?.unit?.service_charge ??
-    tenancy?.unit?.serviceCharge ??
-    null
+  const unit = getUnit(tenancy);
+
+  return firstValue(
+    tenancy?.service_charge,
+    tenancy?.serviceCharge,
+    tenancy?.service_charge_amount,
+    tenancy?.monthly_service_charge,
+
+    unit?.service_charge,
+    unit?.serviceCharge
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Period Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get tenancy start date.
+ */
+const getStartDate = (tenancy) => {
+  return firstValue(
+    tenancy?.start_date,
+    tenancy?.starts_at,
+    tenancy?.start_at,
+    tenancy?.lease_start_date
+  );
+};
+
+/**
+ * Get tenancy end date.
+ */
+const getEndDate = (tenancy) => {
+  return firstValue(
+    tenancy?.end_date,
+    tenancy?.ends_at,
+    tenancy?.end_at,
+    tenancy?.lease_end_date
+  );
+};
+
+/**
+ * Get move-in date.
+ */
+const getMoveInDate = (tenancy) => {
+  return firstValue(
+    tenancy?.move_in_date,
+    tenancy?.moved_in_at,
+    tenancy?.move_in_at
+  );
+};
+
+/**
+ * Get move-out date.
+ */
+const getMoveOutDate = (tenancy) => {
+  return firstValue(
+    tenancy?.move_out_date,
+    tenancy?.moved_out_at,
+    tenancy?.move_out_at
   );
 };
 
@@ -771,7 +923,12 @@ const EmptyState = ({
 
 const LoadingState = () => {
   return (
-    <div className="flex min-h-[320px] items-center justify-center">
+    <div
+      className="flex min-h-[320px] items-center justify-center"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading tenancies"
+    >
       <div className="flex flex-col items-center gap-3">
         <Loader2 className="h-7 w-7 animate-spin text-gray-500" />
 
@@ -785,12 +942,63 @@ const LoadingState = () => {
 
 /*
 |--------------------------------------------------------------------------
+| Tenant Avatar
+|--------------------------------------------------------------------------
+*/
+
+const TenantAvatar = ({
+  image,
+  initials,
+  name,
+}) => {
+  const fallbackInitials =
+    safeText(initials, "T");
+
+  return (
+    <div
+      className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 text-sm font-semibold text-gray-600"
+      aria-label={`${name} avatar`}
+    >
+      {image ? (
+        <img
+          src={image}
+          alt={name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={(event) => {
+            const imageElement =
+              event.currentTarget;
+
+            imageElement.style.display =
+              "none";
+
+            const parent =
+              imageElement.parentElement;
+
+            if (!parent) {
+              return;
+            }
+
+            parent.dataset.fallback = "true";
+            parent.textContent =
+              fallbackInitials;
+          }}
+        />
+      ) : (
+        fallbackInitials
+      )}
+    </div>
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
 | Tenancy Table
 |--------------------------------------------------------------------------
 */
 
 const TenancyTable = ({
-  tenancies = [],
+  tenancies = EMPTY_ROWS,
   loading = false,
 
   /*
@@ -824,13 +1032,14 @@ const TenancyTable = ({
 
   const rows = useMemo(() => {
     if (!Array.isArray(tenancies)) {
-      return [];
+      return EMPTY_ROWS;
     }
 
     return tenancies.filter(
       (tenancy) =>
         tenancy &&
-        typeof tenancy === "object"
+        typeof tenancy === "object" &&
+        !Array.isArray(tenancy)
     );
   }, [tenancies]);
 
@@ -843,7 +1052,7 @@ const TenancyTable = ({
   const handleDelete = useCallback(
     async (id) => {
       if (typeof onDelete !== "function") {
-        return;
+        return undefined;
       }
 
       return onDelete(id);
@@ -854,7 +1063,7 @@ const TenancyTable = ({
   const handleActivate = useCallback(
     async (id) => {
       if (typeof onActivate !== "function") {
-        return;
+        return undefined;
       }
 
       return onActivate(id);
@@ -865,7 +1074,7 @@ const TenancyTable = ({
   const handleDeactivate = useCallback(
     async (id) => {
       if (typeof onDeactivate !== "function") {
-        return;
+        return undefined;
       }
 
       return onDeactivate(id);
@@ -874,9 +1083,9 @@ const TenancyTable = ({
   );
 
   const handleRenew = useCallback(
-    async (id, data = {}) => {
+    async (id, data = EMPTY_OBJECT) => {
       if (typeof onRenew !== "function") {
-        return;
+        return undefined;
       }
 
       return onRenew(id, data);
@@ -885,9 +1094,9 @@ const TenancyTable = ({
   );
 
   const handleTerminate = useCallback(
-    async (id, data = {}) => {
+    async (id, data = EMPTY_OBJECT) => {
       if (typeof onTerminate !== "function") {
-        return;
+        return undefined;
       }
 
       return onTerminate(id, data);
@@ -896,9 +1105,9 @@ const TenancyTable = ({
   );
 
   const handleCancel = useCallback(
-    async (id, data = {}) => {
+    async (id, data = EMPTY_OBJECT) => {
       if (typeof onCancel !== "function") {
-        return;
+        return undefined;
       }
 
       return onCancel(id, data);
@@ -909,7 +1118,7 @@ const TenancyTable = ({
   const handleRestore = useCallback(
     async (id) => {
       if (typeof onRestore !== "function") {
-        return;
+        return undefined;
       }
 
       return onRestore(id);
@@ -919,8 +1128,10 @@ const TenancyTable = ({
 
   const handleForceDelete = useCallback(
     async (id) => {
-      if (typeof onForceDelete !== "function") {
-        return;
+      if (
+        typeof onForceDelete !== "function"
+      ) {
+        return undefined;
       }
 
       return onForceDelete(id);
@@ -951,7 +1162,9 @@ const TenancyTable = ({
   if (rows.length === 0) {
     return (
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <EmptyState hasFilters={hasFilters} />
+        <EmptyState
+          hasFilters={hasFilters}
+        />
       </div>
     );
   }
@@ -968,7 +1181,6 @@ const TenancyTable = ({
         <table className="min-w-[1250px] w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              {/* Tenancy */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -976,7 +1188,6 @@ const TenancyTable = ({
                 Tenancy
               </th>
 
-              {/* Tenant */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -984,7 +1195,6 @@ const TenancyTable = ({
                 Tenant
               </th>
 
-              {/* Property */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -992,7 +1202,6 @@ const TenancyTable = ({
                 Property
               </th>
 
-              {/* Unit */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -1000,7 +1209,6 @@ const TenancyTable = ({
                 Unit
               </th>
 
-              {/* Period */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -1008,7 +1216,6 @@ const TenancyTable = ({
                 Period
               </th>
 
-              {/* Rent */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -1016,7 +1223,6 @@ const TenancyTable = ({
                 Rent
               </th>
 
-              {/* Status */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -1024,7 +1230,6 @@ const TenancyTable = ({
                 Status
               </th>
 
-              {/* Actions */}
               <th
                 scope="col"
                 className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500"
@@ -1053,6 +1258,9 @@ const TenancyTable = ({
 
               const tenantNumber =
                 getTenantNumber(tenancy);
+
+              const tenantEmail =
+                getTenantEmail(tenancy);
 
               const tenantImage =
                 getTenantImage(tenancy);
@@ -1119,6 +1327,24 @@ const TenancyTable = ({
 
               /*
               |--------------------------------------------------------------------------
+              | Period
+              |--------------------------------------------------------------------------
+              */
+
+              const startDate =
+                getStartDate(tenancy);
+
+              const endDate =
+                getEndDate(tenancy);
+
+              const moveInDate =
+                getMoveInDate(tenancy);
+
+              const moveOutDate =
+                getMoveOutDate(tenancy);
+
+              /*
+              |--------------------------------------------------------------------------
               | Key
               |--------------------------------------------------------------------------
               */
@@ -1127,6 +1353,23 @@ const TenancyTable = ({
                 tenancy?.id ??
                 tenancy?.tenancy_number ??
                 tenancyNumber;
+
+              /*
+              |--------------------------------------------------------------------------
+              | Boolean flags
+              |--------------------------------------------------------------------------
+              */
+
+              const isExpired =
+                tenancy?.is_expired === true ||
+                getRawStatus(tenancy) ===
+                "expired";
+
+              const hasMovedIn =
+                tenancy?.has_moved_in === true;
+
+              const hasMovedOut =
+                tenancy?.has_moved_out === true;
 
               return (
                 <tr
@@ -1159,44 +1402,12 @@ const TenancyTable = ({
 
                   {/* Tenant */}
                   <td className="px-5 py-4">
-                    <div className="flex min-w-[210px] items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 text-sm font-semibold text-gray-600">
-                        {tenantImage ? (
-                          <img
-                            src={tenantImage}
-                            alt={tenantName}
-                            className="h-full w-full object-cover"
-                            loading="lazy"
-                            onError={(event) => {
-                              event.currentTarget.style.display =
-                                "none";
-
-                              const parent =
-                                event.currentTarget.parentElement;
-
-                              if (
-                                parent &&
-                                !parent.dataset.fallback
-                              ) {
-                                parent.dataset.fallback =
-                                  "true";
-
-                                parent.classList.add(
-                                  "text-gray-600"
-                                );
-
-                                parent.appendChild(
-                                  document.createTextNode(
-                                    tenantInitials
-                                  )
-                                );
-                              }
-                            }}
-                          />
-                        ) : (
-                          tenantInitials
-                        )}
-                      </div>
+                    <div className="flex min-w-[230px] items-center gap-3">
+                      <TenantAvatar
+                        image={tenantImage}
+                        initials={tenantInitials}
+                        name={tenantName}
+                      />
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
@@ -1224,6 +1435,15 @@ const TenancyTable = ({
                             )}
                           </p>
                         )}
+
+                        {!tenantPhone &&
+                          tenantEmail && (
+                            <p className="mt-0.5 max-w-[180px] truncate text-xs text-gray-400">
+                              {safeText(
+                                tenantEmail
+                              )}
+                            </p>
+                          )}
                       </div>
                     </div>
                   </td>
@@ -1244,7 +1464,9 @@ const TenancyTable = ({
 
                       {propertyCode && (
                         <p className="mt-1 pl-6 text-xs text-gray-500">
-                          {safeText(propertyCode)}
+                          {safeText(
+                            propertyCode
+                          )}
                         </p>
                       )}
 
@@ -1296,33 +1518,33 @@ const TenancyTable = ({
                         <div>
                           <p className="text-sm font-medium text-gray-900">
                             {formatDate(
-                              tenancy?.start_date
+                              startDate
                             )}
                           </p>
 
                           <p className="text-xs text-gray-500">
                             to{" "}
                             {formatDate(
-                              tenancy?.end_date
+                              endDate
                             )}
                           </p>
                         </div>
                       </div>
 
-                      {tenancy?.move_in_date && (
+                      {moveInDate && (
                         <p className="mt-1 pl-6 text-xs text-gray-400">
                           Move in:{" "}
                           {formatDate(
-                            tenancy.move_in_date
+                            moveInDate
                           )}
                         </p>
                       )}
 
-                      {tenancy?.move_out_date && (
+                      {moveOutDate && (
                         <p className="mt-1 pl-6 text-xs text-gray-400">
                           Move out:{" "}
                           {formatDate(
-                            tenancy.move_out_date
+                            moveOutDate
                           )}
                         </p>
                       )}
@@ -1350,9 +1572,12 @@ const TenancyTable = ({
                         </p>
                       )}
 
-                      {serviceCharge !== null &&
-                        serviceCharge !== undefined &&
-                        serviceCharge !== "" && (
+                      {serviceCharge !==
+                        null &&
+                        serviceCharge !==
+                        undefined &&
+                        serviceCharge !==
+                        "" && (
                           <p className="mt-1 pl-6 text-xs text-gray-400">
                             Service:{" "}
                             {formatCurrency(
@@ -1380,24 +1605,20 @@ const TenancyTable = ({
                         )}
                       </span>
 
-                      {tenancy?.is_expired ===
-                        true && (
+                      {isExpired && (
                         <span className="text-xs text-orange-600">
                           Expired
                         </span>
                       )}
 
-                      {tenancy?.has_moved_in ===
-                        true &&
-                        tenancy?.has_moved_out !==
-                          true && (
+                      {hasMovedIn &&
+                        !hasMovedOut && (
                           <span className="text-xs text-green-600">
                             Moved in
                           </span>
                         )}
 
-                      {tenancy?.has_moved_out ===
-                        true && (
+                      {hasMovedOut && (
                         <span className="text-xs text-gray-500">
                           Moved out
                         </span>
@@ -1410,7 +1631,9 @@ const TenancyTable = ({
                     <TenancyActions
                       tenancy={tenancy}
                       onDelete={handleDelete}
-                      onActivate={handleActivate}
+                      onActivate={
+                        handleActivate
+                      }
                       onDeactivate={
                         handleDeactivate
                       }

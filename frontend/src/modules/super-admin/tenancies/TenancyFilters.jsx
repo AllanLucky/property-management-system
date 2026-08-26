@@ -1,6 +1,14 @@
 import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import {
   CalendarDays,
+  ChevronDown,
   Filter,
+  Loader2,
   RotateCcw,
   Search,
   SlidersHorizontal,
@@ -28,6 +36,8 @@ const DEFAULT_FILTERS = {
   sort_direction: "desc",
 };
 
+const SEARCH_DEBOUNCE_MS = 350;
+
 /*
 |--------------------------------------------------------------------------
 | Helpers
@@ -46,7 +56,10 @@ const safeText = (value, fallback = "") => {
     return fallback;
   }
 
-  if (typeof value === "object") {
+  if (
+    typeof value === "object" ||
+    typeof value === "boolean"
+  ) {
     return fallback;
   }
 
@@ -62,7 +75,8 @@ const firstText = (...values) => {
       value !== null &&
       value !== undefined &&
       value !== "" &&
-      typeof value !== "object"
+      typeof value !== "object" &&
+      typeof value !== "boolean"
     ) {
       return String(value);
     }
@@ -83,7 +97,10 @@ const normalizeId = (value) => {
     return "";
   }
 
-  if (typeof value === "object") {
+  if (
+    typeof value === "object" ||
+    typeof value === "boolean"
+  ) {
     return "";
   }
 
@@ -91,23 +108,26 @@ const normalizeId = (value) => {
 };
 
 /**
- * Build a readable status label.
+ * Normalize filter direction.
+ *
+ * Supports both:
+ * - sort_direction
+ * - sort_order
  */
-const formatStatusLabel = (value) => {
-  const text = firstText(value);
+const normalizeSortDirection = (source) => {
+  const value =
+    source?.sort_direction ??
+    source?.sort_order ??
+    DEFAULT_FILTERS.sort_direction;
 
-  if (!text) {
-    return "";
-  }
+  const direction = safeText(
+    value,
+    DEFAULT_FILTERS.sort_direction
+  ).toLowerCase();
 
-  return text
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase()
-    );
+  return direction === "asc"
+    ? "asc"
+    : "desc";
 };
 
 /*
@@ -116,20 +136,14 @@ const formatStatusLabel = (value) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get property ID.
- */
 const getPropertyId = (property) => {
   return normalizeId(
     property?.id ??
-      property?.property_id ??
-      property?.property?.id
+    property?.property_id ??
+    property?.property?.id
   );
 };
 
-/**
- * Get property name.
- */
 const getPropertyName = (property) => {
   return (
     firstText(
@@ -152,30 +166,21 @@ const getPropertyName = (property) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get apartment ID.
- */
 const getApartmentId = (apartment) => {
   return normalizeId(
     apartment?.id ??
-      apartment?.apartment_id
+    apartment?.apartment_id
   );
 };
 
-/**
- * Get apartment property ID.
- */
 const getApartmentPropertyId = (apartment) => {
   return normalizeId(
     apartment?.property_id ??
-      apartment?.property?.id ??
-      apartment?.property?.property_id
+    apartment?.property?.id ??
+    apartment?.property?.property_id
   );
 };
 
-/**
- * Get apartment name.
- */
 const getApartmentName = (apartment) => {
   return (
     firstText(
@@ -198,42 +203,30 @@ const getApartmentName = (apartment) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get unit ID.
- */
 const getUnitId = (unit) => {
   return normalizeId(
     unit?.id ??
-      unit?.unit_id
+    unit?.unit_id
   );
 };
 
-/**
- * Get unit apartment ID.
- */
 const getUnitApartmentId = (unit) => {
   return normalizeId(
     unit?.apartment_id ??
-      unit?.apartment?.id ??
-      unit?.apartment?.apartment_id
+    unit?.apartment?.id ??
+    unit?.apartment?.apartment_id
   );
 };
 
-/**
- * Get unit property ID.
- */
 const getUnitPropertyId = (unit) => {
   return normalizeId(
     unit?.property_id ??
-      unit?.property?.id ??
-      unit?.apartment?.property_id ??
-      unit?.apartment?.property?.id
+    unit?.property?.id ??
+    unit?.apartment?.property_id ??
+    unit?.apartment?.property?.id
   );
 };
 
-/**
- * Get unit name.
- */
 const getUnitName = (unit) => {
   return (
     firstText(
@@ -255,19 +248,13 @@ const getUnitName = (unit) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get tenant ID.
- */
 const getTenantId = (tenant) => {
   return normalizeId(
     tenant?.id ??
-      tenant?.tenant_id
+    tenant?.tenant_id
   );
 };
 
-/**
- * Get tenant display name.
- */
 const getTenantName = (tenant) => {
   const directName = firstText(
     tenant?.full_name,
@@ -290,7 +277,8 @@ const getTenantName = (tenant) => {
         value !== null &&
         value !== undefined &&
         value !== "" &&
-        typeof value !== "object"
+        typeof value !== "object" &&
+        typeof value !== "boolean"
     )
     .join(" ")
     .trim();
@@ -319,13 +307,12 @@ const getTenantName = (tenant) => {
 const normalizeFilters = (filters) => {
   const source =
     filters &&
-    typeof filters === "object"
+      typeof filters === "object"
       ? filters
       : {};
 
   return {
     ...DEFAULT_FILTERS,
-
     ...source,
 
     search: safeText(
@@ -381,10 +368,7 @@ const normalizeFilters = (filters) => {
       ) || DEFAULT_FILTERS.sort_by,
 
     sort_direction:
-      safeText(
-        source.sort_direction,
-        DEFAULT_FILTERS.sort_direction
-      ) || DEFAULT_FILTERS.sort_direction,
+      normalizeSortDirection(source),
   };
 };
 
@@ -419,7 +403,174 @@ const TenancyFilters = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Handle Change
+  | Local Search State
+  |--------------------------------------------------------------------------
+  |
+  | Search is kept locally while the user is typing.
+  | This prevents an API request for every single keystroke.
+  |
+  */
+
+  const [
+    searchValue,
+    setSearchValue,
+  ] = useState(
+    currentFilters.search
+  );
+
+  const searchTimerRef =
+    useRef(null);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Sync Search With Redux
+  |--------------------------------------------------------------------------
+  |
+  | This is important when:
+  | - Filters are reset
+  | - Pagination changes
+  | - Another component changes the filters
+  |
+  */
+
+  useEffect(() => {
+    setSearchValue(
+      currentFilters.search
+    );
+  }, [currentFilters.search]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Cleanup Search Timer
+  |--------------------------------------------------------------------------
+  */
+
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(
+          searchTimerRef.current
+        );
+      }
+    };
+  }, []);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Apply Filters Safely
+  |--------------------------------------------------------------------------
+  */
+
+  const emitChange = (
+    nextFilters
+  ) => {
+    if (
+      typeof onChange !== "function"
+    ) {
+      return;
+    }
+
+    onChange({
+      ...nextFilters,
+      page: 1,
+    });
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Search Request
+  |--------------------------------------------------------------------------
+  */
+
+  const executeSearch = (
+    value
+  ) => {
+    const normalizedSearch =
+      safeText(value, "").trim();
+
+    /*
+     * Keep local search immediately synchronized.
+     */
+    setSearchValue(
+      safeText(value, "")
+    );
+
+    /*
+     * Cancel previous pending search.
+     */
+    if (searchTimerRef.current) {
+      clearTimeout(
+        searchTimerRef.current
+      );
+
+      searchTimerRef.current = null;
+    }
+
+    /*
+     * Immediately update Redux/API.
+     */
+    emitChange({
+      ...currentFilters,
+      search:
+        normalizedSearch,
+    });
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Debounced Search
+  |--------------------------------------------------------------------------
+  */
+
+  const handleSearchChange = (
+    value
+  ) => {
+    setSearchValue(value);
+
+    if (searchTimerRef.current) {
+      clearTimeout(
+        searchTimerRef.current
+      );
+    }
+
+    searchTimerRef.current =
+      setTimeout(() => {
+        const normalizedSearch =
+          safeText(
+            value,
+            ""
+          ).trim();
+
+        emitChange({
+          ...currentFilters,
+          search:
+            normalizedSearch,
+        });
+
+        searchTimerRef.current =
+          null;
+      }, SEARCH_DEBOUNCE_MS);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Search Submit
+  |--------------------------------------------------------------------------
+  */
+
+  const handleSearchSubmit = (
+    event
+  ) => {
+    event?.preventDefault();
+
+    executeSearch(
+      searchValue
+    );
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Handle Normal Filter Change
   |--------------------------------------------------------------------------
   */
 
@@ -439,12 +590,13 @@ const TenancyFilters = ({
         : safeText(value, "");
 
     /*
-     * Property controls apartment and unit.
+     * Property controls apartment
+     * and unit.
      */
     if (
       field === "property_id"
     ) {
-      onChange({
+      emitChange({
         ...currentFilters,
         property_id:
           normalizedValue,
@@ -461,7 +613,7 @@ const TenancyFilters = ({
     if (
       field === "apartment_id"
     ) {
-      onChange({
+      emitChange({
         ...currentFilters,
         apartment_id:
           normalizedValue,
@@ -472,26 +624,44 @@ const TenancyFilters = ({
     }
 
     /*
-     * Changing page size should normally
-     * reset pagination to page one.
+     * Page size resets pagination.
      */
     if (
       field === "per_page"
     ) {
-      onChange({
+      emitChange({
         ...currentFilters,
         per_page:
           Number(normalizedValue) ||
           15,
-        page: 1,
       });
 
       return;
     }
 
-    onChange({
+    /*
+     * Sort direction compatibility.
+     */
+    if (
+      field === "sort_direction"
+    ) {
+      emitChange({
+        ...currentFilters,
+        sort_direction:
+          normalizedValue ||
+          "desc",
+        sort_order:
+          normalizedValue ||
+          "desc",
+      });
+
+      return;
+    }
+
+    emitChange({
       ...currentFilters,
-      [field]: normalizedValue,
+      [field]:
+        normalizedValue,
     });
   };
 
@@ -502,6 +672,16 @@ const TenancyFilters = ({
   */
 
   const handleReset = () => {
+    if (searchTimerRef.current) {
+      clearTimeout(
+        searchTimerRef.current
+      );
+
+      searchTimerRef.current = null;
+    }
+
+    setSearchValue("");
+
     if (
       typeof onReset === "function"
     ) {
@@ -514,6 +694,8 @@ const TenancyFilters = ({
     ) {
       onChange({
         ...DEFAULT_FILTERS,
+        search: "",
+        page: 1,
       });
     }
   };
@@ -525,48 +707,98 @@ const TenancyFilters = ({
   */
 
   const handleApply = () => {
+    if (searchTimerRef.current) {
+      clearTimeout(
+        searchTimerRef.current
+      );
+
+      searchTimerRef.current = null;
+    }
+
+    const payload = {
+      ...currentFilters,
+
+      search:
+        safeText(
+          searchValue,
+          ""
+        ).trim(),
+
+      status:
+        currentFilters.status ||
+        "",
+
+      property_id:
+        currentFilters.property_id ||
+        "",
+
+      apartment_id:
+        currentFilters.apartment_id ||
+        "",
+
+      unit_id:
+        currentFilters.unit_id ||
+        "",
+
+      tenant_id:
+        currentFilters.tenant_id ||
+        "",
+
+      payment_frequency:
+        currentFilters.payment_frequency ||
+        "",
+
+      start_date:
+        currentFilters.start_date ||
+        "",
+
+      end_date:
+        currentFilters.end_date ||
+        "",
+
+      per_page:
+        Number(
+          currentFilters.per_page
+        ) || 15,
+
+      sort_by:
+        currentFilters.sort_by ||
+        "created_at",
+
+      sort_direction:
+        currentFilters.sort_direction ||
+        "desc",
+
+      sort_order:
+        currentFilters.sort_direction ||
+        "desc",
+
+      page: 1,
+    };
+
+    /*
+     * If parent supplied onApply,
+     * use it.
+     */
     if (
-      typeof onApply !== "function"
+      typeof onApply === "function"
     ) {
+      onApply(payload);
       return;
     }
 
     /*
-     * Do not send UI-only or invalid values.
+     * Otherwise use onChange.
+     *
+     * This is important because your
+     * current TenancyList passes onChange
+     * but does not pass onApply.
      */
-    const payload = {
-      ...currentFilters,
-      search:
-        currentFilters.search.trim(),
-      status:
-        currentFilters.status || "",
-      property_id:
-        currentFilters.property_id || "",
-      apartment_id:
-        currentFilters.apartment_id || "",
-      unit_id:
-        currentFilters.unit_id || "",
-      tenant_id:
-        currentFilters.tenant_id || "",
-      payment_frequency:
-        currentFilters.payment_frequency ||
-        "",
-      start_date:
-        currentFilters.start_date || "",
-      end_date:
-        currentFilters.end_date || "",
-      per_page:
-        Number(currentFilters.per_page) ||
-        15,
-      sort_by:
-        currentFilters.sort_by ||
-        "created_at",
-      sort_direction:
-        currentFilters.sort_direction ||
-        "desc",
-    };
-
-    onApply(payload);
+    if (
+      typeof onChange === "function"
+    ) {
+      onChange(payload);
+    }
   };
 
   /*
@@ -576,7 +808,7 @@ const TenancyFilters = ({
   */
 
   const activeFilterCount = [
-    currentFilters.search,
+    searchValue,
     currentFilters.status,
     currentFilters.property_id,
     currentFilters.apartment_id,
@@ -601,37 +833,37 @@ const TenancyFilters = ({
   const propertyOptions =
     Array.isArray(properties)
       ? properties.filter(
-          (item) =>
-            item &&
-            typeof item === "object"
-        )
+        (item) =>
+          item &&
+          typeof item === "object"
+      )
       : [];
 
   const apartmentOptions =
     Array.isArray(apartments)
       ? apartments.filter(
-          (item) =>
-            item &&
-            typeof item === "object"
-        )
+        (item) =>
+          item &&
+          typeof item === "object"
+      )
       : [];
 
   const unitOptions =
     Array.isArray(units)
       ? units.filter(
-          (item) =>
-            item &&
-            typeof item === "object"
-        )
+        (item) =>
+          item &&
+          typeof item === "object"
+      )
       : [];
 
   const tenantOptions =
     Array.isArray(tenants)
       ? tenants.filter(
-          (item) =>
-            item &&
-            typeof item === "object"
-        )
+        (item) =>
+          item &&
+          typeof item === "object"
+      )
       : [];
 
   /*
@@ -672,7 +904,9 @@ const TenancyFilters = ({
         currentFilters.apartment_id
       ) {
         return (
-          getUnitApartmentId(unit) ===
+          getUnitApartmentId(
+            unit
+          ) ===
           String(
             currentFilters.apartment_id
           )
@@ -683,7 +917,9 @@ const TenancyFilters = ({
         currentFilters.property_id
       ) {
         return (
-          getUnitPropertyId(unit) ===
+          getUnitPropertyId(
+            unit
+          ) ===
           String(
             currentFilters.property_id
           )
@@ -697,17 +933,14 @@ const TenancyFilters = ({
   |--------------------------------------------------------------------------
   | Current Selected Dependencies
   |--------------------------------------------------------------------------
-  |
-  | If the selected apartment/unit no longer exists after filtering,
-  | the select still displays its current value instead of unexpectedly
-  | changing state during render.
-  |
   */
 
   const selectedApartment =
     filteredApartments.find(
       (apartment) =>
-        getApartmentId(apartment) ===
+        getApartmentId(
+          apartment
+        ) ===
         String(
           currentFilters.apartment_id
         )
@@ -729,17 +962,20 @@ const TenancyFilters = ({
   */
 
   return (
-    <div
+    <section
+      aria-label="Tenancy filters"
       className="
         mb-6
         overflow-hidden
-        rounded-xl
+        rounded-2xl
         border
-        border-gray-200
+        border-slate-200
         bg-white
         shadow-sm
-        dark:border-gray-700
-        dark:bg-gray-800
+        shadow-slate-200/50
+        dark:border-slate-700
+        dark:bg-slate-900
+        dark:shadow-none
       "
     >
       {/* ================================================================
@@ -748,227 +984,432 @@ const TenancyFilters = ({
 
       <div
         className="
-          flex
-          flex-col
-          gap-3
           border-b
-          border-gray-200
+          border-slate-200
+          bg-gradient-to-r
+          from-slate-50
+          to-white
           px-5
           py-4
-          sm:flex-row
-          sm:items-center
-          sm:justify-between
-          dark:border-gray-700
+          dark:border-slate-700
+          dark:from-slate-900
+          dark:to-slate-900
+          sm:px-6
         "
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="
-              flex
-              h-9
-              w-9
-              shrink-0
-              items-center
-              justify-center
-              rounded-lg
-              bg-indigo-50
-              text-indigo-600
-              dark:bg-indigo-950/40
-              dark:text-indigo-400
-            "
-          >
-            <Filter size={18} />
-          </div>
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2
-                className="
-                  text-sm
-                  font-semibold
-                  text-gray-900
-                  dark:text-white
-                "
-              >
-                Filter Tenancies
-              </h2>
-
-              {activeFilterCount > 0 && (
-                <span
-                  className="
-                    inline-flex
-                    min-w-6
-                    items-center
-                    justify-center
-                    rounded-full
-                    bg-indigo-100
-                    px-2
-                    py-1
-                    text-xs
-                    font-semibold
-                    text-indigo-700
-                    dark:bg-indigo-950/60
-                    dark:text-indigo-300
-                  "
-                >
-                  {activeFilterCount}
-                </span>
-              )}
-            </div>
-
-            <p
+        <div
+          className="
+            flex
+            flex-col
+            gap-4
+            lg:flex-row
+            lg:items-center
+            lg:justify-between
+          "
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div
               className="
-                text-xs
-                text-gray-500
-                dark:text-gray-400
+                flex
+                h-10
+                w-10
+                shrink-0
+                items-center
+                justify-center
+                rounded-xl
+                bg-indigo-50
+                text-indigo-600
+                ring-1
+                ring-inset
+                ring-indigo-100
+                dark:bg-indigo-950/40
+                dark:text-indigo-400
+                dark:ring-indigo-900/50
               "
             >
-              Search and filter tenancy
-              records.
-            </p>
+              <Filter
+                className="h-5 w-5"
+                aria-hidden="true"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2
+                  className="
+                    text-sm
+                    font-bold
+                    text-slate-900
+                    dark:text-white
+                  "
+                >
+                  Filter Tenancies
+                </h2>
+
+                {activeFilterCount > 0 && (
+                  <span
+                    className="
+                      inline-flex
+                      items-center
+                      rounded-full
+                      bg-indigo-100
+                      px-2
+                      py-0.5
+                      text-[11px]
+                      font-bold
+                      text-indigo-700
+                      dark:bg-indigo-950/60
+                      dark:text-indigo-300
+                    "
+                  >
+                    {activeFilterCount} active
+                  </span>
+                )}
+              </div>
+
+              <p
+                className="
+                  mt-0.5
+                  text-xs
+                  text-slate-500
+                  dark:text-slate-400
+                "
+              >
+                Search and refine tenancy
+                records by tenant, property,
+                status and dates.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {loading && (
+              <div
+                className="
+                  inline-flex
+                  items-center
+                  gap-2
+                  rounded-full
+                  bg-indigo-50
+                  px-3
+                  py-1.5
+                  text-xs
+                  font-medium
+                  text-indigo-700
+                  dark:bg-indigo-950/40
+                  dark:text-indigo-300
+                "
+                aria-live="polite"
+              >
+                <Loader2
+                  className="
+                    h-3.5
+                    w-3.5
+                    animate-spin
+                  "
+                  aria-hidden="true"
+                />
+
+                Searching...
+              </div>
+            )}
+
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={loading}
+                className="
+                  inline-flex
+                  items-center
+                  gap-1.5
+                  rounded-lg
+                  border
+                  border-slate-200
+                  bg-white
+                  px-3
+                  py-2
+                  text-xs
+                  font-semibold
+                  text-slate-600
+                  transition
+                  hover:border-red-200
+                  hover:bg-red-50
+                  hover:text-red-600
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                  dark:border-slate-700
+                  dark:bg-slate-800
+                  dark:text-slate-300
+                  dark:hover:border-red-900/50
+                  dark:hover:bg-red-950/30
+                  dark:hover:text-red-400
+                "
+              >
+                <RotateCcw
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
+
+                Reset
+              </button>
+            )}
           </div>
         </div>
-
-        {activeFilterCount > 0 && (
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={loading}
-            className="
-              inline-flex
-              items-center
-              gap-2
-              self-start
-              text-sm
-              font-medium
-              text-gray-500
-              transition
-              hover:text-red-600
-              disabled:cursor-not-allowed
-              disabled:opacity-50
-              sm:self-auto
-              dark:text-gray-400
-              dark:hover:text-red-400
-            "
-          >
-            <RotateCcw size={15} />
-
-            Reset filters
-          </button>
-        )}
       </div>
 
       {/* ================================================================
-          FILTER CONTENT
+          FILTER BODY
       ================================================================ */}
 
-      <div className="p-5">
+      <div className="p-5 sm:p-6">
+
         {/* ============================================================
             SEARCH
         ============================================================ */}
 
-        <div className="mb-5">
+        <form
+          onSubmit={
+            handleSearchSubmit
+          }
+          className="mb-6"
+        >
           <label
             htmlFor="tenancy-search"
             className="
               mb-2
-              block
-              text-sm
-              font-medium
-              text-gray-700
-              dark:text-gray-300
+              flex
+              items-center
+              justify-between
+              text-xs
+              font-bold
+              uppercase
+              tracking-wide
+              text-slate-600
+              dark:text-slate-300
             "
           >
-            Search
+            <span>
+              Search tenancy records
+            </span>
+
+            <span
+              className="
+                hidden
+                text-[10px]
+                font-medium
+                normal-case
+                tracking-normal
+                text-slate-400
+                sm:inline
+              "
+            >
+              Tenancy number, tenant,
+              email or phone
+            </span>
           </label>
 
           <div className="relative">
             <Search
-              size={18}
               className="
                 pointer-events-none
                 absolute
-                left-3
+                left-3.5
                 top-1/2
+                h-4.5
+                w-4.5
                 -translate-y-1/2
-                text-gray-400
+                text-slate-400
               "
+              aria-hidden="true"
             />
 
             <input
               id="tenancy-search"
               type="search"
-              value={
-                currentFilters.search
-              }
+              value={searchValue}
               onChange={(event) =>
-                handleChange(
-                  "search",
+                handleSearchChange(
                   event.target.value
                 )
               }
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter"
+                ) {
+                  handleSearchSubmit(
+                    event
+                  );
+                }
+              }}
               placeholder="
-                Search tenancy number, tenant name,
-                email, phone...
+                Search by tenancy number,
+                tenant name, email or phone...
               "
-              disabled={loading}
               autoComplete="off"
+              spellCheck="false"
               className="
-                h-11
+                h-12
                 w-full
-                rounded-lg
+                rounded-xl
                 border
-                border-gray-300
-                bg-white
+                border-slate-200
+                bg-slate-50
                 pl-10
-                pr-10
+                pr-24
                 text-sm
-                text-gray-900
+                text-slate-900
                 outline-none
-                transition
-                placeholder:text-gray-400
+                transition-all
+                placeholder:text-slate-400
+                hover:border-slate-300
                 focus:border-indigo-500
-                focus:ring-2
-                focus:ring-indigo-500/20
-                disabled:cursor-not-allowed
-                disabled:bg-gray-100
-                dark:border-gray-600
-                dark:bg-gray-900
+                focus:bg-white
+                focus:ring-4
+                focus:ring-indigo-500/10
+                dark:border-slate-700
+                dark:bg-slate-800
                 dark:text-white
-                dark:placeholder:text-gray-500
-                dark:disabled:bg-gray-800
+                dark:placeholder:text-slate-500
+                dark:hover:border-slate-600
+                dark:focus:border-indigo-500
+                dark:focus:bg-slate-800
               "
+              aria-label="Search tenancy records"
             />
 
-            {currentFilters.search && (
-              <button
-                type="button"
-                onClick={() =>
-                  handleChange(
-                    "search",
-                    ""
-                  )
-                }
-                disabled={loading}
-                aria-label="Clear search"
+            <div
+              className="
+                absolute
+                right-2
+                top-1/2
+                flex
+                -translate-y-1/2
+                items-center
+                gap-1
+              "
+            >
+              {loading && (
+                <span
+                  className="
+                    flex
+                    h-8
+                    w-8
+                    items-center
+                    justify-center
+                    text-indigo-500
+                  "
+                  title="Searching"
+                >
+                  <Loader2
+                    className="
+                      h-4
+                      w-4
+                      animate-spin
+                    "
+                    aria-hidden="true"
+                  />
+                </span>
+              )}
+
+              {searchValue && !loading && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    executeSearch("")
+                  }
+                  aria-label="Clear search"
+                  className="
+                    flex
+                    h-8
+                    w-8
+                    items-center
+                    justify-center
+                    rounded-lg
+                    text-slate-400
+                    transition
+                    hover:bg-slate-100
+                    hover:text-slate-700
+                    dark:hover:bg-slate-700
+                    dark:hover:text-white
+                  "
+                >
+                  <X
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
+                </button>
+              )}
+
+              {!loading && (
+                <button
+                  type="submit"
+                  className="
+                    hidden
+                    h-8
+                    items-center
+                    gap-1.5
+                    rounded-lg
+                    bg-indigo-600
+                    px-3
+                    text-xs
+                    font-bold
+                    text-white
+                    transition
+                    hover:bg-indigo-700
+                    focus:outline-none
+                    focus:ring-2
+                    focus:ring-indigo-500
+                    focus:ring-offset-1
+                    sm:inline-flex
+                  "
+                >
+                  <Search
+                    className="h-3.5 w-3.5"
+                    aria-hidden="true"
+                  />
+
+                  Search
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div
+            className="
+              mt-2
+              flex
+              items-center
+              justify-between
+              gap-3
+            "
+          >
+            <p
+              className="
+                text-[11px]
+                text-slate-400
+                dark:text-slate-500
+              "
+            >
+              Results update automatically
+              as you type.
+            </p>
+
+            {searchValue.trim() && (
+              <p
                 className="
-                  absolute
-                  right-3
-                  top-1/2
-                  -translate-y-1/2
-                  text-gray-400
-                  transition
-                  hover:text-gray-700
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
-                  dark:hover:text-white
+                  text-[11px]
+                  font-medium
+                  text-indigo-600
+                  dark:text-indigo-400
                 "
               >
-                <X size={17} />
-              </button>
+                Searching for "
+                {searchValue.trim()}"
+              </p>
             )}
           </div>
-        </div>
+        </form>
 
         {/* ============================================================
             BASIC FILTERS
@@ -983,8 +1424,6 @@ const TenancyFilters = ({
             lg:grid-cols-4
           "
         >
-          {/* STATUS */}
-
           <FilterSelect
             label="Status"
             value={
@@ -1039,8 +1478,6 @@ const TenancyFilters = ({
             </option>
           </FilterSelect>
 
-          {/* PROPERTY */}
-
           <FilterSelect
             label="Property"
             value={
@@ -1083,8 +1520,6 @@ const TenancyFilters = ({
             )}
           </FilterSelect>
 
-          {/* APARTMENT */}
-
           <FilterSelect
             label="Apartment"
             value={
@@ -1098,11 +1533,13 @@ const TenancyFilters = ({
             }
             disabled={
               loading ||
-              Boolean(
-                currentFilters.property_id
-              ) &&
+              (
+                Boolean(
+                  currentFilters.property_id
+                ) &&
                 filteredApartments.length ===
-                  0
+                0
+              )
             }
           >
             <option value="">
@@ -1145,8 +1582,6 @@ const TenancyFilters = ({
               )}
           </FilterSelect>
 
-          {/* UNIT */}
-
           <FilterSelect
             label="Unit"
             value={
@@ -1160,11 +1595,13 @@ const TenancyFilters = ({
             }
             disabled={
               loading ||
-              Boolean(
-                currentFilters.apartment_id ||
-                currentFilters.property_id
-              ) &&
+              (
+                Boolean(
+                  currentFilters.apartment_id ||
+                  currentFilters.property_id
+                ) &&
                 filteredUnits.length === 0
+              )
             }
           >
             <option value="">
@@ -1211,32 +1648,59 @@ const TenancyFilters = ({
         {showAdvanced && (
           <div
             className="
-              mt-5
+              mt-7
               border-t
-              border-gray-200
-              pt-5
-              dark:border-gray-700
+              border-slate-200
+              pt-6
+              dark:border-slate-700
             "
           >
             <div className="mb-4 flex items-center gap-2">
-              <SlidersHorizontal
-                size={16}
+              <div
                 className="
-                  text-gray-500
-                  dark:text-gray-400
-                "
-              />
-
-              <h3
-                className="
-                  text-sm
-                  font-medium
-                  text-gray-700
-                  dark:text-gray-300
+                  flex
+                  h-7
+                  w-7
+                  items-center
+                  justify-center
+                  rounded-lg
+                  bg-slate-100
+                  text-slate-600
+                  dark:bg-slate-800
+                  dark:text-slate-300
                 "
               >
-                Advanced Filters
-              </h3>
+                <SlidersHorizontal
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
+              </div>
+
+              <div>
+                <h3
+                  className="
+                    text-xs
+                    font-bold
+                    uppercase
+                    tracking-wide
+                    text-slate-700
+                    dark:text-slate-300
+                  "
+                >
+                  Advanced Filters
+                </h3>
+
+                <p
+                  className="
+                    mt-0.5
+                    text-[11px]
+                    text-slate-400
+                  "
+                >
+                  Narrow results using tenancy
+                  details and dates.
+                </p>
+              </div>
             </div>
 
             <div
@@ -1248,8 +1712,6 @@ const TenancyFilters = ({
                 lg:grid-cols-4
               "
             >
-              {/* TENANT */}
-
               <FilterSelect
                 label="Tenant"
                 value={
@@ -1292,8 +1754,6 @@ const TenancyFilters = ({
                 )}
               </FilterSelect>
 
-              {/* PAYMENT FREQUENCY */}
-
               <FilterSelect
                 label="Payment Frequency"
                 value={
@@ -1328,8 +1788,6 @@ const TenancyFilters = ({
                 </option>
               </FilterSelect>
 
-              {/* START DATE */}
-
               <DateFilter
                 label="Start Date"
                 value={
@@ -1347,8 +1805,6 @@ const TenancyFilters = ({
                   undefined
                 }
               />
-
-              {/* END DATE */}
 
               <DateFilter
                 label="End Date"
@@ -1372,18 +1828,66 @@ const TenancyFilters = ({
         )}
 
         {/* ============================================================
-            SORTING / PAGINATION
+            SORTING
         ============================================================ */}
 
         <div
           className="
-            mt-5
+            mt-7
             border-t
-            border-gray-200
-            pt-5
-            dark:border-gray-700
+            border-slate-200
+            pt-6
+            dark:border-slate-700
           "
         >
+          <div className="mb-4 flex items-center gap-2">
+            <div
+              className="
+                flex
+                h-7
+                w-7
+                items-center
+                justify-center
+                rounded-lg
+                bg-slate-100
+                text-slate-600
+                dark:bg-slate-800
+                dark:text-slate-300
+              "
+            >
+              <SlidersHorizontal
+                className="h-3.5 w-3.5"
+                aria-hidden="true"
+              />
+            </div>
+
+            <div>
+              <h3
+                className="
+                  text-xs
+                  font-bold
+                  uppercase
+                  tracking-wide
+                  text-slate-700
+                  dark:text-slate-300
+                "
+              >
+                Results & Sorting
+              </h3>
+
+              <p
+                className="
+                  mt-0.5
+                  text-[11px]
+                  text-slate-400
+                "
+              >
+                Choose how tenancy results
+                should be displayed.
+              </p>
+            </div>
+          </div>
+
           <div
             className="
               grid
@@ -1393,8 +1897,6 @@ const TenancyFilters = ({
               lg:grid-cols-4
             "
           >
-            {/* SORT BY */}
-
             <FilterSelect
               label="Sort By"
               value={
@@ -1433,8 +1935,6 @@ const TenancyFilters = ({
               </option>
             </FilterSelect>
 
-            {/* SORT DIRECTION */}
-
             <FilterSelect
               label="Sort Direction"
               value={
@@ -1457,10 +1957,8 @@ const TenancyFilters = ({
               </option>
             </FilterSelect>
 
-            {/* PER PAGE */}
-
             <FilterSelect
-              label="Per Page"
+              label="Results Per Page"
               value={
                 currentFilters.per_page
               }
@@ -1473,32 +1971,32 @@ const TenancyFilters = ({
               disabled={loading}
             >
               <option value="10">
-                10
+                10 records
               </option>
 
               <option value="15">
-                15
+                15 records
               </option>
 
               <option value="25">
-                25
+                25 records
               </option>
 
               <option value="50">
-                50
+                50 records
               </option>
 
               <option value="100">
-                100
+                100 records
               </option>
             </FilterSelect>
-
-            {/* APPLY */}
 
             <div className="flex items-end">
               <button
                 type="button"
-                onClick={handleApply}
+                onClick={
+                  handleApply
+                }
                 disabled={loading}
                 className="
                   inline-flex
@@ -1507,44 +2005,48 @@ const TenancyFilters = ({
                   items-center
                   justify-center
                   gap-2
-                  rounded-lg
+                  rounded-xl
                   bg-indigo-600
                   px-4
                   text-sm
-                  font-semibold
+                  font-bold
                   text-white
                   shadow-sm
-                  transition
+                  shadow-indigo-600/20
+                  transition-all
+                  hover:-translate-y-0.5
                   hover:bg-indigo-700
+                  hover:shadow-md
+                  hover:shadow-indigo-600/20
                   focus:outline-none
-                  focus:ring-2
-                  focus:ring-indigo-500
-                  focus:ring-offset-2
+                  focus:ring-4
+                  focus:ring-indigo-500/20
                   disabled:cursor-not-allowed
-                  disabled:opacity-50
+                  disabled:translate-y-0
+                  disabled:opacity-60
                   dark:bg-indigo-500
                   dark:hover:bg-indigo-600
                 "
               >
                 {loading ? (
                   <>
-                    <span
+                    <Loader2
                       className="
                         h-4
                         w-4
                         animate-spin
-                        rounded-full
-                        border-2
-                        border-white/30
-                        border-t-white
                       "
+                      aria-hidden="true"
                     />
 
-                    Applying...
+                    Loading...
                   </>
                 ) : (
                   <>
-                    <Filter size={17} />
+                    <Filter
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
 
                     Apply Filters
                   </>
@@ -1553,8 +2055,138 @@ const TenancyFilters = ({
             </div>
           </div>
         </div>
+
+        {/* ============================================================
+            ACTIVE FILTER SUMMARY
+        ============================================================ */}
+
+        {activeFilterCount > 0 && (
+          <div
+            className="
+              mt-6
+              flex
+              flex-col
+              gap-3
+              rounded-xl
+              border
+              border-indigo-100
+              bg-indigo-50/70
+              p-3
+              sm:flex-row
+              sm:items-center
+              sm:justify-between
+              dark:border-indigo-900/50
+              dark:bg-indigo-950/20
+            "
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <div
+                className="
+                  flex
+                  h-7
+                  w-7
+                  shrink-0
+                  items-center
+                  justify-center
+                  rounded-lg
+                  bg-white
+                  text-indigo-600
+                  shadow-sm
+                  dark:bg-slate-800
+                  dark:text-indigo-400
+                "
+              >
+                <Filter
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
+              </div>
+
+              <div className="min-w-0">
+                <p
+                  className="
+                    text-xs
+                    font-semibold
+                    text-indigo-900
+                    dark:text-indigo-200
+                  "
+                >
+                  {activeFilterCount} filter
+                  {activeFilterCount === 1
+                    ? ""
+                    : "s"} selected
+                </p>
+
+                <p
+                  className="
+                    truncate
+                    text-[11px]
+                    text-indigo-700
+                    dark:text-indigo-300
+                  "
+                >
+                  {searchValue.trim()
+                    ? `Searching tenancy records for "${searchValue.trim()}".`
+                    : "Results will reflect the selected filter criteria."}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                handleApply
+              }
+              disabled={loading}
+              className="
+                inline-flex
+                shrink-0
+                items-center
+                justify-center
+                gap-1.5
+                rounded-lg
+                border
+                border-indigo-200
+                bg-white
+                px-3
+                py-2
+                text-xs
+                font-bold
+                text-indigo-700
+                transition
+                hover:bg-indigo-100
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+                dark:border-indigo-800
+                dark:bg-slate-800
+                dark:text-indigo-300
+                dark:hover:bg-indigo-950/50
+              "
+            >
+              {loading ? (
+                <Loader2
+                  className="
+                    h-3.5
+                    w-3.5
+                    animate-spin
+                  "
+                  aria-hidden="true"
+                />
+              ) : (
+                <Search
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
+              )}
+
+              {loading
+                ? "Updating..."
+                : "Update Results"}
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -1571,66 +2203,92 @@ const FilterSelect = ({
   disabled = false,
   children,
 }) => {
-  const id = `tenancy-filter-${label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
+  const id =
+    `tenancy-filter-${label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")}`;
 
   return (
-    <div>
+    <div className="min-w-0">
       <label
         htmlFor={id}
         className="
           mb-2
           block
-          text-sm
-          font-medium
-          text-gray-700
-          dark:text-gray-300
+          text-xs
+          font-bold
+          uppercase
+          tracking-wide
+          text-slate-600
+          dark:text-slate-300
         "
       >
         {label}
       </label>
 
-      <select
-        id={id}
-        value={
-          value === null ||
-          value === undefined
-            ? ""
-            : String(value)
-        }
-        onChange={(event) =>
-          onChange(
-            event.target.value
-          )
-        }
-        disabled={disabled}
-        className="
-          h-11
-          w-full
-          rounded-lg
-          border
-          border-gray-300
-          bg-white
-          px-3
-          text-sm
-          text-gray-900
-          outline-none
-          transition
-          focus:border-indigo-500
-          focus:ring-2
-          focus:ring-indigo-500/20
-          disabled:cursor-not-allowed
-          disabled:bg-gray-100
-          dark:border-gray-600
-          dark:bg-gray-900
-          dark:text-white
-          dark:disabled:bg-gray-800
-        "
-      >
-        {children}
-      </select>
+      <div className="relative">
+        <select
+          id={id}
+          value={
+            value === null ||
+              value === undefined
+              ? ""
+              : String(value)
+          }
+          onChange={(event) =>
+            onChange(
+              event.target.value
+            )
+          }
+          disabled={disabled}
+          className="
+            h-11
+            w-full
+            appearance-none
+            rounded-xl
+            border
+            border-slate-200
+            bg-slate-50
+            px-3
+            pr-10
+            text-sm
+            font-medium
+            text-slate-800
+            outline-none
+            transition-all
+            hover:border-slate-300
+            focus:border-indigo-500
+            focus:bg-white
+            focus:ring-4
+            focus:ring-indigo-500/10
+            disabled:cursor-not-allowed
+            disabled:opacity-60
+            dark:border-slate-700
+            dark:bg-slate-800
+            dark:text-slate-100
+            dark:hover:border-slate-600
+            dark:focus:border-indigo-500
+            dark:focus:bg-slate-800
+          "
+        >
+          {children}
+        </select>
+
+        <ChevronDown
+          className="
+            pointer-events-none
+            absolute
+            right-3
+            top-1/2
+            h-4
+            w-4
+            -translate-y-1/2
+            text-slate-400
+          "
+          aria-hidden="true"
+        />
+      </div>
     </div>
   );
 };
@@ -1649,22 +2307,25 @@ const DateFilter = ({
   min,
   max,
 }) => {
-  const id = `tenancy-date-${label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
+  const id =
+    `tenancy-date-${label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")}`;
 
   return (
-    <div>
+    <div className="min-w-0">
       <label
         htmlFor={id}
         className="
           mb-2
           block
-          text-sm
-          font-medium
-          text-gray-700
-          dark:text-gray-300
+          text-xs
+          font-bold
+          uppercase
+          tracking-wide
+          text-slate-600
+          dark:text-slate-300
         "
       >
         {label}
@@ -1672,15 +2333,17 @@ const DateFilter = ({
 
       <div className="relative">
         <CalendarDays
-          size={17}
           className="
             pointer-events-none
             absolute
             left-3
             top-1/2
+            h-4
+            w-4
             -translate-y-1/2
-            text-gray-400
+            text-slate-400
           "
+          aria-hidden="true"
         />
 
         <input
@@ -1698,25 +2361,30 @@ const DateFilter = ({
           className="
             h-11
             w-full
-            rounded-lg
+            rounded-xl
             border
-            border-gray-300
-            bg-white
+            border-slate-200
+            bg-slate-50
             pl-10
             pr-3
             text-sm
-            text-gray-900
+            font-medium
+            text-slate-800
             outline-none
-            transition
+            transition-all
+            hover:border-slate-300
             focus:border-indigo-500
-            focus:ring-2
-            focus:ring-indigo-500/20
+            focus:bg-white
+            focus:ring-4
+            focus:ring-indigo-500/10
             disabled:cursor-not-allowed
-            disabled:bg-gray-100
-            dark:border-gray-600
-            dark:bg-gray-900
-            dark:text-white
-            dark:disabled:bg-gray-800
+            disabled:opacity-60
+            dark:border-slate-700
+            dark:bg-slate-800
+            dark:text-slate-100
+            dark:hover:border-slate-600
+            dark:focus:border-indigo-500
+            dark:focus:bg-slate-800
           "
         />
       </div>

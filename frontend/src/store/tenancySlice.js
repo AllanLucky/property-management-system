@@ -5,7 +5,11 @@ import {
 
 import tenancyService from "../services/tenancy.service";
 
-
+/*
+|--------------------------------------------------------------------------
+| Stable Default References
+|--------------------------------------------------------------------------
+*/
 
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
@@ -93,7 +97,30 @@ const initialState = {
 
   /*
   |--------------------------------------------------------------------------
-  | Loading
+  | Statistics Loading
+  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | Statistics have their own loading state.
+  | This prevents the statistics request from interfering
+  | with the tenancy table loading state.
+  |
+  */
+
+  loadingStatistics: false,
+
+  /*
+  |--------------------------------------------------------------------------
+  | Statistics Errors
+  |--------------------------------------------------------------------------
+  */
+
+  statisticsError: null,
+  statisticsErrorDetails: null,
+
+  /*
+  |--------------------------------------------------------------------------
+  | General Loading
   |--------------------------------------------------------------------------
   */
 
@@ -107,7 +134,7 @@ const initialState = {
 
   /*
   |--------------------------------------------------------------------------
-  | Errors
+  | General Errors
   |--------------------------------------------------------------------------
   */
 
@@ -202,24 +229,23 @@ const isValidObject = (value) => {
 /**
  * Get response body.
  *
- * Axios service is expected to return:
+ * Supports:
  *
+ * Axios:
+ * {
+ *   data: {
+ *     status: true,
+ *     code: 200,
+ *     data: [...]
+ *   }
+ * }
+ *
+ * Already normalized:
  * {
  *   status: true,
  *   code: 200,
  *   data: [...]
  * }
- *
- * If the service returns Axios response:
- *
- * {
- *   data: {
- *      status: true,
- *      ...
- *   }
- * }
- *
- * this helper handles both.
  */
 const getApiPayload = (response) => {
   if (!response) {
@@ -227,8 +253,11 @@ const getApiPayload = (response) => {
   }
 
   /*
-   * Axios response.
-   */
+  |--------------------------------------------------------------------------
+  | Axios response
+  |--------------------------------------------------------------------------
+  */
+
   if (
     response?.data &&
     typeof response.data === "object" &&
@@ -242,8 +271,11 @@ const getApiPayload = (response) => {
   }
 
   /*
-   * Already-normalized API response.
-   */
+  |--------------------------------------------------------------------------
+  | Already normalized response
+  |--------------------------------------------------------------------------
+  */
+
   return response;
 };
 
@@ -259,20 +291,22 @@ const extractResource = (response) => {
   }
 
   /*
-   * Standard:
-   *
-   * {
-   *   data: {...}
-   * }
-   */
+  |--------------------------------------------------------------------------
+  | Standard data object
+  |--------------------------------------------------------------------------
+  */
+
   if (
     payload.data &&
     !Array.isArray(payload.data) &&
     typeof payload.data === "object"
   ) {
     /*
-     * Handle nested pagination/resource shapes.
-     */
+    |--------------------------------------------------------------------------
+    | Nested data.data
+    |--------------------------------------------------------------------------
+    */
+
     if (
       payload.data.data &&
       !Array.isArray(payload.data.data) &&
@@ -285,15 +319,15 @@ const extractResource = (response) => {
   }
 
   /*
-   * Direct object.
-   */
+  |--------------------------------------------------------------------------
+  | Direct object
+  |--------------------------------------------------------------------------
+  */
+
   if (
     typeof payload === "object" &&
     !Array.isArray(payload)
   ) {
-    /*
-     * Do not return the API envelope as tenancy.
-     */
     if (
       payload.id !== undefined ||
       payload.tenancy_number !== undefined
@@ -307,49 +341,31 @@ const extractResource = (response) => {
 
 /**
  * Extract tenancy list.
- *
- * Expected API:
- *
- * {
- *   status: true,
- *   code: 200,
- *   message: "Tenancies fetched successfully",
- *   data: [
- *      {...},
- *      {...}
- *   ],
- *   meta: {
- *      current_page: 1,
- *      last_page: 2,
- *      per_page: 15,
- *      total: 24,
- *      from: 1,
- *      to: 15
- *   }
- * }
  */
 const extractTenancies = (response) => {
   const payload =
     getApiPayload(response);
 
   if (!payload) {
-    console.warn(
-      "[tenancySlice] extractTenancies: empty response"
-    );
-
     return EMPTY_ARRAY;
   }
 
   /*
-   * Primary expected structure.
-   */
+  |--------------------------------------------------------------------------
+  | Standard
+  |--------------------------------------------------------------------------
+  */
+
   if (Array.isArray(payload.data)) {
     return payload.data;
   }
 
   /*
-   * Nested Laravel pagination structure.
-   */
+  |--------------------------------------------------------------------------
+  | Nested Laravel pagination
+  |--------------------------------------------------------------------------
+  */
+
   if (
     payload.data &&
     Array.isArray(payload.data.data)
@@ -358,8 +374,11 @@ const extractTenancies = (response) => {
   }
 
   /*
-   * items structure.
-   */
+  |--------------------------------------------------------------------------
+  | Items
+  |--------------------------------------------------------------------------
+  */
+
   if (
     payload.data &&
     Array.isArray(payload.data.items)
@@ -372,16 +391,14 @@ const extractTenancies = (response) => {
   }
 
   /*
-   * Direct array.
-   */
+  |--------------------------------------------------------------------------
+  | Direct array
+  |--------------------------------------------------------------------------
+  */
+
   if (Array.isArray(payload)) {
     return payload;
   }
-
-  console.warn(
-    "[tenancySlice] extractTenancies: no tenancy array found",
-    payload
-  );
 
   return EMPTY_ARRAY;
 };
@@ -402,24 +419,15 @@ const extractPagination = (
     };
   }
 
-  /*
-   * Standard Laravel API:
-   *
-   * payload.meta
-   */
   const meta =
     payload.meta ||
     payload.data?.meta ||
     null;
 
-  /*
-   * Some APIs place pagination directly
-   * inside data.
-   */
   const data =
     payload.data &&
-      typeof payload.data === "object" &&
-      !Array.isArray(payload.data)
+    typeof payload.data === "object" &&
+    !Array.isArray(payload.data)
       ? payload.data
       : {};
 
@@ -463,7 +471,7 @@ const extractPagination = (
     payload?.to ??
     0;
 
-  const pagination = {
+  return {
     current_page:
       Number(currentPage) || 1,
 
@@ -482,13 +490,6 @@ const extractPagination = (
     to:
       Number(to) || 0,
   };
-
-  console.log(
-    "[tenancySlice] Extracted pagination:",
-    pagination
-  );
-
-  return pagination;
 };
 
 /**
@@ -505,6 +506,93 @@ const getResponseMessage = (
     payload?.message ||
     fallback
   );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Statistics Response Helper
+|--------------------------------------------------------------------------
+|
+| This is intentionally separate from extractResource().
+|
+| Statistics are NOT a tenancy resource.
+|
+| Example:
+|
+| {
+|   status: true,
+|   code: 200,
+|   data: {
+|     total: 50,
+|     active: 40,
+|     expired: 5
+|   }
+| }
+|
+| or:
+|
+| {
+|   data: {
+|     statistics: {
+|       total: 50
+|     }
+|   }
+| }
+|
+|--------------------------------------------------------------------------
+*/
+
+const extractStatistics = (response) => {
+  const payload =
+    getApiPayload(response);
+
+  if (!payload) {
+    return null;
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | data.statistics
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    payload.data?.statistics &&
+    typeof payload.data.statistics === "object" &&
+    !Array.isArray(payload.data.statistics)
+  ) {
+    return payload.data.statistics;
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | statistics
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    payload.statistics &&
+    typeof payload.statistics === "object" &&
+    !Array.isArray(payload.statistics)
+  ) {
+    return payload.statistics;
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | data
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    payload.data &&
+    typeof payload.data === "object" &&
+    !Array.isArray(payload.data)
+  ) {
+    return payload.data;
+  }
+
+  return null;
 };
 
 /*
@@ -594,78 +682,20 @@ export const fetchTenancies =
       params = {},
       { rejectWithValue }
     ) => {
-      console.group(
-        "[tenancySlice] fetchTenancies"
-      );
-
-      console.log(
-        "Request parameters:",
-        params
-      );
-
       try {
         const response =
           await tenancyService.getTenancies(
             params
           );
 
-        console.log(
-          "Raw service response:",
+        return getApiPayload(
           response
         );
-
-        const payload =
-          getApiPayload(response);
-
-        console.log(
-          "Normalized API payload:",
-          payload
-        );
-
-        console.log(
-          "Tenancy array:",
-          extractTenancies(payload)
-        );
-
-        console.log(
-          "Tenancy count:",
-          extractTenancies(payload).length
-        );
-
-        console.log(
-          "Pagination:",
-          extractPagination(payload)
-        );
-
-        console.groupEnd();
-
-        /*
-         * Return normalized API payload.
-         *
-         * This means reducers always receive:
-         *
-         * {
-         *   status,
-         *   code,
-         *   message,
-         *   data,
-         *   meta,
-         *   links
-         * }
-         */
-        return payload;
       } catch (error) {
         console.error(
           "[tenancySlice] fetchTenancies failed:",
           error
         );
-
-        console.error(
-          "Response:",
-          error?.response?.data
-        );
-
-        console.groupEnd();
 
         return rejectWithValue(
           rejectError(
@@ -1161,7 +1191,7 @@ export const assignUnit =
 
 /*
 |--------------------------------------------------------------------------
-| FETCH STATISTICS
+| FETCH TENANCY STATISTICS
 |--------------------------------------------------------------------------
 */
 
@@ -1173,8 +1203,18 @@ export const fetchTenancyStatistics =
       { rejectWithValue }
     ) => {
       try {
-        return await tenancyService.getStatistics();
+        const response =
+          await tenancyService.getStatistics();
+
+        return getApiPayload(
+          response
+        );
       } catch (error) {
+        console.error(
+          "[tenancySlice] fetchTenancyStatistics failed:",
+          error
+        );
+
         return rejectWithValue(
           rejectError(
             error,
@@ -1215,20 +1255,11 @@ const tenancySlice = createSlice({
         ...payload,
       };
 
-      /*
-       * Unless page was explicitly supplied,
-       * changing a filter returns to page 1.
-       */
       if (
         payload.page === undefined
       ) {
         state.filters.page = 1;
       }
-
-      console.log(
-        "[tenancySlice] Filters updated:",
-        state.filters
-      );
     },
 
     /*
@@ -1243,16 +1274,11 @@ const tenancySlice = createSlice({
       state.filters = {
         ...DEFAULT_FILTERS,
       };
-
-      console.log(
-        "[tenancySlice] Filters cleared:",
-        state.filters
-      );
     },
 
     /*
     |--------------------------------------------------------------------------
-    | Clear Error
+    | Clear General Error
     |--------------------------------------------------------------------------
     */
 
@@ -1261,6 +1287,19 @@ const tenancySlice = createSlice({
     ) => {
       state.error = null;
       state.errorDetails = null;
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Clear Statistics Error
+    |--------------------------------------------------------------------------
+    */
+
+    clearTenancyStatisticsError: (
+      state
+    ) => {
+      state.statisticsError = null;
+      state.statisticsErrorDetails = null;
     },
 
     /*
@@ -1289,7 +1328,7 @@ const tenancySlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Reset
+    | Reset State
     |--------------------------------------------------------------------------
     */
 
@@ -1310,16 +1349,30 @@ const tenancySlice = createSlice({
 
       statistics: null,
 
+      loadingStatistics: false,
+
+      statisticsError: null,
+
+      statisticsErrorDetails: null,
+
       error: null,
+
       errorDetails: null,
+
       success: null,
 
       loading: false,
+
       creating: false,
+
       updating: false,
+
       deleting: false,
+
       restoring: false,
+
       forceDeleting: false,
+
       actionLoading: false,
     }),
   },
@@ -1340,16 +1393,11 @@ const tenancySlice = createSlice({
     builder
       .addCase(
         fetchTenancies.pending,
-        (state, action) => {
+        (state) => {
           state.loading = true;
 
           state.error = null;
           state.errorDetails = null;
-
-          console.log(
-            "[tenancySlice] FETCH PENDING",
-            action.meta?.arg
-          );
         }
       )
 
@@ -1374,23 +1422,10 @@ const tenancySlice = createSlice({
 
           state.loading = false;
 
-          /*
-           * THIS IS THE IMPORTANT PART.
-           *
-           * The API returns:
-           *
-           * data: Array(15)
-           *
-           * Therefore state.tenancies MUST become
-           * that array directly.
-           */
           state.tenancies = [
             ...tenancies,
           ];
 
-          /*
-           * Save Laravel pagination metadata.
-           */
           state.pagination = {
             ...state.pagination,
             ...pagination,
@@ -1398,42 +1433,6 @@ const tenancySlice = createSlice({
 
           state.error = null;
           state.errorDetails = null;
-
-          console.group(
-            "[tenancySlice] FETCH FULFILLED"
-          );
-
-          console.log(
-            "Thunk type:",
-            action.type
-          );
-
-          console.log(
-            "API response:",
-            response
-          );
-
-          console.log(
-            "Tenancies:",
-            state.tenancies
-          );
-
-          console.log(
-            "Tenancy count:",
-            state.tenancies.length
-          );
-
-          console.log(
-            "Pagination:",
-            state.pagination
-          );
-
-          console.log(
-            "API total:",
-            response?.meta?.total
-          );
-
-          console.groupEnd();
         }
       )
 
@@ -1450,26 +1449,12 @@ const tenancySlice = createSlice({
           state.errorDetails =
             action.payload?.errors ||
             null;
-
-          console.error(
-            "[tenancySlice] FETCH REJECTED",
-            {
-              payload:
-                action.payload,
-
-              error:
-                action.error,
-
-              meta:
-                action.meta,
-            }
-          );
         }
       );
 
     /*
     |--------------------------------------------------------------------------
-    | FETCH SINGLE
+    | FETCH SINGLE TENANCY
     |--------------------------------------------------------------------------
     */
 
@@ -1502,6 +1487,7 @@ const tenancySlice = createSlice({
         fetchTenancy.rejected,
         (state, action) => {
           state.loading = false;
+
           state.tenancy = null;
 
           state.error =
@@ -1526,6 +1512,7 @@ const tenancySlice = createSlice({
         createTenancy.pending,
         (state) => {
           state.creating = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1543,8 +1530,7 @@ const tenancySlice = createSlice({
             );
 
           if (created) {
-            state.tenancy =
-              created;
+            state.tenancy = created;
 
             updateTenancyInList(
               state,
@@ -1594,6 +1580,7 @@ const tenancySlice = createSlice({
         updateTenancy.pending,
         (state) => {
           state.updating = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1611,8 +1598,7 @@ const tenancySlice = createSlice({
             );
 
           if (updated) {
-            state.tenancy =
-              updated;
+            state.tenancy = updated;
 
             updateTenancyInList(
               state,
@@ -1660,6 +1646,7 @@ const tenancySlice = createSlice({
         patchTenancy.pending,
         (state) => {
           state.updating = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1677,8 +1664,7 @@ const tenancySlice = createSlice({
             );
 
           if (updated) {
-            state.tenancy =
-              updated;
+            state.tenancy = updated;
 
             updateTenancyInList(
               state,
@@ -1727,6 +1713,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.deleting = true;
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1750,7 +1737,7 @@ const tenancySlice = createSlice({
           if (
             state.tenancy &&
             Number(state.tenancy.id) ===
-            Number(deletedId)
+              Number(deletedId)
           ) {
             state.tenancy = null;
           }
@@ -1803,6 +1790,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.restoring = true;
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1821,8 +1809,7 @@ const tenancySlice = createSlice({
             );
 
           if (restored) {
-            state.tenancy =
-              restored;
+            state.tenancy = restored;
 
             updateTenancyInList(
               state,
@@ -1872,6 +1859,7 @@ const tenancySlice = createSlice({
         (state) => {
           state.forceDeleting = true;
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1895,7 +1883,7 @@ const tenancySlice = createSlice({
           if (
             state.tenancy &&
             Number(state.tenancy.id) ===
-            Number(deletedId)
+              Number(deletedId)
           ) {
             state.tenancy = null;
           }
@@ -1947,6 +1935,7 @@ const tenancySlice = createSlice({
         activateTenancy.pending,
         (state) => {
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -1964,8 +1953,7 @@ const tenancySlice = createSlice({
             );
 
           if (activated) {
-            state.tenancy =
-              activated;
+            state.tenancy = activated;
 
             updateTenancyInList(
               state,
@@ -2013,6 +2001,7 @@ const tenancySlice = createSlice({
         deactivateTenancy.pending,
         (state) => {
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -2030,8 +2019,7 @@ const tenancySlice = createSlice({
             );
 
           if (deactivated) {
-            state.tenancy =
-              deactivated;
+            state.tenancy = deactivated;
 
             updateTenancyInList(
               state,
@@ -2079,6 +2067,7 @@ const tenancySlice = createSlice({
         renewTenancy.pending,
         (state) => {
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -2096,8 +2085,7 @@ const tenancySlice = createSlice({
             );
 
           if (renewed) {
-            state.tenancy =
-              renewed;
+            state.tenancy = renewed;
 
             updateTenancyInList(
               state,
@@ -2145,6 +2133,7 @@ const tenancySlice = createSlice({
         assignUnit.pending,
         (state) => {
           state.actionLoading = true;
+
           state.error = null;
           state.errorDetails = null;
           state.success = null;
@@ -2162,8 +2151,7 @@ const tenancySlice = createSlice({
             );
 
           if (assigned) {
-            state.tenancy =
-              assigned;
+            state.tenancy = assigned;
 
             updateTenancyInList(
               state,
@@ -2204,52 +2192,64 @@ const tenancySlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | STATISTICS
+    | TENANCY STATISTICS
     |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    | This uses loadingStatistics instead of loading.
+    |
     */
 
     builder
       .addCase(
         fetchTenancyStatistics.pending,
         (state) => {
-          state.loading = true;
-          state.error = null;
-          state.errorDetails = null;
+          state.loadingStatistics = true;
+
+          state.statisticsError = null;
+          state.statisticsErrorDetails = null;
         }
       )
 
       .addCase(
         fetchTenancyStatistics.fulfilled,
         (state, action) => {
-          state.loading = false;
+          state.loadingStatistics = false;
+
+          const statistics =
+            extractStatistics(
+              action.payload
+            );
 
           state.statistics =
-            extractResource(
-              action.payload
-            ) ||
-            getApiPayload(
-              action.payload
-            )?.data ||
-            null;
+            statistics;
 
-          state.error = null;
-          state.errorDetails = null;
+          state.statisticsError = null;
+          state.statisticsErrorDetails = null;
         }
       )
 
       .addCase(
         fetchTenancyStatistics.rejected,
         (state, action) => {
-          state.loading = false;
+          state.loadingStatistics = false;
 
-          state.statistics = null;
+          /*
+          |--------------------------------------------------------------------------
+          | IMPORTANT
+          |--------------------------------------------------------------------------
+          |
+          | Do not destroy existing statistics during
+          | a background refresh failure.
+          |
+          */
 
-          state.error =
+          state.statisticsError =
             action.payload?.message ||
             action.error?.message ||
             "Failed to fetch tenancy statistics.";
 
-          state.errorDetails =
+          state.statisticsErrorDetails =
             action.payload?.errors ||
             null;
         }
@@ -2267,6 +2267,7 @@ export const {
   setTenancyFilters,
   clearTenancyFilters,
   clearTenancyError,
+  clearTenancyStatisticsError,
   clearTenancySuccess,
   clearTenancy,
   resetTenancyState,
@@ -2321,7 +2322,7 @@ export const selectTenancyFilters = (
   DEFAULT_FILTERS;
 
 /**
- * Loading.
+ * General loading.
  */
 export const selectTenancyLoading = (
   state
@@ -2330,9 +2331,31 @@ export const selectTenancyLoading = (
     state?.tenancy?.loading
   );
 
-/**
- * Creating.
- */
+/*
+|--------------------------------------------------------------------------
+| Statistics Loading Selector
+|--------------------------------------------------------------------------
+|
+| THIS FIXES:
+|
+| "does not provide an export named
+| selectTenancyLoadingStatistics"
+|
+*/
+
+export const selectTenancyLoadingStatistics = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.loadingStatistics
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Creating
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyCreating = (
   state
 ) =>
@@ -2340,9 +2363,12 @@ export const selectTenancyCreating = (
     state?.tenancy?.creating
   );
 
-/**
- * Updating.
- */
+/*
+|--------------------------------------------------------------------------
+| Updating
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyUpdating = (
   state
 ) =>
@@ -2350,9 +2376,12 @@ export const selectTenancyUpdating = (
     state?.tenancy?.updating
   );
 
-/**
- * Deleting.
- */
+/*
+|--------------------------------------------------------------------------
+| Deleting
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyDeleting = (
   state
 ) =>
@@ -2360,9 +2389,12 @@ export const selectTenancyDeleting = (
     state?.tenancy?.deleting
   );
 
-/**
- * Restoring.
- */
+/*
+|--------------------------------------------------------------------------
+| Restoring
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyRestoring = (
   state
 ) =>
@@ -2370,9 +2402,12 @@ export const selectTenancyRestoring = (
     state?.tenancy?.restoring
   );
 
-/**
- * Force deleting.
- */
+/*
+|--------------------------------------------------------------------------
+| Force Deleting
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyForceDeleting = (
   state
 ) =>
@@ -2380,9 +2415,12 @@ export const selectTenancyForceDeleting = (
     state?.tenancy?.forceDeleting
   );
 
-/**
- * Action loading.
- */
+/*
+|--------------------------------------------------------------------------
+| Action Loading
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyActionLoading = (
   state
 ) =>
@@ -2390,36 +2428,77 @@ export const selectTenancyActionLoading = (
     state?.tenancy?.actionLoading
   );
 
-/**
- * Error.
- */
+/*
+|--------------------------------------------------------------------------
+| General Error
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyError = (
   state
 ) =>
   state?.tenancy?.error ??
   null;
 
-/**
- * Error details.
- */
+/*
+|--------------------------------------------------------------------------
+| General Error Details
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyErrorDetails = (
   state
 ) =>
   state?.tenancy?.errorDetails ??
   null;
 
-/**
- * Success.
- */
+/*
+|--------------------------------------------------------------------------
+| Statistics Error
+|--------------------------------------------------------------------------
+|
+| THIS MATCHES TenancyStats.jsx:
+|
+| selectTenancyStatisticsError
+|
+*/
+
+export const selectTenancyStatisticsError = (
+  state
+) =>
+  state?.tenancy?.statisticsError ??
+  null;
+
+/*
+|--------------------------------------------------------------------------
+| Statistics Error Details
+|--------------------------------------------------------------------------
+*/
+
+export const selectTenancyStatisticsErrorDetails = (
+  state
+) =>
+  state?.tenancy?.statisticsErrorDetails ??
+  null;
+
+/*
+|--------------------------------------------------------------------------
+| Success
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancySuccess = (
   state
 ) =>
   state?.tenancy?.success ??
   null;
 
-/**
- * Statistics.
- */
+/*
+|--------------------------------------------------------------------------
+| Statistics
+|--------------------------------------------------------------------------
+*/
+
 export const selectTenancyStatistics = (
   state
 ) =>
@@ -2529,6 +2608,16 @@ export const selectIsLoadingTenancies = (
 ) =>
   Boolean(
     state?.tenancy?.loading
+  );
+
+/**
+ * Is statistics loading.
+ */
+export const selectIsLoadingTenancyStatistics = (
+  state
+) =>
+  Boolean(
+    state?.tenancy?.loadingStatistics
   );
 
 /*
