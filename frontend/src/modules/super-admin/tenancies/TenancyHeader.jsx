@@ -1,3 +1,4 @@
+
 import {
   ArrowLeft,
   BarChart3,
@@ -8,16 +9,29 @@ import {
 import { useNavigate } from "react-router-dom";
 
 /**
- * TenancyHeader
+ * ============================================================================
+ * TENANCY HEADER
+ * ============================================================================
  *
  * Header for the Tenancy management module.
  *
  * Supports:
  * - Back navigation
  * - Create tenancy
- * - Assign unit
+ * - Navigate to Assign Unit page
  * - Statistics
  * - Refresh
+ *
+ * IMPORTANT:
+ *
+ * Assign Unit only NAVIGATES to:
+ *
+ * /super-admin/tenancies/:tenancyId/assign-unit
+ *
+ * It does NOT assign the unit here.
+ *
+ * The actual POST request is made inside the AssignUnit page
+ * after the user selects a unit and clicks "Assign Unit".
  *
  * Props:
  * - title
@@ -27,6 +41,7 @@ import { useNavigate } from "react-router-dom";
  * - showAssign
  * - showStatistics
  * - showRefresh
+ * - tenancyId
  * - onRefresh
  * - loading
  */
@@ -38,6 +53,7 @@ const TenancyHeader = ({
   showAssign = true,
   showStatistics = true,
   showRefresh = true,
+  tenancyId = null,
   onRefresh,
   loading = false,
 }) => {
@@ -64,10 +80,35 @@ const TenancyHeader = ({
   };
 
   /**
-   * Navigate to assign unit.
+   * Navigate to Assign Unit page.
+   *
+   * IMPORTANT:
+   * This does NOT call the API.
+   *
+   * Example:
+   *
+   * tenancyId = 26
+   *
+   * Result:
+   *
+   * /super-admin/tenancies/26/assign-unit
    */
   const handleAssignUnit = () => {
-    navigate("/super-admin/tenancies/assign-unit");
+    if (
+      tenancyId === null ||
+      tenancyId === undefined ||
+      String(tenancyId).trim() === ""
+    ) {
+      console.warn(
+        "TenancyHeader: tenancyId is required to open Assign Unit page."
+      );
+
+      return;
+    }
+
+    navigate(
+      `/super-admin/tenancies/${tenancyId}/assign-unit`
+    );
   };
 
   /**
@@ -83,9 +124,6 @@ const TenancyHeader = ({
   |--------------------------------------------------------------------------
   */
 
-  /**
-   * Refresh tenancy data.
-   */
   const handleRefresh = () => {
     if (loading) {
       return;
@@ -96,11 +134,29 @@ const TenancyHeader = ({
     }
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | ASSIGN UNIT AVAILABILITY
+  |--------------------------------------------------------------------------
+  */
+
+  const canAssignUnit =
+    tenancyId !== null &&
+    tenancyId !== undefined &&
+    String(tenancyId).trim() !== "";
+
+  /*
+  |--------------------------------------------------------------------------
+  | RENDER
+  |--------------------------------------------------------------------------
+  */
+
   return (
     <div className="mb-6">
       {/* ================================================================
           HEADER
       ================================================================ */}
+
       <div
         className="
           flex
@@ -114,10 +170,12 @@ const TenancyHeader = ({
         {/* ============================================================
             LEFT SIDE
         ============================================================ */}
+
         <div className="flex min-w-0 items-start gap-3">
           {/* ==========================================================
               BACK BUTTON
           ========================================================== */}
+
           {showBack && (
             <button
               type="button"
@@ -160,6 +218,7 @@ const TenancyHeader = ({
           {/* ==========================================================
               TITLE / DESCRIPTION
           ========================================================== */}
+
           <div className="min-w-0">
             <h1
               className="
@@ -193,6 +252,7 @@ const TenancyHeader = ({
         {/* ============================================================
             ACTIONS
         ============================================================ */}
+
         <div
           className="
             flex
@@ -209,6 +269,7 @@ const TenancyHeader = ({
           {/* ========================================================
               REFRESH
           ======================================================== */}
+
           {showRefresh && (
             <button
               type="button"
@@ -270,7 +331,9 @@ const TenancyHeader = ({
               />
 
               <span className="hidden sm:inline">
-                {loading ? "Refreshing..." : "Refresh"}
+                {loading
+                  ? "Refreshing..."
+                  : "Refresh"}
               </span>
             </button>
           )}
@@ -278,6 +341,7 @@ const TenancyHeader = ({
           {/* ========================================================
               STATISTICS
           ======================================================== */}
+
           {showStatistics && (
             <button
               type="button"
@@ -329,11 +393,22 @@ const TenancyHeader = ({
           {/* ========================================================
               ASSIGN UNIT
           ======================================================== */}
+
           {showAssign && (
             <button
               type="button"
               onClick={handleAssignUnit}
-              title="Assign unit to tenant"
+              disabled={!canAssignUnit}
+              aria-label={
+                canAssignUnit
+                  ? "Open Assign Unit page"
+                  : "Tenancy ID is required"
+              }
+              title={
+                canAssignUnit
+                  ? "Open Assign Unit page"
+                  : "Tenancy ID is required"
+              }
               className="
                 inline-flex
                 h-10
@@ -354,6 +429,10 @@ const TenancyHeader = ({
                 hover:border-indigo-300
                 hover:bg-indigo-100
                 active:scale-[0.98]
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+                disabled:hover:border-indigo-200
+                disabled:hover:bg-indigo-50
                 focus:outline-none
                 focus:ring-2
                 focus:ring-indigo-500
@@ -362,6 +441,7 @@ const TenancyHeader = ({
                 dark:bg-indigo-950/40
                 dark:text-indigo-300
                 dark:hover:bg-indigo-950/70
+                dark:disabled:hover:bg-indigo-950/40
               "
             >
               <UserPlus
@@ -378,6 +458,7 @@ const TenancyHeader = ({
           {/* ========================================================
               CREATE TENANCY
           ======================================================== */}
+
           {showCreate && (
             <button
               type="button"

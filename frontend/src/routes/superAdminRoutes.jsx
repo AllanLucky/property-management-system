@@ -172,8 +172,13 @@ import {
 | APARTMENTS
 |--------------------------------------------------------------------------
 */
-import { ApartmentList, CreateApartment, DeleteApartmentModal, EditApartment, ViewApartment, } from "../modules/super-admin/apartments";
-
+import {
+  ApartmentList,
+  CreateApartment,
+  DeleteApartmentModal,
+  EditApartment,
+  ViewApartment,
+} from "../modules/super-admin/apartments";
 
 /*
 |--------------------------------------------------------------------------
@@ -190,19 +195,26 @@ import UnitDetails from "../modules/super-admin/units/UnitDetails";
 | TENANTS
 |--------------------------------------------------------------------------
 */
-import { CreateTenant, EditTenant, TenantDetails, TenantList, } from "../modules/super-admin/tenants";
-
+import {
+  CreateTenant,
+  EditTenant,
+  TenantDetails,
+  TenantList,
+} from "../modules/super-admin/tenants";
 
 /*
 |--------------------------------------------------------------------------
 | TENANCIES
 |--------------------------------------------------------------------------
 */
-import { AssignUnit, CreateTenancy, EditTenancy, TenancyDetails, TenancyList, } from "../modules/super-admin/tenancies";
-
-
-
-
+import {
+  AssignUnit,
+  CreateTenancy,
+  EditTenancy,
+  TenancyDetails,
+  TenancyList,
+  TenancyStatistics,
+} from "../modules/super-admin/tenancies";
 
 /*
 |--------------------------------------------------------------------------
@@ -898,6 +910,19 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="tenancies.create">
             <CreateTenancy />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Tenancy Statistics
+          IMPORTANT:
+          This route must come before tenancies/:id
+      */}
+      <Route
+        path="tenancies/statistics"
+        element={
+          <PermissionGuard permission="tenancies.view">
+            <TenancyStatistics />
           </PermissionGuard>
         }
       />

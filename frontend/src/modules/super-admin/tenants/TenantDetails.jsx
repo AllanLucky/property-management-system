@@ -20,18 +20,18 @@ import {
 } from "lucide-react";
 
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+} from "react";
+
+import {
   useLocation,
   useNavigate,
   useParams,
 } from "react-router-dom";
 
 import Swal from "sweetalert2";
-
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-} from "react";
 
 import {
   useDispatch,
@@ -69,7 +69,7 @@ const TenantDetails = () => {
   */
 
   const {
-    tenant,
+    tenant = null,
     loading = false,
     error = null,
     activating = false,
@@ -85,47 +85,22 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   | LOAD TENANT
   |--------------------------------------------------------------------------
-  |
-  | This is deliberately kept stable.
-  |
   */
 
-  const loadTenant = useCallback(
-    async () => {
-      if (!id) {
-        return null;
-      }
+  const loadTenant = useCallback(async () => {
+    if (!id) {
+      return null;
+    }
 
-      dispatch(clearTenantError());
+    dispatch(clearTenantError());
 
-      return dispatch(
-        fetchTenant(id)
-      );
-    },
-    [dispatch, id]
-  );
+    return dispatch(fetchTenant(id));
+  }, [dispatch, id]);
 
   /*
   |--------------------------------------------------------------------------
-  | LOAD / REFRESH TENANT
+  | INITIAL LOAD
   |--------------------------------------------------------------------------
-  |
-  | location.key changes when navigating away and coming back to this page.
-  |
-  | This means:
-  |
-  | Edit tenant
-  |     ↓
-  | Save
-  |     ↓
-  | Navigate back to details
-  |     ↓
-  | location.key changes
-  |     ↓
-  | fetchTenant(id)
-  |
-  | No setState is performed inside the dependency chain.
-  |
   */
 
   useEffect(() => {
@@ -136,28 +111,15 @@ const TenantDetails = () => {
     loadTenant();
 
     return () => {
+      dispatch(clearTenant());
       dispatch(clearTenantError());
     };
-  }, [
-    id,
-    location.key,
-    loadTenant,
-    dispatch,
-  ]);
+  }, [id, loadTenant, dispatch]);
 
   /*
   |--------------------------------------------------------------------------
-  | HANDLE UPDATED STATE
+  | REFRESH AFTER EDIT
   |--------------------------------------------------------------------------
-  |
-  | TenantForm can navigate back using:
-  |
-  | navigate(`/super-admin/tenants/${id}`, {
-  |   state: { updated: true }
-  | })
-  |
-  | We refresh immediately and then remove the temporary state.
-  |
   */
 
   useEffect(() => {
@@ -170,13 +132,10 @@ const TenantDetails = () => {
 
     loadTenant();
 
-    navigate(
-      location.pathname,
-      {
-        replace: true,
-        state: {},
-      }
-    );
+    navigate(location.pathname, {
+      replace: true,
+      state: {},
+    });
   }, [
     id,
     location.state?.updated,
@@ -187,12 +146,20 @@ const TenantDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | USER / TENANT NORMALIZATION
+  | USER NORMALIZATION
   |--------------------------------------------------------------------------
   */
 
   const tenantUser = useMemo(() => {
-    return tenant?.user || null;
+    if (
+      tenant?.user &&
+      typeof tenant.user === "object" &&
+      !Array.isArray(tenant.user)
+    ) {
+      return tenant.user;
+    }
+
+    return null;
   }, [tenant]);
 
   const firstName =
@@ -228,20 +195,23 @@ const TenantDetails = () => {
 
   const fullName = useMemo(() => {
     if (tenant?.full_name) {
-      return tenant.full_name;
+      return String(tenant.full_name);
     }
 
     if (tenantUser?.full_name) {
-      return tenantUser.full_name;
+      return String(tenantUser.full_name);
     }
 
-    return [
+    const name = [
       firstName,
       otherNames,
       lastName,
     ]
       .filter(Boolean)
-      .join(" ") || "Tenant";
+      .join(" ")
+      .trim();
+
+    return name || "Tenant";
   }, [
     tenant?.full_name,
     tenantUser?.full_name,
@@ -257,36 +227,30 @@ const TenantDetails = () => {
   */
 
   const initials = useMemo(() => {
-    const first = String(
-      firstName || ""
-    )
-      .trim()
-      .charAt(0);
+    const first =
+      String(firstName || "")
+        .trim()
+        .charAt(0);
 
-    const last = String(
-      lastName || ""
-    )
-      .trim()
-      .charAt(0);
+    const last =
+      String(lastName || "")
+        .trim()
+        .charAt(0);
 
-    const result =
-      `${first}${last}`.trim();
-
-    if (result) {
-      return result.toUpperCase();
+    if (first || last) {
+      return `${first}${last}`.toUpperCase();
     }
 
-    const fallback = String(
-      fullName || "Tenant"
-    )
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) =>
-        part.charAt(0)
-      )
-      .join("");
+    const fallback =
+      String(fullName || "Tenant")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) =>
+          part.charAt(0)
+        )
+        .join("");
 
     return (
       fallback || "T"
@@ -312,7 +276,11 @@ const TenantDetails = () => {
         value === "true" ||
         value === "TRUE" ||
         value === "yes" ||
-        value === "active"
+        value === "YES" ||
+        value === "active" ||
+        value === "ACTIVE" ||
+        value === "verified" ||
+        value === "VERIFIED"
       ) {
         return true;
       }
@@ -336,9 +304,23 @@ const TenantDetails = () => {
       tenantUser?.account_status ??
       "pending";
 
-    return String(
-      rawStatus
-    ).toLowerCase();
+    if (
+      typeof rawStatus === "object" &&
+      rawStatus !== null
+    ) {
+      return String(
+        rawStatus?.value ??
+        rawStatus?.name ??
+        rawStatus?.status ??
+        "pending"
+      )
+        .toLowerCase()
+        .trim();
+    }
+
+    return String(rawStatus)
+      .toLowerCase()
+      .trim();
   }, [
     tenant?.status,
     tenant?.account_status,
@@ -348,14 +330,14 @@ const TenantDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | ACTIVE
+  | ACTIVE ACCOUNT
   |--------------------------------------------------------------------------
   */
 
   const isActive = useMemo(() => {
     if (
-      tenant?.is_active !==
-      undefined
+      tenant?.is_active !== undefined &&
+      tenant?.is_active !== null
     ) {
       return toBoolean(
         tenant.is_active
@@ -363,8 +345,8 @@ const TenantDetails = () => {
     }
 
     if (
-      tenant?.active !==
-      undefined
+      tenant?.active !== undefined &&
+      tenant?.active !== null
     ) {
       return toBoolean(
         tenant.active
@@ -372,8 +354,8 @@ const TenantDetails = () => {
     }
 
     if (
-      tenantUser?.is_active !==
-      undefined
+      tenantUser?.is_active !== undefined &&
+      tenantUser?.is_active !== null
     ) {
       return toBoolean(
         tenantUser.is_active
@@ -381,8 +363,8 @@ const TenantDetails = () => {
     }
 
     if (
-      tenantUser?.active !==
-      undefined
+      tenantUser?.active !== undefined &&
+      tenantUser?.active !== null
     ) {
       return toBoolean(
         tenantUser.active
@@ -410,8 +392,8 @@ const TenantDetails = () => {
 
   const isVerified = useMemo(() => {
     if (
-      tenant?.is_verified !==
-      undefined
+      tenant?.is_verified !== undefined &&
+      tenant?.is_verified !== null
     ) {
       return toBoolean(
         tenant.is_verified
@@ -419,8 +401,8 @@ const TenantDetails = () => {
     }
 
     if (
-      tenant?.verified !==
-      undefined
+      tenant?.verified !== undefined &&
+      tenant?.verified !== null
     ) {
       return toBoolean(
         tenant.verified
@@ -428,8 +410,8 @@ const TenantDetails = () => {
     }
 
     if (
-      tenantUser?.is_verified !==
-      undefined
+      tenantUser?.is_verified !== undefined &&
+      tenantUser?.is_verified !== null
     ) {
       return toBoolean(
         tenantUser.is_verified
@@ -437,8 +419,8 @@ const TenantDetails = () => {
     }
 
     if (
-      tenantUser?.verified !==
-      undefined
+      tenantUser?.verified !== undefined &&
+      tenantUser?.verified !== null
     ) {
       return toBoolean(
         tenantUser.verified
@@ -467,14 +449,56 @@ const TenantDetails = () => {
 
   const statusLabel = useMemo(() => {
     return capitalize(
-      String(
-        status || "pending"
-      ).replace(
-        /_/g,
-        " "
-      )
+      String(status || "pending")
+        .replace(/_/g, " ")
     );
   }, [status]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | EMERGENCY CONTACT
+  |--------------------------------------------------------------------------
+  */
+
+  const emergencyContact = useMemo(() => {
+    const nested =
+      tenant?.emergency_contact;
+
+    const nestedContact =
+      nested &&
+        typeof nested === "object" &&
+        !Array.isArray(nested)
+        ? nested
+        : {};
+
+    return {
+      name:
+        nestedContact?.name ??
+        tenant?.emergency_contact_name ??
+        tenant?.emergency_name ??
+        "",
+
+      phone:
+        nestedContact?.phone ??
+        tenant?.emergency_contact_phone ??
+        tenant?.emergency_phone ??
+        "",
+
+      relationship:
+        nestedContact?.relationship ??
+        tenant?.emergency_contact_relationship ??
+        tenant?.emergency_relationship ??
+        "",
+    };
+  }, [
+    tenant?.emergency_contact,
+    tenant?.emergency_contact_name,
+    tenant?.emergency_contact_phone,
+    tenant?.emergency_contact_relationship,
+    tenant?.emergency_name,
+    tenant?.emergency_phone,
+    tenant?.emergency_relationship,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -482,33 +506,36 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const formatDate = (
-    value,
-    fallback = "Not provided"
-  ) => {
-    if (!value) {
-      return fallback;
-    }
-
-    const date = new Date(value);
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return fallback;
-    }
-
-    return new Intl.DateTimeFormat(
-      "en-KE",
-      {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
+  const formatDate = useCallback(
+    (
+      value,
+      fallback = "Not provided"
+    ) => {
+      if (!value) {
+        return fallback;
       }
-    ).format(date);
-  };
+
+      const date = new Date(value);
+
+      if (
+        Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        return fallback;
+      }
+
+      return new Intl.DateTimeFormat(
+        "en-KE",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }
+      ).format(date);
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -516,32 +543,35 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const formatDateTime = (
-    value,
-    fallback = "Not available"
-  ) => {
-    if (!value) {
-      return fallback;
-    }
-
-    const date = new Date(value);
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return fallback;
-    }
-
-    return new Intl.DateTimeFormat(
-      "en-KE",
-      {
-        dateStyle: "medium",
-        timeStyle: "short",
+  const formatDateTime = useCallback(
+    (
+      value,
+      fallback = "Not available"
+    ) => {
+      if (!value) {
+        return fallback;
       }
-    ).format(date);
-  };
+
+      const date = new Date(value);
+
+      if (
+        Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        return fallback;
+      }
+
+      return new Intl.DateTimeFormat(
+        "en-KE",
+        {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }
+      ).format(date);
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -549,47 +579,65 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const valueOrFallback = (
-    value,
-    fallback = "Not provided"
-  ) => {
-    if (
-      value === null ||
-      value === undefined ||
-      value === ""
-    ) {
-      return fallback;
-    }
-
-    if (
-      typeof value === "object"
-    ) {
+  const valueOrFallback = useCallback(
+    (
+      value,
+      fallback = "Not provided"
+    ) => {
       if (
-        value?.name !==
-        undefined
+        value === null ||
+        value === undefined ||
+        value === ""
       ) {
-        return value.name;
+        return fallback;
       }
 
       if (
-        value?.title !==
-        undefined
+        typeof value === "object"
       ) {
-        return value.title;
+        if (
+          value.name !== undefined &&
+          value.name !== null
+        ) {
+          return String(
+            value.name
+          );
+        }
+
+        if (
+          value.title !== undefined &&
+          value.title !== null
+        ) {
+          return String(
+            value.title
+          );
+        }
+
+        if (
+          value.label !== undefined &&
+          value.label !== null
+        ) {
+          return String(
+            value.label
+          );
+        }
+
+        if (
+          value.value !== undefined &&
+          typeof value.value !== "object"
+        ) {
+          return String(
+            value.value
+          );
+        }
+
+        return fallback;
       }
 
-      if (
-        value?.label !==
-        undefined
-      ) {
-        return value.label;
-      }
-
-      return fallback;
-    }
-
-    return String(value);
-  };
+      return String(value);
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -598,50 +646,51 @@ const TenantDetails = () => {
   */
 
   const locationName = useMemo(() => {
+    const getLocationValue = (
+      objectValue,
+      stringValue
+    ) => {
+      if (
+        objectValue &&
+        typeof objectValue === "object"
+      ) {
+        return (
+          objectValue.name ??
+          objectValue.title ??
+          objectValue.label ??
+          null
+        );
+      }
+
+      if (
+        typeof objectValue === "string"
+      ) {
+        return objectValue;
+      }
+
+      return stringValue || null;
+    };
+
     const parts = [
-      tenant?.area?.name ||
-      tenant?.area_name ||
-      (
-        typeof tenant?.area ===
-          "string"
-          ? tenant.area
-          : null
+      getLocationValue(
+        tenant?.area,
+        tenant?.area_name
       ),
-
-      tenant?.city?.name ||
-      tenant?.city_name ||
-      (
-        typeof tenant?.city ===
-          "string"
-          ? tenant.city
-          : null
+      getLocationValue(
+        tenant?.city,
+        tenant?.city_name
       ),
-
-      tenant?.county?.name ||
-      tenant?.county_name ||
-      (
-        typeof tenant?.county ===
-          "string"
-          ? tenant.county
-          : null
+      getLocationValue(
+        tenant?.county,
+        tenant?.county_name
       ),
-
-      tenant?.region?.name ||
-      tenant?.region_name ||
-      (
-        typeof tenant?.region ===
-          "string"
-          ? tenant.region
-          : null
+      getLocationValue(
+        tenant?.region,
+        tenant?.region_name
       ),
-
-      tenant?.country?.name ||
-      tenant?.country_name ||
-      (
-        typeof tenant?.country ===
-          "string"
-          ? tenant.country
-          : null
+      getLocationValue(
+        tenant?.country,
+        tenant?.country_name
       ),
     ].filter(Boolean);
 
@@ -653,25 +702,69 @@ const TenantDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | TENANCIES
+  | TENANCY NORMALIZATION
   |--------------------------------------------------------------------------
+  |
+  | Supports:
+  |
+  | tenant.tenancies
+  | tenant.active_tenancies
+  | tenant.tenancy_history
+  | tenant.tenancy_records
+  | tenant.tenancyRecords
+  | tenant.tenancy
+  | tenant.current_tenancy
+  | tenant.active_tenancy
+  | tenant.data.tenancies
+  |
   */
 
   const tenancies = useMemo(() => {
     const candidates = [
       tenant?.tenancies,
-      tenant?.active_tenancies,
       tenant?.tenancy_history,
       tenant?.tenancy_records,
       tenant?.tenancyRecords,
+      tenant?.active_tenancies,
+      tenant?.data?.tenancies,
+      tenant?.data?.tenancy_history,
     ];
 
-    const found = candidates.find(
-      (value) =>
-        Array.isArray(value)
-    );
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        return candidate.filter(
+          (item) =>
+            item &&
+            typeof item === "object"
+        );
+      }
+    }
 
-    return found || [];
+    /*
+    |----------------------------------------------------------------------
+    | Some API responses return one tenancy object instead of an array.
+    | ---------------------------------------------------------------------
+    */
+
+    const singleCandidates = [
+      tenant?.current_tenancy,
+      tenant?.active_tenancy,
+      tenant?.tenancy,
+      tenant?.currentTenancy,
+      tenant?.activeTenancy,
+    ];
+
+    const single =
+      singleCandidates.find(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item)
+      );
+
+    return single
+      ? [single]
+      : [];
   }, [tenant]);
 
   /*
@@ -681,42 +774,86 @@ const TenantDetails = () => {
   */
 
   const activeTenancy = useMemo(() => {
-    if (
-      tenant?.active_tenancy &&
-      typeof tenant.active_tenancy ===
-      "object"
-    ) {
-      return tenant.active_tenancy;
+    /*
+    |----------------------------------------------------------------------
+    | First prefer explicitly supplied active tenancy.
+    | ---------------------------------------------------------------------
+    */
+
+    const explicitCandidates = [
+      tenant?.active_tenancy,
+      tenant?.current_tenancy,
+      tenant?.activeTenancy,
+      tenant?.currentTenancy,
+    ];
+
+    const explicit =
+      explicitCandidates.find(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item)
+      );
+
+    if (explicit) {
+      const explicitStatus =
+        normalizeTenancyStatus(
+          explicit?.status
+        );
+
+      /*
+      |--------------------------------------------------------------------
+      | Do not display an explicitly expired/terminated/cancelled tenancy
+      | as current tenancy.
+      | -------------------------------------------------------------------
+      */
+
+      if (
+        !isInactiveTenancyStatus(
+          explicitStatus
+        )
+      ) {
+        return explicit;
+      }
     }
 
-    if (
-      tenant?.current_tenancy &&
-      typeof tenant.current_tenancy ===
-      "object"
-    ) {
-      return tenant.current_tenancy;
-    }
+    /*
+    |----------------------------------------------------------------------
+    | Search tenancy history for an active record.
+    | ---------------------------------------------------------------------
+    */
 
-    return tenancies.find(
-      (item) => {
+    const active =
+      tenancies.find((item) => {
         const itemStatus =
-          String(
-            item?.status || ""
-          ).toLowerCase();
+          normalizeTenancyStatus(
+            item?.status
+          );
+
+        if (
+          isActiveTenancyStatus(
+            itemStatus
+          )
+        ) {
+          return true;
+        }
 
         return (
           toBoolean(
             item?.is_active
-          ) ||
-          itemStatus === "active" ||
-          itemStatus === "ongoing" ||
-          itemStatus === "current"
+          ) &&
+          !isInactiveTenancyStatus(
+            itemStatus
+          )
         );
-      }
-    );
+      });
+
+    return active || null;
   }, [
     tenant?.active_tenancy,
     tenant?.current_tenancy,
+    tenant?.activeTenancy,
+    tenant?.currentTenancy,
     tenancies,
     toBoolean,
   ]);
@@ -731,14 +868,24 @@ const TenantDetails = () => {
     const count =
       tenant?.tenancies_count ??
       tenant?.tenancy_count ??
-      tenant?.tenanciesCount;
+      tenant?.tenanciesCount ??
+      tenant?.data?.tenancies_count;
 
     if (
       count !== null &&
       count !== undefined &&
       count !== ""
     ) {
-      return Number(count) || 0;
+      const numeric =
+        Number(count);
+
+      if (
+        Number.isFinite(
+          numeric
+        )
+      ) {
+        return numeric;
+      }
     }
 
     return tenancies.length;
@@ -746,6 +893,7 @@ const TenantDetails = () => {
     tenant?.tenancies_count,
     tenant?.tenancy_count,
     tenant?.tenanciesCount,
+    tenant?.data?.tenancies_count,
     tenancies.length,
   ]);
 
@@ -770,159 +918,174 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const runTenantAction = async ({
-    action,
-    title,
-    successMessage,
-    confirmText,
-    confirmButtonColor,
-  }) => {
-    if (!tenant?.id) {
-      return;
-    }
-
-    const result =
-      await Swal.fire({
-        icon: "warning",
-        title,
-        text: "Are you sure you want to continue?",
-        showCancelButton: true,
-        confirmButtonText:
-          confirmText || "Continue",
-        cancelButtonText:
-          "Cancel",
-        confirmButtonColor:
-          confirmButtonColor ||
-          "#2563eb",
-        reverseButtons: true,
-      });
-
-    if (!result.isConfirmed) {
-      return;
-    }
-
-    try {
-      dispatch(
-        clearTenantError()
-      );
-
-      const response =
-        await dispatch(
-          action(tenant.id)
-        );
-
-      if (
-        response?.meta
-          ?.requestStatus ===
-        "fulfilled"
-      ) {
-        await Swal.fire({
-          icon: "success",
-          title: "Success",
-          text:
-            response?.payload
-              ?.message ||
-            successMessage,
-          confirmButtonColor:
-            "#2563eb",
-        });
-
-        /*
-        | Refresh the Redux tenant
-        | from the API after action.
-        */
-        await loadTenant();
-
+  const runTenantAction = useCallback(
+    async ({
+      action,
+      title,
+      successMessage,
+      confirmText,
+      confirmButtonColor,
+    }) => {
+      if (!tenant?.id) {
         return;
       }
 
-      throw new Error(
-        response?.payload
-          ?.message ||
-        response?.payload
-          ?.error ||
-        response?.error
-          ?.message ||
-        "The tenant action failed."
-      );
-    } catch (
-    actionError
-    ) {
-      await Swal.fire({
-        icon: "error",
-        title: "Action Failed",
-        text:
-          actionError?.message ||
-          "Unable to complete this action.",
-        confirmButtonColor:
-          "#dc2626",
-      });
-    }
-  };
+      const result =
+        await Swal.fire({
+          icon: "warning",
+          title,
+          text:
+            "Are you sure you want to continue?",
+          showCancelButton: true,
+          confirmButtonText:
+            confirmText || "Continue",
+          cancelButtonText:
+            "Cancel",
+          confirmButtonColor:
+            confirmButtonColor ||
+            "#2563eb",
+          reverseButtons: true,
+        });
+
+      if (!result.isConfirmed) {
+        return;
+      }
+
+      try {
+        dispatch(
+          clearTenantError()
+        );
+
+        const response =
+          await dispatch(
+            action(tenant.id)
+          );
+
+        if (
+          response?.meta?.requestStatus ===
+          "fulfilled"
+        ) {
+          await Swal.fire({
+            icon: "success",
+            title: "Success",
+            text:
+              response?.payload
+                ?.message ||
+              successMessage,
+            confirmButtonColor:
+              "#2563eb",
+          });
+
+          await loadTenant();
+
+          return;
+        }
+
+        throw new Error(
+          response?.payload?.message ||
+          response?.payload?.error ||
+          response?.error?.message ||
+          "The tenant action failed."
+        );
+      } catch (actionError) {
+        await Swal.fire({
+          icon: "error",
+          title: "Action Failed",
+          text:
+            actionError?.message ||
+            "Unable to complete this action.",
+          confirmButtonColor:
+            "#dc2626",
+        });
+      }
+    },
+    [
+      tenant?.id,
+      dispatch,
+      loadTenant,
+    ]
+  );
 
   /*
   |--------------------------------------------------------------------------
-  | ACTIONS
+  | ACTION HANDLERS
   |--------------------------------------------------------------------------
   */
 
-  const handleActivate = () =>
-    runTenantAction({
-      action: activateTenant,
-      title: "Activate Tenant?",
-      successMessage:
-        "Tenant activated successfully.",
-      confirmText:
-        "Activate Tenant",
-      confirmButtonColor:
-        "#16a34a",
-    });
+  const handleActivate = useCallback(
+    () =>
+      runTenantAction({
+        action: activateTenant,
+        title: "Activate Tenant?",
+        successMessage:
+          "Tenant activated successfully.",
+        confirmText:
+          "Activate Tenant",
+        confirmButtonColor:
+          "#16a34a",
+      }),
+    [runTenantAction]
+  );
 
-  const handleDeactivate = () =>
-    runTenantAction({
-      action: deactivateTenant,
-      title: "Deactivate Tenant?",
-      successMessage:
-        "Tenant deactivated successfully.",
-      confirmText: "Deactivate",
-      confirmButtonColor:
-        "#d97706",
-    });
+  const handleDeactivate = useCallback(
+    () =>
+      runTenantAction({
+        action: deactivateTenant,
+        title: "Deactivate Tenant?",
+        successMessage:
+          "Tenant deactivated successfully.",
+        confirmText:
+          "Deactivate",
+        confirmButtonColor:
+          "#d97706",
+      }),
+    [runTenantAction]
+  );
 
-  const handleBlacklist = () =>
-    runTenantAction({
-      action: blacklistTenant,
-      title: "Blacklist Tenant?",
-      successMessage:
-        "Tenant blacklisted successfully.",
-      confirmText:
-        "Blacklist Tenant",
-      confirmButtonColor:
-        "#dc2626",
-    });
+  const handleBlacklist = useCallback(
+    () =>
+      runTenantAction({
+        action: blacklistTenant,
+        title: "Blacklist Tenant?",
+        successMessage:
+          "Tenant blacklisted successfully.",
+        confirmText:
+          "Blacklist Tenant",
+        confirmButtonColor:
+          "#dc2626",
+      }),
+    [runTenantAction]
+  );
 
-  const handleVerify = () =>
-    runTenantAction({
-      action: verifyTenant,
-      title: "Verify Tenant?",
-      successMessage:
-        "Tenant verified successfully.",
-      confirmText: "Verify Tenant",
-      confirmButtonColor:
-        "#2563eb",
-    });
+  const handleVerify = useCallback(
+    () =>
+      runTenantAction({
+        action: verifyTenant,
+        title: "Verify Tenant?",
+        successMessage:
+          "Tenant verified successfully.",
+        confirmText:
+          "Verify Tenant",
+        confirmButtonColor:
+          "#2563eb",
+      }),
+    [runTenantAction]
+  );
 
-  const handleUnverify = () =>
-    runTenantAction({
-      action: unverifyTenant,
-      title: "Remove Verification?",
-      successMessage:
-        "Tenant verification removed successfully.",
-      confirmText:
-        "Remove Verification",
-      confirmButtonColor:
-        "#d97706",
-    });
+  const handleUnverify = useCallback(
+    () =>
+      runTenantAction({
+        action: unverifyTenant,
+        title: "Remove Verification?",
+        successMessage:
+          "Tenant verification removed successfully.",
+        confirmText:
+          "Remove Verification",
+        confirmButtonColor:
+          "#d97706",
+      }),
+    [runTenantAction]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -930,9 +1093,9 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleRetry = () => {
+  const handleRetry = useCallback(() => {
     loadTenant();
-  };
+  }, [loadTenant]);
 
   /*
   |--------------------------------------------------------------------------
@@ -940,7 +1103,7 @@ const TenantDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleEdit = () => {
+  const handleEdit = useCallback(() => {
     if (!tenant?.id) {
       return;
     }
@@ -948,7 +1111,7 @@ const TenantDetails = () => {
     navigate(
       `/super-admin/tenants/${tenant.id}/edit`
     );
-  };
+  }, [tenant?.id, navigate]);
 
   /*
   |--------------------------------------------------------------------------
@@ -983,12 +1146,10 @@ const TenantDetails = () => {
             </h2>
 
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-gray-500">
-              {typeof error ===
-                "string"
-                ? error
-                : error?.message ||
-                error?.error ||
-                "The requested tenant could not be found."}
+              {getErrorMessage(
+                error,
+                "The requested tenant could not be found."
+              )}
             </p>
 
             <div className="mt-5 flex justify-center gap-3">
@@ -1078,6 +1239,7 @@ const TenantDetails = () => {
       </PageHeader>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+
         {error && (
           <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1087,12 +1249,10 @@ const TenantDetails = () => {
                 </p>
 
                 <p className="mt-1 text-sm text-red-700">
-                  {typeof error ===
-                    "string"
-                    ? error
-                    : error?.message ||
-                    error?.error ||
-                    "An unexpected error occurred."}
+                  {getErrorMessage(
+                    error,
+                    "An unexpected error occurred."
+                  )}
                 </p>
               </div>
 
@@ -1143,8 +1303,7 @@ const TenantDetails = () => {
                   </p>
 
                   <p className="mt-1 text-xs text-gray-400">
-                    Record ID: #
-                    {tenant?.id}
+                    Record ID: #{tenant?.id}
                   </p>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1166,9 +1325,7 @@ const TenantDetails = () => {
                     <Mail className="h-4 w-4" />
                   }
                   label="Email"
-                  value={valueOrFallback(
-                    email
-                  )}
+                  value={valueOrFallback(email)}
                 />
 
                 <ContactCard
@@ -1176,9 +1333,7 @@ const TenantDetails = () => {
                     <Phone className="h-4 w-4" />
                   }
                   label="Phone"
-                  value={valueOrFallback(
-                    phone
-                  )}
+                  value={valueOrFallback(phone)}
                 />
               </div>
             </div>
@@ -1188,21 +1343,16 @@ const TenantDetails = () => {
 
           <div className="border-t border-gray-200 bg-gray-50 px-5 py-4 sm:px-6">
             <div className="flex flex-wrap gap-2">
+
               {!isActive && (
                 <ActionButton
                   icon={
                     <UserCheck className="h-4 w-4" />
                   }
                   label="Activate"
-                  onClick={
-                    handleActivate
-                  }
-                  loading={
-                    activating
-                  }
-                  disabled={
-                    actionLoading
-                  }
+                  onClick={handleActivate}
+                  loading={activating}
+                  disabled={actionLoading}
                   variant="success"
                 />
               )}
@@ -1213,15 +1363,9 @@ const TenantDetails = () => {
                     <UserRoundX className="h-4 w-4" />
                   }
                   label="Deactivate"
-                  onClick={
-                    handleDeactivate
-                  }
-                  loading={
-                    deactivating
-                  }
-                  disabled={
-                    actionLoading
-                  }
+                  onClick={handleDeactivate}
+                  loading={deactivating}
+                  disabled={actionLoading}
                   variant="warning"
                 />
               )}
@@ -1232,15 +1376,9 @@ const TenantDetails = () => {
                     <ShieldCheck className="h-4 w-4" />
                   }
                   label="Verify"
-                  onClick={
-                    handleVerify
-                  }
-                  loading={
-                    verifying
-                  }
-                  disabled={
-                    actionLoading
-                  }
+                  onClick={handleVerify}
+                  loading={verifying}
+                  disabled={actionLoading}
                   variant="primary"
                 />
               )}
@@ -1251,44 +1389,29 @@ const TenantDetails = () => {
                     <XCircle className="h-4 w-4" />
                   }
                   label="Unverify"
-                  onClick={
-                    handleUnverify
-                  }
-                  loading={
-                    unverifying
-                  }
-                  disabled={
-                    actionLoading
-                  }
+                  onClick={handleUnverify}
+                  loading={unverifying}
+                  disabled={actionLoading}
                   variant="warning"
                 />
               )}
 
-              {status !==
-                "blacklisted" && (
-                  <ActionButton
-                    icon={
-                      <UserRoundX className="h-4 w-4" />
-                    }
-                    label="Blacklist"
-                    onClick={
-                      handleBlacklist
-                    }
-                    loading={
-                      blacklisting
-                    }
-                    disabled={
-                      actionLoading
-                    }
-                    variant="danger"
-                  />
-                )}
+              {status !== "blacklisted" && (
+                <ActionButton
+                  icon={
+                    <UserRoundX className="h-4 w-4" />
+                  }
+                  label="Blacklist"
+                  onClick={handleBlacklist}
+                  loading={blacklisting}
+                  disabled={actionLoading}
+                  variant="danger"
+                />
+              )}
 
               <button
                 type="button"
-                onClick={
-                  handleRetry
-                }
+                onClick={handleRetry}
                 disabled={
                   loading ||
                   actionLoading
@@ -1297,8 +1420,8 @@ const TenantDetails = () => {
               >
                 <RefreshCw
                   className={`h-4 w-4 ${loading
-                      ? "animate-spin"
-                      : ""
+                    ? "animate-spin"
+                    : ""
                     }`}
                 />
                 Refresh
@@ -1364,6 +1487,7 @@ const TenantDetails = () => {
         {/* PERSONAL + ACCOUNT */}
 
         <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-3">
+
           <InfoSection
             className="xl:col-span-2"
             icon={
@@ -1373,32 +1497,25 @@ const TenantDetails = () => {
             description="Tenant identification and personal details."
           >
             <InfoGrid>
+
               <InfoItem
                 label="First Name"
-                value={valueOrFallback(
-                  firstName
-                )}
+                value={valueOrFallback(firstName)}
               />
 
               <InfoItem
                 label="Other Names"
-                value={valueOrFallback(
-                  otherNames
-                )}
+                value={valueOrFallback(otherNames)}
               />
 
               <InfoItem
                 label="Last Name"
-                value={valueOrFallback(
-                  lastName
-                )}
+                value={valueOrFallback(lastName)}
               />
 
               <InfoItem
                 label="Email"
-                value={valueOrFallback(
-                  email
-                )}
+                value={valueOrFallback(email)}
                 icon={
                   <Mail className="h-4 w-4" />
                 }
@@ -1406,9 +1523,7 @@ const TenantDetails = () => {
 
               <InfoItem
                 label="Phone"
-                value={valueOrFallback(
-                  phone
-                )}
+                value={valueOrFallback(phone)}
                 icon={
                   <Phone className="h-4 w-4" />
                 }
@@ -1452,12 +1567,14 @@ const TenantDetails = () => {
               <InfoItem
                 label="Nationality"
                 value={valueOrFallback(
-                  tenant?.nationality
+                  tenant?.nationality ??
+                  tenant?.country
                 )}
                 icon={
                   <Globe2 className="h-4 w-4" />
                 }
               />
+
             </InfoGrid>
           </InfoSection>
 
@@ -1469,6 +1586,7 @@ const TenantDetails = () => {
             description="Tenant account and verification status."
           >
             <div className="space-y-4">
+
               <StatusRow
                 label="Status"
                 value={
@@ -1531,6 +1649,7 @@ const TenantDetails = () => {
                     )}
                   />
                 )}
+
             </div>
           </InfoSection>
         </div>
@@ -1546,16 +1665,13 @@ const TenantDetails = () => {
             description="Tenant residential and location information."
           >
             <InfoGrid columns="lg:grid-cols-3">
+
               <InfoItem
                 label="Country"
                 value={valueOrFallback(
-                  tenant?.country?.name ||
-                  tenant?.country_name ||
-                  (
-                    typeof tenant?.country ===
-                      "string"
-                      ? tenant.country
-                      : null
+                  getLocationPart(
+                    tenant?.country,
+                    tenant?.country_name
                   )
                 )}
               />
@@ -1563,13 +1679,9 @@ const TenantDetails = () => {
               <InfoItem
                 label="Region"
                 value={valueOrFallback(
-                  tenant?.region?.name ||
-                  tenant?.region_name ||
-                  (
-                    typeof tenant?.region ===
-                      "string"
-                      ? tenant.region
-                      : null
+                  getLocationPart(
+                    tenant?.region,
+                    tenant?.region_name
                   )
                 )}
               />
@@ -1577,13 +1689,9 @@ const TenantDetails = () => {
               <InfoItem
                 label="County"
                 value={valueOrFallback(
-                  tenant?.county?.name ||
-                  tenant?.county_name ||
-                  (
-                    typeof tenant?.county ===
-                      "string"
-                      ? tenant.county
-                      : null
+                  getLocationPart(
+                    tenant?.county,
+                    tenant?.county_name
                   )
                 )}
               />
@@ -1591,13 +1699,9 @@ const TenantDetails = () => {
               <InfoItem
                 label="City"
                 value={valueOrFallback(
-                  tenant?.city?.name ||
-                  tenant?.city_name ||
-                  (
-                    typeof tenant?.city ===
-                      "string"
-                      ? tenant.city
-                      : null
+                  getLocationPart(
+                    tenant?.city,
+                    tenant?.city_name
                   )
                 )}
               />
@@ -1605,13 +1709,9 @@ const TenantDetails = () => {
               <InfoItem
                 label="Area"
                 value={valueOrFallback(
-                  tenant?.area?.name ||
-                  tenant?.area_name ||
-                  (
-                    typeof tenant?.area ===
-                      "string"
-                      ? tenant.area
-                      : null
+                  getLocationPart(
+                    tenant?.area,
+                    tenant?.area_name
                   )
                 )}
               />
@@ -1628,11 +1728,12 @@ const TenantDetails = () => {
                 <InfoItem
                   label="Residential Address"
                   value={valueOrFallback(
-                    tenant?.address ||
+                    tenant?.address ??
                     tenant?.street_address
                   )}
                 />
               </div>
+
             </InfoGrid>
           </InfoSection>
         </div>
@@ -1640,6 +1741,7 @@ const TenantDetails = () => {
         {/* EMPLOYMENT + EMERGENCY */}
 
         <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+
           <InfoSection
             icon={
               <FileText className="h-5 w-5" />
@@ -1648,6 +1750,7 @@ const TenantDetails = () => {
             description="Tenant occupation and employment details."
           >
             <InfoGrid>
+
               <InfoItem
                 label="Occupation"
                 value={valueOrFallback(
@@ -1658,10 +1761,24 @@ const TenantDetails = () => {
               <InfoItem
                 label="Employer"
                 value={valueOrFallback(
-                  tenant?.employer ||
+                  tenant?.employer ??
                   tenant?.company
                 )}
               />
+
+              <InfoItem
+                label="Monthly Income"
+                value={
+                  tenant?.monthly_income !== null &&
+                    tenant?.monthly_income !== undefined &&
+                    tenant?.monthly_income !== ""
+                    ? formatMoney(
+                      tenant.monthly_income
+                    )
+                    : "Not provided"
+                }
+              />
+
             </InfoGrid>
           </InfoSection>
 
@@ -1673,28 +1790,37 @@ const TenantDetails = () => {
             description="Person to contact in case of an emergency."
           >
             <InfoGrid>
+
               <InfoItem
                 label="Name"
                 value={valueOrFallback(
-                  tenant?.emergency_contact_name
+                  emergencyContact.name
                 )}
+                icon={
+                  <User className="h-4 w-4" />
+                }
               />
 
               <InfoItem
                 label="Phone"
                 value={valueOrFallback(
-                  tenant?.emergency_contact_phone
+                  emergencyContact.phone
                 )}
+                icon={
+                  <Phone className="h-4 w-4" />
+                }
               />
 
               <InfoItem
                 label="Relationship"
                 value={valueOrFallback(
-                  tenant?.emergency_contact_relationship
+                  emergencyContact.relationship
                 )}
               />
+
             </InfoGrid>
           </InfoSection>
+
         </div>
 
         {/* CURRENT TENANCY */}
@@ -1728,14 +1854,19 @@ const TenantDetails = () => {
               }
               title="Tenancy History"
               description={`${tenancyCount} tenancy record${tenancyCount === 1
-                  ? ""
-                  : "s"
+                ? ""
+                : "s"
                 } associated with this tenant.`}
             >
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead>
                     <tr>
+
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Tenancy
+                      </th>
+
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                         Property
                       </th>
@@ -1759,74 +1890,97 @@ const TenantDetails = () => {
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                         Status
                       </th>
+
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-gray-100 bg-white">
+
                     {tenancies.map(
                       (
                         tenancy,
                         index
-                      ) => (
-                        <tr
-                          key={
-                            tenancy?.id ??
-                            index
-                          }
-                          className="hover:bg-gray-50"
-                        >
-                          <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">
-                            {getPropertyName(
-                              tenancy
-                            )}
-                          </td>
+                      ) => {
 
-                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
-                            {getApartmentName(
-                              tenancy
-                            )}
-                          </td>
+                        const tenancyStatus =
+                          normalizeTenancyStatus(
+                            tenancy?.status
+                          );
 
-                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
-                            {getUnitName(
-                              tenancy
-                            )}
-                          </td>
+                        return (
+                          <tr
+                            key={
+                              tenancy?.id ??
+                              tenancy?.tenancy_number ??
+                              index
+                            }
+                            className="hover:bg-gray-50"
+                          >
 
-                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
-                            {formatDate(
-                              tenancy?.start_date ??
-                              tenancy?.lease_start_date
-                            )}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
-                            {formatDate(
-                              tenancy?.end_date ??
-                              tenancy?.lease_end_date
-                            )}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-4">
-                            <StatusBadge
-                              status={String(
-                                tenancy?.status ||
-                                "unknown"
-                              ).toLowerCase()}
-                              label={capitalize(
-                                String(
-                                  tenancy?.status ||
-                                  "Unknown"
-                                ).replace(
-                                  /_/g,
-                                  " "
-                                )
+                            <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">
+                              {valueOrFallbackStatic(
+                                tenancy?.tenancy_number,
+                                tenancy?.id
+                                  ? `#${tenancy.id}`
+                                  : "Not assigned"
                               )}
-                            />
-                          </td>
-                        </tr>
-                      )
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">
+                              {getPropertyName(
+                                tenancy
+                              )}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                              {getApartmentName(
+                                tenancy
+                              )}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                              {getUnitName(
+                                tenancy
+                              )}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                              {formatDate(
+                                tenancy?.start_date ??
+                                tenancy?.lease_start_date
+                              )}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">
+                              {formatDate(
+                                tenancy?.end_date ??
+                                tenancy?.lease_end_date
+                              )}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-4">
+                              <StatusBadge
+                                status={
+                                  tenancyStatus ||
+                                  "unknown"
+                                }
+                                label={capitalize(
+                                  (
+                                    tenancyStatus ||
+                                    "Unknown"
+                                  ).replace(
+                                    /_/g,
+                                    " "
+                                  )
+                                )}
+                              />
+                            </td>
+
+                          </tr>
+                        );
+                      }
                     )}
+
                   </tbody>
                 </table>
               </div>
@@ -1846,9 +2000,7 @@ const TenantDetails = () => {
           >
             {tenant?.notes ? (
               <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">
-                {String(
-                  tenant.notes
-                )}
+                {String(tenant.notes)}
               </p>
             ) : (
               <p className="text-sm text-gray-400">
@@ -1862,6 +2014,7 @@ const TenantDetails = () => {
         {/* FOOTER ACTIONS */}
 
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+
           <button
             type="button"
             onClick={() =>
@@ -1883,7 +2036,9 @@ const TenantDetails = () => {
             <Edit3 className="h-4 w-4" />
             Edit Tenant
           </button>
+
         </div>
+
       </main>
     </div>
   );
@@ -1904,7 +2059,9 @@ const PageHeader = ({
   <header className="border-b border-gray-200 bg-white">
     <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
         <div className="flex items-center gap-3">
+
           <button
             type="button"
             onClick={onBack}
@@ -1923,9 +2080,11 @@ const PageHeader = ({
               {subtitle}
             </p>
           </div>
+
         </div>
 
         {children}
+
       </div>
     </div>
   </header>
@@ -1948,6 +2107,7 @@ const InfoSection = ({
     className={`rounded-xl border border-gray-200 bg-white shadow-sm ${className}`}
   >
     <div className="flex items-start gap-3 border-b border-gray-200 px-5 py-4 sm:px-6">
+
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
         {icon}
       </div>
@@ -1961,6 +2121,7 @@ const InfoSection = ({
           {description}
         </p>
       </div>
+
     </div>
 
     <div className="p-5 sm:p-6">
@@ -1998,11 +2159,13 @@ const InfoItem = ({
   icon,
 }) => (
   <div className="min-w-0">
+
     <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
       {label}
     </p>
 
     <div className="mt-1.5 flex items-center gap-2">
+
       {icon && (
         <span className="shrink-0 text-gray-400">
           {icon}
@@ -2012,6 +2175,7 @@ const InfoItem = ({
       <p className="break-words text-sm font-medium text-gray-800">
         {value}
       </p>
+
     </div>
   </div>
 );
@@ -2027,6 +2191,7 @@ const StatusRow = ({
   value,
 }) => (
   <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+
     <span className="text-sm text-gray-500">
       {label}
     </span>
@@ -2034,6 +2199,7 @@ const StatusRow = ({
     <div className="text-right">
       {value}
     </div>
+
   </div>
 );
 
@@ -2048,16 +2214,18 @@ const StatusBadge = ({
   label,
 }) => {
   const normalized =
-    String(
-      status || ""
-    ).toLowerCase();
+    normalizeTenancyStatus(
+      status
+    );
 
   let classes =
     "bg-gray-100 text-gray-700";
 
   if (
     normalized === "active" ||
-    normalized === "approved"
+    normalized === "approved" ||
+    normalized === "ongoing" ||
+    normalized === "current"
   ) {
     classes =
       "bg-green-50 text-green-700";
@@ -2079,7 +2247,9 @@ const StatusBadge = ({
     classes =
       "bg-red-50 text-red-700";
   } else if (
-    normalized === "terminated"
+    normalized === "terminated" ||
+    normalized === "cancelled" ||
+    normalized === "expired"
   ) {
     classes =
       "bg-red-50 text-red-700";
@@ -2089,7 +2259,11 @@ const StatusBadge = ({
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${classes}`}
     >
-      {label}
+      {label ||
+        capitalize(
+          normalized ||
+          "Unknown"
+        )}
     </span>
   );
 };
@@ -2127,7 +2301,9 @@ const ContactCard = ({
   value,
 }) => (
   <div className="rounded-lg border border-gray-200 bg-white/80 px-3 py-2.5">
+
     <div className="flex items-center gap-2">
+
       <span className="text-primary-600">
         {icon}
       </span>
@@ -2135,11 +2311,13 @@ const ContactCard = ({
       <span className="text-xs font-medium text-gray-400">
         {label}
       </span>
+
     </div>
 
     <p className="mt-1 truncate text-sm font-medium text-gray-800">
       {value}
     </p>
+
   </div>
 );
 
@@ -2156,8 +2334,11 @@ const MiniStatCard = ({
   description,
 }) => (
   <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+
     <div className="flex items-start justify-between gap-3">
+
       <div className="min-w-0">
+
         <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
           {label}
         </p>
@@ -2169,11 +2350,13 @@ const MiniStatCard = ({
         <p className="mt-1 text-xs text-gray-500">
           {description}
         </p>
+
       </div>
 
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
         {icon}
       </div>
+
     </div>
   </div>
 );
@@ -2195,12 +2378,16 @@ const ActionButton = ({
   const variants = {
     primary:
       "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100",
+
     success:
       "border-green-200 bg-green-50 text-green-700 hover:bg-green-100",
+
     warning:
       "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
+
     danger:
       "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
+
     neutral:
       "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
   };
@@ -2240,22 +2427,26 @@ const TenancyCard = ({
   formatDate,
 }) => {
   const propertyName =
-    getPropertyName(tenancy);
+    getPropertyName(
+      tenancy
+    );
 
   const apartmentName =
-    getApartmentName(tenancy);
+    getApartmentName(
+      tenancy
+    );
 
   const unitName =
-    getUnitName(tenancy);
+    getUnitName(
+      tenancy
+    );
 
   const rent =
     tenancy?.rent_amount ??
     tenancy?.monthly_rent ??
     tenancy?.rent ??
-    tenancy?.pricing
-      ?.rent_amount ??
-    tenancy?.unit
-      ?.rent_amount ??
+    tenancy?.pricing?.rent_amount ??
+    tenancy?.unit?.rent_amount ??
     tenancy?.unit?.price;
 
   const deposit =
@@ -2267,12 +2458,31 @@ const TenancyCard = ({
   const serviceCharge =
     tenancy?.service_charge ??
     tenancy?.service_charge_amount ??
-    tenancy?.unit
-      ?.service_charge;
+    tenancy?.unit?.service_charge;
+
+  const tenancyStatus =
+    normalizeTenancyStatus(
+      tenancy?.status
+    );
 
   return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
+
+        <TenancyValue
+          label="Tenancy Number"
+          value={valueOrFallbackStatic(
+            tenancy?.tenancy_number,
+            tenancy?.id
+              ? `#${tenancy.id}`
+              : "Not assigned"
+          )}
+          icon={
+            <FileText className="h-4 w-4" />
+          }
+        />
+
         <TenancyValue
           label="Property"
           value={propertyName}
@@ -2299,15 +2509,17 @@ const TenancyCard = ({
 
         <TenancyValue
           label="Status"
-          value={capitalize(
-            String(
-              tenancy?.status ||
-              "Active"
-            ).replace(
-              /_/g,
-              " "
+          value={
+            capitalize(
+              (
+                tenancyStatus ||
+                "Active"
+              ).replace(
+                /_/g,
+                " "
+              )
             )
-          )}
+          }
           icon={
             <CheckCircle2 className="h-4 w-4" />
           }
@@ -2339,7 +2551,8 @@ const TenancyCard = ({
           label="Monthly Rent"
           value={
             rent !== undefined &&
-              rent !== null
+              rent !== null &&
+              rent !== ""
               ? formatMoney(rent)
               : "Not provided"
           }
@@ -2349,7 +2562,8 @@ const TenancyCard = ({
           label="Deposit"
           value={
             deposit !== undefined &&
-              deposit !== null
+              deposit !== null &&
+              deposit !== ""
               ? formatMoney(deposit)
               : "Not provided"
           }
@@ -2357,7 +2571,8 @@ const TenancyCard = ({
 
         {serviceCharge !==
           undefined &&
-          serviceCharge !== null && (
+          serviceCharge !== null &&
+          serviceCharge !== "" && (
             <TenancyValue
               label="Service Charge"
               value={formatMoney(
@@ -2365,6 +2580,7 @@ const TenancyCard = ({
               )}
             />
           )}
+
       </div>
     </div>
   );
@@ -2382,11 +2598,13 @@ const TenancyValue = ({
   icon,
 }) => (
   <div className="min-w-0">
+
     <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
       {label}
     </p>
 
     <div className="mt-1.5 flex items-center gap-2">
+
       {icon && (
         <span className="shrink-0 text-gray-400">
           {icon}
@@ -2396,6 +2614,7 @@ const TenancyValue = ({
       <p className="break-words text-sm font-semibold text-gray-800">
         {value}
       </p>
+
     </div>
   </div>
 );
@@ -2408,6 +2627,7 @@ const TenancyValue = ({
 
 const EmptyTenancy = () => (
   <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
+
     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
       <Home className="h-6 w-6" />
     </div>
@@ -2417,10 +2637,9 @@ const EmptyTenancy = () => (
     </h4>
 
     <p className="mt-1 max-w-md text-sm text-gray-500">
-      This tenant currently
-      has no active property
-      or unit assignment.
+      This tenant currently has no active property or unit assignment.
     </p>
+
   </div>
 );
 
@@ -2432,28 +2651,38 @@ const EmptyTenancy = () => (
 
 const TenantDetailsSkeleton = () => (
   <div className="space-y-5">
+
     <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+
       <div className="flex items-center gap-4">
+
         <div className="h-16 w-16 rounded-2xl bg-gray-200" />
 
         <div className="space-y-2">
+
           <div className="h-5 w-48 rounded bg-gray-200" />
+
           <div className="h-4 w-32 rounded bg-gray-200" />
+
           <div className="h-5 w-20 rounded-full bg-gray-200" />
+
         </div>
       </div>
     </div>
 
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+
       {[1, 2, 3, 4].map(
         (item) => (
           <div
             key={item}
             className="animate-pulse rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
           >
+
             <div className="h-5 w-40 rounded bg-gray-200" />
 
             <div className="mt-6 grid grid-cols-2 gap-5">
+
               {[1, 2, 3, 4].map(
                 (field) => (
                   <div
@@ -2465,10 +2694,12 @@ const TenantDetailsSkeleton = () => (
                   </div>
                 )
               )}
+
             </div>
           </div>
         )
       )}
+
     </div>
   </div>
 );
@@ -2482,25 +2713,44 @@ const TenantDetailsSkeleton = () => (
 const getPropertyName = (
   tenancy
 ) => {
+  if (!tenancy) {
+    return "Not assigned";
+  }
+
   const property =
-    tenancy?.property ||
-    tenancy?.unit?.property;
+    tenancy?.property ??
+    tenancy?.property_details ??
+    tenancy?.propertyDetail ??
+    tenancy?.unit?.property ??
+    tenancy?.apartment?.property ??
+    null;
 
   if (
-    typeof property ===
-    "string"
+    typeof property === "string"
   ) {
     return property;
   }
 
+  if (
+    property &&
+    typeof property === "object"
+  ) {
+    return (
+      property?.title ??
+      property?.name ??
+      property?.property_name ??
+      property?.property_title ??
+      property?.display_name ??
+      "Not assigned"
+    );
+  }
+
   return (
-    property?.title ||
-    property?.name ||
-    tenancy?.property_title ||
-    tenancy?.property_name ||
-    tenancy?.property?.property_name ||
-    tenancy?.unit?.property
-      ?.property_name ||
+    tenancy?.property_title ??
+    tenancy?.property_name ??
+    tenancy?.property_label ??
+    tenancy?.property?.title ??
+    tenancy?.property?.name ??
     "Not assigned"
   );
 };
@@ -2514,22 +2764,42 @@ const getPropertyName = (
 const getApartmentName = (
   tenancy
 ) => {
+  if (!tenancy) {
+    return "Not assigned";
+  }
+
   const apartment =
-    tenancy?.apartment ||
-    tenancy?.unit?.apartment;
+    tenancy?.apartment ??
+    tenancy?.apartment_details ??
+    tenancy?.apartmentDetail ??
+    tenancy?.unit?.apartment ??
+    null;
 
   if (
-    typeof apartment ===
-    "string"
+    typeof apartment === "string"
   ) {
     return apartment;
   }
 
+  if (
+    apartment &&
+    typeof apartment === "object"
+  ) {
+    return (
+      apartment?.name ??
+      apartment?.title ??
+      apartment?.apartment_name ??
+      apartment?.apartment_title ??
+      apartment?.display_name ??
+      apartment?.code ??
+      "Not assigned"
+    );
+  }
+
   return (
-    apartment?.name ||
-    apartment?.title ||
-    tenancy?.apartment_name ||
-    tenancy?.apartment_title ||
+    tenancy?.apartment_name ??
+    tenancy?.apartment_title ??
+    tenancy?.apartment_label ??
     "Not assigned"
   );
 };
@@ -2543,25 +2813,192 @@ const getApartmentName = (
 const getUnitName = (
   tenancy
 ) => {
+  if (!tenancy) {
+    return "Not assigned";
+  }
+
   const unit =
-    tenancy?.unit;
+    tenancy?.unit ??
+    tenancy?.unit_details ??
+    tenancy?.unitDetail ??
+    null;
 
   if (
-    typeof unit ===
-    "string"
+    typeof unit === "string"
   ) {
     return unit;
   }
 
+  if (
+    unit &&
+    typeof unit === "object"
+  ) {
+    return (
+      unit?.full_unit_name ??
+      unit?.unit_name ??
+      unit?.name ??
+      unit?.unit_number ??
+      unit?.number ??
+      unit?.display_name ??
+      "Not assigned"
+    );
+  }
+
   return (
-    unit?.full_unit_name ||
-    unit?.unit_name ||
-    unit?.unit_number ||
-    tenancy?.full_unit_name ||
-    tenancy?.unit_name ||
-    tenancy?.unit_number ||
+    tenancy?.full_unit_name ??
+    tenancy?.unit_name ??
+    tenancy?.unit_number ??
+    tenancy?.unit_label ??
     "Not assigned"
   );
+};
+
+/*
+|--------------------------------------------------------------------------
+| TENANCY STATUS NORMALIZATION
+|--------------------------------------------------------------------------
+*/
+
+const normalizeTenancyStatus = (
+  value
+) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "";
+  }
+
+  if (
+    typeof value === "object"
+  ) {
+    return String(
+      value?.value ??
+      value?.name ??
+      value?.status ??
+      value?.label ??
+      ""
+    )
+      .toLowerCase()
+      .trim();
+  }
+
+  return String(value)
+    .toLowerCase()
+    .trim();
+};
+
+/*
+|--------------------------------------------------------------------------
+| ACTIVE TENANCY STATUS
+|--------------------------------------------------------------------------
+*/
+
+const isActiveTenancyStatus = (
+  status
+) => {
+  const normalized =
+    normalizeTenancyStatus(
+      status
+    );
+
+  return (
+    normalized === "active" ||
+    normalized === "ongoing" ||
+    normalized === "current" ||
+    normalized === "occupied"
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| INACTIVE TENANCY STATUS
+|--------------------------------------------------------------------------
+*/
+
+const isInactiveTenancyStatus = (
+  status
+) => {
+  const normalized =
+    normalizeTenancyStatus(
+      status
+    );
+
+  return (
+    normalized === "expired" ||
+    normalized === "terminated" ||
+    normalized === "cancelled" ||
+    normalized === "canceled" ||
+    normalized === "inactive" ||
+    normalized === "ended" ||
+    normalized === "closed"
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| LOCATION PART
+|--------------------------------------------------------------------------
+*/
+
+const getLocationPart = (
+  objectValue,
+  stringValue
+) => {
+  if (
+    objectValue &&
+    typeof objectValue === "object"
+  ) {
+    return (
+      objectValue.name ??
+      objectValue.title ??
+      objectValue.label ??
+      stringValue ??
+      null
+    );
+  }
+
+  if (
+    typeof objectValue === "string"
+  ) {
+    return objectValue;
+  }
+
+  return stringValue ?? null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| STATIC SAFE VALUE
+|--------------------------------------------------------------------------
+*/
+
+const valueOrFallbackStatic = (
+  value,
+  fallback = "Not provided"
+) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  if (
+    typeof value === "object"
+  ) {
+    return (
+      value?.name ??
+      value?.title ??
+      value?.label ??
+      value?.value ??
+      fallback
+    );
+  }
+
+  return String(value);
 };
 
 /*
@@ -2593,6 +3030,34 @@ const formatMoney = (
       maximumFractionDigits: 2,
     }
   ).format(numericValue);
+};
+
+/*
+|--------------------------------------------------------------------------
+| ERROR MESSAGE
+|--------------------------------------------------------------------------
+*/
+
+const getErrorMessage = (
+  error,
+  fallback
+) => {
+  if (!error) {
+    return fallback;
+  }
+
+  if (
+    typeof error === "string"
+  ) {
+    return error;
+  }
+
+  return (
+    error?.message ??
+    error?.error ??
+    error?.errors?.message ??
+    fallback
+  );
 };
 
 /*
