@@ -20,7 +20,16 @@ class CreateTenantRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, ValidationRule|array<mixed>|string>
+     * A tenant is an existing User account with the "tenant" role.
+     *
+     * The users table is therefore the source of:
+     *
+     * - name
+     * - email
+     * - phone
+     * - login/account information
+     *
+     * The tenants table stores tenant-specific information.
      */
     public function rules(): array
     {
@@ -33,10 +42,7 @@ class CreateTenantRequest extends FormRequest
             |
             | Every tenant MUST belong to an existing user account.
             |
-            | This means:
-            |
-            |     user_id = required
-            |     user_id must exist in users.id
+            | The user must also have the "tenant" Spatie role.
             |
             */
 
@@ -44,6 +50,8 @@ class CreateTenantRequest extends FormRequest
                 'required',
                 'integer',
                 'exists:users,id',
+
+                Rule::unique('tenants', 'user_id'),
             ],
 
 
@@ -51,10 +59,6 @@ class CreateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Tenant Number
             |--------------------------------------------------------------------------
-            |
-            | Normally generated automatically by TenantService / Tenant model.
-            | It is allowed here when explicitly supplied.
-            |
             */
 
             'tenant_number' => [
@@ -69,6 +73,10 @@ class CreateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Personal Information
             |--------------------------------------------------------------------------
+            |
+            | These fields may be copied from the selected User when creating
+            | the tenant profile.
+            |
             */
 
             'first_name' => [
@@ -124,14 +132,6 @@ class CreateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
-            |
-            | At least one of:
-            |
-            | - id_number
-            | - passport_number
-            |
-            | is required. This is enforced in withValidator().
-            |
             */
 
             'id_number' => [
@@ -153,17 +153,6 @@ class CreateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Address / Location
             |--------------------------------------------------------------------------
-            |
-            | Full location hierarchy:
-            |
-            | Country
-            | Region
-            | County
-            | City
-            | Area
-            | Postal Code
-            | Address
-            |
             */
 
             'country' => [
@@ -303,8 +292,8 @@ class CreateTenantRequest extends FormRequest
             | Verification
             |--------------------------------------------------------------------------
             |
-            | is_verified is normally controlled by the verification endpoints.
-            | It is not required during tenant creation.
+            | These should normally be controlled by dedicated verification
+            | endpoints rather than manually during creation.
             |
             */
 
@@ -348,8 +337,6 @@ class CreateTenantRequest extends FormRequest
 
     /**
      * Get custom validation messages.
-     *
-     * @return array<string, string>
      */
     public function messages(): array
     {
@@ -369,6 +356,9 @@ class CreateTenantRequest extends FormRequest
 
             'user_id.exists' =>
                 'The selected user account does not exist.',
+
+            'user_id.unique' =>
+                'This user already has a tenant profile.',
 
 
             /*
@@ -712,21 +702,27 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | User Relationship
+            | User Role Validation
             |--------------------------------------------------------------------------
             |
-            | user_id is already required by the main validation rules.
+            | The selected user MUST have the tenant role.
             |
-            | This additional check makes the intention explicit and protects
-            | against an empty/null user ID.
+            | This is important because your Users Management already uses
+            | Spatie roles and permissions.
             |
             */
 
-            if (blank($this->input('user_id'))) {
-                $validator->errors()->add(
-                    'user_id',
-                    'A valid user account is required for every tenant.'
-                );
+            if ($this->filled('user_id')) {
+
+                $user = \App\Models\User::find($this->input('user_id'));
+
+                if ($user && ! $user->hasRole('tenant')) {
+
+                    $validator->errors()->add(
+                        'user_id',
+                        'The selected user does not have the tenant role.'
+                    );
+                }
             }
 
 
@@ -768,9 +764,7 @@ class CreateTenantRequest extends FormRequest
 
             $hasEmergencyContact = collect($emergencyFields)
                 ->contains(
-                    fn ($field) => filled(
-                        $this->input($field)
-                    )
+                    fn ($field) => filled($this->input($field))
                 );
 
             if ($hasEmergencyContact) {
@@ -789,3 +783,4 @@ class CreateTenantRequest extends FormRequest
         });
     }
 }
+
