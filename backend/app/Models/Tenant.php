@@ -14,6 +14,9 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     | Tenant Status Constants
     |--------------------------------------------------------------------------
+    |
+    | These values must match the `status` enum in the tenants table.
+    |
     */
 
     public const STATUS_PENDING = 'pending';
@@ -52,18 +55,30 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     | Mass Assignable Fields
     |--------------------------------------------------------------------------
+    |
+    | These fields correspond to the columns defined in the tenants table.
+    |
     */
 
     protected $fillable = [
 
         /*
         |----------------------------------------------------------------------
-        | User / Tenant Identification
+        | Tenant Identification
+        |----------------------------------------------------------------------
+        */
+
+        'tenant_number',
+
+
+        /*
+        |----------------------------------------------------------------------
+        | User Account Relationship
         |----------------------------------------------------------------------
         */
 
         'user_id',
-        'tenant_number',
+
 
         /*
         |----------------------------------------------------------------------
@@ -79,6 +94,7 @@ class Tenant extends Model
         'date_of_birth',
         'gender',
 
+
         /*
         |----------------------------------------------------------------------
         | Identification
@@ -88,9 +104,10 @@ class Tenant extends Model
         'id_number',
         'passport_number',
 
+
         /*
         |----------------------------------------------------------------------
-        | Location
+        | Location Information
         |----------------------------------------------------------------------
         */
 
@@ -102,15 +119,17 @@ class Tenant extends Model
         'postal_code',
         'address',
 
+
         /*
         |----------------------------------------------------------------------
-        | Employment
+        | Employment Information
         |----------------------------------------------------------------------
         */
 
         'occupation',
         'employer',
         'monthly_income',
+
 
         /*
         |----------------------------------------------------------------------
@@ -122,6 +141,7 @@ class Tenant extends Model
         'emergency_contact_phone',
         'emergency_contact_relationship',
 
+
         /*
         |----------------------------------------------------------------------
         | Tenant Documents
@@ -130,10 +150,13 @@ class Tenant extends Model
 
         'photo',
         'photo_public_id',
+
         'id_front',
         'id_front_public_id',
+
         'id_back',
         'id_back_public_id',
+
 
         /*
         |----------------------------------------------------------------------
@@ -144,6 +167,7 @@ class Tenant extends Model
         'is_verified',
         'verified_at',
 
+
         /*
         |----------------------------------------------------------------------
         | Tenant Status
@@ -151,13 +175,14 @@ class Tenant extends Model
         |
         | IMPORTANT:
         |
-        | `status` is the single source of truth.
+        | `status` is the SINGLE source of truth.
         |
-        | There is NO `is_active` database column.
+        | There is intentionally NO `is_active` database field.
         |
         */
 
         'status',
+
 
         /*
         |----------------------------------------------------------------------
@@ -173,17 +198,39 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     | Attribute Casting
     |--------------------------------------------------------------------------
+    |
+    | These casts correspond to the database column types.
+    |
     */
 
     protected $casts = [
 
+        /*
+        | Date
+        */
+
         'date_of_birth' => 'date',
 
+
+        /*
+        | Decimal
+        */
+
         'monthly_income' => 'decimal:2',
+
+
+        /*
+        | Verification
+        */
 
         'is_verified' => 'boolean',
 
         'verified_at' => 'datetime',
+
+
+        /*
+        | Timestamps
+        */
 
         'created_at' => 'datetime',
 
@@ -207,7 +254,9 @@ class Tenant extends Model
     | Appended Attributes
     |--------------------------------------------------------------------------
     |
-    | These are computed attributes.
+    | These values do NOT exist as database columns.
+    |
+    | They are computed when the model is converted to an array/JSON.
     |
     */
 
@@ -250,7 +299,7 @@ class Tenant extends Model
     |
     | IMPORTANT:
     |
-    | This is NOT a database column.
+    | `is_active` is NOT a database column.
     |
     | It is calculated from `status`.
     |
@@ -267,7 +316,9 @@ class Tenant extends Model
     | User Relationship
     |--------------------------------------------------------------------------
     |
-    | A tenant can optionally have a user account.
+    | A tenant may optionally have a User account.
+    |
+    | tenants.user_id -> users.id
     |
     */
 
@@ -285,7 +336,7 @@ class Tenant extends Model
     | Tenancies Relationship
     |--------------------------------------------------------------------------
     |
-    | Returns all tenancies belonging to this tenant.
+    | One tenant can have many tenancy records.
     |
     */
 
@@ -303,9 +354,9 @@ class Tenant extends Model
     | Active Tenancy
     |--------------------------------------------------------------------------
     |
-    | Returns one active tenancy.
+    | Returns the latest active tenancy.
     |
-    | Use:
+    | Usage:
     |
     | $tenant->activeTenancy
     |
@@ -330,15 +381,7 @@ class Tenant extends Model
     | Active Tenancies
     |--------------------------------------------------------------------------
     |
-    | Returns ALL active tenancies.
-    |
-    | This relationship is required when code uses:
-    |
-    | with('activeTenancies')
-    |
-    | or:
-    |
-    | $tenant->activeTenancies
+    | Returns all active tenancies belonging to this tenant.
     |
     */
 
@@ -492,6 +535,12 @@ class Tenant extends Model
     }
 
 
+    /*
+    |--------------------------------------------------------------------------
+    | Verification Helpers
+    |--------------------------------------------------------------------------
+    */
+
     public function isVerified(): bool
     {
         return (bool) $this->is_verified;
@@ -502,14 +551,13 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     | Activate Tenant
     |--------------------------------------------------------------------------
+    |
+    | A blacklisted tenant cannot be activated directly.
+    |
     */
 
     public function activate(): bool
     {
-        /*
-        | Do not allow a blacklisted tenant to be activated directly.
-        */
-
         if ($this->isBlacklisted()) {
             return false;
         }
@@ -599,7 +647,7 @@ class Tenant extends Model
     |
     | Kept for backwards compatibility.
     |
-    | There is no `is_active` database column.
+    | There is NO `is_active` database column.
     |
     */
 
@@ -675,9 +723,6 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     | Has Active Tenancy
     |--------------------------------------------------------------------------
-    |
-    | Checks whether the tenant currently has at least one active tenancy.
-    |
     */
 
     public function hasActiveTenancy(): bool
@@ -688,11 +733,8 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Get Current Tenancy
+    | Current Tenancy
     |--------------------------------------------------------------------------
-    |
-    | Returns the tenant's current active tenancy.
-    |
     */
 
     public function getCurrentTenancyAttribute()

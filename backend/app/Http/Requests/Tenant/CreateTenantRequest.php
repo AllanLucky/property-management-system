@@ -3,7 +3,7 @@
 namespace App\Http\Requests\Tenant;
 
 use App\Models\Tenant;
-use Illuminate\Contracts\Validation\ValidationRule;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -17,19 +17,37 @@ class CreateTenantRequest extends FormRequest
         return true;
     }
 
+
     /**
      * Get the validation rules that apply to the request.
      *
-     * A tenant is an existing User account with the "tenant" role.
+     * IMPORTANT:
      *
-     * The users table is therefore the source of:
+     * The User account is created separately through User Management.
      *
-     * - name
+     * Create Tenant only creates the tenant profile for an existing
+     * User who already has the "tenant" Spatie role.
+     *
+     * User owns:
+     * - first_name
+     * - last_name
      * - email
      * - phone
-     * - login/account information
+     * - password
+     * - roles / permissions
      *
-     * The tenants table stores tenant-specific information.
+     * Tenant owns:
+     * - tenant_number
+     * - date_of_birth
+     * - gender
+     * - identification
+     * - address
+     * - employment
+     * - emergency contact
+     * - documents
+     * - verification
+     * - tenant status
+     * - notes
      */
     public function rules(): array
     {
@@ -37,12 +55,14 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | User Relationship
+            | Existing User Account
             |--------------------------------------------------------------------------
             |
-            | Every tenant MUST belong to an existing user account.
+            | The selected user must:
             |
-            | The user must also have the "tenant" Spatie role.
+            | 1. Exist
+            | | 2. Have the "tenant" role
+            | | 3. Not already have a tenant profile
             |
             */
 
@@ -50,7 +70,6 @@ class CreateTenantRequest extends FormRequest
                 'required',
                 'integer',
                 'exists:users,id',
-
                 Rule::unique('tenants', 'user_id'),
             ],
 
@@ -59,6 +78,11 @@ class CreateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Tenant Number
             |--------------------------------------------------------------------------
+            |
+            | Optional from the frontend.
+            |
+            | If omitted, TenantService should generate it automatically.
+            |
             */
 
             'tenant_number' => [
@@ -71,45 +95,24 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | Personal Information
+            | Tenant-Specific Personal Information
             |--------------------------------------------------------------------------
             |
-            | These fields may be copied from the selected User when creating
-            | the tenant profile.
+            | DO NOT include:
+            |
+            | first_name
+            | last_name
+            | email
+            | phone
+            |
+            | Those belong to the selected User.
             |
             */
-
-            'first_name' => [
-                'required',
-                'string',
-                'min:2',
-                'max:100',
-            ],
-
-            'last_name' => [
-                'required',
-                'string',
-                'min:2',
-                'max:100',
-            ],
 
             'other_names' => [
                 'nullable',
                 'string',
                 'max:150',
-            ],
-
-            'email' => [
-                'nullable',
-                'email',
-                'max:255',
-            ],
-
-            'phone' => [
-                'required',
-                'string',
-                'max:30',
-                'unique:tenants,phone',
             ],
 
             'date_of_birth' => [
@@ -132,6 +135,9 @@ class CreateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
+            |
+            | At least one identification number is required.
+            |
             */
 
             'id_number' => [
@@ -164,19 +170,19 @@ class CreateTenantRequest extends FormRequest
             'region' => [
                 'nullable',
                 'string',
-                'max:100',
+                'max:150',
             ],
 
             'county' => [
                 'nullable',
                 'string',
-                'max:100',
+                'max:150',
             ],
 
             'city' => [
                 'nullable',
                 'string',
-                'max:100',
+                'max:150',
             ],
 
             'area' => [
@@ -200,7 +206,7 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | Employment Information
+            | Employment / Financial Information
             |--------------------------------------------------------------------------
             */
 
@@ -292,8 +298,8 @@ class CreateTenantRequest extends FormRequest
             | Verification
             |--------------------------------------------------------------------------
             |
-            | These should normally be controlled by dedicated verification
-            | endpoints rather than manually during creation.
+            | Normally verification should happen through dedicated
+            | verification endpoints.
             |
             */
 
@@ -310,8 +316,13 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | Status
+            | Tenant Status
             |--------------------------------------------------------------------------
+            |
+            | New tenants should normally start as "pending".
+            |
+            | The service should enforce pending as the default.
+            |
             */
 
             'status' => [
@@ -349,10 +360,10 @@ class CreateTenantRequest extends FormRequest
             */
 
             'user_id.required' =>
-                'A user account is required when creating a tenant.',
+                'Please select an existing user account for this tenant.',
 
             'user_id.integer' =>
-                'The user ID must be a valid integer.',
+                'The selected user account is invalid.',
 
             'user_id.exists' =>
                 'The selected user account does not exist.',
@@ -370,45 +381,27 @@ class CreateTenantRequest extends FormRequest
             'tenant_number.unique' =>
                 'This tenant number is already registered.',
 
+            'tenant_number.max' =>
+                'Tenant number may not exceed 50 characters.',
+
 
             /*
             |--------------------------------------------------------------------------
-            | Personal Information
+            | Tenant Information
             |--------------------------------------------------------------------------
             */
 
-            'first_name.required' =>
-                'First name is required.',
+            'other_names.string' =>
+                'Other names must be valid text.',
 
-            'first_name.min' =>
-                'First name must be at least 2 characters.',
-
-            'first_name.max' =>
-                'First name may not exceed 100 characters.',
-
-            'last_name.required' =>
-                'Last name is required.',
-
-            'last_name.min' =>
-                'Last name must be at least 2 characters.',
-
-            'last_name.max' =>
-                'Last name may not exceed 100 characters.',
-
-            'email.email' =>
-                'Please provide a valid email address.',
-
-            'phone.required' =>
-                'Phone number is required.',
-
-            'phone.unique' =>
-                'This phone number is already registered to another tenant.',
+            'other_names.max' =>
+                'Other names may not exceed 150 characters.',
 
             'date_of_birth.date' =>
                 'Please provide a valid date of birth.',
 
             'date_of_birth.before' =>
-                'Date of birth must be a date before today.',
+                'Date of birth must be before today.',
 
             'gender.in' =>
                 'The selected gender is invalid.',
@@ -421,7 +414,7 @@ class CreateTenantRequest extends FormRequest
             */
 
             'id_number.unique' =>
-                'This ID number is already registered.',
+                'This National ID number is already registered.',
 
             'passport_number.unique' =>
                 'This passport number is already registered.',
@@ -429,30 +422,30 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | Location
+            | Address / Location
             |--------------------------------------------------------------------------
             */
 
             'country.string' =>
-                'Country must be a valid text value.',
+                'Country must be valid text.',
 
             'region.string' =>
-                'Region must be a valid text value.',
+                'Region must be valid text.',
 
             'county.string' =>
-                'County must be a valid text value.',
+                'County must be valid text.',
 
             'city.string' =>
-                'City must be a valid text value.',
+                'City must be valid text.',
 
             'area.string' =>
-                'Area must be a valid text value.',
+                'Area must be valid text.',
 
             'postal_code.string' =>
-                'Postal code must be a valid text value.',
+                'Postal code must be valid text.',
 
             'address.string' =>
-                'Address must be a valid text value.',
+                'Address must be valid text.',
 
 
             /*
@@ -460,6 +453,12 @@ class CreateTenantRequest extends FormRequest
             | Employment
             |--------------------------------------------------------------------------
             */
+
+            'occupation.string' =>
+                'Occupation must be valid text.',
+
+            'employer.string' =>
+                'Employer must be valid text.',
 
             'monthly_income.numeric' =>
                 'Monthly income must be a valid number.',
@@ -470,9 +469,28 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
+            | Emergency Contact
+            |--------------------------------------------------------------------------
+            */
+
+            'emergency_contact_name.string' =>
+                'Emergency contact name must be valid text.',
+
+            'emergency_contact_phone.string' =>
+                'Emergency contact phone must be valid text.',
+
+            'emergency_contact_relationship.string' =>
+                'Emergency contact relationship must be valid text.',
+
+
+            /*
+            |--------------------------------------------------------------------------
             | Documents
             |--------------------------------------------------------------------------
             */
+
+            'photo.file' =>
+                'The tenant photo must be a valid file.',
 
             'photo.image' =>
                 'The tenant photo must be a valid image.',
@@ -483,6 +501,9 @@ class CreateTenantRequest extends FormRequest
             'photo.max' =>
                 'The tenant photo may not be larger than 5MB.',
 
+            'id_front.file' =>
+                'The front ID document must be a valid file.',
+
             'id_front.image' =>
                 'The front ID document must be a valid image.',
 
@@ -491,6 +512,9 @@ class CreateTenantRequest extends FormRequest
 
             'id_front.max' =>
                 'The front ID document may not be larger than 5MB.',
+
+            'id_back.file' =>
+                'The back ID document must be a valid file.',
 
             'id_back.image' =>
                 'The back ID document must be a valid image.',
@@ -509,10 +533,10 @@ class CreateTenantRequest extends FormRequest
             */
 
             'is_verified.boolean' =>
-                'The verification status must be true or false.',
+                'Verification status must be true or false.',
 
             'verified_at.date' =>
-                'The verification date must be a valid date.',
+                'The verification date must be valid.',
 
 
             /*
@@ -532,7 +556,10 @@ class CreateTenantRequest extends FormRequest
             */
 
             'notes.string' =>
-                'Notes must be a valid text value.',
+                'Notes must be valid text.',
+
+            'notes.max' =>
+                'Notes may not exceed 5000 characters.',
         ];
     }
 
@@ -562,34 +589,18 @@ class CreateTenantRequest extends FormRequest
             */
 
             'tenant_number' => $this->filled('tenant_number')
-                ? trim($this->input('tenant_number'))
+                ? trim((string) $this->input('tenant_number'))
                 : null,
 
 
             /*
             |--------------------------------------------------------------------------
-            | Personal Information
+            | Tenant-Specific Personal Information
             |--------------------------------------------------------------------------
             */
 
-            'first_name' => $this->filled('first_name')
-                ? trim($this->input('first_name'))
-                : null,
-
-            'last_name' => $this->filled('last_name')
-                ? trim($this->input('last_name'))
-                : null,
-
             'other_names' => $this->filled('other_names')
-                ? trim($this->input('other_names'))
-                : null,
-
-            'email' => $this->filled('email')
-                ? strtolower(trim($this->input('email')))
-                : null,
-
-            'phone' => $this->filled('phone')
-                ? trim($this->input('phone'))
+                ? trim((string) $this->input('other_names'))
                 : null,
 
 
@@ -600,11 +611,11 @@ class CreateTenantRequest extends FormRequest
             */
 
             'id_number' => $this->filled('id_number')
-                ? strtoupper(trim($this->input('id_number')))
+                ? strtoupper(trim((string) $this->input('id_number')))
                 : null,
 
             'passport_number' => $this->filled('passport_number')
-                ? strtoupper(trim($this->input('passport_number')))
+                ? strtoupper(trim((string) $this->input('passport_number')))
                 : null,
 
 
@@ -615,31 +626,31 @@ class CreateTenantRequest extends FormRequest
             */
 
             'country' => $this->filled('country')
-                ? trim($this->input('country'))
+                ? trim((string) $this->input('country'))
                 : 'Kenya',
 
             'region' => $this->filled('region')
-                ? trim($this->input('region'))
+                ? trim((string) $this->input('region'))
                 : null,
 
             'county' => $this->filled('county')
-                ? trim($this->input('county'))
+                ? trim((string) $this->input('county'))
                 : null,
 
             'city' => $this->filled('city')
-                ? trim($this->input('city'))
+                ? trim((string) $this->input('city'))
                 : null,
 
             'area' => $this->filled('area')
-                ? trim($this->input('area'))
+                ? trim((string) $this->input('area'))
                 : null,
 
             'postal_code' => $this->filled('postal_code')
-                ? trim($this->input('postal_code'))
+                ? trim((string) $this->input('postal_code'))
                 : null,
 
             'address' => $this->filled('address')
-                ? trim($this->input('address'))
+                ? trim((string) $this->input('address'))
                 : null,
 
 
@@ -650,11 +661,11 @@ class CreateTenantRequest extends FormRequest
             */
 
             'occupation' => $this->filled('occupation')
-                ? trim($this->input('occupation'))
+                ? trim((string) $this->input('occupation'))
                 : null,
 
             'employer' => $this->filled('employer')
-                ? trim($this->input('employer'))
+                ? trim((string) $this->input('employer'))
                 : null,
 
 
@@ -666,17 +677,17 @@ class CreateTenantRequest extends FormRequest
 
             'emergency_contact_name' =>
                 $this->filled('emergency_contact_name')
-                    ? trim($this->input('emergency_contact_name'))
+                    ? trim((string) $this->input('emergency_contact_name'))
                     : null,
 
             'emergency_contact_phone' =>
                 $this->filled('emergency_contact_phone')
-                    ? trim($this->input('emergency_contact_phone'))
+                    ? trim((string) $this->input('emergency_contact_phone'))
                     : null,
 
             'emergency_contact_relationship' =>
                 $this->filled('emergency_contact_relationship')
-                    ? trim($this->input('emergency_contact_relationship'))
+                    ? trim((string) $this->input('emergency_contact_relationship'))
                     : null,
 
 
@@ -687,7 +698,7 @@ class CreateTenantRequest extends FormRequest
             */
 
             'notes' => $this->filled('notes')
-                ? trim($this->input('notes'))
+                ? trim((string) $this->input('notes'))
                 : null,
         ]);
     }
@@ -702,25 +713,59 @@ class CreateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | User Role Validation
+            | Existing User Validation
             |--------------------------------------------------------------------------
             |
-            | The selected user MUST have the tenant role.
+            | The selected User must:
             |
-            | This is important because your Users Management already uses
-            | Spatie roles and permissions.
+            | 1. Exist
+            | 2. Have the tenant role
+            | 3. Not already have a tenant profile
             |
             */
 
             if ($this->filled('user_id')) {
 
-                $user = \App\Models\User::find($this->input('user_id'));
+                $user = User::find($this->input('user_id'));
 
-                if ($user && ! $user->hasRole('tenant')) {
+                if (! $user) {
+                    return;
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | Tenant Role
+                |--------------------------------------------------------------------------
+                */
+
+                if (! $user->hasRole('tenant')) {
 
                     $validator->errors()->add(
                         'user_id',
                         'The selected user does not have the tenant role.'
+                    );
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | Existing Tenant Profile
+                |--------------------------------------------------------------------------
+                |
+                | One User can have one Tenant profile.
+                |
+                | A Tenant can later have multiple Tenancies.
+                |
+                */
+
+                if (
+                    Tenant::where('user_id', $user->id)->exists()
+                ) {
+
+                    $validator->errors()->add(
+                        'user_id',
+                        'This user already has a tenant profile.'
                     );
                 }
             }
@@ -731,7 +776,7 @@ class CreateTenantRequest extends FormRequest
             | Identification Requirement
             |--------------------------------------------------------------------------
             |
-            | Require at least one government identification number.
+            | At least one government identification number is required.
             |
             */
 
@@ -739,9 +784,10 @@ class CreateTenantRequest extends FormRequest
                 blank($this->input('id_number')) &&
                 blank($this->input('passport_number'))
             ) {
+
                 $validator->errors()->add(
                     'identification',
-                    'Either an ID number or passport number is required.'
+                    'Either a National ID number or Passport number is required.'
                 );
             }
 
@@ -751,8 +797,8 @@ class CreateTenantRequest extends FormRequest
             | Emergency Contact Validation
             |--------------------------------------------------------------------------
             |
-            | If one emergency-contact field is supplied,
-            | require all emergency-contact fields.
+            | If one emergency contact field is supplied,
+            | all emergency contact fields are required.
             |
             */
 
@@ -783,4 +829,3 @@ class CreateTenantRequest extends FormRequest
         });
     }
 }
-
