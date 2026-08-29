@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Tenant;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\UploadedFile;
@@ -26,10 +27,18 @@ class TenantService
      *
      * Tenant
      *   ├── User
-     *   └── Tenancies
+     *   ├── Tenancies
+     *   │    ├── Property
+     *   │    ├── Apartment
+     *   │    └── Unit
+     *   │
+     *   └── Active Tenancies
      *        ├── Property
      *        ├── Apartment
      *        └── Unit
+     *
+     * IMPORTANT:
+     * These relationship names must exist in Tenant model.
      */
     protected function tenantRelations(): array
     {
@@ -39,6 +48,10 @@ class TenantService
             'tenancies.property',
             'tenancies.apartment',
             'tenancies.unit',
+
+            'activeTenancies.property',
+            'activeTenancies.apartment',
+            'activeTenancies.unit',
         ];
     }
 
@@ -51,17 +64,14 @@ class TenantService
     /**
      * Get the base tenant query.
      *
+     * Only tenants linked to a user account are returned.
+     *
      * IMPORTANT:
-     * Only tenants that have a valid user_id are returned.
+     * Do NOT use an is_active column here.
      *
-     * This prevents API responses such as:
-     *
-     * "user_id": null,
-     * "user": null
-     *
-     * from appearing in the normal tenant API.
+     * Tenant active state is determined by the `status` column.
      */
-    protected function tenantQuery()
+    protected function tenantQuery(): Builder
     {
         return Tenant::query()
             ->whereNotNull('user_id')
@@ -79,236 +89,303 @@ class TenantService
      */
     public function paginate(array $filters = []): LengthAwarePaginator
     {
-        $query = $this->tenantQuery()
+        $query = $this->tenantQuery();
 
-            /*
-            |--------------------------------------------------------------------------
-            | Search
-            |--------------------------------------------------------------------------
-            */
+        /*
+        |--------------------------------------------------------------------------
+        | Search
+        |--------------------------------------------------------------------------
+        */
 
-            ->when(
-                !empty($filters['search']),
-                function ($query) use ($filters) {
-                    $search = trim($filters['search']);
+        if (!empty($filters['search'])) {
+            $search = trim((string) $filters['search']);
 
-                    $query->where(function ($query) use ($search) {
-                        $query
-                            ->where('tenant_number', 'like', "%{$search}%")
-                            ->orWhere('first_name', 'like', "%{$search}%")
-                            ->orWhere('last_name', 'like', "%{$search}%")
-                            ->orWhere('other_names', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%")
-                            ->orWhere('phone', 'like', "%{$search}%")
-                            ->orWhere('id_number', 'like', "%{$search}%")
-                            ->orWhere('passport_number', 'like', "%{$search}%")
+            if ($search !== '') {
+                $query->where(function (Builder $query) use ($search) {
+                    $query
+                        ->where(
+                            'tenant_number',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'first_name',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'last_name',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'other_names',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'email',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'phone',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'id_number',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'passport_number',
+                            'like',
+                            "%{$search}%"
+                        )
 
-                            // Location search
-                            ->orWhere('country', 'like', "%{$search}%")
-                            ->orWhere('region', 'like', "%{$search}%")
-                            ->orWhere('county', 'like', "%{$search}%")
-                            ->orWhere('city', 'like', "%{$search}%")
-                            ->orWhere('area', 'like', "%{$search}%")
-                            ->orWhere('postal_code', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%");
-                    });
-                }
-            )
+                        // Location
+                        ->orWhere(
+                            'country',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'region',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'county',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'city',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'area',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'postal_code',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'address',
+                            'like',
+                            "%{$search}%"
+                        );
+                });
+            }
+        }
 
-            /*
-            |--------------------------------------------------------------------------
-            | User ID
-            |--------------------------------------------------------------------------
-            */
+        /*
+        |--------------------------------------------------------------------------
+        | User ID
+        |--------------------------------------------------------------------------
+        */
 
-            ->when(
-                !empty($filters['user_id']),
-                fn ($query) =>
-                    $query->where(
-                        'user_id',
-                        $filters['user_id']
-                    )
-            )
+        if (
+            isset($filters['user_id']) &&
+            $filters['user_id'] !== ''
+        ) {
+            $query->where(
+                'user_id',
+                $filters['user_id']
+            );
+        }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Status
-            |--------------------------------------------------------------------------
-            */
+        /*
+        |--------------------------------------------------------------------------
+        | Status
+        |--------------------------------------------------------------------------
+        */
 
-            ->when(
-                !empty($filters['status']),
-                fn ($query) =>
+        if (
+            isset($filters['status']) &&
+            $filters['status'] !== ''
+        ) {
+            $query->where(
+                'status',
+                $filters['status']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Active Filter
+        |--------------------------------------------------------------------------
+        |
+        | There is NO `is_active` database column.
+        |
+        | Active tenants:
+        |     status = active
+        |
+        | Inactive tenants:
+        |     status != active
+        |
+        */
+
+        if (isset($filters['is_active'])) {
+            $isActive = filter_var(
+                $filters['is_active'],
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+
+            if ($isActive !== null) {
+                if ($isActive) {
                     $query->where(
                         'status',
-                        $filters['status']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Active Filter
-            |--------------------------------------------------------------------------
-            |
-            | The current tenants table derives active state from status.
-            | We intentionally do NOT query tenants.is_active.
-            |
-            */
-
-            ->when(
-                isset($filters['is_active']),
-                function ($query) use ($filters) {
-                    $value = filter_var(
-                        $filters['is_active'],
-                        FILTER_VALIDATE_BOOLEAN,
-                        FILTER_NULL_ON_FAILURE
+                        Tenant::STATUS_ACTIVE
                     );
-
-                    if ($value !== null) {
-                        if ($value) {
-                            $query->where(
-                                'status',
-                                Tenant::STATUS_ACTIVE
-                            );
-                        } else {
-                            $query->where(
-                                'status',
-                                '!=',
-                                Tenant::STATUS_ACTIVE
-                            );
-                        }
-                    }
-                }
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Gender
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['gender']),
-                fn ($query) =>
+                } else {
                     $query->where(
-                        'gender',
-                        $filters['gender']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Country
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['country']),
-                fn ($query) =>
-                    $query->where(
-                        'country',
-                        $filters['country']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Region
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['region']),
-                fn ($query) =>
-                    $query->where(
-                        'region',
-                        $filters['region']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | County
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['county']),
-                fn ($query) =>
-                    $query->where(
-                        'county',
-                        $filters['county']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | City
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['city']),
-                fn ($query) =>
-                    $query->where(
-                        'city',
-                        $filters['city']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Area
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['area']),
-                fn ($query) =>
-                    $query->where(
-                        'area',
-                        $filters['area']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Postal Code
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                !empty($filters['postal_code']),
-                fn ($query) =>
-                    $query->where(
-                        'postal_code',
-                        $filters['postal_code']
-                    )
-            )
-
-            /*
-            |--------------------------------------------------------------------------
-            | Verification
-            |--------------------------------------------------------------------------
-            */
-
-            ->when(
-                isset($filters['is_verified']),
-                function ($query) use ($filters) {
-                    $value = filter_var(
-                        $filters['is_verified'],
-                        FILTER_VALIDATE_BOOLEAN,
-                        FILTER_NULL_ON_FAILURE
+                        'status',
+                        '!=',
+                        Tenant::STATUS_ACTIVE
                     );
-
-                    if ($value !== null) {
-                        $query->where(
-                            'is_verified',
-                            $value
-                        );
-                    }
                 }
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Gender
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['gender']) &&
+            $filters['gender'] !== ''
+        ) {
+            $query->where(
+                'gender',
+                $filters['gender']
             );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Country
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['country']) &&
+            $filters['country'] !== ''
+        ) {
+            $query->where(
+                'country',
+                $filters['country']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Region
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['region']) &&
+            $filters['region'] !== ''
+        ) {
+            $query->where(
+                'region',
+                $filters['region']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | County
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['county']) &&
+            $filters['county'] !== ''
+        ) {
+            $query->where(
+                'county',
+                $filters['county']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | City
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['city']) &&
+            $filters['city'] !== ''
+        ) {
+            $query->where(
+                'city',
+                $filters['city']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Area
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['area']) &&
+            $filters['area'] !== ''
+        ) {
+            $query->where(
+                'area',
+                $filters['area']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Postal Code
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['postal_code']) &&
+            $filters['postal_code'] !== ''
+        ) {
+            $query->where(
+                'postal_code',
+                $filters['postal_code']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Verification
+        |--------------------------------------------------------------------------
+        */
+
+        if (isset($filters['is_verified'])) {
+            $isVerified = filter_var(
+                $filters['is_verified'],
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+
+            if ($isVerified !== null) {
+                $query->where(
+                    'is_verified',
+                    $isVerified
+                );
+            }
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -342,7 +419,7 @@ class TenantService
         }
 
         $sortDirection = strtolower(
-            $filters['sort_direction'] ?? 'desc'
+            (string) ($filters['sort_direction'] ?? 'desc')
         );
 
         if (!in_array($sortDirection, ['asc', 'desc'], true)) {
@@ -380,14 +457,11 @@ class TenantService
 
     /**
      * Find tenant by ID.
-     *
-     * Only tenants with user_id are returned.
      */
     public function find(
         int|string $id
     ): Tenant {
         $tenant = $this->tenantQuery()
-            ->whereNotNull('user_id')
             ->find($id);
 
         if (!$tenant) {
@@ -470,9 +544,9 @@ class TenantService
     */
 
     /**
-     * Create a tenant.
+     * Create tenant.
      *
-     * A tenant MUST have a user_id.
+     * A tenant must be linked to a user.
      */
     public function create(
         array $data,
@@ -480,135 +554,133 @@ class TenantService
         ?UploadedFile $idFront = null,
         ?UploadedFile $idBack = null
     ): Tenant {
-        return DB::transaction(function () use (
-            $data,
-            $photo,
-            $idFront,
-            $idBack
-        ) {
-
-            /*
-            |--------------------------------------------------------------------------
-            | User ID
-            |--------------------------------------------------------------------------
-            |
-            | Tenant must be linked to an existing User.
-            |
-            */
-
-            if (
-                !isset($data['user_id']) ||
-                empty($data['user_id'])
+        return DB::transaction(
+            function () use (
+                $data,
+                $photo,
+                $idFront,
+                $idBack
             ) {
-                throw new RuntimeException(
-                    'A valid user_id is required when creating a tenant.'
+                /*
+                |--------------------------------------------------------------------------
+                | User ID
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    !isset($data['user_id']) ||
+                    empty($data['user_id'])
+                ) {
+                    throw new RuntimeException(
+                        'A valid user_id is required when creating a tenant.'
+                    );
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Tenant Number
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    !isset($data['tenant_number']) ||
+                    empty($data['tenant_number'])
+                ) {
+                    $data['tenant_number'] =
+                        $this->generateTenantNumber();
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Defaults
+                |--------------------------------------------------------------------------
+                */
+
+                $data['country'] =
+                    $data['country'] ?? 'Kenya';
+
+                $data['status'] =
+                    $data['status']
+                    ?? Tenant::STATUS_PENDING;
+
+                /*
+                |--------------------------------------------------------------------------
+                | Remove Unsupported Fields
+                |--------------------------------------------------------------------------
+                |
+                | `is_active` is NOT a tenants table column.
+                |
+                */
+
+                unset(
+                    $data['is_active']
+                );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Verification
+                |--------------------------------------------------------------------------
+                */
+
+                $data['is_verified'] =
+                    (bool) (
+                        $data['is_verified'] ?? false
+                    );
+
+                if (!$data['is_verified']) {
+                    $data['verified_at'] = null;
+                } elseif (
+                    empty($data['verified_at'])
+                ) {
+                    $data['verified_at'] = now();
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Create Tenant
+                |--------------------------------------------------------------------------
+                */
+
+                $tenant = Tenant::create($data);
+
+                /*
+                |--------------------------------------------------------------------------
+                | Upload Documents
+                |--------------------------------------------------------------------------
+                */
+
+                if ($photo) {
+                    $this->uploadPhoto(
+                        $tenant,
+                        $photo
+                    );
+                }
+
+                if ($idFront) {
+                    $this->uploadIdFront(
+                        $tenant,
+                        $idFront
+                    );
+                }
+
+                if ($idBack) {
+                    $this->uploadIdBack(
+                        $tenant,
+                        $idBack
+                    );
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Return Fresh Tenant
+                |--------------------------------------------------------------------------
+                */
+
+                return $tenant->fresh(
+                    $this->tenantRelations()
                 );
             }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Number
-            |--------------------------------------------------------------------------
-            */
-
-            if (empty($data['tenant_number'])) {
-                $data['tenant_number'] =
-                    $this->generateTenantNumber();
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Defaults
-            |--------------------------------------------------------------------------
-            */
-
-            $data['country'] =
-                $data['country'] ?? 'Kenya';
-
-            $data['status'] =
-                $data['status']
-                ?? Tenant::STATUS_PENDING;
-
-            /*
-            |--------------------------------------------------------------------------
-            | Remove Non-existent is_active Column
-            |--------------------------------------------------------------------------
-            */
-
-            unset(
-                $data['is_active']
-            );
-
-            /*
-            |--------------------------------------------------------------------------
-            | Verification
-            |--------------------------------------------------------------------------
-            */
-
-            $data['is_verified'] =
-                $data['is_verified'] ?? false;
-
-            if (!$data['is_verified']) {
-                $data['verified_at'] = null;
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Create Tenant
-            |--------------------------------------------------------------------------
-            */
-
-            $tenant = Tenant::create($data);
-
-            /*
-            |--------------------------------------------------------------------------
-            | Upload Photo
-            |--------------------------------------------------------------------------
-            */
-
-            if ($photo) {
-                $this->uploadPhoto(
-                    $tenant,
-                    $photo
-                );
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Upload Front ID
-            |--------------------------------------------------------------------------
-            */
-
-            if ($idFront) {
-                $this->uploadIdFront(
-                    $tenant,
-                    $idFront
-                );
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Upload Back ID
-            |--------------------------------------------------------------------------
-            */
-
-            if ($idBack) {
-                $this->uploadIdBack(
-                    $tenant,
-                    $idBack
-                );
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Return Fresh Tenant With User
-            |--------------------------------------------------------------------------
-            */
-
-            return $tenant->fresh(
-                $this->tenantRelations()
-            );
-        });
+        );
     }
 
     /*
@@ -620,6 +692,8 @@ class TenantService
     /**
      * Update tenant.
      *
+     * Tenant number cannot be changed.
+     *
      * user_id cannot be changed to null.
      */
     public function update(
@@ -629,139 +703,122 @@ class TenantService
         ?UploadedFile $idFront = null,
         ?UploadedFile $idBack = null
     ): Tenant {
-        return DB::transaction(function () use (
-            $tenant,
-            $data,
-            $photo,
-            $idFront,
-            $idBack
-        ) {
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Number
-            |--------------------------------------------------------------------------
-            |
-            | Tenant numbers cannot be changed.
-            |
-            */
-
-            unset(
-                $data['tenant_number']
-            );
-
-            /*
-            |--------------------------------------------------------------------------
-            | Protect user_id
-            |--------------------------------------------------------------------------
-            |
-            | Existing tenant must always have a user.
-            |
-            */
-
-            if (
-                array_key_exists(
-                    'user_id',
-                    $data
-                )
+        return DB::transaction(
+            function () use (
+                $tenant,
+                $data,
+                $photo,
+                $idFront,
+                $idBack
             ) {
+                /*
+                |--------------------------------------------------------------------------
+                | Protect Tenant Number
+                |--------------------------------------------------------------------------
+                */
+
+                unset(
+                    $data['tenant_number']
+                );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Protect User ID
+                |--------------------------------------------------------------------------
+                */
+
                 if (
+                    array_key_exists(
+                        'user_id',
+                        $data
+                    ) &&
                     empty($data['user_id'])
                 ) {
                     throw new RuntimeException(
                         'A valid user_id is required for every tenant.'
                     );
                 }
-            }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Protect is_active
-            |--------------------------------------------------------------------------
-            */
+                /*
+                |--------------------------------------------------------------------------
+                | Remove Unsupported is_active Field
+                |--------------------------------------------------------------------------
+                */
 
-            unset(
-                $data['is_active']
-            );
+                unset(
+                    $data['is_active']
+                );
 
-            /*
-            |--------------------------------------------------------------------------
-            | Verification
-            |--------------------------------------------------------------------------
-            */
+                /*
+                |--------------------------------------------------------------------------
+                | Verification
+                |--------------------------------------------------------------------------
+                */
 
-            if (
-                array_key_exists(
-                    'is_verified',
-                    $data
-                )
-            ) {
-                if ($data['is_verified']) {
-                    $data['verified_at'] =
-                        $data['verified_at']
-                        ?? now();
-                } else {
-                    $data['verified_at'] = null;
+                if (
+                    array_key_exists(
+                        'is_verified',
+                        $data
+                    )
+                ) {
+                    $data['is_verified'] =
+                        (bool) $data['is_verified'];
+
+                    if ($data['is_verified']) {
+                        $data['verified_at'] =
+                            $data['verified_at']
+                            ?? now();
+                    } else {
+                        $data['verified_at'] = null;
+                    }
                 }
-            }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Update Tenant
-            |--------------------------------------------------------------------------
-            */
+                /*
+                |--------------------------------------------------------------------------
+                | Update Tenant
+                |--------------------------------------------------------------------------
+                */
 
-            $tenant->update($data);
+                $tenant->update($data);
 
-            /*
-            |--------------------------------------------------------------------------
-            | Upload Photo
-            |--------------------------------------------------------------------------
-            */
+                /*
+                |--------------------------------------------------------------------------
+                | Upload Documents
+                |--------------------------------------------------------------------------
+                */
 
-            if ($photo) {
-                $this->uploadPhoto(
-                    $tenant,
-                    $photo
+                if ($photo) {
+                    $this->uploadPhoto(
+                        $tenant,
+                        $photo
+                    );
+                }
+
+                if ($idFront) {
+                    $this->uploadIdFront(
+                        $tenant,
+                        $idFront
+                    );
+                }
+
+                if ($idBack) {
+                    $this->uploadIdBack(
+                        $tenant,
+                        $idBack
+                    );
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Return Fresh Tenant
+                |--------------------------------------------------------------------------
+                */
+
+                return $tenant->fresh(
+                    $this->tenantRelations()
                 );
             }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Upload Front ID
-            |--------------------------------------------------------------------------
-            */
-
-            if ($idFront) {
-                $this->uploadIdFront(
-                    $tenant,
-                    $idFront
-                );
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Upload Back ID
-            |--------------------------------------------------------------------------
-            */
-
-            if ($idBack) {
-                $this->uploadIdBack(
-                    $tenant,
-                    $idBack
-                );
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Return Fresh Tenant
-            |--------------------------------------------------------------------------
-            */
-
-            return $tenant->fresh(
-                $this->tenantRelations()
-            );
-        });
+        );
     }
 
     /*
@@ -776,24 +833,25 @@ class TenantService
     public function delete(
         Tenant $tenant
     ): bool {
-        return DB::transaction(function () use ($tenant) {
+        return DB::transaction(
+            function () use ($tenant) {
+                $hasActiveTenancy = $tenant
+                    ->tenancies()
+                    ->where(
+                        'status',
+                        'active'
+                    )
+                    ->exists();
 
-            $hasActiveTenancy = $tenant
-                ->tenancies()
-                ->where(
-                    'status',
-                    'active'
-                )
-                ->exists();
+                if ($hasActiveTenancy) {
+                    throw new RuntimeException(
+                        'This tenant cannot be deleted because they have an active tenancy.'
+                    );
+                }
 
-            if ($hasActiveTenancy) {
-                throw new RuntimeException(
-                    'This tenant cannot be deleted because they have an active tenancy.'
-                );
+                return (bool) $tenant->delete();
             }
-
-            return (bool) $tenant->delete();
-        });
+        );
     }
 
     /**
@@ -835,14 +893,15 @@ class TenantService
             );
         }
 
-        if (
-            $tenant->tenancies()
-                ->where(
-                    'status',
-                    'active'
-                )
-                ->exists()
-        ) {
+        $hasActiveTenancy = $tenant
+            ->tenancies()
+            ->where(
+                'status',
+                'active'
+            )
+            ->exists();
+
+        if ($hasActiveTenancy) {
             throw new RuntimeException(
                 'This tenant cannot be permanently deleted because they have an active tenancy.'
             );
@@ -978,31 +1037,40 @@ class TenantService
         Tenant $tenant,
         UploadedFile $file
     ): Tenant {
-        return DB::transaction(function () use (
-            $tenant,
-            $file
-        ) {
+        return DB::transaction(
+            function () use (
+                $tenant,
+                $file
+            ) {
+                $oldPath = $tenant->photo;
 
-            if ($tenant->photo) {
-                $this->deleteFile(
-                    $tenant->photo
+                $path = $file->store(
+                    'tenants/photos',
+                    'public'
+                );
+
+                if (!$path) {
+                    throw new RuntimeException(
+                        'Unable to store tenant photo.'
+                    );
+                }
+
+                $tenant->update([
+                    'photo' => $path,
+                    'photo_public_id' => null,
+                ]);
+
+                if ($oldPath && $oldPath !== $path) {
+                    $this->deleteFile(
+                        $oldPath
+                    );
+                }
+
+                return $tenant->fresh(
+                    $this->tenantRelations()
                 );
             }
-
-            $path = $file->store(
-                'tenants/photos',
-                'public'
-            );
-
-            $tenant->update([
-                'photo' => $path,
-                'photo_public_id' => null,
-            ]);
-
-            return $tenant->fresh(
-                $this->tenantRelations()
-            );
-        });
+        );
     }
 
     /**
@@ -1012,31 +1080,40 @@ class TenantService
         Tenant $tenant,
         UploadedFile $file
     ): Tenant {
-        return DB::transaction(function () use (
-            $tenant,
-            $file
-        ) {
+        return DB::transaction(
+            function () use (
+                $tenant,
+                $file
+            ) {
+                $oldPath = $tenant->id_front;
 
-            if ($tenant->id_front) {
-                $this->deleteFile(
-                    $tenant->id_front
+                $path = $file->store(
+                    'tenants/documents',
+                    'public'
+                );
+
+                if (!$path) {
+                    throw new RuntimeException(
+                        'Unable to store tenant front ID.'
+                    );
+                }
+
+                $tenant->update([
+                    'id_front' => $path,
+                    'id_front_public_id' => null,
+                ]);
+
+                if ($oldPath && $oldPath !== $path) {
+                    $this->deleteFile(
+                        $oldPath
+                    );
+                }
+
+                return $tenant->fresh(
+                    $this->tenantRelations()
                 );
             }
-
-            $path = $file->store(
-                'tenants/documents',
-                'public'
-            );
-
-            $tenant->update([
-                'id_front' => $path,
-                'id_front_public_id' => null,
-            ]);
-
-            return $tenant->fresh(
-                $this->tenantRelations()
-            );
-        });
+        );
     }
 
     /**
@@ -1046,31 +1123,40 @@ class TenantService
         Tenant $tenant,
         UploadedFile $file
     ): Tenant {
-        return DB::transaction(function () use (
-            $tenant,
-            $file
-        ) {
+        return DB::transaction(
+            function () use (
+                $tenant,
+                $file
+            ) {
+                $oldPath = $tenant->id_back;
 
-            if ($tenant->id_back) {
-                $this->deleteFile(
-                    $tenant->id_back
+                $path = $file->store(
+                    'tenants/documents',
+                    'public'
+                );
+
+                if (!$path) {
+                    throw new RuntimeException(
+                        'Unable to store tenant back ID.'
+                    );
+                }
+
+                $tenant->update([
+                    'id_back' => $path,
+                    'id_back_public_id' => null,
+                ]);
+
+                if ($oldPath && $oldPath !== $path) {
+                    $this->deleteFile(
+                        $oldPath
+                    );
+                }
+
+                return $tenant->fresh(
+                    $this->tenantRelations()
                 );
             }
-
-            $path = $file->store(
-                'tenants/documents',
-                'public'
-            );
-
-            $tenant->update([
-                'id_back' => $path,
-                'id_back_public_id' => null,
-            ]);
-
-            return $tenant->fresh(
-                $this->tenantRelations()
-            );
-        });
+        );
     }
 
     /**
@@ -1079,22 +1165,18 @@ class TenantService
     public function deleteTenantDocuments(
         Tenant $tenant
     ): void {
-        if ($tenant->photo) {
-            $this->deleteFile(
-                $tenant->photo
-            );
-        }
+        $paths = [
+            $tenant->photo,
+            $tenant->id_front,
+            $tenant->id_back,
+        ];
 
-        if ($tenant->id_front) {
-            $this->deleteFile(
-                $tenant->id_front
-            );
-        }
-
-        if ($tenant->id_back) {
-            $this->deleteFile(
-                $tenant->id_back
-            );
+        foreach ($paths as $path) {
+            if ($path) {
+                $this->deleteFile(
+                    $path
+                );
+            }
         }
     }
 
@@ -1105,12 +1187,10 @@ class TenantService
         string $path
     ): void {
         try {
-            if (
-                Storage::disk('public')
-                    ->exists($path)
-            ) {
-                Storage::disk('public')
-                    ->delete($path);
+            $disk = Storage::disk('public');
+
+            if ($disk->exists($path)) {
+                $disk->delete($path);
             }
         } catch (Throwable $e) {
             report($e);
@@ -1127,94 +1207,122 @@ class TenantService
      * Get tenant statistics.
      *
      * IMPORTANT:
-     * Statistics only count tenants that have user_id.
+     *
+     * This method NEVER queries `is_active`.
+     *
+     * Active state is derived from:
+     *
+     *     status = active
+     *
+     * The statistics only include tenants with user_id.
      */
     public function statistics(): array
     {
         $query = Tenant::query()
             ->whereNotNull('user_id');
 
+        $total = (clone $query)->count();
+
+        $active = (clone $query)
+            ->where(
+                'status',
+                Tenant::STATUS_ACTIVE
+            )
+            ->count();
+
+        $inactive = (clone $query)
+            ->where(
+                'status',
+                Tenant::STATUS_INACTIVE
+            )
+            ->count();
+
+        $pending = (clone $query)
+            ->where(
+                'status',
+                Tenant::STATUS_PENDING
+            )
+            ->count();
+
+        $blacklisted = (clone $query)
+            ->where(
+                'status',
+                Tenant::STATUS_BLACKLISTED
+            )
+            ->count();
+
+        $verified = (clone $query)
+            ->where(
+                'is_verified',
+                true
+            )
+            ->count();
+
+        $unverified = (clone $query)
+            ->where(
+                'is_verified',
+                false
+            )
+            ->count();
+
         return [
-            'total' =>
-                (clone $query)->count(),
-
-            'active' =>
-                (clone $query)
-                    ->where(
-                        'status',
-                        Tenant::STATUS_ACTIVE
-                    )
-                    ->count(),
-
-            'inactive' =>
-                (clone $query)
-                    ->where(
-                        'status',
-                        Tenant::STATUS_INACTIVE
-                    )
-                    ->count(),
-
-            'pending' =>
-                (clone $query)
-                    ->where(
-                        'status',
-                        Tenant::STATUS_PENDING
-                    )
-                    ->count(),
-
-            'blacklisted' =>
-                (clone $query)
-                    ->where(
-                        'status',
-                        Tenant::STATUS_BLACKLISTED
-                    )
-                    ->count(),
-
-            'verified' =>
-                (clone $query)
-                    ->where(
-                        'is_verified',
-                        true
-                    )
-                    ->count(),
-
-            'unverified' =>
-                (clone $query)
-                    ->where(
-                        'is_verified',
-                        false
-                    )
-                    ->count(),
-
-            'active_accounts' =>
-                (clone $query)
-                    ->where(
-                        'status',
-                        Tenant::STATUS_ACTIVE
-                    )
-                    ->count(),
-
-            'inactive_accounts' =>
-                (clone $query)
-                    ->where(
-                        'status',
-                        '!=',
-                        Tenant::STATUS_ACTIVE
-                    )
-                    ->count(),
-
             /*
             |--------------------------------------------------------------------------
-            | User Account Statistics
+            | Overall
             |--------------------------------------------------------------------------
             */
 
-            'with_user' =>
-                (clone $query)
-                    ->count(),
+            'total' => $total,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Status
+            |--------------------------------------------------------------------------
+            */
+
+            'active' => $active,
+
+            'inactive' => $inactive,
+
+            'pending' => $pending,
+
+            'blacklisted' => $blacklisted,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Verification
+            |--------------------------------------------------------------------------
+            */
+
+            'verified' => $verified,
+
+            'unverified' => $unverified,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Account Status
+            |--------------------------------------------------------------------------
+            |
+            | These are aliases based on tenant status.
+            |
+            */
+
+            'active_accounts' => $active,
+
+            'inactive_accounts' =>
+                $total - $active,
+
+            /*
+            |--------------------------------------------------------------------------
+            | User Account
+            |--------------------------------------------------------------------------
+            */
+
+            'with_user' => $total,
 
             'without_user' =>
-                Tenant::whereNull('user_id')
+                Tenant::query()
+                    ->whereNull('user_id')
                     ->count(),
         ];
     }
@@ -1246,7 +1354,7 @@ class TenantService
         );
 
         return $this->tenantQuery()
-            ->where(function ($query) use ($search) {
+            ->where(function (Builder $query) use ($search) {
                 $query
                     ->where(
                         'tenant_number',
@@ -1312,6 +1420,16 @@ class TenantService
                         'area',
                         'like',
                         "%{$search}%"
+                    )
+                    ->orWhere(
+                        'postal_code',
+                        'like',
+                        "%{$search}%"
+                    )
+                    ->orWhere(
+                        'address',
+                        'like',
+                        "%{$search}%"
                     );
             })
             ->orderBy(
@@ -1361,8 +1479,6 @@ class TenantService
 
     /**
      * Get active tenants.
-     *
-     * Only tenants with user_id are returned.
      */
     public function getActive(): Collection
     {
@@ -1377,9 +1493,37 @@ class TenantService
     }
 
     /**
+     * Get inactive tenants.
+     */
+    public function getInactive(): Collection
+    {
+        return $this->tenantQuery()
+            ->where(
+                'status',
+                Tenant::STATUS_INACTIVE
+            )
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get();
+    }
+
+    /**
+     * Get blacklisted tenants.
+     */
+    public function getBlacklisted(): Collection
+    {
+        return $this->tenantQuery()
+            ->where(
+                'status',
+                Tenant::STATUS_BLACKLISTED
+            )
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get();
+    }
+
+    /**
      * Get pending tenants.
-     *
-     * Only tenants with user_id are returned.
      */
     public function getPending(): Collection
     {
@@ -1397,8 +1541,6 @@ class TenantService
 
     /**
      * Get verified tenants.
-     *
-     * Only tenants with user_id are returned.
      */
     public function getVerified(): Collection
     {
@@ -1406,6 +1548,21 @@ class TenantService
             ->where(
                 'is_verified',
                 true
+            )
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get();
+    }
+
+    /**
+     * Get unverified tenants.
+     */
+    public function getUnverified(): Collection
+    {
+        return $this->tenantQuery()
+            ->where(
+                'is_verified',
+                false
             )
             ->orderBy('first_name')
             ->orderBy('last_name')
@@ -1459,6 +1616,12 @@ class TenantService
             ->orderBy('last_name')
             ->get();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activation Rules
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Check whether tenant can be activated.

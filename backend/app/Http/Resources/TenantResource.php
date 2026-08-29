@@ -10,15 +10,84 @@ class TenantResource extends JsonResource
     /**
      * Transform the resource into an array.
      *
+     * The User account is the source of truth for:
+     *
+     * - first name
+     * - last name
+     * - other names
+     * - email
+     * - phone
+     * - account status
+     * - roles / permissions
+     *
+     * Tenant-specific information remains on the tenants table.
+     *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        /*
+        |--------------------------------------------------------------------------
+        | Linked User
+        |--------------------------------------------------------------------------
+        |
+        | The Tenant model should have:
+        |
+        |     user_id
+        |
+        | and:
+        |
+        |     user()
+        |
+        | relationship.
+        |
+        | TenantService should preferably load:
+        |
+        |     ->with('user')
+        |
+        */
+
+        $user = $this->relationLoaded('user')
+            ? $this->user
+            : null;
+
+        /*
+        |--------------------------------------------------------------------------
+        | User Identity
+        |--------------------------------------------------------------------------
+        |
+        | Prefer values from users table.
+        |
+        | Tenant table values are used as fallback so existing tenant records
+        | do not immediately break if the user relationship is unavailable.
+        |
+        */
+
+        $firstName = $user?->first_name ?? $this->first_name;
+
+        $lastName = $user?->last_name ?? $this->last_name;
+
+        $otherNames = $user?->other_names ?? $this->other_names;
+
+        $email = $user?->email ?? $this->email;
+
+        $phone = $user?->phone ?? $this->phone;
+
+        $fullName = trim(
+            collect([
+                $firstName,
+                $otherNames,
+                $lastName,
+            ])
+                ->filter(fn ($value) => filled($value))
+                ->implode(' ')
+        );
+
         return [
 
             /*
             |--------------------------------------------------------------------------
-            | Identification
+            | Tenant Identification
             |--------------------------------------------------------------------------
             */
 
@@ -29,27 +98,95 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | User Account
+            | Linked User Account
             |--------------------------------------------------------------------------
-            |
-            | user_id is returned directly from the tenants table.
-            |
-            | user is returned when the relationship has been loaded.
-            |
-            | TenantService loads the user relationship using:
-            |
-            |     ->with('user')
-            |
             */
 
             'user_id' => $this->user_id,
 
             'user' => $this->whenLoaded(
                 'user',
-                function () {
-                    return $this->user
-                        ? new UserResource($this->user)
+                function () use ($user) {
+                    return $user
+                        ? new UserResource($user)
                         : null;
+                }
+            ),
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | User Identity
+            |--------------------------------------------------------------------------
+            |
+            | These values are primarily taken from the users table.
+            |
+            */
+
+            'first_name' => $firstName,
+
+            'last_name' => $lastName,
+
+            'other_names' => $otherNames,
+
+            'full_name' => $fullName,
+
+            'email' => $email,
+
+            'phone' => $phone,
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Account Information
+            |--------------------------------------------------------------------------
+            |
+            | These values come from the linked user when the relationship is
+            | loaded. This is useful for the Admin Users / Tenant interface.
+            |
+            */
+
+            'account' => $this->when(
+                $this->relationLoaded('user'),
+                function () use ($user) {
+
+                    if (!$user) {
+                        return null;
+                    }
+
+                    return [
+                        'id' => $user->id,
+
+                        'name' => $user->name
+                            ?? trim(
+                                collect([
+                                    $user->first_name ?? null,
+                                    $user->other_names ?? null,
+                                    $user->last_name ?? null,
+                                ])
+                                    ->filter(fn ($value) => filled($value))
+                                    ->implode(' ')
+                            ),
+
+                        'email' => $user->email,
+
+                        'phone' => $user->phone,
+
+                        'status' => $user->status ?? null,
+
+                        'is_active' => isset($user->is_active)
+                            ? (bool) $user->is_active
+                            : null,
+
+                        'email_verified_at' => $user->email_verified_at
+                            ? $user->email_verified_at->toISOString()
+                            : null,
+
+                        'roles' => method_exists($user, 'getRoleNames')
+                            ? $user->getRoleNames()->values()->all()
+                            : [],
+
+                    ];
                 }
             ),
 
@@ -58,19 +195,11 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | Personal Information
             |--------------------------------------------------------------------------
+            |
+            | Date of birth and gender remain tenant-specific unless you have
+            | deliberately moved them to users.
+            |
             */
-
-            'first_name' => $this->first_name,
-
-            'last_name' => $this->last_name,
-
-            'other_names' => $this->other_names,
-
-            'full_name' => $this->full_name,
-
-            'email' => $this->email,
-
-            'phone' => $this->phone,
 
             'date_of_birth' => $this->date_of_birth
                 ? $this->date_of_birth->format('Y-m-d')
@@ -83,6 +212,9 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
+            |
+            | These belong to the tenant profile, not the authentication user.
+            |
             */
 
             'id_number' => $this->id_number,
@@ -94,17 +226,6 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | Location
             |--------------------------------------------------------------------------
-            |
-            | Full tenant location hierarchy:
-            |
-            | Country
-            | Region
-            | County
-            | City
-            | Area
-            | Postal Code
-            | Address
-            |
             */
 
             'country' => $this->country,
@@ -121,22 +242,26 @@ class TenantResource extends JsonResource
 
             'address' => $this->address,
 
+
             /*
             |--------------------------------------------------------------------------
             | Location Object
             |--------------------------------------------------------------------------
-            |
-            | Convenient nested representation for frontend applications.
-            |
             */
 
             'location' => [
                 'country' => $this->country,
+
                 'region' => $this->region,
+
                 'county' => $this->county,
+
                 'city' => $this->city,
+
                 'area' => $this->area,
+
                 'postal_code' => $this->postal_code,
+
                 'address' => $this->address,
             ],
 
@@ -161,13 +286,11 @@ class TenantResource extends JsonResource
             */
 
             'emergency_contact' => [
-
                 'name' => $this->emergency_contact_name,
 
                 'phone' => $this->emergency_contact_phone,
 
                 'relationship' => $this->emergency_contact_relationship,
-
             ],
 
 
@@ -178,13 +301,11 @@ class TenantResource extends JsonResource
             */
 
             'documents' => [
-
                 'photo' => $this->photo,
 
                 'id_front' => $this->id_front,
 
                 'id_back' => $this->id_back,
-
             ],
 
 
@@ -228,13 +349,13 @@ class TenantResource extends JsonResource
             | Tenancies
             |--------------------------------------------------------------------------
             |
-            | Every tenancy can contain:
+            | A tenant can have multiple tenancies.
             |
-            | - Property
-            | - Apartment
-            | - Unit
+            | Each tenancy may contain:
             |
-            | These relationships are loaded by TenantService.
+            | - property
+            | - apartment
+            | - unit
             |
             */
 
