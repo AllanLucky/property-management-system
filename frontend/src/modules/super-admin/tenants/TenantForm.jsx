@@ -1012,7 +1012,9 @@ const TenantForm = ({
       ];
 
       const currentUserId =
-        String(form.user_id || "");
+        String(
+          form.user_id || ""
+        );
 
       if (
         currentUserId &&
@@ -1055,10 +1057,6 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   | RESET WHEN TENANT / MODE CHANGES
   |--------------------------------------------------------------------------
-  |
-  | Do not depend on the complete tenant object or initialValues object.
-  | Parent components may create new object references on every render.
-  |
   */
 
   useEffect(() => {
@@ -1092,12 +1090,6 @@ const TenantForm = ({
       return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | String error
-    |--------------------------------------------------------------------------
-    */
-
     if (
       typeof error === "string"
     ) {
@@ -1105,22 +1097,10 @@ const TenantForm = ({
       return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Laravel / Axios error response
-    |--------------------------------------------------------------------------
-    */
-
     const responseData =
       error?.response?.data ||
       error?.data ||
       error;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Extract Laravel validation errors.
-    |--------------------------------------------------------------------------
-    */
 
     const validationErrors =
       responseData?.errors;
@@ -1223,13 +1203,6 @@ const TenantForm = ({
           ...current,
         };
 
-        /*
-        |--------------------------------------------------------------------------
-        | If ID/passport gets entered, clear the
-        | combined identification error.
-        |--------------------------------------------------------------------------
-        */
-
         if (
           name === "id_number" ||
           name === "passport_number"
@@ -1251,14 +1224,6 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   | HANDLE USER CHANGE
   |--------------------------------------------------------------------------
-  |
-  | Selecting a user automatically populates:
-  |
-  | first_name
-  | last_name
-  | email
-  | phone
-  |
   */
 
   const handleUserChange = (
@@ -1594,13 +1559,6 @@ const TenantForm = ({
     |--------------------------------------------------------------------------
     | EMERGENCY CONTACT
     |--------------------------------------------------------------------------
-    |
-    | 0 fields = valid
-    |
-    | 3 fields = valid
-    |
-    | 1 or 2 fields = invalid
-    |
     */
 
     const hasEmergencyContact =
@@ -1667,19 +1625,11 @@ const TenantForm = ({
         emergencyRelationship
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Laravel Payload
-    |--------------------------------------------------------------------------
-    */
-
     return {
       /*
       |--------------------------------------------------------------------------
       | USER RELATION
       |--------------------------------------------------------------------------
-      |
-      | IMPORTANT:
       |
       | Send user_id.
       |
@@ -3036,8 +2986,8 @@ const InputField = ({
                 : undefined
           }
           className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${icon
-            ? "pl-10"
-            : ""
+              ? "pl-10"
+              : ""
             } ${hasError
               ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
               : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
@@ -3120,8 +3070,8 @@ const SelectField = ({
             hasError
           }
           className={`h-10 w-full appearance-none rounded-lg border bg-white px-3 pr-10 text-sm text-gray-900 outline-none transition disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${hasError
-            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             }`}
         >
           {Array.isArray(
@@ -3222,8 +3172,8 @@ const TextAreaField = ({
           hasError
         }
         className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${hasError
-          ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-          : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           }`}
       />
 
@@ -3258,8 +3208,8 @@ const ToggleField = ({
     <label
       htmlFor={name}
       className={`flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 transition ${disabled
-        ? "cursor-not-allowed opacity-60"
-        : "cursor-pointer hover:bg-gray-100"
+          ? "cursor-not-allowed opacity-60"
+          : "cursor-pointer hover:bg-gray-100"
         }`}
     >
       <div>
@@ -3294,4 +3244,3 @@ const ToggleField = ({
 };
 
 export default TenantForm;
-
