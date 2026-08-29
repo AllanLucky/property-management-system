@@ -68,15 +68,15 @@ import {
 | ERROR NORMALIZER
 |--------------------------------------------------------------------------
 |
-| Converts:
+| Converts all supported Laravel / Axios / Redux errors into:
 |
-| 1. Axios errors
-| 2. Redux Toolkit rejectWithValue errors
-| 3. Laravel API errors
-| 4. Plain strings
-| 5. Normal JavaScript errors
-|
-| into one predictable object.
+| {
+|   message,
+|   status,
+|   code,
+|   errors,
+|   raw
+| }
 |
 */
 
@@ -99,7 +99,7 @@ const normalizeError = (error) => {
 
   /*
   |--------------------------------------------------------------------------
-  | STRING
+  | STRING ERROR
   |--------------------------------------------------------------------------
   */
 
@@ -115,56 +115,76 @@ const normalizeError = (error) => {
 
   /*
   |--------------------------------------------------------------------------
-  | AXIOS RESPONSE
+  | POSSIBLE RESPONSE OBJECTS
   |--------------------------------------------------------------------------
   */
 
-  const response = error?.response;
-  const responseData = response?.data;
+  const response = error?.response ?? null;
+  const responseData = response?.data ?? null;
 
   /*
   |--------------------------------------------------------------------------
-  | HANDLE LARAVEL RESPONSE
+  | SUPPORT REDUX REJECT WITH VALUE
   |--------------------------------------------------------------------------
-  |
-  | Example:
-  |
-  | {
-  |   status: false,
-  |   code: 500,
-  |   message: "...",
-  |   data: null,
-  |   errors: {...}
-  | }
-  |
+  */
+
+  const data =
+    responseData ??
+    error?.data ??
+    error?.raw?.response?.data ??
+    error?.raw?.data ??
+    null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | MESSAGE
+  |--------------------------------------------------------------------------
   */
 
   const message =
-    responseData?.message ||
-    responseData?.error ||
-    responseData?.errors?.message ||
-    responseData?.data?.message ||
-    error?.message ||
-    error?.raw?.message ||
+    data?.message ??
+    data?.error ??
+    data?.errors?.message ??
+    data?.data?.message ??
+    error?.message ??
+    error?.raw?.message ??
     "An unexpected error occurred.";
+
+  /*
+  |--------------------------------------------------------------------------
+  | HTTP STATUS
+  |--------------------------------------------------------------------------
+  */
 
   const status =
     response?.status ??
-    responseData?.code ??
+    data?.code ??
     error?.status ??
     error?.raw?.status ??
     null;
 
+  /*
+  |--------------------------------------------------------------------------
+  | APPLICATION CODE
+  |--------------------------------------------------------------------------
+  */
+
   const code =
-    responseData?.code ??
+    data?.code ??
     error?.code ??
     error?.raw?.code ??
     response?.status ??
     null;
 
+  /*
+  |--------------------------------------------------------------------------
+  | VALIDATION / API ERRORS
+  |--------------------------------------------------------------------------
+  */
+
   const errors =
-    responseData?.errors ??
-    responseData?.data?.errors ??
+    data?.errors ??
+    data?.data?.errors ??
     error?.errors ??
     error?.raw?.errors ??
     null;
@@ -183,23 +203,28 @@ const normalizeError = (error) => {
 | TENANT ID HELPER
 |--------------------------------------------------------------------------
 |
-| Accepts:
+| Supports:
 |
-| removeTenant(2)
+| getTenant(12)
+| getTenant("12")
 |
-| removeTenant("2")
-|
-| removeTenant({
-|   id: 2
+| getTenant({
+|   id: 12
 | })
 |
-| removeTenant({
-|   tenant_id: 2
+| getTenant({
+|   tenant_id: 12
 | })
 |
-| removeTenant({
+| getTenant({
 |   tenant: {
-|     id: 2
+|     id: 12
+|   }
+| })
+|
+| getTenant({
+|   data: {
+|     id: 12
 |   }
 | })
 |
@@ -208,7 +233,7 @@ const normalizeError = (error) => {
 const getTenantId = (tenantOrId) => {
   /*
   |--------------------------------------------------------------------------
-  | NULL / UNDEFINED
+  | NULL
   |--------------------------------------------------------------------------
   */
 
@@ -233,7 +258,7 @@ const getTenantId = (tenantOrId) => {
       tenantOrId
     ).trim();
 
-    return value || null;
+    return value !== "" ? value : null;
   }
 
   /*
@@ -267,7 +292,7 @@ const getTenantId = (tenantOrId) => {
 
 /*
 |--------------------------------------------------------------------------
-| CREATE STANDARD ERROR
+| STANDARD ERROR
 |--------------------------------------------------------------------------
 */
 
@@ -277,14 +302,44 @@ const createTenantError = (
   code = 400,
   errors = null,
   raw = null
+) => ({
+  message,
+  status,
+  code,
+  errors,
+  raw,
+});
+
+/*
+|--------------------------------------------------------------------------
+| SAFE DISPATCH
+|--------------------------------------------------------------------------
+|
+| Centralizes:
+|
+| dispatch(thunk).unwrap()
+|
+| and normalizes every error.
+|
+*/
+
+const executeTenantAction = async (
+  dispatch,
+  thunk,
+  errorContext
 ) => {
-  return {
-    message,
-    status,
-    code,
-    errors,
-    raw,
-  };
+  try {
+    return await dispatch(thunk).unwrap();
+  } catch (error) {
+    const normalized = normalizeError(error);
+
+    console.error(
+      errorContext,
+      normalized
+    );
+
+    throw normalized;
+  }
 };
 
 /*
@@ -416,27 +471,17 @@ export const useTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | FETCH TENANTS
+  | FETCH ALL TENANTS
   |--------------------------------------------------------------------------
   */
 
   const getTenants = useCallback(
     async (params = {}) => {
-      try {
-        return await dispatch(
-          fetchTenants(params)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to fetch tenants:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        fetchTenants(params),
+        "Failed to fetch tenants:"
+      );
     },
     [dispatch]
   );
@@ -448,9 +493,9 @@ export const useTenant = () => {
   */
 
   const getTenant = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -458,21 +503,11 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          fetchTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to fetch tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        fetchTenant(id),
+        "Failed to fetch tenant:"
+      );
     },
     [dispatch]
   );
@@ -485,27 +520,20 @@ export const useTenant = () => {
 
   const addTenant = useCallback(
     async (tenantData) => {
-      if (!tenantData) {
+      if (
+        !tenantData ||
+        typeof tenantData !== "object"
+      ) {
         throw createTenantError(
           "Tenant data is required."
         );
       }
 
-      try {
-        return await dispatch(
-          createTenant(tenantData)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to create tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        createTenant(tenantData),
+        "Failed to create tenant:"
+      );
     },
     [dispatch]
   );
@@ -518,11 +546,11 @@ export const useTenant = () => {
 
   const editTenant = useCallback(
     async (
-      tenantId,
+      tenantOrId,
       tenantData
     ) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -530,38 +558,31 @@ export const useTenant = () => {
         );
       }
 
-      if (!tenantData) {
+      if (
+        !tenantData ||
+        typeof tenantData !== "object"
+      ) {
         throw createTenantError(
           "Tenant data is required."
         );
       }
 
-      try {
-        console.log(
-          "Updating tenant:",
-          {
-            tenantId: id,
-            tenantData,
-          }
-        );
+      console.log(
+        "Updating tenant:",
+        {
+          tenantId: id,
+          tenantData,
+        }
+      );
 
-        return await dispatch(
-          updateTenant({
-            tenantId: id,
-            tenantData,
-          })
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Tenant update failed:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        updateTenant({
+          tenantId: id,
+          tenantData,
+        }),
+        "Tenant update failed:"
+      );
     },
     [dispatch]
   );
@@ -570,194 +591,58 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   | DELETE TENANT
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | TenantTable.jsx remains unchanged.
-  |
-  | It can call:
-  |
-  | removeTenant(tenantId)
-  |
-  | OR:
-  |
-  | removeTenant(tenant)
-  |
   */
 
   const removeTenant = useCallback(
     async (tenantOrId) => {
-      /*
-      |--------------------------------------------------------------------------
-      | RESOLVE ID
-      |--------------------------------------------------------------------------
-      */
-
       const id =
-        getTenantId(
-          tenantOrId
-        );
-
-      /*
-      |--------------------------------------------------------------------------
-      | VALIDATE ID
-      |--------------------------------------------------------------------------
-      */
+        getTenantId(tenantOrId);
 
       if (!id) {
-        const normalized =
-          createTenantError(
-            "Unable to delete tenant because the tenant ID is missing.",
-            400,
-            400,
-            null,
-            tenantOrId
-          );
-
-        console.error(
-          "Tenant deletion failed:",
-          normalized
+        throw createTenantError(
+          "Unable to delete tenant because the tenant ID is missing.",
+          400,
+          400,
+          null,
+          tenantOrId
         );
-
-        throw normalized;
       }
-
-      /*
-      |--------------------------------------------------------------------------
-      | DEBUG
-      |--------------------------------------------------------------------------
-      */
 
       console.log(
         "Deleting tenant:",
         {
           tenantId: id,
-          tenant:
-            typeof tenantOrId ===
-              "object"
-              ? tenantOrId
-              : null,
         }
       );
 
-      /*
-      |--------------------------------------------------------------------------
-      | DISPATCH DELETE
-      |--------------------------------------------------------------------------
-      */
-
-      try {
-        const result =
-          await dispatch(
-            deleteTenant(id)
-          ).unwrap();
-
-        /*
-        |--------------------------------------------------------------------------
-        | SUCCESS
-        |--------------------------------------------------------------------------
-        |
-        | IMPORTANT:
-        |
-        | If Redux thunk resolves, this is a successful
-        | HTTP/API operation.
-        |
-        */
-
-        console.log(
-          "Tenant deleted successfully:",
-          {
-            tenantId: id,
-            result,
-          }
-        );
-
-        return result;
-      } catch (err) {
-        /*
-        |--------------------------------------------------------------------------
-        | NORMALIZE REAL ERROR
-        |--------------------------------------------------------------------------
-        */
-
-        const normalized =
-          normalizeError(err);
-
-        /*
-        |--------------------------------------------------------------------------
-        | IMPORTANT DEBUG
-        |--------------------------------------------------------------------------
-        |
-        | This will expose the actual Laravel error rather
-        | than only:
-        |
-        | "Failed to delete tenant."
-        |
-        */
-
-        console.error(
-          "Failed to delete tenant:",
-          {
-            tenantId: id,
-            message:
-              normalized.message,
-            status:
-              normalized.status,
-            code:
-              normalized.code,
-            errors:
-              normalized.errors,
-            raw:
-              normalized.raw,
-          }
-        );
-
-        /*
-        |--------------------------------------------------------------------------
-        | THROW TO TENANT TABLE
-        |--------------------------------------------------------------------------
-        |
-        | TenantTable.jsx can safely use:
-        |
-        | error.message
-        |
-        */
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        deleteTenant(id),
+        "Failed to delete tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | SEARCH
+  | SEARCH TENANTS
   |--------------------------------------------------------------------------
   */
 
   const search = useCallback(
     async (
-      searchValue,
+      searchValue = "",
       limit = 20
     ) => {
-      try {
-        return await dispatch(
-          searchTenants({
-            search: searchValue,
-            limit,
-          })
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Tenant search failed:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        searchTenants({
+          search: searchValue,
+          limit,
+        }),
+        "Tenant search failed:"
+      );
     },
     [dispatch]
   );
@@ -771,21 +656,11 @@ export const useTenant = () => {
   const getActiveTenants =
     useCallback(
       async () => {
-        try {
-          return await dispatch(
-            fetchActiveTenants()
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to fetch active tenants:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          fetchActiveTenants(),
+          "Failed to fetch active tenants:"
+        );
       },
       [dispatch]
     );
@@ -799,21 +674,11 @@ export const useTenant = () => {
   const getPendingTenants =
     useCallback(
       async () => {
-        try {
-          return await dispatch(
-            fetchPendingTenants()
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to fetch pending tenants:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          fetchPendingTenants(),
+          "Failed to fetch pending tenants:"
+        );
       },
       [dispatch]
     );
@@ -827,21 +692,11 @@ export const useTenant = () => {
   const getInactiveTenants =
     useCallback(
       async () => {
-        try {
-          return await dispatch(
-            fetchInactiveTenants()
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to fetch inactive tenants:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          fetchInactiveTenants(),
+          "Failed to fetch inactive tenants:"
+        );
       },
       [dispatch]
     );
@@ -855,35 +710,25 @@ export const useTenant = () => {
   const getBlacklistedTenants =
     useCallback(
       async () => {
-        try {
-          return await dispatch(
-            fetchBlacklistedTenants()
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to fetch blacklisted tenants:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          fetchBlacklistedTenants(),
+          "Failed to fetch blacklisted tenants:"
+        );
       },
       [dispatch]
     );
 
   /*
   |--------------------------------------------------------------------------
-  | ACTIVATE
+  | ACTIVATE TENANT
   |--------------------------------------------------------------------------
   */
 
   const activate = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -891,35 +736,25 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          activateTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to activate tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        activateTenant(id),
+        "Failed to activate tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | DEACTIVATE
+  | DEACTIVATE TENANT
   |--------------------------------------------------------------------------
   */
 
   const deactivate = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -927,35 +762,25 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          deactivateTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to deactivate tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        deactivateTenant(id),
+        "Failed to deactivate tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | BLACKLIST
+  | BLACKLIST TENANT
   |--------------------------------------------------------------------------
   */
 
   const blacklist = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -963,36 +788,26 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          blacklistTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to blacklist tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        blacklistTenant(id),
+        "Failed to blacklist tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | SET PENDING
+  | SET TENANT PENDING
   |--------------------------------------------------------------------------
   */
 
   const setPending =
     useCallback(
-      async (tenantId) => {
+      async (tenantOrId) => {
         const id =
-          getTenantId(tenantId);
+          getTenantId(tenantOrId);
 
         if (!id) {
           throw createTenantError(
@@ -1000,35 +815,25 @@ export const useTenant = () => {
           );
         }
 
-        try {
-          return await dispatch(
-            setTenantPending(id)
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to set tenant pending:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          setTenantPending(id),
+          "Failed to set tenant pending:"
+        );
       },
       [dispatch]
     );
 
   /*
   |--------------------------------------------------------------------------
-  | VERIFY
+  | VERIFY TENANT
   |--------------------------------------------------------------------------
   */
 
   const verify = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -1036,35 +841,25 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          verifyTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to verify tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        verifyTenant(id),
+        "Failed to verify tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | UNVERIFY
+  | UNVERIFY TENANT
   |--------------------------------------------------------------------------
   */
 
   const unverify = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -1072,35 +867,25 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          unverifyTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to unverify tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        unverifyTenant(id),
+        "Failed to unverify tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | RESTORE
+  | RESTORE TENANT
   |--------------------------------------------------------------------------
   */
 
   const restore = useCallback(
-    async (tenantId) => {
+    async (tenantOrId) => {
       const id =
-        getTenantId(tenantId);
+        getTenantId(tenantOrId);
 
       if (!id) {
         throw createTenantError(
@@ -1108,36 +893,26 @@ export const useTenant = () => {
         );
       }
 
-      try {
-        return await dispatch(
-          restoreTenant(id)
-        ).unwrap();
-      } catch (err) {
-        const normalized =
-          normalizeError(err);
-
-        console.error(
-          "Failed to restore tenant:",
-          normalized
-        );
-
-        throw normalized;
-      }
+      return executeTenantAction(
+        dispatch,
+        restoreTenant(id),
+        "Failed to restore tenant:"
+      );
     },
     [dispatch]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | FORCE DELETE
+  | FORCE DELETE TENANT
   |--------------------------------------------------------------------------
   */
 
   const forceDelete =
     useCallback(
-      async (tenantId) => {
+      async (tenantOrId) => {
         const id =
-          getTenantId(tenantId);
+          getTenantId(tenantOrId);
 
         if (!id) {
           throw createTenantError(
@@ -1145,56 +920,36 @@ export const useTenant = () => {
           );
         }
 
-        try {
-          return await dispatch(
-            forceDeleteTenant(id)
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to permanently delete tenant:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          forceDeleteTenant(id),
+          "Failed to permanently delete tenant:"
+        );
       },
       [dispatch]
     );
 
   /*
   |--------------------------------------------------------------------------
-  | STATISTICS
+  | TENANT STATISTICS
   |--------------------------------------------------------------------------
   */
 
   const getStatistics =
     useCallback(
       async () => {
-        try {
-          return await dispatch(
-            fetchTenantStatistics()
-          ).unwrap();
-        } catch (err) {
-          const normalized =
-            normalizeError(err);
-
-          console.error(
-            "Failed to fetch tenant statistics:",
-            normalized
-          );
-
-          throw normalized;
-        }
+        return executeTenantAction(
+          dispatch,
+          fetchTenantStatistics(),
+          "Failed to fetch tenant statistics:"
+        );
       },
       [dispatch]
     );
 
   /*
   |--------------------------------------------------------------------------
-  | SET TENANT
+  | SELECT TENANT
   |--------------------------------------------------------------------------
   */
 
@@ -1209,7 +964,7 @@ export const useTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | CLEAR TENANT
+  | CLEAR SELECTED TENANT
   |--------------------------------------------------------------------------
   */
 
@@ -1221,7 +976,7 @@ export const useTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | FILTERS
+  | UPDATE FILTERS
   |--------------------------------------------------------------------------
   */
 
@@ -1230,32 +985,54 @@ export const useTenant = () => {
       (newFilters) => {
         dispatch(
           setTenantFilters(
-            newFilters
+            newFilters ?? {}
           )
         );
       },
       [dispatch]
     );
 
+  /*
+  |--------------------------------------------------------------------------
+  | UPDATE SEARCH
+  |--------------------------------------------------------------------------
+  */
+
   const updateSearch =
     useCallback(
       (value) => {
         dispatch(
-          setTenantSearch(value)
+          setTenantSearch(
+            value ?? ""
+          )
         );
       },
       [dispatch]
     );
 
+  /*
+  |--------------------------------------------------------------------------
+  | UPDATE STATUS
+  |--------------------------------------------------------------------------
+  */
+
   const updateStatus =
     useCallback(
       (status) => {
         dispatch(
-          setTenantStatus(status)
+          setTenantStatus(
+            status ?? ""
+          )
         );
       },
       [dispatch]
     );
+
+  /*
+  |--------------------------------------------------------------------------
+  | CHANGE PAGE
+  |--------------------------------------------------------------------------
+  */
 
   const changePage =
     useCallback(
@@ -1267,17 +1044,27 @@ export const useTenant = () => {
       [dispatch]
     );
 
+  /*
+  |--------------------------------------------------------------------------
+  | CHANGE PER PAGE
+  |--------------------------------------------------------------------------
+  */
+
   const changePerPage =
     useCallback(
       (perPage) => {
         dispatch(
-          setTenantPerPage(
-            perPage
-          )
+          setTenantPerPage(perPage)
         );
       },
       [dispatch]
     );
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESET FILTERS
+  |--------------------------------------------------------------------------
+  */
 
   const resetFilters =
     useCallback(() => {
@@ -1327,7 +1114,7 @@ export const useTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | RETURN
+  | RETURN API
   |--------------------------------------------------------------------------
   */
 
@@ -1426,7 +1213,6 @@ export const useTenant = () => {
     |--------------------------------------------------------------------------
     | VERIFICATION
     |--------------------------------------------------------------------------
-
     */
 
     verify,
@@ -1483,12 +1269,14 @@ export const useTenant = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | ERROR HELPER
+    | UTILITY
     |--------------------------------------------------------------------------
     */
 
     normalizeError,
+    getTenantId,
   };
 };
 
 export default useTenant;
+
