@@ -15,6 +15,23 @@ class TenantSeeder extends Seeder
      */
     public function run(): void
     {
+        /*
+        |--------------------------------------------------------------------------
+        | Tenant Seed Data
+        |--------------------------------------------------------------------------
+        |
+        | IMPORTANT:
+        |
+        | `status` is the single source of truth for tenant activity.
+        |
+        | There is NO `is_active` database column.
+        |
+        | The Tenant model exposes `is_active` as a computed attribute:
+        |
+        |     status === active
+        |
+        */
+
         $tenants = [
 
             [
@@ -489,38 +506,24 @@ class TenantSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Synchronize Active State
-            |--------------------------------------------------------------------------
-            |
-            | is_active is now stored in the database.
-            |
-            | ACTIVE    => true
-            | PENDING   => false
-            | INACTIVE  => false
-            | BLACKLIST => false
-            |
-            */
-
-            $data['is_active'] =
-                $data['status'] === Tenant::STATUS_ACTIVE;
-
-            /*
-            |--------------------------------------------------------------------------
             | Find Existing User
             |--------------------------------------------------------------------------
+            |
+            | Users are matched by email.
+            |
             */
 
             $user = User::withTrashed()
                 ->where('email', $data['email'])
                 ->first();
 
-            if ($user) {
+            /*
+            |--------------------------------------------------------------------------
+            | Create Or Restore User
+            |--------------------------------------------------------------------------
+            */
 
-                /*
-                |--------------------------------------------------------------------------
-                | Restore User If Soft Deleted
-                |--------------------------------------------------------------------------
-                */
+            if ($user) {
 
                 if (
                     method_exists($user, 'trashed') &&
@@ -529,12 +532,6 @@ class TenantSeeder extends Seeder
                     $user->restore();
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Update User
-                |--------------------------------------------------------------------------
-                */
-
                 $user->update([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
@@ -542,12 +539,6 @@ class TenantSeeder extends Seeder
                 ]);
 
             } else {
-
-                /*
-                |--------------------------------------------------------------------------
-                | Create User
-                |--------------------------------------------------------------------------
-                */
 
                 $user = User::create([
                     'first_name' => $data['first_name'],
@@ -570,21 +561,46 @@ class TenantSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Create / Update Tenant
+            | Create Or Update Tenant
+            |--------------------------------------------------------------------------
+            |
+            | IMPORTANT:
+            |
+            | Do NOT add:
+            |
+            |     'is_active' => ...
+            |
+            | because `is_active` is NOT a database column.
+            |
+            | Tenant activity is controlled exclusively by `status`.
+            |
+            */
+
+            $tenant = Tenant::withTrashed()
+                ->updateOrCreate(
+                    [
+                        'tenant_number' => $data['tenant_number'],
+                    ],
+                    array_merge(
+                        $data,
+                        [
+                            'user_id' => $user->id,
+                        ]
+                    )
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Restore Tenant If Soft Deleted
             |--------------------------------------------------------------------------
             */
 
-            Tenant::withTrashed()->updateOrCreate(
-                [
-                    'tenant_number' => $data['tenant_number'],
-                ],
-                array_merge(
-                    $data,
-                    [
-                        'user_id' => $user->id,
-                    ]
-                )
-            );
+            if (
+                method_exists($tenant, 'trashed') &&
+                $tenant->trashed()
+            ) {
+                $tenant->restore();
+            }
         }
 
         /*
@@ -601,5 +617,10 @@ class TenantSeeder extends Seeder
         $this->command?->info(
             'Tenant login password: Password@123'
         );
+
+        $this->command?->info(
+            'Tenant activity is derived from the status field; no is_active column is used.'
+        );
     }
 }
+?>
