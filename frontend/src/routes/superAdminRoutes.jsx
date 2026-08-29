@@ -1,4 +1,4 @@
-import { Route, Navigate } from "react-router-dom";
+import { Navigate, Route } from "react-router-dom";
 
 /*
 |--------------------------------------------------------------------------
@@ -52,6 +52,21 @@ import RoleRequestDetail from "../modules/super-admin/role-requests/RoleRequestD
 
 /*
 |--------------------------------------------------------------------------
+| USER ACTIVITY
+|--------------------------------------------------------------------------
+*/
+import UserActivityList from "../modules/super-admin/activities/UserActivityList";
+import UserActivityDetail from "../modules/super-admin/activities/UserActivityDetail";
+
+/*
+|--------------------------------------------------------------------------
+| PROFILE
+|--------------------------------------------------------------------------
+*/
+import ProfileUser from "../modules/super-admin/profile/ProfileUser";
+
+/*
+|--------------------------------------------------------------------------
 | PROPERTY TYPES
 |--------------------------------------------------------------------------
 */
@@ -92,6 +107,20 @@ import PropertyDetails from "../modules/super-admin/properties/PropertyDetails";
 
 /*
 |--------------------------------------------------------------------------
+| PROPERTY FEATURE ASSIGNMENTS
+|--------------------------------------------------------------------------
+*/
+import PropertyFeatureIndex from "../modules/super-admin/properties/PropertyFeatureIndex";
+
+/*
+|--------------------------------------------------------------------------
+| PROPERTY AMENITY ASSIGNMENTS
+|--------------------------------------------------------------------------
+*/
+import PropertyAmenityIndex from "../modules/super-admin/properties/PropertyAmenityIndex";
+
+/*
+|--------------------------------------------------------------------------
 | PROPERTY AMENITIES
 |--------------------------------------------------------------------------
 */
@@ -99,29 +128,6 @@ import AmenityList from "../modules/super-admin/Amenities/AmenityList";
 import AmenityCreate from "../modules/super-admin/Amenities/AmenityCreate";
 import AmenityEdit from "../modules/super-admin/Amenities/AmenityEdit";
 import AmenityShow from "../modules/super-admin/Amenities/AmenityShow";
-
-/*
-|--------------------------------------------------------------------------
-| USER ACTIVITY
-|--------------------------------------------------------------------------
-*/
-import UserActivityList from "../modules/super-admin/activities/UserActivityList";
-import UserActivityDetail from "../modules/super-admin/activities/UserActivityDetail";
-
-/*
-|--------------------------------------------------------------------------
-| PROPERTY ASSIGNMENTS
-|--------------------------------------------------------------------------
-*/
-import PropertyFeatureIndex from "../modules/super-admin/properties/PropertyFeatureIndex";
-import PropertyAmenityIndex from "../modules/super-admin/properties/PropertyAmenityIndex";
-
-/*
-|--------------------------------------------------------------------------
-| PROFILE
-|--------------------------------------------------------------------------
-*/
-import ProfileUser from "../modules/super-admin/profile/ProfileUser";
 
 /*
 |--------------------------------------------------------------------------
@@ -196,6 +202,19 @@ import {
   TenantList,
 } from "../modules/super-admin/tenants";
 
+/*
+|--------------------------------------------------------------------------
+| TENANCIES
+|--------------------------------------------------------------------------
+*/
+import {
+  AssignUnit,
+  CreateTenancy,
+  EditTenancy,
+  TenancyDetails,
+  TenancyList,
+  TenancyStatistics,
+} from "../modules/super-admin/tenancies";
 
 /*
 |--------------------------------------------------------------------------
@@ -206,10 +225,9 @@ import {
 const SuperAdminRoutes = () => {
   return (
     <>
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           DEFAULT
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         index
@@ -221,10 +239,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           DASHBOARD
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="dashboard"
@@ -235,10 +252,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           USERS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="users"
@@ -267,10 +283,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROFILE
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="profile"
@@ -281,10 +296,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           ROLES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="roles"
@@ -322,10 +336,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           ROLE REQUESTS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="role-requests"
@@ -345,10 +358,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           USER ACTIVITY
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="activities"
@@ -368,10 +380,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PERMISSIONS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="permissions"
@@ -400,10 +411,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY TYPES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-types"
@@ -441,10 +451,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY FEATURES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-features"
@@ -482,10 +491,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY CATEGORIES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-categories"
@@ -523,10 +531,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTIES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="properties"
@@ -564,10 +571,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY FEATURE ASSIGNMENTS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-feature-assignments"
@@ -578,10 +584,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY AMENITY ASSIGNMENTS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-amenity-assignments"
@@ -592,51 +597,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
-          UNITS
-      ------------------------------------------------------------------ */}
-
-      <Route
-        path="units"
-        element={
-          <PermissionGuard permission="units.view">
-            <UnitList />
-          </PermissionGuard>
-        }
-      />
-
-      <Route
-        path="units/create"
-        element={
-          <PermissionGuard permission="units.create">
-            <CreateUnit />
-          </PermissionGuard>
-        }
-      />
-
-      <Route
-        path="units/edit/:id"
-        element={
-          <PermissionGuard permission="units.edit">
-            <EditUnit />
-          </PermissionGuard>
-        }
-      />
-
-      <Route
-        path="units/:id"
-        element={
-          <PermissionGuard permission="units.view">
-            <UnitDetails />
-          </PermissionGuard>
-        }
-      />
-
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY AMENITIES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-amenities"
@@ -674,10 +637,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY REVIEWS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-reviews"
@@ -724,10 +686,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY VISITS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-visits"
@@ -756,10 +717,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY FAVORITES
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-favorites"
@@ -788,10 +748,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           PROPERTY ANALYTICS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="property-analytics"
@@ -802,10 +761,9 @@ const SuperAdminRoutes = () => {
         }
       />
 
-
-      {/* ------------------------------------------------------------------
+      {/* ==================================================================
           APARTMENTS
-      ------------------------------------------------------------------ */}
+      ================================================================== */}
 
       <Route
         path="apartments"
@@ -852,11 +810,50 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* ------------------------------------------------------------------
-    TENANTS
------------------------------------------------------------------- */}
+      {/* ==================================================================
+          UNITS
+      ================================================================== */}
 
-      {/* Tenant List */}
+      <Route
+        path="units"
+        element={
+          <PermissionGuard permission="units.view">
+            <UnitList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="units/create"
+        element={
+          <PermissionGuard permission="units.create">
+            <CreateUnit />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="units/:id/edit"
+        element={
+          <PermissionGuard permission="units.edit">
+            <EditUnit />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="units/:id"
+        element={
+          <PermissionGuard permission="units.view">
+            <UnitDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
+          TENANTS
+      ================================================================== */}
+
       <Route
         path="tenants"
         element={
@@ -866,7 +863,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Create Tenant */}
       <Route
         path="tenants/create"
         element={
@@ -876,17 +872,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Tenant Details */}
-      <Route
-        path="tenants/:id"
-        element={
-          <PermissionGuard permission="tenants.view">
-            <TenantDetails />
-          </PermissionGuard>
-        }
-      />
-
-      {/* Edit Tenant */}
       <Route
         path="tenants/:id/edit"
         element={
@@ -896,9 +881,83 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      <Route
+        path="tenants/:id"
+        element={
+          <PermissionGuard permission="tenants.view">
+            <TenantDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
+          TENANCIES
+      ================================================================== */}
+
+      {/* Tenancy List */}
+      <Route
+        path="tenancies"
+        element={
+          <PermissionGuard permission="tenancies.view">
+            <TenancyList />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Create Tenancy */}
+      <Route
+        path="tenancies/create"
+        element={
+          <PermissionGuard permission="tenancies.create">
+            <CreateTenancy />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Tenancy Statistics
+          IMPORTANT:
+          This route must come before tenancies/:id
+      */}
+      <Route
+        path="tenancies/statistics"
+        element={
+          <PermissionGuard permission="tenancies.view">
+            <TenancyStatistics />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Edit Tenancy */}
+      <Route
+        path="tenancies/:id/edit"
+        element={
+          <PermissionGuard permission="tenancies.edit">
+            <EditTenancy />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Assign Unit */}
+      <Route
+        path="tenancies/:id/assign-unit"
+        element={
+          <PermissionGuard permission="tenancies.update">
+            <AssignUnit />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Tenancy Details */}
+      <Route
+        path="tenancies/:id"
+        element={
+          <PermissionGuard permission="tenancies.view">
+            <TenancyDetails />
+          </PermissionGuard>
+        }
+      />
     </>
   );
 };
-
 
 export default SuperAdminRoutes;
