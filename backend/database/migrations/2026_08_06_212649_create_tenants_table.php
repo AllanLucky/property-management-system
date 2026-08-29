@@ -24,34 +24,34 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | User / Tenant Relationship
+            | Tenant Identification
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('tenant_number')
+                ->unique();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | User Relationship
             |--------------------------------------------------------------------------
             |
-            | A tenant may optionally be connected to a user account.
+            | Each tenant can be linked to one user account.
             |
-            | This allows:
+            | The user_id is nullable here to allow existing/imported tenant
+            | records to exist before their user account is created.
             |
-            | - Tenants without user accounts
-            | - Creating a tenant before assigning a user
-            | - Removing a user without deleting the tenant
+            | New tenants should always be created with a valid user_id
+            | from the TenantController/service.
             |
             */
 
             $table->foreignId('user_id')
                 ->nullable()
+                ->unique()
                 ->constrained('users')
-                ->cascadeOnUpdate()
                 ->nullOnDelete();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Identification
-            |--------------------------------------------------------------------------
-            */
-
-            $table->string('tenant_number', 50)
-                ->unique();
 
 
             /*
@@ -60,72 +60,77 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('first_name', 100);
+            $table->string('first_name');
 
-            $table->string('last_name', 100);
+            $table->string('last_name');
 
-            $table->string('other_names', 150)
+            $table->string('other_names')
                 ->nullable();
 
-            $table->string('email', 150)
-                ->nullable();
+            $table->string('email')
+                ->nullable()
+                ->index();
 
-            $table->string('phone', 30)
+            $table->string('phone')
                 ->unique();
 
             $table->date('date_of_birth')
                 ->nullable();
 
-            $table->string('gender', 30)
+            $table->enum('gender', [
+                'male',
+                'female',
+                'other',
+            ])->nullable();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Identification
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('id_number')
+                ->nullable()
+                ->index();
+
+            $table->string('passport_number')
+                ->nullable()
+                ->index();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Emergency Contact
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('emergency_contact_name')
+                ->nullable();
+
+            $table->string('emergency_contact_phone')
+                ->nullable();
+
+            $table->string('emergency_contact_relationship')
                 ->nullable();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Identification Documents
+            | Address Information
             |--------------------------------------------------------------------------
             */
 
-            $table->string('id_number', 100)
-                ->nullable()
-                ->unique();
-
-            $table->string('passport_number', 100)
-                ->nullable()
-                ->unique();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Location Information
-            |--------------------------------------------------------------------------
-            |
-            | Country
-            |     └── Region
-            |           └── County
-            |                 └── City
-            |                       └── Area
-            |                             └── Postal Code
-            |                                   └── Address
-            |
-            */
-
-            $table->string('country', 100)
+            $table->string('country')
                 ->default('Kenya');
 
-            $table->string('region', 150)
+            $table->string('county')
                 ->nullable();
 
-            $table->string('county', 150)
+            $table->string('city')
                 ->nullable();
 
-            $table->string('city', 150)
-                ->nullable();
-
-            $table->string('area', 150)
-                ->nullable();
-
-            $table->string('postal_code', 30)
+            $table->string('postal_code')
                 ->nullable();
 
             $table->text('address')
@@ -138,29 +143,13 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('occupation', 150)
+            $table->string('occupation')
                 ->nullable();
 
-            $table->string('employer', 200)
+            $table->string('employer')
                 ->nullable();
 
-            $table->decimal('monthly_income', 15, 2)
-                ->nullable();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Emergency Contact
-            |--------------------------------------------------------------------------
-            */
-
-            $table->string('emergency_contact_name', 150)
-                ->nullable();
-
-            $table->string('emergency_contact_phone', 30)
-                ->nullable();
-
-            $table->string('emergency_contact_relationship', 100)
+            $table->decimal('monthly_income', 12, 2)
                 ->nullable();
 
 
@@ -207,50 +196,39 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Status
             |--------------------------------------------------------------------------
-            |
-            | `status` describes the tenant's business/lifecycle state.
-            |
-            | Supported values:
-            |
-            | - pending
-            | - active
-            | - inactive
-            | - blacklisted
-            |
-            | Example:
-            |
-            |     status = active
-            |     status = inactive
-            |
             */
 
-            $table->string('status', 30)
+            $table->enum('status', [
+                'active',
+                'inactive',
+                'blacklisted',
+                'pending',
+            ])
                 ->default('pending')
                 ->index();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Tenant Active State
+            | Active Flag
             |--------------------------------------------------------------------------
             |
-            | `is_active` provides a boolean representation of whether the
-            | tenant record is currently active.
+            | This flag is separate from the tenant status.
             |
-            | Expected synchronization:
+            | status:
+            |   - active
+            |   - inactive
+            |   - pending
+            |   - blacklisted
             |
-            |     active      => true
-            |     inactive    => false
-            |     pending     => false
-            |     blacklisted => false
-            |
-            | The Tenant model/service layer should keep this value synchronized
-            | with the tenant status.
+            | is_active:
+            |   - true  = tenant record is enabled
+            |   - false = tenant record is disabled
             |
             */
 
             $table->boolean('is_active')
-                ->default(false)
+                ->default(true)
                 ->index();
 
 
@@ -266,88 +244,37 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Timestamps
+            | Timestamps & Soft Deletes
             |--------------------------------------------------------------------------
             */
 
             $table->timestamps();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Soft Deletes
-            |--------------------------------------------------------------------------
-            */
 
             $table->softDeletes();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Search / Filtering Indexes
-            |--------------------------------------------------------------------------
-            |
-            | These indexes support tenant searching, filtering and reporting.
-            |
-            */
-
-            $table->index('first_name');
-
-            $table->index('last_name');
-
-            $table->index('email');
-
-            $table->index('country');
-
-            $table->index('region');
-
-            $table->index('county');
-
-            $table->index('city');
-
-            $table->index('area');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Composite Location Index
+            | Composite Indexes
             |--------------------------------------------------------------------------
             */
 
-            $table->index(
-                [
-                    'region',
-                    'county',
-                    'city',
-                    'area',
-                ],
-                'tenants_location_index'
-            );
+            $table->index([
+                'first_name',
+                'last_name',
+            ]);
 
+            $table->index([
+                'status',
+                'is_active',
+            ]);
 
-            /*
-            |--------------------------------------------------------------------------
-            | Status + Active State Index
-            |--------------------------------------------------------------------------
-            |
-            | Useful for queries such as:
-            |
-            | Tenant::where('status', 'active')
-            |     ->where('is_active', true)
-            |     ->get();
-            |
-            */
-
-            $table->index(
-                [
-                    'status',
-                    'is_active',
-                ],
-                'tenants_status_active_index'
-            );
+            $table->index([
+                'is_verified',
+                'is_active',
+            ]);
         });
     }
-
 
     /**
      * Reverse the migrations.
@@ -357,4 +284,3 @@ return new class extends Migration
         Schema::dropIfExists('tenants');
     }
 };
-
