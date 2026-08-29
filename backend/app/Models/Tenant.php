@@ -17,9 +17,36 @@ class Tenant extends Model
     */
 
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_INACTIVE = 'inactive';
+
     public const STATUS_BLACKLISTED = 'blacklisted';
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Supported Tenant Statuses
+    |--------------------------------------------------------------------------
+    |
+    | Used by:
+    |
+    | - Form Request validation
+    | - Controllers
+    | - Services
+    | - Filters
+    | - API validation
+    |
+    */
+
+    public const STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_ACTIVE,
+        self::STATUS_INACTIVE,
+        self::STATUS_BLACKLISTED,
+    ];
+
 
     /*
     |--------------------------------------------------------------------------
@@ -28,6 +55,7 @@ class Tenant extends Model
     */
 
     protected $table = 'tenants';
+
 
     /*
     |--------------------------------------------------------------------------
@@ -143,6 +171,7 @@ class Tenant extends Model
         'notes',
     ];
 
+
     /*
     |--------------------------------------------------------------------------
     | Attribute Casting
@@ -150,6 +179,7 @@ class Tenant extends Model
     */
 
     protected $casts = [
+
         'date_of_birth' => 'date',
 
         'monthly_income' => 'decimal:2',
@@ -167,6 +197,7 @@ class Tenant extends Model
         'deleted_at' => 'datetime',
     ];
 
+
     /*
     |--------------------------------------------------------------------------
     | Hidden Attributes
@@ -174,6 +205,7 @@ class Tenant extends Model
     */
 
     protected $hidden = [];
+
 
     /*
     |--------------------------------------------------------------------------
@@ -184,6 +216,7 @@ class Tenant extends Model
     protected $appends = [
         'full_name',
     ];
+
 
     /*
     |--------------------------------------------------------------------------
@@ -204,6 +237,7 @@ class Tenant extends Model
         );
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | User Relationship
@@ -215,8 +249,9 @@ class Tenant extends Model
 
     public function user()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'user_id');
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -226,8 +261,12 @@ class Tenant extends Model
 
     public function tenancies()
     {
-        return $this->hasMany(Tenancy::class, 'tenant_id');
+        return $this->hasMany(
+            Tenancy::class,
+            'tenant_id'
+        );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -237,9 +276,15 @@ class Tenant extends Model
 
     public function activeTenancy()
     {
-        return $this->hasOne(Tenancy::class, 'tenant_id')
-            ->where('status', Tenancy::STATUS_ACTIVE);
+        return $this->hasOne(
+            Tenancy::class,
+            'tenant_id'
+        )->where(
+            'status',
+            Tenancy::STATUS_ACTIVE
+        );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -252,6 +297,7 @@ class Tenant extends Model
         return $query->where('is_active', true);
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Scope: Inactive
@@ -263,6 +309,7 @@ class Tenant extends Model
         return $query->where('is_active', false);
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Scope: Pending
@@ -271,8 +318,12 @@ class Tenant extends Model
 
     public function scopePending($query)
     {
-        return $query->where('status', self::STATUS_PENDING);
+        return $query->where(
+            'status',
+            self::STATUS_PENDING
+        );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -282,8 +333,12 @@ class Tenant extends Model
 
     public function scopeBlacklisted($query)
     {
-        return $query->where('status', self::STATUS_BLACKLISTED);
+        return $query->where(
+            'status',
+            self::STATUS_BLACKLISTED
+        );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -293,8 +348,12 @@ class Tenant extends Model
 
     public function scopeVerified($query)
     {
-        return $query->where('is_verified', true);
+        return $query->where(
+            'is_verified',
+            true
+        );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -304,8 +363,27 @@ class Tenant extends Model
 
     public function scopeUnverified($query)
     {
-        return $query->where('is_verified', false);
+        return $query->where(
+            'is_verified',
+            false
+        );
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scope: Status
+    |--------------------------------------------------------------------------
+    */
+
+    public function scopeStatus($query, string $status)
+    {
+        return $query->where(
+            'status',
+            $status
+        );
+    }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -318,25 +396,30 @@ class Tenant extends Model
         return (bool) $this->is_active;
     }
 
+
     public function isInactive(): bool
     {
         return ! $this->is_active;
     }
+
 
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;
     }
 
+
     public function isBlacklisted(): bool
     {
         return $this->status === self::STATUS_BLACKLISTED;
     }
 
+
     public function isVerified(): bool
     {
         return (bool) $this->is_verified;
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -352,6 +435,7 @@ class Tenant extends Model
         ]);
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Deactivate Tenant
@@ -365,6 +449,7 @@ class Tenant extends Model
             'is_active' => false,
         ]);
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -380,6 +465,22 @@ class Tenant extends Model
         ]);
     }
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Set Pending
+    |--------------------------------------------------------------------------
+    */
+
+    public function setPending(): bool
+    {
+        return $this->update([
+            'status' => self::STATUS_PENDING,
+            'is_active' => false,
+        ]);
+    }
+
+
     /*
     |--------------------------------------------------------------------------
     | Verify Tenant
@@ -394,6 +495,7 @@ class Tenant extends Model
         ]);
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Unverify Tenant
@@ -406,5 +508,56 @@ class Tenant extends Model
             'is_verified' => false,
             'verified_at' => null,
         ]);
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Synchronize Active Flag With Status
+    |--------------------------------------------------------------------------
+    |
+    | Keeps is_active consistent with the tenant status.
+    |
+    */
+
+    public function syncActiveStatus(): bool
+    {
+        $isActive = $this->status === self::STATUS_ACTIVE;
+
+        if ((bool) $this->is_active === $isActive) {
+            return true;
+        }
+
+        return $this->update([
+            'is_active' => $isActive,
+        ]);
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get Status Label
+    |--------------------------------------------------------------------------
+    */
+
+    public function getStatusLabelAttribute(): string
+    {
+        return match ($this->status) {
+            self::STATUS_ACTIVE => 'Active',
+
+            self::STATUS_INACTIVE => 'Inactive',
+
+            self::STATUS_PENDING => 'Pending',
+
+            self::STATUS_BLACKLISTED => 'Blacklisted',
+
+            default => ucfirst(
+                str_replace(
+                    '_',
+                    ' ',
+                    (string) $this->status
+                )
+            ),
+        };
     }
 }
