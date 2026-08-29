@@ -4,6 +4,8 @@ import {
   CalendarDays,
   CheckCircle2,
   Edit3,
+  ExternalLink,
+  FileCheck2,
   FileText,
   Home,
   Loader2,
@@ -14,11 +16,27 @@ import {
   Wallet,
   XCircle,
   Trash2,
+  Clock3,
+  CreditCard,
+  BadgeCheck,
 } from "lucide-react";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { useNavigate, useParams } from "react-router-dom";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  useDispatch,
+  useSelector,
+} from "react-redux";
+
+import {
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 
 import {
   activateTenancy,
@@ -251,7 +269,9 @@ const getTenancyStatus = (tenancy) => {
   }
 
   if (tenancy.tenancy_status) {
-    return String(tenancy.tenancy_status).toLowerCase();
+    return String(
+      tenancy.tenancy_status
+    ).toLowerCase();
   }
 
   if (
@@ -287,6 +307,16 @@ const getStatusLabel = (status) => {
     .join(" ");
 };
 
+const getPaymentFrequencyLabel = (
+  frequency
+) => {
+  if (!frequency) {
+    return "—";
+  }
+
+  return getStatusLabel(frequency);
+};
+
 /*
 |--------------------------------------------------------------------------
 | STATUS BADGE
@@ -297,26 +327,59 @@ const StatusBadge = ({ status }) => {
   const normalized = String(status || "")
     .toLowerCase();
 
-  const active =
-    normalized === "active";
+  let classes =
+    "border-gray-200 bg-gray-50 text-gray-600";
 
-  const inactive =
-    normalized === "inactive" ||
+  let icon = (
+    <Clock3 className="h-3.5 w-3.5" />
+  );
+
+  if (normalized === "active") {
+    classes =
+      "border-green-200 bg-green-50 text-green-700";
+
+    icon = (
+      <CheckCircle2 className="h-3.5 w-3.5" />
+    );
+  }
+
+  if (normalized === "pending") {
+    classes =
+      "border-amber-200 bg-amber-50 text-amber-700";
+
+    icon = (
+      <Clock3 className="h-3.5 w-3.5" />
+    );
+  }
+
+  if (normalized === "expired") {
+    classes =
+      "border-orange-200 bg-orange-50 text-orange-700";
+
+    icon = (
+      <Clock3 className="h-3.5 w-3.5" />
+    );
+  }
+
+  if (
     normalized === "terminated" ||
     normalized === "cancelled" ||
-    normalized === "expired";
+    normalized === "inactive"
+  ) {
+    classes =
+      "border-red-200 bg-red-50 text-red-700";
 
-  const classes = active
-    ? "border-green-200 bg-green-50 text-green-700"
-    : inactive
-      ? "border-gray-200 bg-gray-50 text-gray-600"
-      : "border-amber-200 bg-amber-50 text-amber-700";
+    icon = (
+      <XCircle className="h-3.5 w-3.5" />
+    );
+  }
 
   return (
     <span
       className={`
         inline-flex
         items-center
+        gap-1.5
         rounded-full
         border
         px-2.5
@@ -326,7 +389,46 @@ const StatusBadge = ({ status }) => {
         ${classes}
       `}
     >
+      {icon}
       {getStatusLabel(status)}
+    </span>
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| ACTIVE BADGE
+|--------------------------------------------------------------------------
+*/
+
+const ActiveBadge = ({ active }) => {
+  const isActive = normalizeBoolean(active);
+
+  return (
+    <span
+      className={`
+        inline-flex
+        items-center
+        gap-1.5
+        rounded-full
+        border
+        px-2.5
+        py-1
+        text-xs
+        font-semibold
+        ${isActive
+          ? "border-green-200 bg-green-50 text-green-700"
+          : "border-gray-200 bg-gray-50 text-gray-600"
+        }
+      `}
+    >
+      {isActive ? (
+        <CheckCircle2 className="h-3.5 w-3.5" />
+      ) : (
+        <XCircle className="h-3.5 w-3.5" />
+      )}
+
+      {isActive ? "Active" : "Inactive"}
     </span>
   );
 };
@@ -665,9 +767,7 @@ const TenancyDetails = () => {
     try {
       if (isActive) {
         await dispatch(
-          deactivateTenancy(
-            tenancy.id
-          )
+          deactivateTenancy(tenancy.id)
         ).unwrap();
 
         dispatch(
@@ -679,9 +779,7 @@ const TenancyDetails = () => {
         );
       } else {
         await dispatch(
-          activateTenancy(
-            tenancy.id
-          )
+          activateTenancy(tenancy.id)
         ).unwrap();
 
         dispatch(
@@ -702,8 +800,6 @@ const TenancyDetails = () => {
             getErrorMessage(actionError),
         })
       );
-
-      throw actionError;
     } finally {
       setActionLoading(false);
     }
@@ -752,8 +848,6 @@ const TenancyDetails = () => {
             getErrorMessage(deleteError),
         })
       );
-
-      throw deleteError;
     } finally {
       setActionLoading(false);
     }
@@ -994,6 +1088,23 @@ const TenancyDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | AGREEMENT
+  |--------------------------------------------------------------------------
+  */
+
+  const agreementFile =
+    tenancy.agreement_file ||
+    tenancy.agreement_url ||
+    tenancy.agreement?.url ||
+    null;
+
+  const agreementPublicId =
+    tenancy.agreement_public_id ||
+    tenancy.agreement?.public_id ||
+    null;
+
+  /*
+  |--------------------------------------------------------------------------
   | MAIN RENDER
   |--------------------------------------------------------------------------
   */
@@ -1035,7 +1146,8 @@ const TenancyDetails = () => {
           </div>
 
           <p className="mt-1 text-sm text-gray-500">
-            View complete tenancy information and rental details.
+            View complete tenancy information,
+            rental details and lease configuration.
           </p>
         </div>
 
@@ -1158,7 +1270,7 @@ const TenancyDetails = () => {
         </div>
       )}
 
-      {/* TENANCY SUMMARY */}
+      {/* SUMMARY */}
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="p-5 sm:p-6">
@@ -1185,7 +1297,17 @@ const TenancyDetails = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-5">
+              <div>
+                <p className="text-xs text-gray-400">
+                  Status
+                </p>
+
+                <div className="mt-1">
+                  <StatusBadge status={status} />
+                </div>
+              </div>
+
               <div>
                 <p className="text-xs text-gray-400">
                   Start Date
@@ -1226,15 +1348,17 @@ const TenancyDetails = () => {
 
               <div>
                 <p className="text-xs text-gray-400">
-                  Deposit
+                  Active
                 </p>
 
-                <p className="mt-1 text-sm font-semibold text-gray-900">
-                  {formatCurrency(
-                    tenancy.deposit_amount ??
-                    tenancy.deposit
-                  )}
-                </p>
+                <div className="mt-1">
+                  <ActiveBadge
+                    active={
+                      tenancy.is_active ??
+                      isActive
+                    }
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1383,17 +1507,76 @@ const TenancyDetails = () => {
               unit?.id
             }
           />
+
+          <InfoItem
+            icon={<Home className="h-4 w-4" />}
+            label="Unit Number"
+            value={
+              unit?.unit_number ||
+              tenancy.unit_number
+            }
+          />
+
+          <InfoItem
+            icon={<Home className="h-4 w-4" />}
+            label="Unit Type"
+            value={
+              getObjectName(unit?.type) ||
+              unit?.unit_type ||
+              unit?.type_name
+            }
+          />
+
+          <InfoItem
+            icon={<Wallet className="h-4 w-4" />}
+            label="Unit Price"
+            value={formatCurrency(
+              unit?.price
+            )}
+          />
         </div>
       </DetailsSection>
 
-      {/* RENTAL */}
+      {/* TENANCY / LEASE CONFIGURATION */}
 
       <DetailsSection
-        icon={<Wallet className="h-5 w-5" />}
-        title="Rental Information"
-        description="Financial and lease information for this tenancy."
+        icon={<FileCheck2 className="h-5 w-5" />}
+        title="Tenancy & Lease Configuration"
+        description="Core tenancy identification, status and lease dates."
       >
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <InfoItem
+            icon={<FileText className="h-4 w-4" />}
+            label="Tenancy Number"
+            value={
+              tenancy.tenancy_number ||
+              tenancy.number
+            }
+          />
+
+          <InfoItem
+            icon={<BadgeCheck className="h-4 w-4" />}
+            label="Tenancy Status"
+          >
+            <div className="mt-1">
+              <StatusBadge status={status} />
+            </div>
+          </InfoItem>
+
+          <InfoItem
+            icon={<BadgeCheck className="h-4 w-4" />}
+            label="Active Status"
+          >
+            <div className="mt-1">
+              <ActiveBadge
+                active={
+                  tenancy.is_active ??
+                  isActive
+                }
+              />
+            </div>
+          </InfoItem>
+
           <InfoItem
             icon={<CalendarDays className="h-4 w-4" />}
             label="Start Date"
@@ -1410,6 +1593,32 @@ const TenancyDetails = () => {
             )}
           />
 
+          <InfoItem
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Move-In Date"
+            value={formatDate(
+              tenancy.move_in_date
+            )}
+          />
+
+          <InfoItem
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Move-Out Date"
+            value={formatDate(
+              tenancy.move_out_date
+            )}
+          />
+        </div>
+      </DetailsSection>
+
+      {/* RENTAL */}
+
+      <DetailsSection
+        icon={<Wallet className="h-5 w-5" />}
+        title="Rental & Payment Information"
+        description="Financial and payment configuration for this tenancy."
+      >
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <InfoItem
             icon={<Wallet className="h-4 w-4" />}
             label="Monthly Rent"
@@ -1439,14 +1648,83 @@ const TenancyDetails = () => {
           />
 
           <InfoItem
-            icon={<CalendarDays className="h-4 w-4" />}
-            label="Created At"
-            value={formatDateTime(
-              tenancy.created_at
+            icon={<Wallet className="h-4 w-4" />}
+            label="Late Fee"
+            value={formatCurrency(
+              tenancy.late_fee
             )}
+          />
+
+          <InfoItem
+            icon={<CreditCard className="h-4 w-4" />}
+            label="Payment Frequency"
+            value={getPaymentFrequencyLabel(
+              tenancy.payment_frequency
+            )}
+          />
+
+          <InfoItem
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Payment Due Day"
+            value={
+              tenancy.due_day
+                ? `Day ${tenancy.due_day}`
+                : "—"
+            }
           />
         </div>
       </DetailsSection>
+
+      {/* AGREEMENT */}
+
+      {(agreementFile ||
+        agreementPublicId) && (
+          <DetailsSection
+            icon={<FileCheck2 className="h-5 w-5" />}
+            title="Tenancy Agreement"
+            description="Agreement file and document information associated with this tenancy."
+          >
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <InfoItem
+                icon={<FileText className="h-4 w-4" />}
+                label="Agreement File"
+              >
+                {agreementFile ? (
+                  <div className="mt-1">
+                    <a
+                      href={agreementFile}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="
+                      inline-flex
+                      items-center
+                      gap-2
+                      text-sm
+                      font-semibold
+                      text-primary-600
+                      hover:text-primary-700
+                    "
+                    >
+                      <FileText className="h-4 w-4" />
+                      View Agreement
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm font-medium text-gray-900">
+                    —
+                  </p>
+                )}
+              </InfoItem>
+
+              <InfoItem
+                icon={<FileText className="h-4 w-4" />}
+                label="Agreement Public ID"
+                value={agreementPublicId}
+              />
+            </div>
+          </DetailsSection>
+        )}
 
       {/* NOTES */}
 
@@ -1463,6 +1741,46 @@ const TenancyDetails = () => {
             </p>
           </DetailsSection>
         )}
+
+      {/* RECORD INFORMATION */}
+
+      <DetailsSection
+        icon={<Clock3 className="h-5 w-5" />}
+        title="Record Information"
+        description="System timestamps for this tenancy record."
+      >
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <InfoItem
+            icon={<FileText className="h-4 w-4" />}
+            label="Tenancy ID"
+            value={tenancy.id}
+          />
+
+          <InfoItem
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Created At"
+            value={formatDateTime(
+              tenancy.created_at
+            )}
+          />
+
+          <InfoItem
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Last Updated"
+            value={formatDateTime(
+              tenancy.updated_at
+            )}
+          />
+
+          <InfoItem
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Deleted At"
+            value={formatDateTime(
+              tenancy.deleted_at
+            )}
+          />
+        </div>
+      </DetailsSection>
 
       {/* FOOTER ACTIONS */}
 
@@ -1499,6 +1817,45 @@ const TenancyDetails = () => {
           </button>
 
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            <button
+              type="button"
+              onClick={handleStatusChange}
+              disabled={actionLoading}
+              className="
+                inline-flex
+                w-full
+                items-center
+                justify-center
+                gap-2
+                rounded-lg
+                border
+                border-gray-300
+                bg-white
+                px-5
+                py-2.5
+                text-sm
+                font-semibold
+                text-gray-700
+                transition
+                hover:bg-gray-50
+                disabled:cursor-not-allowed
+                disabled:opacity-60
+                sm:w-auto
+              "
+            >
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isActive ? (
+                <XCircle className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+
+              {isActive
+                ? "Deactivate"
+                : "Activate"}
+            </button>
+
             <button
               type="button"
               onClick={handleEdit}

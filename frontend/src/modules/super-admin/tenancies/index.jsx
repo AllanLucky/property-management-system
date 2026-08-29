@@ -1,6 +1,7 @@
 export { default as TenancyList } from "./TenancyList";
 export { default as TenancyTable } from "./TenancyTable";
 export { default as TenancyStats } from "./TenancyStats";
+export { default as TenancyStatistics } from "./TenancyStatistics";
 export { default as TenancyFilters } from "./TenancyFilters";
 export { default as TenancyPagination } from "./TenancyPagination";
 

@@ -14,9 +14,35 @@ import {
 } from "lucide-react";
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
+
+/*
+|--------------------------------------------------------------------------
+| BACKEND CONSTANTS
+|--------------------------------------------------------------------------
+|
+| These values MUST match Laravel Tenancy::STATUSES.
+|
+*/
+
+const TENANCY_STATUSES = [
+  "active",
+  "pending",
+  "expired",
+  "terminated",
+  "cancelled",
+];
+
+const PAYMENT_FREQUENCIES = [
+  "daily",
+  "weekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+];
 
 /*
 |--------------------------------------------------------------------------
@@ -35,13 +61,22 @@ const DEFAULT_FORM = {
   start_date: "",
   end_date: "",
 
+  move_in_date: "",
+  move_out_date: "",
+
   rent_amount: "",
   deposit_amount: "",
   service_charge: "",
+  late_fee: "",
 
   payment_frequency: "monthly",
+  due_day: "",
 
   status: "active",
+  is_active: true,
+
+  agreement_file: "",
+  agreement_public_id: "",
 
   notes: "",
 };
@@ -83,26 +118,10 @@ const normalizeId = (value) => {
     return "";
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Handle Laravel resource / nested object
-  |--------------------------------------------------------------------------
-  */
-
   if (
     typeof value === "object" &&
     !Array.isArray(value)
   ) {
-    /*
-    | Common shapes:
-    |
-    | { id: 7 }
-    | { value: 7 }
-    | { data: { id: 7 } }
-    | { property_id: 2 }
-    | { apartment_id: 7 }
-    */
-
     if (
       value.id !== undefined &&
       value.id !== null &&
@@ -120,9 +139,7 @@ const normalizeId = (value) => {
     }
 
     if (value.data) {
-      const nested = normalizeId(
-        value.data
-      );
+      const nested = normalizeId(value.data);
 
       if (nested) {
         return nested;
@@ -147,9 +164,7 @@ const normalizeId = (value) => {
         value[key] !== null &&
         value[key] !== ""
       ) {
-        const result = normalizeId(
-          value[key]
-        );
+        const result = normalizeId(value[key]);
 
         if (result) {
           return result;
@@ -188,9 +203,7 @@ const formatDateForInput = (value) => {
   const stringValue = String(value);
 
   if (
-    /^\d{4}-\d{2}-\d{2}$/.test(
-      stringValue
-    )
+    /^\d{4}-\d{2}-\d{2}$/.test(stringValue)
   ) {
     return stringValue;
   }
@@ -217,7 +230,111 @@ const formatDateForInput = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| VALUE HELPERS
+| PAYMENT FREQUENCY
+|--------------------------------------------------------------------------
+*/
+
+const normalizePaymentFrequency = (value) => {
+  const normalized =
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
+
+  if (normalized === "annual") {
+    return "yearly";
+  }
+
+  if (normalized === "biannual") {
+    return "quarterly";
+  }
+
+  return PAYMENT_FREQUENCIES.includes(
+    normalized
+  )
+    ? normalized
+    : "monthly";
+};
+
+/*
+|--------------------------------------------------------------------------
+| STATUS
+|--------------------------------------------------------------------------
+*/
+
+const normalizeStatus = (value) => {
+  let normalized = value;
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    normalized =
+      value.value ??
+      value.name ??
+      value.status ??
+      value.data ??
+      "";
+  }
+
+  normalized = String(
+    normalized ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+  /*
+  | Old frontend value.
+  */
+
+  if (normalized === "inactive") {
+    return "terminated";
+  }
+
+  if (
+    TENANCY_STATUSES.includes(
+      normalized
+    )
+  ) {
+    return normalized;
+  }
+
+  return "active";
+};
+
+/*
+|--------------------------------------------------------------------------
+| BOOLEAN
+|--------------------------------------------------------------------------
+*/
+
+const normalizeBoolean = (
+  value,
+  fallback = false
+) => {
+  if (
+    value === true ||
+    value === 1 ||
+    value === "1" ||
+    value === "true"
+  ) {
+    return true;
+  }
+
+  if (
+    value === false ||
+    value === 0 ||
+    value === "0" ||
+    value === "false"
+  ) {
+    return false;
+  }
+
+  return fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| VALUE HELPER
 |--------------------------------------------------------------------------
 */
 
@@ -262,47 +379,17 @@ const getCollection = (value) => {
     return [];
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | { data: [...] }
-  |--------------------------------------------------------------------------
-  */
-
   if (Array.isArray(value.data)) {
     return value.data;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | { items: [...] }
-  |--------------------------------------------------------------------------
-  */
 
   if (Array.isArray(value.items)) {
     return value.items;
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | { results: [...] }
-  |--------------------------------------------------------------------------
-  */
-
   if (Array.isArray(value.results)) {
     return value.results;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Laravel nested paginator/resource:
-  |
-  | {
-  |   data: {
-  |     data: [...]
-  |   }
-  | }
-  |--------------------------------------------------------------------------
-  */
 
   if (
     value.data &&
@@ -338,17 +425,16 @@ const getCollection = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| APARTMENT COLLECTION BUILDER
+| APARTMENTS FROM PROPERTIES
 |--------------------------------------------------------------------------
-|
-| Create forms often receive properties with their apartments embedded
-| in the property response, while edit forms may receive a standalone
-| apartments collection. Support both shapes.
-|
 */
 
-const getApartmentsFromProperties = (properties) => {
-  const propertyList = getCollection(properties);
+const getApartmentsFromProperties = (
+  properties
+) => {
+  const propertyList =
+    getCollection(properties);
+
   const result = [];
 
   for (const property of propertyList) {
@@ -358,22 +444,22 @@ const getApartmentsFromProperties = (properties) => {
       property?.propertyId
     );
 
-    const nestedApartments = getCollection(
-      property?.apartments
-    );
+    const nestedApartments =
+      getCollection(
+        property?.apartments
+      );
 
     for (const apartment of nestedApartments) {
-      if (!apartment || typeof apartment !== "object") {
+      if (
+        !apartment ||
+        typeof apartment !== "object"
+      ) {
         continue;
       }
 
       result.push({
         ...apartment,
 
-        /*
-        | Preserve the relationship when the nested API response
-        | does not include property_id.
-        */
         property_id:
           apartment?.property_id ??
           apartment?.propertyId ??
@@ -390,38 +476,40 @@ const mergeUniqueApartments = (
   propertyApartments
 ) => {
   const merged = [
-    ...getCollection(explicitApartments),
+    ...getCollection(
+      explicitApartments
+    ),
     ...propertyApartments,
   ];
 
   const seen = new Set();
 
-  return merged.filter((apartment) => {
-    const id = normalizeId(
-      apartment?.id ??
-      apartment?.apartment_id ??
-      apartment?.apartmentId
-    );
+  return merged.filter(
+    (apartment) => {
+      const id = normalizeId(
+        apartment?.id ??
+        apartment?.apartment_id ??
+        apartment?.apartmentId
+      );
 
-    /*
-    | If an apartment has no usable id, keep it.
-    */
-    if (!id) {
+      if (!id) {
+        return true;
+      }
+
+      if (seen.has(id)) {
+        return false;
+      }
+
+      seen.add(id);
+
       return true;
     }
-
-    if (seen.has(id)) {
-      return false;
-    }
-
-    seen.add(id);
-    return true;
-  });
+  );
 };
 
 /*
 |--------------------------------------------------------------------------
-| RELATIONSHIP HELPERS
+| ENTITY ID
 |--------------------------------------------------------------------------
 */
 
@@ -433,47 +521,27 @@ const getEntityId = (
     return "";
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Primitive
-  |--------------------------------------------------------------------------
-  */
-
   if (
     typeof entity !== "object"
   ) {
     return normalizeId(entity);
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Direct keys
-  |--------------------------------------------------------------------------
-  */
-
   for (const key of keys) {
-    const value =
-      entity[key];
+    const value = entity[key];
 
     if (
       value !== undefined &&
       value !== null &&
       value !== ""
     ) {
-      const id =
-        normalizeId(value);
+      const id = normalizeId(value);
 
       if (id) {
         return id;
       }
     }
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Nested data
-  |--------------------------------------------------------------------------
-  */
 
   if (entity.data) {
     const nestedId =
@@ -486,12 +554,6 @@ const getEntityId = (
       return nestedId;
     }
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Direct ID fallback
-  |--------------------------------------------------------------------------
-  */
 
   if (
     entity.id !== undefined &&
@@ -507,37 +569,8 @@ const getEntityId = (
 
 /*
 |--------------------------------------------------------------------------
-| GET PROPERTY ID FROM APARTMENT
+| APARTMENT -> PROPERTY
 |--------------------------------------------------------------------------
-|
-| Supports:
-|
-| {
-|   id: 7,
-|   property_id: 2
-| }
-|
-| {
-|   id: 7,
-|   propertyId: 2
-| }
-|
-| {
-|   id: 7,
-|   property: {
-|     id: 2
-|   }
-| }
-|
-| {
-|   id: 7,
-|   property: {
-|     data: {
-|       id: 2
-|     }
-|   }
-| }
-|
 */
 
 const getPropertyIdFromApartment = (
@@ -546,12 +579,6 @@ const getPropertyIdFromApartment = (
   if (!apartment) {
     return "";
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Direct property ID
-  |--------------------------------------------------------------------------
-  */
 
   const directId =
     getEntityId(
@@ -563,12 +590,6 @@ const getPropertyIdFromApartment = (
   if (directId) {
     return directId;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Nested property
-  |--------------------------------------------------------------------------
-  */
 
   const nestedPropertyId =
     getEntityId(
@@ -582,30 +603,6 @@ const getPropertyIdFromApartment = (
     return nestedPropertyId;
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Additional possible API shapes
-  |--------------------------------------------------------------------------
-  */
-
-  const relationId =
-    getEntityId(
-      apartment.property_relation,
-      "id",
-      "property_id",
-      "propertyId"
-    );
-
-  if (relationId) {
-    return relationId;
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Resource wrapper
-  |--------------------------------------------------------------------------
-  */
-
   if (apartment.data) {
     return getPropertyIdFromApartment(
       apartment.data
@@ -617,7 +614,7 @@ const getPropertyIdFromApartment = (
 
 /*
 |--------------------------------------------------------------------------
-| GET APARTMENT ID FROM UNIT
+| UNIT -> APARTMENT
 |--------------------------------------------------------------------------
 */
 
@@ -662,99 +659,7 @@ const getApartmentIdFromUnit = (
 
 /*
 |--------------------------------------------------------------------------
-| GET PROPERTY ID FROM UNIT
-|--------------------------------------------------------------------------
-*/
-
-const getPropertyIdFromUnit = (
-  unit
-) => {
-  if (!unit) {
-    return "";
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Direct
-  |--------------------------------------------------------------------------
-  */
-
-  const directId =
-    getEntityId(
-      unit,
-      "property_id",
-      "propertyId"
-    );
-
-  if (directId) {
-    return directId;
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Nested property
-  |--------------------------------------------------------------------------
-  */
-
-  const propertyId =
-    getEntityId(
-      unit.property,
-      "id",
-      "property_id",
-      "propertyId"
-    );
-
-  if (propertyId) {
-    return propertyId;
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Through apartment
-  |--------------------------------------------------------------------------
-  */
-
-  const apartmentPropertyId =
-    getEntityId(
-      unit.apartment,
-      "property_id",
-      "propertyId"
-    );
-
-  if (apartmentPropertyId) {
-    return apartmentPropertyId;
-  }
-
-  const nestedApartmentPropertyId =
-    getEntityId(
-      unit.apartment?.property,
-      "id",
-      "property_id",
-      "propertyId"
-    );
-
-  if (nestedApartmentPropertyId) {
-    return nestedApartmentPropertyId;
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Resource wrapper
-  |--------------------------------------------------------------------------
-  */
-
-  if (unit.data) {
-    return getPropertyIdFromUnit(
-      unit.data
-    );
-  }
-
-  return "";
-};
-
-/*
-|--------------------------------------------------------------------------
-| TENANCY NORMALIZATION
+| NORMALIZE TENANCY FOR EDIT
 |--------------------------------------------------------------------------
 */
 
@@ -792,6 +697,30 @@ const normalizeTenancy = (
       "tenantId"
     ) ||
     tenancy?.tenant;
+
+  const statusValue =
+    getValue(
+      tenancy,
+      "status",
+      "tenancy_status"
+    );
+
+  const isActiveValue =
+    getValue(
+      tenancy,
+      "is_active",
+      "isActive"
+    );
+
+  const paymentFrequency =
+    normalizePaymentFrequency(
+      getValue(
+        tenancy,
+        "payment_frequency",
+        "paymentFrequency",
+        "frequency"
+      )
+    );
 
   return {
     property_id:
@@ -842,15 +771,31 @@ const normalizeTenancy = (
         )
       ),
 
+    move_in_date:
+      formatDateForInput(
+        getValue(
+          tenancy,
+          "move_in_date",
+          "moveInDate"
+        )
+      ),
+
+    move_out_date:
+      formatDateForInput(
+        getValue(
+          tenancy,
+          "move_out_date",
+          "moveOutDate"
+        )
+      ),
+
     rent_amount:
       normalizeNumber(
         getValue(
           tenancy,
           "rent_amount",
           "rentAmount",
-          "rent",
-          "monthly_rent",
-          "monthlyRent"
+          "rent"
         )
       ),
 
@@ -860,9 +805,7 @@ const normalizeTenancy = (
           tenancy,
           "deposit_amount",
           "depositAmount",
-          "deposit",
-          "security_deposit",
-          "securityDeposit"
+          "deposit"
         )
       ),
 
@@ -875,85 +818,128 @@ const normalizeTenancy = (
         )
       ),
 
-    payment_frequency:
-      normalizePaymentFrequency(
+    late_fee:
+      normalizeNumber(
         getValue(
           tenancy,
-          "payment_frequency",
-          "paymentFrequency",
-          "frequency"
+          "late_fee",
+          "lateFee"
+        )
+      ),
+
+    payment_frequency:
+      paymentFrequency,
+
+    due_day:
+      normalizeNumber(
+        getValue(
+          tenancy,
+          "due_day",
+          "dueDay"
         )
       ),
 
     status:
-      getValue(
-        tenancy,
-        "status",
-        "tenancy_status"
-      ) || "active",
+      normalizeStatus(
+        statusValue
+      ),
+
+    is_active:
+      normalizeBoolean(
+        isActiveValue,
+        normalizeStatus(
+          statusValue
+        ) === "active"
+      ),
+
+    agreement_file:
+      normalizeString(
+        getValue(
+          tenancy,
+          "agreement_file",
+          "agreementFile"
+        )
+      ),
+
+    agreement_public_id:
+      normalizeString(
+        getValue(
+          tenancy,
+          "agreement_public_id",
+          "agreementPublicId"
+        )
+      ),
 
     notes:
-      getValue(
-        tenancy,
-        "notes",
-        "description"
-      ) || "",
+      normalizeString(
+        getValue(
+          tenancy,
+          "notes",
+          "description"
+        )
+      ),
   };
 };
 
-const normalizePaymentFrequency = (value) => {
-  const normalized =
-    String(value ?? "")
-      .trim()
-      .toLowerCase();
-
-  /*
-  |-------------------------------------------------------------------------- 
-  | Backend-supported values:
-  | daily, weekly, monthly, quarterly, yearly
-  |-------------------------------------------------------------------------- 
-  |
-  | Convert old frontend values so stale edit data cannot be submitted with
-  | an invalid value.
-  |
-  */
-  if (normalized === "annual") {
-    return "yearly";
-  }
-
-  if (normalized === "biannual") {
-    return "quarterly";
-  }
-
-  const allowed = new Set([
-    "daily",
-    "weekly",
-    "monthly",
-    "quarterly",
-    "yearly",
-  ]);
-
-  return allowed.has(normalized)
-    ? normalized
-    : "monthly";
-};
+/*
+|--------------------------------------------------------------------------
+| INITIAL FORM
+|--------------------------------------------------------------------------
+*/
 
 const buildInitialForm = (
   tenancy,
   isEdit,
   initialValues
 ) => {
-  return {
-    ...DEFAULT_FORM,
-
-    ...(isEdit
+  const normalized =
+    isEdit
       ? normalizeTenancy(
         tenancy
       )
-      : {}),
+      : {};
 
+  const merged = {
+    ...DEFAULT_FORM,
+    ...normalized,
     ...(initialValues || {}),
   };
+
+  /*
+  |----------------------------------------------------------------------
+  | Make sure status is always a backend-supported value.
+  |----------------------------------------------------------------------
+  */
+
+  merged.status =
+    normalizeStatus(
+      merged.status
+    );
+
+  merged.payment_frequency =
+    normalizePaymentFrequency(
+      merged.payment_frequency
+    );
+
+  /*
+  |----------------------------------------------------------------------
+  | Keep is_active consistent with status.
+  |----------------------------------------------------------------------
+  */
+
+  if (
+    merged.status !== "active"
+  ) {
+    merged.is_active = false;
+  } else {
+    merged.is_active =
+      normalizeBoolean(
+        merged.is_active,
+        true
+      );
+  }
+
+  return merged;
 };
 
 /*
@@ -1105,6 +1091,32 @@ const TenancyForm = ({
 
   /*
   |--------------------------------------------------------------------------
+  | IMPORTANT
+  |--------------------------------------------------------------------------
+  | When edit tenancy data arrives after the component mounted,
+  | synchronize the form.
+  |
+  */
+
+  useEffect(() => {
+    if (!isEdit || !tenancy) {
+      return;
+    }
+
+    setForm(
+      buildInitialForm(
+        tenancy,
+        true,
+        initialValues
+      )
+    );
+  }, [
+    tenancy?.id,
+    isEdit,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
   | COLLECTIONS
   |--------------------------------------------------------------------------
   */
@@ -1120,33 +1132,10 @@ const TenancyForm = ({
 
   const apartmentList =
     useMemo(() => {
-      /*
-      |--------------------------------------------------------------------------
-      | Preferred source
-      |--------------------------------------------------------------------------
-      |
-      | Use the standalone apartments prop when the parent already loaded
-      | apartments separately.
-      |
-      */
-
       const explicitApartments =
-        getCollection(apartments);
-
-      /*
-      |--------------------------------------------------------------------------
-      | Create-form fallback
-      |--------------------------------------------------------------------------
-      |
-      | Some property endpoints return:
-      |
-      | property.apartments = [...]
-      |
-      | This is especially useful on Create because the selected property
-      | can already contain its apartments even when the parent did not
-      | separately request /apartments.
-      |
-      */
+        getCollection(
+          apartments
+        );
 
       const nestedApartments =
         getApartmentsFromProperties(
@@ -1182,12 +1171,6 @@ const TenancyForm = ({
   |--------------------------------------------------------------------------
   | FILTER APARTMENTS
   |--------------------------------------------------------------------------
-  |
-  | FIX:
-  |
-  | The previous implementation depended too heavily on apartment.property_id.
-  | This version checks every supported relationship shape.
-  |
   */
 
   const filteredApartments =
@@ -1197,21 +1180,9 @@ const TenancyForm = ({
           form.property_id
         );
 
-      /*
-      |--------------------------------------------------------------------------
-      | No property selected
-      |--------------------------------------------------------------------------
-      */
-
       if (!propertyId) {
         return [];
       }
-
-      /*
-      |--------------------------------------------------------------------------
-      | Filter apartments belonging to selected property
-      |--------------------------------------------------------------------------
-      */
 
       return apartmentList.filter(
         (apartment) => {
@@ -1220,82 +1191,10 @@ const TenancyForm = ({
               apartment
             );
 
-          /*
-          | Exact match
-          */
-
-          if (
-            apartmentPropertyId &&
-            sameId(
-              apartmentPropertyId,
-              propertyId
-            )
-          ) {
-            return true;
-          }
-
-          /*
-          | Some APIs return apartment.property_id
-          | as an object.
-          */
-
-          const alternativePropertyId =
-            normalizeId(
-              apartment?.property_id
-            );
-
-          if (
-            alternativePropertyId &&
-            sameId(
-              alternativePropertyId,
-              propertyId
-            )
-          ) {
-            return true;
-          }
-
-          /*
-          | Nested property object.
-          */
-
-          const nestedPropertyId =
-            normalizeId(
-              apartment?.property?.id
-            );
-
-          if (
-            nestedPropertyId &&
-            sameId(
-              nestedPropertyId,
-              propertyId
-            )
-          ) {
-            return true;
-          }
-
-          /*
-          |--------------------------------------------------------------------------
-          | Some nested property resources expose only the parent
-          | relationship after the apartment has been flattened.
-          |--------------------------------------------------------------------------
-          */
-
-          const apartmentParentId =
-            normalizeId(
-              apartment?.property?.property_id
-            );
-
-          if (
-            apartmentParentId &&
-            sameId(
-              apartmentParentId,
-              propertyId
-            )
-          ) {
-            return true;
-          }
-
-          return false;
+          return sameId(
+            apartmentPropertyId,
+            propertyId
+          );
         }
       );
     }, [
@@ -1350,19 +1249,14 @@ const TenancyForm = ({
     const {
       name,
       value,
+      type,
+      checked,
     } = event.target;
 
     /*
     |--------------------------------------------------------------------------
-    | PROPERTY CHANGE
+    | PROPERTY
     |--------------------------------------------------------------------------
-    |
-    | Property changed:
-    |
-    | property = new value
-    | apartment = reset
-    | unit = reset
-    |
     */
 
     if (
@@ -1376,7 +1270,6 @@ const TenancyForm = ({
           normalizeId(value),
 
         apartment_id: "",
-
         unit_id: "",
       }));
 
@@ -1399,15 +1292,8 @@ const TenancyForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | APARTMENT CHANGE
+    | APARTMENT
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | Only reset unit.
-    |
-    | Do NOT reset property.
-    |
     */
 
     if (
@@ -1441,13 +1327,114 @@ const TenancyForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | OTHER FIELDS
+    | STATUS
+    |--------------------------------------------------------------------------
+    |
+    | Backend rule:
+    |
+    | active => is_active true
+    | everything else => is_active false
+    |
+    */
+
+    if (
+      name === "status"
+    ) {
+      const normalizedStatus =
+        normalizeStatus(value);
+
+      setForm((current) => ({
+        ...current,
+
+        status:
+          normalizedStatus,
+
+        is_active:
+          normalizedStatus ===
+          "active",
+      }));
+
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.status;
+        delete next.is_active;
+
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | IS ACTIVE
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      name === "is_active"
+    ) {
+      const nextIsActive =
+        type === "checkbox"
+          ? checked
+          : normalizeBoolean(
+            value
+          );
+
+      setForm((current) => ({
+        ...current,
+
+        is_active:
+          nextIsActive,
+
+        /*
+        | If activating, status becomes active.
+        | If deactivating an active tenancy, use pending.
+        | This prevents backend consistency errors.
+        */
+
+        status:
+          nextIsActive
+            ? "active"
+            : current.status ===
+              "active"
+              ? "pending"
+              : current.status,
+      }));
+
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.is_active;
+        delete next.status;
+
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMAL FIELD
     |--------------------------------------------------------------------------
     */
 
     setForm((current) => ({
       ...current,
-      [name]: value,
+      [name]:
+        type === "checkbox"
+          ? checked
+          : value,
     }));
 
     setErrors((current) => {
@@ -1513,13 +1500,23 @@ const TenancyForm = ({
         form.end_date
       );
 
+    const moveInDate =
+      normalizeString(
+        form.move_in_date
+      );
+
+    const moveOutDate =
+      normalizeString(
+        form.move_out_date
+      );
+
     const rentAmount =
       normalizeString(
         form.rent_amount
       );
 
     const status =
-      normalizeString(
+      normalizeStatus(
         form.status
       );
 
@@ -1527,6 +1524,12 @@ const TenancyForm = ({
       normalizePaymentFrequency(
         form.payment_frequency
       );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Required fields
+    |--------------------------------------------------------------------------
+    */
 
     if (!propertyId) {
       nextErrors.property_id =
@@ -1553,14 +1556,41 @@ const TenancyForm = ({
         "Start date is required.";
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Status
+    |--------------------------------------------------------------------------
+    */
+
     if (
-      endDate &&
-      startDate &&
-      endDate < startDate
+      !TENANCY_STATUSES.includes(
+        status
+      )
     ) {
-      nextErrors.end_date =
-        "End date cannot be before the start date.";
+      nextErrors.status =
+        "Please select a valid tenancy status.";
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payment frequency
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !PAYMENT_FREQUENCIES.includes(
+        paymentFrequency
+      )
+    ) {
+      nextErrors.payment_frequency =
+        "Please select a valid payment frequency.";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rent
+    |--------------------------------------------------------------------------
+    */
 
     if (!rentAmount) {
       nextErrors.rent_amount =
@@ -1583,75 +1613,163 @@ const TenancyForm = ({
         "Rent amount cannot be negative.";
     }
 
-    if (
-      form.deposit_amount !==
-      ""
-    ) {
-      if (
-        Number.isNaN(
-          Number(
-            form.deposit_amount
-          )
-        )
-      ) {
-        nextErrors.deposit_amount =
-          "Enter a valid deposit amount.";
-      } else if (
-        Number(
-          form.deposit_amount
-        ) < 0
-      ) {
-        nextErrors.deposit_amount =
-          "Deposit amount cannot be negative.";
-      }
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Optional numeric fields
+    |--------------------------------------------------------------------------
+    */
 
-    if (
-      form.service_charge !==
-      ""
-    ) {
-      if (
-        Number.isNaN(
-          Number(
-            form.service_charge
-          )
-        )
-      ) {
-        nextErrors.service_charge =
-          "Enter a valid service charge.";
-      } else if (
-        Number(
-          form.service_charge
-        ) < 0
-      ) {
-        nextErrors.service_charge =
-          "Service charge cannot be negative.";
-      }
-    }
-
-    if (!status) {
-      nextErrors.status =
-        "Please select tenancy status.";
-    }
-
-    const allowedPaymentFrequencies = [
-      "daily",
-      "weekly",
-      "monthly",
-      "quarterly",
-      "yearly",
+    const numericFields = [
+      [
+        "deposit_amount",
+        "Deposit amount",
+      ],
+      [
+        "service_charge",
+        "Service charge",
+      ],
+      [
+        "late_fee",
+        "Late fee",
+      ],
+      [
+        "due_day",
+        "Due day",
+      ],
     ];
 
+    numericFields.forEach(
+      ([field, label]) => {
+        if (
+          form[field] !== "" &&
+          form[field] !== null &&
+          form[field] !== undefined
+        ) {
+          if (
+            Number.isNaN(
+              Number(form[field])
+            )
+          ) {
+            nextErrors[field] =
+              `${label} must be a valid number.`;
+          }
+        }
+      }
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Non-negative amounts
+    |--------------------------------------------------------------------------
+    */
+
+    [
+      "deposit_amount",
+      "service_charge",
+      "late_fee",
+    ].forEach((field) => {
+      if (
+        form[field] !== "" &&
+        Number(form[field]) < 0
+      ) {
+        nextErrors[field] =
+          `${field.replaceAll("_", " ")} cannot be negative.`;
+      }
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Due day
+    |--------------------------------------------------------------------------
+    */
+
     if (
-      !allowedPaymentFrequencies.includes(
-        paymentFrequency
-      )
+      form.due_day !== "" &&
+      form.due_day !== null &&
+      form.due_day !== undefined
     ) {
-      nextErrors.payment_frequency =
-        "Please select a valid payment frequency.";
+      const dueDay =
+        Number(form.due_day);
+
+      if (
+        !Number.isInteger(
+          dueDay
+        ) ||
+        dueDay < 1 ||
+        dueDay > 31
+      ) {
+        nextErrors.due_day =
+          "Due day must be between 1 and 31.";
+      }
     }
 
-    setErrors(nextErrors);
+    /*
+    |--------------------------------------------------------------------------
+    | Dates
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      startDate &&
+      endDate &&
+      endDate < startDate
+    ) {
+      nextErrors.end_date =
+        "The end date must be on or after the start date.";
+    }
+
+    if (
+      startDate &&
+      moveInDate &&
+      moveInDate < startDate
+    ) {
+      nextErrors.move_in_date =
+        "The move-in date cannot be before the tenancy start date.";
+    }
+
+    if (
+      moveInDate &&
+      moveOutDate &&
+      moveOutDate < moveInDate
+    ) {
+      nextErrors.move_out_date =
+        "The move-out date must be on or after the move-in date.";
+    }
+
+    if (
+      endDate &&
+      moveOutDate &&
+      moveOutDate > endDate
+    ) {
+      nextErrors.move_out_date =
+        "The move-out date cannot be after the tenancy end date.";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | ACTIVE STATUS CONSISTENCY
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      status !== "active" &&
+      form.is_active === true
+    ) {
+      nextErrors.is_active =
+        "Only an active tenancy can be marked as active.";
+    }
+
+    if (
+      form.move_out_date &&
+      form.is_active === true
+    ) {
+      nextErrors.is_active =
+        "A tenancy with a move-out date cannot be active.";
+    }
+
+    setErrors(
+      nextErrors
+    );
 
     return (
       Object.keys(
@@ -1662,11 +1780,22 @@ const TenancyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | BUILD PAYLOAD
+  | BUILD BACKEND PAYLOAD
   |--------------------------------------------------------------------------
+  |
+  | This matches your Laravel UpdateTenancyRequest.
+  |
   */
 
   const buildPayload = () => {
+    const status =
+      normalizeStatus(
+        form.status
+      );
+
+    const isActive =
+      status === "active";
+
     const payload = {
       property_id:
         form.property_id
@@ -1704,9 +1833,19 @@ const TenancyForm = ({
         form.end_date ||
         null,
 
+      move_in_date:
+        form.move_in_date ||
+        null,
+
+      move_out_date:
+        form.move_out_date ||
+        null,
+
       rent_amount:
         form.rent_amount !==
-          ""
+          "" &&
+          form.rent_amount !==
+          null
           ? Number(
             form.rent_amount
           )
@@ -1714,7 +1853,9 @@ const TenancyForm = ({
 
       deposit_amount:
         form.deposit_amount !==
-          ""
+          "" &&
+          form.deposit_amount !==
+          null
           ? Number(
             form.deposit_amount
           )
@@ -1722,9 +1863,21 @@ const TenancyForm = ({
 
       service_charge:
         form.service_charge !==
-          ""
+          "" &&
+          form.service_charge !==
+          null
           ? Number(
             form.service_charge
+          )
+          : null,
+
+      late_fee:
+        form.late_fee !==
+          "" &&
+          form.late_fee !==
+          null
+          ? Number(
+            form.late_fee
           )
           : null,
 
@@ -1733,15 +1886,46 @@ const TenancyForm = ({
           form.payment_frequency
         ),
 
-      status:
-        form.status ||
-        "active",
+      due_day:
+        form.due_day !==
+          "" &&
+          form.due_day !==
+          null
+          ? Number(
+            form.due_day
+          )
+          : null,
+
+      status,
+
+      is_active:
+        isActive,
+
+      agreement_file:
+        normalizeString(
+          form.agreement_file
+        ) || null,
+
+      agreement_public_id:
+        normalizeString(
+          form.agreement_public_id
+        ) || null,
 
       notes:
         normalizeString(
           form.notes
         ) || null,
     };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenancy number
+    |--------------------------------------------------------------------------
+    |
+    | Your backend accepts tenancy_number during update.
+    | We only send it when editing.
+    |
+    */
 
     if (isEdit) {
       payload.tenancy_number =
@@ -1789,12 +1973,14 @@ const TenancyForm = ({
         payload,
         tenancy
       );
-    } catch (
-    submitError
-    ) {
+    } catch (submitError) {
+      const message =
+        getErrorMessage(
+          submitError
+        );
+
       setServerError(
-        submitError?.message ||
-        submitError?.error ||
+        message ||
         "Failed to save tenancy. Please try again."
       );
     }
@@ -1817,119 +2003,12 @@ const TenancyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | EXTERNAL ERROR
+  | ERROR MESSAGE
   |--------------------------------------------------------------------------
   */
 
-  const getExternalErrorMessage =
-    () => {
-      if (!error) {
-        return "";
-      }
-
-      if (
-        typeof error ===
-        "string"
-      ) {
-        return error;
-      }
-
-      if (error?.message) {
-        return String(
-          error.message
-        );
-      }
-
-      if (error?.error) {
-        return String(
-          error.error
-        );
-      }
-
-      if (error?.errors) {
-        if (
-          typeof error.errors ===
-          "string"
-        ) {
-          return error.errors;
-        }
-
-        if (
-          typeof error.errors ===
-          "object"
-        ) {
-          const messages =
-            Object.values(
-              error.errors
-            )
-              .flat()
-              .filter(Boolean)
-              .map(String);
-
-          if (
-            messages.length
-          ) {
-            return messages.join(
-              " "
-            );
-          }
-        }
-      }
-
-      if (
-        error?.response?.data
-      ) {
-        const data =
-          error.response.data;
-
-        if (data?.message) {
-          return String(
-            data.message
-          );
-        }
-
-        if (data?.error) {
-          return String(
-            data.error
-          );
-        }
-
-        if (data?.errors) {
-          if (
-            typeof data.errors ===
-            "string"
-          ) {
-            return data.errors;
-          }
-
-          if (
-            typeof data.errors ===
-            "object"
-          ) {
-            const messages =
-              Object.values(
-                data.errors
-              )
-                .flat()
-                .filter(Boolean)
-                .map(String);
-
-            if (
-              messages.length
-            ) {
-              return messages.join(
-                " "
-              );
-            }
-          }
-        }
-      }
-
-      return "";
-    };
-
   const externalErrorMessage =
-    getExternalErrorMessage();
+    getErrorMessage(error);
 
   const displayedServerError =
     serverError ||
@@ -2015,9 +2094,7 @@ const TenancyForm = ({
 
   return (
     <form
-      onSubmit={
-        handleSubmit
-      }
+      onSubmit={handleSubmit}
       noValidate
       className="space-y-6"
     >
@@ -2077,7 +2154,7 @@ const TenancyForm = ({
                   </p>
 
                   {displayedServerError && (
-                    <p className="mt-1 text-sm text-red-700">
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
                       {
                         displayedServerError
                       }
@@ -2089,7 +2166,7 @@ const TenancyForm = ({
                       {Object.entries(
                         errors
                       )
-                        .slice(0, 8)
+                        .slice(0, 10)
                         .map(
                           ([
                             field,
@@ -2114,7 +2191,7 @@ const TenancyForm = ({
           )}
       </div>
 
-      {/* TENANCY ASSIGNMENT */}
+      {/* ASSIGNMENT */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -2145,7 +2222,6 @@ const TenancyForm = ({
                 label:
                   "Select property",
               },
-
               ...propertyList.map(
                 (property) => ({
                   value:
@@ -2187,7 +2263,6 @@ const TenancyForm = ({
                       : "No apartments available for this property"
                     : "Select property first",
               },
-
               ...filteredApartments.map(
                 (apartment) => ({
                   value:
@@ -2229,7 +2304,6 @@ const TenancyForm = ({
                       : "No units available for this apartment"
                     : "Select apartment first",
               },
-
               ...filteredUnits.map(
                 (unit) => ({
                   value:
@@ -2264,7 +2338,6 @@ const TenancyForm = ({
                 label:
                   "Select tenant",
               },
-
               ...tenantList.map(
                 (tenant) => ({
                   value:
@@ -2290,9 +2363,8 @@ const TenancyForm = ({
               onChange={
                 handleChange
               }
-              placeholder="e.g. TEN-W7Q4TEBQ"
-              hint="The tenancy number assigned to this tenancy."
               disabled
+              hint="The tenancy number assigned to this tenancy."
             />
           )}
         </div>
@@ -2306,10 +2378,10 @@ const TenancyForm = ({
             <CalendarDays className="h-5 w-5" />
           }
           title="Tenancy Period"
-          description="Define when the tenancy starts and when it ends."
+          description="Define the tenancy start, end, move-in and move-out dates."
         />
 
-        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
+        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6">
           <InputField
             label="Start Date"
             name="start_date"
@@ -2339,7 +2411,36 @@ const TenancyForm = ({
             error={fieldError(
               "end_date"
             )}
-            hint="Leave empty for an open-ended tenancy if supported by your backend."
+          />
+
+          <InputField
+            label="Move-In Date"
+            name="move_in_date"
+            type="date"
+            value={
+              form.move_in_date
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "move_in_date"
+            )}
+          />
+
+          <InputField
+            label="Move-Out Date"
+            name="move_out_date"
+            type="date"
+            value={
+              form.move_out_date
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "move_out_date"
+            )}
           />
         </div>
       </section>
@@ -2352,7 +2453,7 @@ const TenancyForm = ({
             <Wallet className="h-5 w-5" />
           }
           title="Financial Information"
-          description="Set rent, deposit, service charge and payment frequency."
+          description="Set rent, deposit, service charge, late fee and payment configuration."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6">
@@ -2370,9 +2471,9 @@ const TenancyForm = ({
               "rent_amount"
             )}
             required
-            placeholder="e.g. 25000"
             min="0"
             step="0.01"
+            placeholder="e.g. 60000"
           />
 
           <InputField
@@ -2388,9 +2489,9 @@ const TenancyForm = ({
             error={fieldError(
               "deposit_amount"
             )}
-            placeholder="e.g. 25000"
             min="0"
             step="0.01"
+            placeholder="e.g. 60000"
           />
 
           <InputField
@@ -2406,9 +2507,27 @@ const TenancyForm = ({
             error={fieldError(
               "service_charge"
             )}
-            placeholder="e.g. 3000"
             min="0"
             step="0.01"
+            placeholder="e.g. 5000"
+          />
+
+          <InputField
+            label="Late Fee"
+            name="late_fee"
+            type="number"
+            value={
+              form.late_fee
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "late_fee"
+            )}
+            min="0"
+            step="0.01"
+            placeholder="e.g. 3500"
           />
 
           <SelectField
@@ -2420,6 +2539,10 @@ const TenancyForm = ({
             onChange={
               handleChange
             }
+            error={fieldError(
+              "payment_frequency"
+            )}
+            required
             options={[
               {
                 value:
@@ -2453,6 +2576,25 @@ const TenancyForm = ({
               },
             ]}
           />
+
+          <InputField
+            label="Due Day"
+            name="due_day"
+            type="number"
+            value={
+              form.due_day
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "due_day"
+            )}
+            min="1"
+            max="31"
+            step="1"
+            placeholder="e.g. 1"
+          />
         </div>
       </section>
 
@@ -2464,7 +2606,7 @@ const TenancyForm = ({
             <ShieldCheck className="h-5 w-5" />
           }
           title="Tenancy Status"
-          description="Manage the current status of this tenancy."
+          description="Manage the current status and active state of this tenancy."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
@@ -2483,6 +2625,11 @@ const TenancyForm = ({
             required
             options={[
               {
+                value: "",
+                label:
+                  "Select status",
+              },
+              {
                 value:
                   "active",
                 label:
@@ -2496,9 +2643,9 @@ const TenancyForm = ({
               },
               {
                 value:
-                  "inactive",
+                  "expired",
                 label:
-                  "Inactive",
+                  "Expired",
               },
               {
                 value:
@@ -2508,9 +2655,9 @@ const TenancyForm = ({
               },
               {
                 value:
-                  "expired",
+                  "cancelled",
                 label:
-                  "Expired",
+                  "Cancelled",
               },
             ]}
           />
@@ -2521,7 +2668,7 @@ const TenancyForm = ({
                 <ShieldCheck className="h-4 w-4" />
               </div>
 
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-medium text-gray-800">
                   Current tenancy status
                 </p>
@@ -2530,11 +2677,90 @@ const TenancyForm = ({
                   {form.status ===
                     "active"
                     ? "This tenancy is currently active."
-                    : "The tenancy is not currently marked as active."}
+                    : `This tenancy is ${form.status}.`}
                 </p>
+
+                <label className="mt-4 flex cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    checked={
+                      form.is_active ===
+                      true
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    disabled={
+                      form.status !==
+                      "active"
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+
+                  <span className="text-sm font-medium text-gray-700">
+                    Mark tenancy as active
+                  </span>
+                </label>
+
+                {fieldError(
+                  "is_active"
+                ) && (
+                    <p className="mt-2 text-xs text-red-600">
+                      {
+                        fieldError(
+                          "is_active"
+                        )
+                      }
+                    </p>
+                  )}
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* AGREEMENT */}
+
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <SectionHeader
+          icon={
+            <FileText className="h-5 w-5" />
+          }
+          title="Agreement"
+          description="Store agreement information for this tenancy."
+        />
+
+        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
+          <InputField
+            label="Agreement File"
+            name="agreement_file"
+            value={
+              form.agreement_file
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "agreement_file"
+            )}
+            placeholder="Agreement file path or URL"
+          />
+
+          <InputField
+            label="Agreement Public ID"
+            name="agreement_public_id"
+            value={
+              form.agreement_public_id
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "agreement_public_id"
+            )}
+            placeholder="Optional public ID"
+          />
         </div>
       </section>
 
@@ -2648,9 +2874,7 @@ const TenancyForm = ({
                   <Save className="h-4 w-4" />
                 )}
 
-                {
-                  submitLabel
-                }
+                {submitLabel}
               </>
             )}
           </button>
@@ -2659,6 +2883,95 @@ const TenancyForm = ({
     </form>
   );
 };
+
+/*
+|--------------------------------------------------------------------------
+| ERROR MESSAGE HELPER
+|--------------------------------------------------------------------------
+*/
+
+function getErrorMessage(
+  error
+) {
+  if (!error) {
+    return "";
+  }
+
+  if (
+    typeof error === "string"
+  ) {
+    return error;
+  }
+
+  if (error?.message) {
+    return String(
+      error.message
+    );
+  }
+
+  if (error?.error) {
+    return String(
+      error.error
+    );
+  }
+
+  const data =
+    error?.response?.data;
+
+  if (data?.message) {
+    return String(
+      data.message
+    );
+  }
+
+  if (data?.error) {
+    return String(
+      data.error
+    );
+  }
+
+  const validationErrors =
+    data?.errors ||
+    error?.errors;
+
+  if (
+    validationErrors &&
+    typeof validationErrors ===
+    "object"
+  ) {
+    const messages =
+      Object.entries(
+        validationErrors
+      )
+        .flatMap(
+          ([
+            field,
+            values,
+          ]) => {
+            const list =
+              Array.isArray(
+                values
+              )
+                ? values
+                : [values];
+
+            return list.map(
+              (message) =>
+                `${field}: ${message}`
+            );
+          }
+        )
+        .filter(Boolean);
+
+    if (messages.length) {
+      return messages.join(
+        "\n"
+      );
+    }
+  }
+
+  return "";
+}
 
 /*
 |--------------------------------------------------------------------------
