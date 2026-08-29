@@ -33,6 +33,14 @@ import {
 const DEFAULT_FORM = {
   /*
   |--------------------------------------------------------------------------
+  | USER ACCOUNT
+  |--------------------------------------------------------------------------
+  */
+
+  user_id: "",
+
+  /*
+  |--------------------------------------------------------------------------
   | PERSONAL INFORMATION
   |--------------------------------------------------------------------------
   */
@@ -103,6 +111,7 @@ const DEFAULT_FORM = {
   */
 
   status: "pending",
+
   is_active: true,
   is_verified: false,
 
@@ -121,46 +130,35 @@ const DEFAULT_FORM = {
 |--------------------------------------------------------------------------
 */
 
-const normalizeBoolean = (value) => {
-  return (
+const normalizeBoolean = (
+  value,
+  fallback = false
+) => {
+  if (
     value === true ||
     value === 1 ||
     value === "1" ||
-    value === "true"
-  );
-};
-
-const formatDateForInput = (value) => {
-  if (!value) {
-    return "";
+    value === "true" ||
+    value === "TRUE" ||
+    value === "yes" ||
+    value === "YES"
+  ) {
+    return true;
   }
 
-  const stringValue = String(value);
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
-    return stringValue;
+  if (
+    value === false ||
+    value === 0 ||
+    value === "0" ||
+    value === "false" ||
+    value === "FALSE" ||
+    value === "no" ||
+    value === "NO"
+  ) {
+    return false;
   }
 
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toISOString().split("T")[0];
-};
-
-const getValue = (source, ...keys) => {
-  for (const key of keys) {
-    if (
-      source?.[key] !== undefined &&
-      source?.[key] !== null
-    ) {
-      return source[key];
-    }
-  }
-
-  return "";
+  return fallback;
 };
 
 const normalizeString = (value) => {
@@ -174,100 +172,286 @@ const normalizeString = (value) => {
   return String(value).trim();
 };
 
+const formatDateForInput = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const stringValue =
+    String(value).trim();
+
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      stringValue
+    )
+  ) {
+    return stringValue;
+  }
+
+  const date =
+    new Date(stringValue);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return date
+    .toISOString()
+    .split("T")[0];
+};
+
+const getValue = (
+  source,
+  ...keys
+) => {
+  for (const key of keys) {
+    const value =
+      source?.[key];
+
+    if (
+      value !== undefined &&
+      value !== null
+    ) {
+      return value;
+    }
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET USER ID
+|--------------------------------------------------------------------------
+*/
+
+const getUserId = (
+  tenant
+) => {
+  if (!tenant) {
+    return "";
+  }
+
+  if (
+    tenant.user_id !==
+      undefined &&
+    tenant.user_id !== null
+  ) {
+    return String(
+      tenant.user_id
+    );
+  }
+
+  if (
+    tenant.user?.id !==
+      undefined &&
+    tenant.user?.id !== null
+  ) {
+    return String(
+      tenant.user.id
+    );
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| EXTRACT NESTED LOCATION VALUE
+|--------------------------------------------------------------------------
+*/
+
+const getLocationValue = (
+  tenant,
+  objectKey,
+  ...fallbackKeys
+) => {
+  const nestedValue =
+    tenant?.[objectKey];
+
+  if (
+    nestedValue &&
+    typeof nestedValue ===
+      "object"
+  ) {
+    return normalizeString(
+      nestedValue.name ??
+        nestedValue.label ??
+        nestedValue.value
+    );
+  }
+
+  return normalizeString(
+    getValue(
+      tenant,
+      ...fallbackKeys,
+      objectKey
+    )
+  );
+};
+
 /*
 |--------------------------------------------------------------------------
 | NORMALIZE TENANT
 |--------------------------------------------------------------------------
 */
 
-const normalizeTenant = (tenant = {}) => {
+const normalizeTenant = (
+  tenant = {}
+) => {
   /*
   |--------------------------------------------------------------------------
-  | Support both:
-  |
-  | emergency_contact_name
-  |
-  | and:
-  |
-  | emergency_contact: {
-  |   name,
-  |   phone,
-  |   relationship
-  | }
+  | USER
+  |--------------------------------------------------------------------------
+  */
+
+  const user =
+    tenant?.user &&
+    typeof tenant.user ===
+      "object"
+      ? tenant.user
+      : {};
+
+  /*
+  |--------------------------------------------------------------------------
+  | EMERGENCY CONTACT
   |--------------------------------------------------------------------------
   */
 
   const emergencyContact =
     tenant?.emergency_contact &&
-      typeof tenant.emergency_contact === "object"
+    typeof tenant.emergency_contact ===
+      "object"
       ? tenant.emergency_contact
       : {};
 
   return {
     /*
     |--------------------------------------------------------------------------
+    | USER ACCOUNT
+    |--------------------------------------------------------------------------
+    */
+
+    user_id: getUserId(
+      tenant
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
     | PERSONAL INFORMATION
     |--------------------------------------------------------------------------
     */
 
-    first_name: getValue(
-      tenant,
-      "first_name",
-      "firstName"
-    ),
+    first_name:
+      normalizeString(
+        getValue(
+          tenant,
+          "first_name",
+          "firstName"
+        ) ||
+          getValue(
+            user,
+            "first_name",
+            "firstName"
+          )
+      ),
 
-    last_name: getValue(
-      tenant,
-      "last_name",
-      "lastName"
-    ),
+    last_name:
+      normalizeString(
+        getValue(
+          tenant,
+          "last_name",
+          "lastName"
+        ) ||
+          getValue(
+            user,
+            "last_name",
+            "lastName"
+          )
+      ),
 
-    other_names: getValue(
-      tenant,
-      "other_names",
-      "otherNames"
-    ),
+    other_names:
+      normalizeString(
+        getValue(
+          tenant,
+          "other_names",
+          "otherNames"
+        )
+      ),
 
-    email: getValue(
-      tenant,
-      "email"
-    ),
+    email:
+      normalizeString(
+        getValue(
+          tenant,
+          "email"
+        ) ||
+          getValue(
+            user,
+            "email"
+          )
+      ),
 
-    phone: getValue(
-      tenant,
-      "phone",
-      "phone_number"
-    ),
+    phone:
+      normalizeString(
+        getValue(
+          tenant,
+          "phone",
+          "phone_number"
+        ) ||
+          getValue(
+            user,
+            "phone",
+            "phone_number"
+          )
+      ),
 
-    id_number: getValue(
-      tenant,
-      "id_number",
-      "national_id",
-      "national_id_number"
-    ),
+    id_number:
+      normalizeString(
+        getValue(
+          tenant,
+          "id_number",
+          "national_id",
+          "national_id_number"
+        )
+      ),
 
-    passport_number: getValue(
-      tenant,
-      "passport_number"
-    ),
+    passport_number:
+      normalizeString(
+        getValue(
+          tenant,
+          "passport_number",
+          "passport"
+        )
+      ),
 
-    gender: getValue(
-      tenant,
-      "gender"
-    ),
+    gender:
+      normalizeString(
+        getValue(
+          tenant,
+          "gender"
+        )
+      ),
 
-    date_of_birth: formatDateForInput(
-      getValue(
-        tenant,
-        "date_of_birth",
-        "dob"
-      )
-    ),
+    date_of_birth:
+      formatDateForInput(
+        getValue(
+          tenant,
+          "date_of_birth",
+          "dob",
+          "birth_date"
+        )
+      ),
 
     nationality:
-      getValue(
-        tenant,
-        "nationality"
+      normalizeString(
+        getValue(
+          tenant,
+          "nationality"
+        )
       ) || "Kenyan",
 
     /*
@@ -277,56 +461,58 @@ const normalizeTenant = (tenant = {}) => {
     */
 
     country:
-      tenant?.country?.name ||
-      getValue(
+      getLocationValue(
         tenant,
-        "country_name",
-        "country"
+        "country",
+        "country_name"
       ),
 
     region:
-      tenant?.region?.name ||
-      getValue(
+      getLocationValue(
         tenant,
-        "region_name",
-        "region"
+        "region",
+        "region_name"
       ),
 
     county:
-      tenant?.county?.name ||
-      getValue(
+      getLocationValue(
         tenant,
-        "county_name",
-        "county"
+        "county",
+        "county_name"
       ),
 
     city:
-      tenant?.city?.name ||
-      getValue(
+      getLocationValue(
         tenant,
-        "city_name",
-        "city"
+        "city",
+        "city_name"
       ),
 
     area:
-      tenant?.area?.name ||
-      getValue(
+      getLocationValue(
         tenant,
-        "area_name",
-        "area"
+        "area",
+        "area_name"
       ),
 
-    postal_code: getValue(
-      tenant,
-      "postal_code",
-      "zip_code"
-    ),
+    postal_code:
+      normalizeString(
+        getValue(
+          tenant,
+          "postal_code",
+          "zip_code"
+        )
+      ),
 
-    address: getValue(
-      tenant,
-      "address",
-      "street_address"
-    ),
+    address:
+      normalizeString(
+        getValue(
+          tenant,
+          "address",
+          "street_address",
+          "residential_address"
+        )
+      ),
 
     /*
     |--------------------------------------------------------------------------
@@ -335,38 +521,44 @@ const normalizeTenant = (tenant = {}) => {
     */
 
     emergency_contact_name:
-      getValue(
-        tenant,
-        "emergency_contact_name"
-      ) ||
-      getValue(
-        emergencyContact,
-        "name",
-        "full_name",
-        "contact_name"
+      normalizeString(
+        getValue(
+          tenant,
+          "emergency_contact_name"
+        ) ||
+          getValue(
+            emergencyContact,
+            "name",
+            "full_name",
+            "contact_name"
+          )
       ),
 
     emergency_contact_phone:
-      getValue(
-        tenant,
-        "emergency_contact_phone"
-      ) ||
-      getValue(
-        emergencyContact,
-        "phone",
-        "phone_number",
-        "contact_phone"
+      normalizeString(
+        getValue(
+          tenant,
+          "emergency_contact_phone"
+        ) ||
+          getValue(
+            emergencyContact,
+            "phone",
+            "phone_number",
+            "contact_phone"
+          )
       ),
 
     emergency_contact_relationship:
-      getValue(
-        tenant,
-        "emergency_contact_relationship"
-      ) ||
-      getValue(
-        emergencyContact,
-        "relationship",
-        "relation"
+      normalizeString(
+        getValue(
+          tenant,
+          "emergency_contact_relationship"
+        ) ||
+          getValue(
+            emergencyContact,
+            "relationship",
+            "relation"
+          )
       ),
 
     /*
@@ -375,22 +567,29 @@ const normalizeTenant = (tenant = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    occupation: getValue(
-      tenant,
-      "occupation"
-    ),
+    occupation:
+      normalizeString(
+        getValue(
+          tenant,
+          "occupation"
+        )
+      ),
 
-    employer: getValue(
-      tenant,
-      "employer",
-      "company"
-    ),
+    employer:
+      normalizeString(
+        getValue(
+          tenant,
+          "employer",
+          "company"
+        )
+      ),
 
-    monthly_income: getValue(
-      tenant,
-      "monthly_income",
-      "income"
-    ),
+    monthly_income:
+      getValue(
+        tenant,
+        "monthly_income",
+        "income"
+      ),
 
     /*
     |--------------------------------------------------------------------------
@@ -398,20 +597,23 @@ const normalizeTenant = (tenant = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    photo: getValue(
-      tenant,
-      "photo"
-    ),
+    photo:
+      getValue(
+        tenant,
+        "photo"
+      ),
 
-    id_front: getValue(
-      tenant,
-      "id_front"
-    ),
+    id_front:
+      getValue(
+        tenant,
+        "id_front"
+      ),
 
-    id_back: getValue(
-      tenant,
-      "id_back"
-    ),
+    id_back:
+      getValue(
+        tenant,
+        "id_back"
+      ),
 
     /*
     |--------------------------------------------------------------------------
@@ -420,24 +622,28 @@ const normalizeTenant = (tenant = {}) => {
     */
 
     status:
-      getValue(
-        tenant,
-        "status",
-        "tenant_status"
+      normalizeString(
+        getValue(
+          tenant,
+          "status",
+          "tenant_status"
+        )
       ) || "pending",
 
     is_active:
-      tenant?.is_active !== undefined
+      tenant?.is_active !==
+      undefined
         ? normalizeBoolean(
-          tenant.is_active
-        )
+            tenant.is_active
+          )
         : true,
 
     is_verified:
-      tenant?.is_verified !== undefined
+      tenant?.is_verified !==
+      undefined
         ? normalizeBoolean(
-          tenant.is_verified
-        )
+            tenant.is_verified
+          )
         : false,
 
     /*
@@ -446,10 +652,89 @@ const normalizeTenant = (tenant = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    notes: getValue(
-      tenant,
-      "notes"
-    ),
+    notes:
+      normalizeString(
+        getValue(
+          tenant,
+          "notes"
+        )
+      ),
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE USER OPTION
+|--------------------------------------------------------------------------
+*/
+
+const normalizeUserOption = (
+  user = {}
+) => {
+  const id =
+    user?.id ??
+    user?.user_id ??
+    "";
+
+  const firstName =
+    user?.first_name ??
+    user?.firstName ??
+    user?.user?.first_name ??
+    user?.user?.firstName ??
+    "";
+
+  const lastName =
+    user?.last_name ??
+    user?.lastName ??
+    user?.user?.last_name ??
+    user?.user?.lastName ??
+    "";
+
+  const email =
+    user?.email ??
+    user?.user?.email ??
+    "";
+
+  const phone =
+    user?.phone ??
+    user?.phone_number ??
+    user?.user?.phone ??
+    user?.user?.phone_number ??
+    "";
+
+  const name =
+    `${firstName} ${lastName}`.trim();
+
+  return {
+    id:
+      id !== ""
+        ? String(id)
+        : "",
+
+    first_name:
+      normalizeString(
+        firstName
+      ),
+
+    last_name:
+      normalizeString(
+        lastName
+      ),
+
+    email:
+      normalizeString(
+        email
+      ),
+
+    phone:
+      normalizeString(
+        phone
+      ),
+
+    name:
+      name ||
+      email ||
+      `User #${id}`,
   };
 };
 
@@ -464,14 +749,27 @@ const buildInitialForm = (
   isEdit,
   initialValues
 ) => {
+  const normalizedTenant =
+    isEdit
+      ? normalizeTenant(
+          tenant
+        )
+      : {};
+
   return {
     ...DEFAULT_FORM,
 
     ...(isEdit
-      ? normalizeTenant(tenant)
+      ? normalizedTenant
       : {}),
 
     ...(initialValues || {}),
+
+    user_id: String(
+      initialValues?.user_id ??
+        normalizedTenant?.user_id ??
+        ""
+    ),
   };
 };
 
@@ -483,6 +781,7 @@ const buildInitialForm = (
 
 const TenantForm = ({
   tenant = null,
+  users = [],
   mode = "create",
   loading = false,
   submitting = false,
@@ -491,50 +790,54 @@ const TenantForm = ({
   onSubmit,
   onCancel,
 }) => {
-  /*
-  |--------------------------------------------------------------------------
-  | EDIT MODE
-  |--------------------------------------------------------------------------
-  */
-
   const isEdit =
     mode === "edit" ||
     Boolean(tenant?.id);
 
+  const [form, setForm] =
+    useState(() =>
+      buildInitialForm(
+        tenant,
+        isEdit,
+        initialValues
+      )
+    );
+
+  const [errors, setErrors] =
+    useState({});
+
+  const [
+    serverError,
+    setServerError,
+  ] = useState("");
+
   /*
   |--------------------------------------------------------------------------
-  | FORM STATE
+  | NORMALIZE USERS
   |--------------------------------------------------------------------------
   */
 
-  const [form, setForm] = useState(() =>
-    buildInitialForm(
-      tenant,
-      isEdit,
-      initialValues
-    )
-  );
+  const normalizedUsers =
+    useMemo(() => {
+      if (
+        !Array.isArray(users)
+      ) {
+        return [];
+      }
+
+      return users
+        .map(
+          normalizeUserOption
+        )
+        .filter(
+          (user) =>
+            user.id !== ""
+        );
+    }, [users]);
 
   /*
   |--------------------------------------------------------------------------
-  | VALIDATION ERRORS
-  |--------------------------------------------------------------------------
-  */
-
-  const [errors, setErrors] = useState({});
-
-  /*
-  |--------------------------------------------------------------------------
-  | SERVER ERROR
-  |--------------------------------------------------------------------------
-  */
-
-  const [serverError, setServerError] =
-    useState("");
-
-  /*
-  |--------------------------------------------------------------------------
-  | RESET FORM WHEN TENANT CHANGES
+  | RESET WHEN TENANT / MODE CHANGES
   |--------------------------------------------------------------------------
   */
 
@@ -551,7 +854,10 @@ const TenantForm = ({
     setServerError("");
   }, [
     tenant?.id,
+    tenant?.user_id,
     mode,
+    isEdit,
+    initialValues,
   ]);
 
   /*
@@ -565,7 +871,10 @@ const TenantForm = ({
       return;
     }
 
-    if (typeof error === "string") {
+    if (
+      typeof error ===
+      "string"
+    ) {
       setServerError(error);
       return;
     }
@@ -573,10 +882,12 @@ const TenantForm = ({
     const message =
       error?.message ||
       error?.error ||
+      error?.errors?.message ||
       "Something went wrong. Please check the form and try again.";
 
     setServerError(
-      typeof message === "string"
+      typeof message ===
+        "string"
         ? message
         : "Something went wrong. Please check the form and try again."
     );
@@ -588,7 +899,9 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleChange = (event) => {
+  const handleChange = (
+    event
+  ) => {
     const {
       name,
       value,
@@ -601,24 +914,90 @@ const TenantForm = ({
         ? checked
         : value;
 
-    setForm((current) => ({
-      ...current,
-      [name]: nextValue,
-    }));
-
-    setErrors((current) => {
-      if (!current[name]) {
-        return current;
-      }
-
-      const next = {
+    setForm(
+      (current) => ({
         ...current,
-      };
+        [name]: nextValue,
+      })
+    );
 
-      delete next[name];
+    setErrors(
+      (current) => {
+        if (!current[name]) {
+          return current;
+        }
 
-      return next;
-    });
+        const next = {
+          ...current,
+        };
+
+        delete next[name];
+
+        return next;
+      }
+    );
+
+    setServerError("");
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | HANDLE USER CHANGE
+  |--------------------------------------------------------------------------
+  */
+
+  const handleUserChange = (
+    event
+  ) => {
+    const userId =
+      event.target.value;
+
+    const selectedUser =
+      normalizedUsers.find(
+        (user) =>
+          String(user.id) ===
+          String(userId)
+      );
+
+    setForm(
+      (current) => ({
+        ...current,
+
+        user_id: userId,
+
+        ...(selectedUser
+          ? {
+              first_name:
+                selectedUser.first_name ||
+                current.first_name,
+
+              last_name:
+                selectedUser.last_name ||
+                current.last_name,
+
+              email:
+                selectedUser.email ||
+                current.email,
+
+              phone:
+                selectedUser.phone ||
+                current.phone,
+            }
+          : {}),
+      })
+    );
+
+    setErrors(
+      (current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.user_id;
+
+        return next;
+      }
+    );
 
     setServerError("");
   };
@@ -633,24 +1012,28 @@ const TenantForm = ({
     name,
     value
   ) => {
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
-
-    setErrors((current) => {
-      if (!current[name]) {
-        return current;
-      }
-
-      const next = {
+    setForm(
+      (current) => ({
         ...current,
-      };
+        [name]: value,
+      })
+    );
 
-      delete next[name];
+    setErrors(
+      (current) => {
+        if (!current[name]) {
+          return current;
+        }
 
-      return next;
-    });
+        const next = {
+          ...current,
+        };
+
+        delete next[name];
+
+        return next;
+      }
+    );
 
     setServerError("");
   };
@@ -663,6 +1046,11 @@ const TenantForm = ({
 
   const validate = () => {
     const nextErrors = {};
+
+    const userId =
+      normalizeString(
+        form.user_id
+      );
 
     const firstName =
       normalizeString(
@@ -684,6 +1072,16 @@ const TenantForm = ({
         form.phone
       );
 
+    const idNumber =
+      normalizeString(
+        form.id_number
+      );
+
+    const passportNumber =
+      normalizeString(
+        form.passport_number
+      );
+
     const emergencyName =
       normalizeString(
         form.emergency_contact_name
@@ -699,11 +1097,10 @@ const TenantForm = ({
         form.emergency_contact_relationship
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | FIRST NAME
-    |--------------------------------------------------------------------------
-    */
+    if (!userId) {
+      nextErrors.user_id =
+        "Please select a tenant user account.";
+    }
 
     if (!firstName) {
       nextErrors.first_name =
@@ -715,12 +1112,6 @@ const TenantForm = ({
         "First name must be at least 2 characters.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | LAST NAME
-    |--------------------------------------------------------------------------
-    */
-
     if (!lastName) {
       nextErrors.last_name =
         "Last name is required.";
@@ -730,12 +1121,6 @@ const TenantForm = ({
       nextErrors.last_name =
         "Last name must be at least 2 characters.";
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | EMAIL
-    |--------------------------------------------------------------------------
-    */
 
     if (!email) {
       nextErrors.email =
@@ -749,12 +1134,6 @@ const TenantForm = ({
         "Enter a valid email address.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | PHONE
-    |--------------------------------------------------------------------------
-    */
-
     if (!phone) {
       nextErrors.phone =
         "Phone number is required.";
@@ -765,51 +1144,23 @@ const TenantForm = ({
         "Enter a valid phone number.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | ID / PASSPORT
-    |--------------------------------------------------------------------------
-    */
-
     if (
-      !normalizeString(
-        form.id_number
-      ) &&
-      !normalizeString(
-        form.passport_number
-      )
+      !idNumber &&
+      !passportNumber
     ) {
       nextErrors.id_number =
         "National ID or passport number is required.";
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | GENDER
-    |--------------------------------------------------------------------------
-    */
 
     if (!form.gender) {
       nextErrors.gender =
         "Please select gender.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | STATUS
-    |--------------------------------------------------------------------------
-    */
-
     if (!form.status) {
       nextErrors.status =
         "Please select tenant status.";
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | MONTHLY INCOME
-    |--------------------------------------------------------------------------
-    */
 
     if (
       normalizeString(
@@ -830,22 +1181,11 @@ const TenantForm = ({
       }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | EMERGENCY CONTACT
-    |--------------------------------------------------------------------------
-    |
-    | 0 fields = valid
-    | 3 fields = valid
-    | 1 or 2 fields = invalid
-    |
-    */
-
     const hasEmergencyContact =
       Boolean(
         emergencyName ||
-        emergencyPhone ||
-        emergencyRelationship
+          emergencyPhone ||
+          emergencyRelationship
       );
 
     if (hasEmergencyContact) {
@@ -868,8 +1208,9 @@ const TenantForm = ({
     setErrors(nextErrors);
 
     return (
-      Object.keys(nextErrors).length ===
-      0
+      Object.keys(
+        nextErrors
+      ).length === 0
     );
   };
 
@@ -898,17 +1239,21 @@ const TenantForm = ({
     const hasEmergencyContact =
       Boolean(
         emergencyName ||
-        emergencyPhone ||
-        emergencyRelationship
+          emergencyPhone ||
+          emergencyRelationship
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | PAYLOAD
-    |--------------------------------------------------------------------------
-    */
+    return {
+      /*
+      |--------------------------------------------------------------------------
+      | USER RELATION
+      |--------------------------------------------------------------------------
+      */
 
-    const payload = {
+      user_id: form.user_id
+        ? Number(form.user_id)
+        : null,
+
       /*
       |--------------------------------------------------------------------------
       | PERSONAL INFORMATION
@@ -951,10 +1296,16 @@ const TenantForm = ({
         ) || null,
 
       gender:
-        form.gender || null,
+        normalizeString(
+          form.gender
+        ) || null,
 
       date_of_birth:
-        form.date_of_birth || null,
+        form.date_of_birth
+          ? formatDateForInput(
+              form.date_of_birth
+            )
+          : null,
 
       nationality:
         normalizeString(
@@ -963,7 +1314,7 @@ const TenantForm = ({
 
       /*
       |--------------------------------------------------------------------------
-      | ADDRESS & LOCATION
+      | ADDRESS
       |--------------------------------------------------------------------------
       */
 
@@ -1044,19 +1395,14 @@ const TenantForm = ({
           form.monthly_income
         )
           ? Number(
-            form.monthly_income
-          )
+              form.monthly_income
+            )
           : null,
 
       /*
       |--------------------------------------------------------------------------
       | DOCUMENTS / MEDIA
       |--------------------------------------------------------------------------
-      |
-      | These are currently sent as their stored path/value.
-      | If your backend expects actual file uploads, your service
-      | should convert these fields to FormData.
-      |
       */
 
       photo:
@@ -1081,16 +1427,20 @@ const TenantForm = ({
       */
 
       status:
-        form.status || "pending",
+        normalizeString(
+          form.status
+        ) || "pending",
 
       is_active:
-        Boolean(
-          form.is_active
+        normalizeBoolean(
+          form.is_active,
+          true
         ),
 
       is_verified:
-        Boolean(
-          form.is_verified
+        normalizeBoolean(
+          form.is_verified,
+          false
         ),
 
       /*
@@ -1104,8 +1454,6 @@ const TenantForm = ({
           form.notes
         ) || null,
     };
-
-    return payload;
   };
 
   /*
@@ -1121,15 +1469,9 @@ const TenantForm = ({
 
     setServerError("");
 
-    const isValid =
-      validate();
-
-    if (!isValid) {
+    if (!validate()) {
       return;
     }
-
-    const payload =
-      buildPayload();
 
     if (
       typeof onSubmit !==
@@ -1142,15 +1484,25 @@ const TenantForm = ({
       return;
     }
 
+    const payload =
+      buildPayload();
+
     try {
       await onSubmit(
         payload,
         tenant
       );
-    } catch (submitError) {
-      setServerError(
+    } catch (
+      submitError
+    ) {
+      const message =
+        submitError?.response
+          ?.data?.message ||
         submitError?.message ||
-        "Failed to save tenant. Please try again."
+        "Failed to save tenant. Please try again.";
+
+      setServerError(
+        message
       );
 
       throw submitError;
@@ -1172,12 +1524,6 @@ const TenantForm = ({
     }
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | FORM TITLE
-  |--------------------------------------------------------------------------
-  */
-
   const formTitle = isEdit
     ? "Update Tenant"
     : "Create Tenant";
@@ -1186,20 +1532,9 @@ const TenantForm = ({
     ? "Update Tenant"
     : "Create Tenant";
 
-  /*
-  |--------------------------------------------------------------------------
-  | FIELD ERROR
-  |--------------------------------------------------------------------------
-  */
-
-  const fieldError = (field) =>
-    errors?.[field];
-
-  /*
-  |--------------------------------------------------------------------------
-  | HAS ERRORS
-  |--------------------------------------------------------------------------
-  */
+  const fieldError = (
+    field
+  ) => errors?.[field];
 
   const hasErrors =
     Object.keys(errors).length >
@@ -1213,6 +1548,7 @@ const TenantForm = ({
 
   const completion = useMemo(() => {
     const requiredFields = [
+      "user_id",
       "first_name",
       "last_name",
       "email",
@@ -1232,7 +1568,7 @@ const TenantForm = ({
     return Math.round(
       (completed /
         requiredFields.length) *
-      100
+        100
     );
   }, [form]);
 
@@ -1271,9 +1607,7 @@ const TenantForm = ({
       noValidate
       className="space-y-6"
     >
-      {/* ================================================================
-          HEADER
-      ================================================================= */}
+      {/* HEADER */}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -1319,52 +1653,135 @@ const TenantForm = ({
 
         {(serverError ||
           hasErrors) && (
-            <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
-              <div className="flex gap-3">
-                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
 
-                <div>
-                  <p className="text-sm font-semibold text-red-800">
-                    Please check the form
+              <div>
+                <p className="text-sm font-semibold text-red-800">
+                  Please check the form
+                </p>
+
+                {serverError && (
+                  <p className="mt-1 text-sm text-red-700">
+                    {serverError}
                   </p>
+                )}
 
-                  {serverError && (
-                    <p className="mt-1 text-sm text-red-700">
-                      {serverError}
-                    </p>
-                  )}
-
-                  {hasErrors && (
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
-                      {Object.entries(
-                        errors
-                      )
-                        .slice(0, 8)
-                        .map(
-                          ([
-                            field,
-                            message,
-                          ]) => (
-                            <li
-                              key={
-                                field
-                              }
-                            >
-                              {message}
-                            </li>
-                          )
-                        )}
-                    </ul>
-                  )}
-                </div>
+                {hasErrors && (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
+                    {Object.entries(
+                      errors
+                    )
+                      .slice(0, 8)
+                      .map(
+                        ([
+                          field,
+                          message,
+                        ]) => (
+                          <li
+                            key={
+                              field
+                            }
+                          >
+                            {message}
+                          </li>
+                        )
+                      )}
+                  </ul>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        )}
       </div>
 
-      {/* ================================================================
-          PERSONAL INFORMATION
-      ================================================================= */}
+      {/* TENANT USER ACCOUNT */}
+
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <SectionHeader
+          icon={
+            <UserRound className="h-5 w-5" />
+          }
+          title="Tenant User Account"
+          description="Select an existing user account that has the tenant role."
+        />
+
+        <div className="p-5 sm:p-6">
+          <SelectField
+            label="Tenant User"
+            name="user_id"
+            value={form.user_id}
+            onChange={
+              handleUserChange
+            }
+            error={fieldError(
+              "user_id"
+            )}
+            required
+            disabled={
+              submitting ||
+              (isEdit &&
+                Boolean(
+                  form.user_id
+                ))
+            }
+            options={[
+              {
+                value: "",
+                label:
+                  normalizedUsers.length
+                    ? "Select tenant user"
+                    : "No tenant users available",
+              },
+
+              ...normalizedUsers.map(
+                (user) => ({
+                  value:
+                    user.id,
+
+                  label:
+                    user.name +
+                    (user.email
+                      ? ` — ${user.email}`
+                      : ""),
+                })
+              ),
+            ]}
+          />
+
+          <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+            <div className="flex gap-2">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+
+              <p className="text-xs leading-5 text-blue-700">
+                Only select a user who already has the{" "}
+                <strong>
+                  tenant
+                </strong>{" "}
+                role. The selected user's ID will be stored as{" "}
+                <strong>
+                  user_id
+                </strong>{" "}
+                on the tenant profile.
+              </p>
+            </div>
+          </div>
+
+          {normalizedUsers.length ===
+            0 && (
+            <p className="mt-2 text-xs text-amber-600">
+              No tenant users were
+              provided. Create or
+              assign users the tenant
+              role first, then return
+              here.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* PERSONAL INFORMATION */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1379,8 +1796,12 @@ const TenantForm = ({
           <InputField
             label="First Name"
             name="first_name"
-            value={form.first_name}
-            onChange={handleChange}
+            value={
+              form.first_name
+            }
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "first_name"
             )}
@@ -1392,8 +1813,12 @@ const TenantForm = ({
           <InputField
             label="Last Name"
             name="last_name"
-            value={form.last_name}
-            onChange={handleChange}
+            value={
+              form.last_name
+            }
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "last_name"
             )}
@@ -1405,8 +1830,12 @@ const TenantForm = ({
           <InputField
             label="Other Names"
             name="other_names"
-            value={form.other_names}
-            onChange={handleChange}
+            value={
+              form.other_names
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Mwangi"
             hint="Optional additional or middle names."
           />
@@ -1416,7 +1845,9 @@ const TenantForm = ({
             name="email"
             type="email"
             value={form.email}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "email"
             )}
@@ -1433,7 +1864,9 @@ const TenantForm = ({
             name="phone"
             type="tel"
             value={form.phone}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "phone"
             )}
@@ -1448,8 +1881,12 @@ const TenantForm = ({
           <InputField
             label="National ID Number"
             name="id_number"
-            value={form.id_number}
-            onChange={handleChange}
+            value={
+              form.id_number
+            }
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "id_number"
             )}
@@ -1463,7 +1900,9 @@ const TenantForm = ({
             value={
               form.passport_number
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. A12345678"
           />
 
@@ -1471,7 +1910,9 @@ const TenantForm = ({
             label="Gender"
             name="gender"
             value={form.gender}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "gender"
             )}
@@ -1504,7 +1945,9 @@ const TenantForm = ({
             value={
               form.date_of_birth
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             icon={
               <CalendarDays className="h-4 w-4" />
             }
@@ -1516,7 +1959,9 @@ const TenantForm = ({
             value={
               form.nationality
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Kenyan"
             icon={
               <Globe2 className="h-4 w-4" />
@@ -1525,9 +1970,7 @@ const TenantForm = ({
         </div>
       </section>
 
-      {/* ================================================================
-          ADDRESS & LOCATION
-      ================================================================= */}
+      {/* ADDRESS */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1543,7 +1986,9 @@ const TenantForm = ({
             label="Country"
             name="country"
             value={form.country}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Kenya"
           />
 
@@ -1551,7 +1996,9 @@ const TenantForm = ({
             label="Region"
             name="region"
             value={form.region}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Nairobi Region"
           />
 
@@ -1559,7 +2006,9 @@ const TenantForm = ({
             label="County"
             name="county"
             value={form.county}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Nairobi"
           />
 
@@ -1567,7 +2016,9 @@ const TenantForm = ({
             label="City"
             name="city"
             value={form.city}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Nairobi"
           />
 
@@ -1575,15 +2026,21 @@ const TenantForm = ({
             label="Area"
             name="area"
             value={form.area}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Westlands"
           />
 
           <InputField
             label="Postal Code"
             name="postal_code"
-            value={form.postal_code}
-            onChange={handleChange}
+            value={
+              form.postal_code
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. 00100"
             autoComplete="postal-code"
           />
@@ -1592,8 +2049,12 @@ const TenantForm = ({
             <TextAreaField
               label="Residential Address"
               name="address"
-              value={form.address}
-              onChange={handleChange}
+              value={
+                form.address
+              }
+              onChange={
+                handleChange
+              }
               placeholder="Enter the tenant's residential address..."
               rows={3}
             />
@@ -1601,9 +2062,7 @@ const TenantForm = ({
         </div>
       </section>
 
-      {/* ================================================================
-          EMPLOYMENT
-      ================================================================= */}
+      {/* EMPLOYMENT */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1618,16 +2077,24 @@ const TenantForm = ({
           <InputField
             label="Occupation"
             name="occupation"
-            value={form.occupation}
-            onChange={handleChange}
+            value={
+              form.occupation
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Software Engineer"
           />
 
           <InputField
             label="Employer / Company"
             name="employer"
-            value={form.employer}
-            onChange={handleChange}
+            value={
+              form.employer
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. ABC Technologies Ltd"
           />
 
@@ -1640,7 +2107,9 @@ const TenantForm = ({
             value={
               form.monthly_income
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "monthly_income"
             )}
@@ -1650,9 +2119,7 @@ const TenantForm = ({
         </div>
       </section>
 
-      {/* ================================================================
-          EMERGENCY CONTACT
-      ================================================================= */}
+      {/* EMERGENCY CONTACT */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1670,7 +2137,9 @@ const TenantForm = ({
             value={
               form.emergency_contact_name
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "emergency_contact_name"
             )}
@@ -1684,7 +2153,9 @@ const TenantForm = ({
             value={
               form.emergency_contact_phone
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "emergency_contact_phone"
             )}
@@ -1697,7 +2168,9 @@ const TenantForm = ({
             value={
               form.emergency_contact_relationship
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "emergency_contact_relationship"
             )}
@@ -1706,9 +2179,7 @@ const TenantForm = ({
         </div>
       </section>
 
-      {/* ================================================================
-          DOCUMENTS & MEDIA
-      ================================================================= */}
+      {/* DOCUMENTS */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1724,7 +2195,9 @@ const TenantForm = ({
             label="Profile Photo"
             name="photo"
             value={form.photo}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. tenants/profile.jpg"
             hint="Stored photo path or URL."
           />
@@ -1732,8 +2205,12 @@ const TenantForm = ({
           <InputField
             label="ID Front"
             name="id_front"
-            value={form.id_front}
-            onChange={handleChange}
+            value={
+              form.id_front
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. tenants/id-front.jpg"
             hint="Stored ID front path or URL."
           />
@@ -1741,17 +2218,19 @@ const TenantForm = ({
           <InputField
             label="ID Back"
             name="id_back"
-            value={form.id_back}
-            onChange={handleChange}
+            value={
+              form.id_back
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. tenants/id-back.jpg"
             hint="Stored ID back path or URL."
           />
         </div>
       </section>
 
-      {/* ================================================================
-          ACCOUNT SETTINGS
-      ================================================================= */}
+      {/* ACCOUNT SETTINGS */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1767,7 +2246,9 @@ const TenantForm = ({
             label="Tenant Status"
             name="status"
             value={form.status}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "status"
             )}
@@ -1800,7 +2281,9 @@ const TenantForm = ({
             checked={
               form.is_active
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
           />
 
           <ToggleField
@@ -1810,14 +2293,14 @@ const TenantForm = ({
             checked={
               form.is_verified
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
           />
         </div>
       </section>
 
-      {/* ================================================================
-          NOTES
-      ================================================================= */}
+      {/* NOTES */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1833,79 +2316,40 @@ const TenantForm = ({
             label="Notes"
             name="notes"
             value={form.notes}
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="Enter any additional notes about this tenant..."
             rows={5}
           />
         </div>
       </section>
 
-      {/* ================================================================
-          ACTIONS
-      ================================================================= */}
+      {/* ACTIONS */}
 
       <div className="sticky bottom-0 z-10 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:p-5">
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            onClick={handleCancel}
-            disabled={submitting}
-            className="
-              inline-flex
-              w-full
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              border
-              border-gray-300
-              bg-white
-              px-5
-              py-2.5
-              text-sm
-              font-medium
-              text-gray-700
-              transition
-              hover:bg-gray-50
-              focus:outline-none
-              focus:ring-2
-              focus:ring-gray-400/20
-              disabled:cursor-not-allowed
-              disabled:opacity-50
-              sm:w-auto
-            "
+            onClick={
+              handleCancel
+            }
+            disabled={
+              submitting
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             <X className="h-4 w-4" />
-
             Cancel
           </button>
 
           <button
             type="submit"
-            disabled={submitting}
-            className="
-              inline-flex
-              w-full
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              bg-primary-600
-              px-6
-              py-2.5
-              text-sm
-              font-semibold
-              text-white
-              shadow-sm
-              transition
-              hover:bg-primary-700
-              focus:outline-none
-              focus:ring-2
-              focus:ring-primary-500/30
-              disabled:cursor-not-allowed
-              disabled:opacity-60
-              sm:w-auto
-            "
+            disabled={
+              submitting ||
+              loading
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? (
               <>
@@ -2016,12 +2460,18 @@ const InputField = ({
           type={type}
           value={value ?? ""}
           onChange={onChange}
-          placeholder={placeholder}
-          autoComplete={autoComplete}
+          placeholder={
+            placeholder
+          }
+          autoComplete={
+            autoComplete
+          }
           disabled={disabled}
           min={min}
           step={step}
-          aria-invalid={hasError}
+          aria-invalid={
+            hasError
+          }
           aria-describedby={
             hasError
               ? `${name}-error`
@@ -2029,27 +2479,15 @@ const InputField = ({
                 ? `${name}-hint`
                 : undefined
           }
-          className={`
-            h-10
-            w-full
-            rounded-lg
-            border
-            bg-white
-            px-3
-            text-sm
-            text-gray-900
-            outline-none
-            transition
-            placeholder:text-gray-400
-            disabled:cursor-not-allowed
-            disabled:bg-gray-50
-            disabled:text-gray-500
-            ${icon ? "pl-10" : ""}
-            ${hasError
+          className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+            icon
+              ? "pl-10"
+              : ""
+          } ${
+            hasError
               ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
               : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            }
-          `}
+          }`}
         />
       </div>
 
@@ -2068,7 +2506,6 @@ const InputField = ({
           className="flex items-center gap-1 text-xs text-red-600"
         >
           <AlertCircle className="h-3.5 w-3.5" />
-
           {error}
         </p>
       )}
@@ -2117,40 +2554,28 @@ const SelectField = ({
           value={value ?? ""}
           onChange={onChange}
           disabled={disabled}
-          aria-invalid={hasError}
-          className={`
-            h-10
-            w-full
-            appearance-none
-            rounded-lg
-            border
-            bg-white
-            px-3
-            pr-10
-            text-sm
-            text-gray-900
-            outline-none
-            transition
-            disabled:cursor-not-allowed
-            disabled:bg-gray-50
-            disabled:text-gray-500
-            ${hasError
+          aria-invalid={
+            hasError
+          }
+          className={`h-10 w-full appearance-none rounded-lg border bg-white px-3 pr-10 text-sm text-gray-900 outline-none transition disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+            hasError
               ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
               : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            }
-          `}
+          }`}
         >
           {options.map(
             (option) => (
               <option
-                key={
+                key={String(
                   option.value
-                }
+                )}
                 value={
                   option.value
                 }
               >
-                {option.label}
+                {
+                  option.label
+                }
               </option>
             )
           )}
@@ -2162,7 +2587,6 @@ const SelectField = ({
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
-
           {error}
         </p>
       )}
@@ -2210,32 +2634,22 @@ const TextAreaField = ({
         value={value ?? ""}
         onChange={onChange}
         rows={rows}
-        placeholder={placeholder}
-        aria-invalid={hasError}
-        className={`
-          w-full
-          resize-y
-          rounded-lg
-          border
-          bg-white
-          px-3
-          py-2.5
-          text-sm
-          text-gray-900
-          outline-none
-          transition
-          placeholder:text-gray-400
-          ${hasError
+        placeholder={
+          placeholder
+        }
+        aria-invalid={
+          hasError
+        }
+        className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 ${
+          hasError
             ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
             : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-          }
-        `}
+        }`}
       />
 
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
-
           {error}
         </p>
       )}
@@ -2259,20 +2673,7 @@ const ToggleField = ({
   return (
     <label
       htmlFor={name}
-      className="
-        flex
-        cursor-pointer
-        items-center
-        justify-between
-        gap-4
-        rounded-xl
-        border
-        border-gray-200
-        bg-gray-50
-        p-4
-        transition
-        hover:bg-gray-100
-      "
+      className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 transition hover:bg-gray-100"
     >
       <div>
         <p className="text-sm font-medium text-gray-800">
@@ -2305,4 +2706,3 @@ const ToggleField = ({
 };
 
 export default TenantForm;
-
