@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
 
 class TenantSeeder extends Seeder
 {
@@ -14,7 +15,8 @@ class TenantSeeder extends Seeder
      */
     public function run(): void
     {
-          $tenants = [
+        $tenants = [
+
             [
                 'tenant_number' => 'TNT-000001',
                 'first_name' => 'Brian',
@@ -27,8 +29,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '28745001',
                 'passport_number' => 'A12345678',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Westlands',
                 'postal_code' => '00100',
                 'address' => 'Westlands, Nairobi',
                 'occupation' => 'Software Engineer',
@@ -55,8 +59,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '29167002',
                 'passport_number' => 'A23456789',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Kiambu',
                 'city' => 'Ruiru',
+                'area' => 'Ruiru Town',
                 'postal_code' => '00232',
                 'address' => 'Ruiru, Kiambu',
                 'occupation' => 'Accountant',
@@ -83,8 +89,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '24583003',
                 'passport_number' => 'A34567890',
                 'country' => 'Kenya',
+                'region' => 'Nyanza Region',
                 'county' => 'Kisumu',
                 'city' => 'Kisumu',
+                'area' => 'Milimani',
                 'postal_code' => '40100',
                 'address' => 'Milimani, Kisumu',
                 'occupation' => 'Business Manager',
@@ -111,8 +119,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '31894004',
                 'passport_number' => 'A45678901',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Kilimani',
                 'postal_code' => '00505',
                 'address' => 'Kilimani, Nairobi',
                 'occupation' => 'Marketing Executive',
@@ -139,8 +149,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '22356005',
                 'passport_number' => 'A56789012',
                 'country' => 'Kenya',
+                'region' => 'Rift Valley Region',
                 'county' => 'Uasin Gishu',
                 'city' => 'Eldoret',
+                'area' => 'Elgon View',
                 'postal_code' => '30100',
                 'address' => 'Elgon View, Eldoret',
                 'occupation' => 'Civil Engineer',
@@ -167,8 +179,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '32978006',
                 'passport_number' => 'A67890123',
                 'country' => 'Kenya',
+                'region' => 'Rift Valley Region',
                 'county' => 'Nakuru',
                 'city' => 'Nakuru',
+                'area' => 'Milimani',
                 'postal_code' => '20100',
                 'address' => 'Milimani, Nakuru',
                 'occupation' => 'Human Resources Officer',
@@ -195,8 +209,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '30245007',
                 'passport_number' => 'A78901234',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'South B',
                 'postal_code' => '00100',
                 'address' => 'South B, Nairobi',
                 'occupation' => 'Graphic Designer',
@@ -223,8 +239,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '27689008',
                 'passport_number' => 'A89012345',
                 'country' => 'Kenya',
+                'region' => 'Rift Valley Region',
                 'county' => 'Kericho',
                 'city' => 'Kericho',
+                'area' => 'Kericho Town',
                 'postal_code' => '20200',
                 'address' => 'Kericho Town',
                 'occupation' => 'Pharmacist',
@@ -251,8 +269,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '21876009',
                 'passport_number' => 'A90123456',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Lavington',
                 'postal_code' => '00606',
                 'address' => 'Lavington, Nairobi',
                 'occupation' => 'Procurement Manager',
@@ -279,8 +299,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '29431010',
                 'passport_number' => 'B12345678',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Murang’a',
                 'city' => 'Thika',
+                'area' => 'Section 9',
                 'postal_code' => '01000',
                 'address' => 'Section 9, Thika',
                 'occupation' => 'Teacher',
@@ -307,8 +329,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '25892011',
                 'passport_number' => 'B23456789',
                 'country' => 'Kenya',
+                'region' => 'Eastern Region',
                 'county' => 'Machakos',
                 'city' => 'Machakos',
+                'area' => 'Machakos Town',
                 'postal_code' => '90100',
                 'address' => 'Machakos Town',
                 'occupation' => 'Sales Manager',
@@ -335,8 +359,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '32167012',
                 'passport_number' => 'B34567890',
                 'country' => 'Kenya',
+                'region' => 'Nyanza Region',
                 'county' => 'Kisumu',
                 'city' => 'Kisumu',
+                'area' => 'Kondele',
                 'postal_code' => '40100',
                 'address' => 'Kondele, Kisumu',
                 'occupation' => 'Medical Officer',
@@ -363,8 +389,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '23654013',
                 'passport_number' => 'B45678901',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Kiambu',
                 'city' => 'Limuru',
+                'area' => 'Limuru Town',
                 'postal_code' => '00217',
                 'address' => 'Limuru Town',
                 'occupation' => 'Business Consultant',
@@ -391,8 +419,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '33542014',
                 'passport_number' => 'B56789012',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Kasarani',
                 'postal_code' => '00100',
                 'address' => 'Kasarani, Nairobi',
                 'occupation' => 'Customer Service Officer',
@@ -419,8 +449,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '20578015',
                 'passport_number' => 'B67890123',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Nyeri',
                 'city' => 'Nyeri',
+                'area' => 'Nyeri Town',
                 'postal_code' => '10100',
                 'address' => 'Nyeri Town',
                 'occupation' => 'Architect',
@@ -436,34 +468,87 @@ class TenantSeeder extends Seeder
             ],
         ];
 
+        /*
+        |--------------------------------------------------------------------------
+        | Tenant Role
+        |--------------------------------------------------------------------------
+        */
+
+        $tenantRole = Role::firstOrCreate([
+            'name' => 'tenant',
+            'guard_name' => 'web',
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Seed Tenants
+        |--------------------------------------------------------------------------
+        */
+
         foreach ($tenants as $data) {
+
             /*
             |--------------------------------------------------------------------------
-            | Auto-compute is_active based on status
+            | Synchronize Active State
             |--------------------------------------------------------------------------
+            |
+            | is_active is now stored in the database.
+            |
+            | ACTIVE    => true
+            | PENDING   => false
+            | INACTIVE  => false
+            | BLACKLIST => false
+            |
             */
-            $data['is_active'] = $data['status'] === Tenant::STATUS_ACTIVE;
+
+            $data['is_active'] =
+                $data['status'] === Tenant::STATUS_ACTIVE;
 
             /*
             |--------------------------------------------------------------------------
             | Find Existing User
             |--------------------------------------------------------------------------
             */
+
             $user = User::withTrashed()
                 ->where('email', $data['email'])
                 ->first();
 
             if ($user) {
-                if (method_exists($user, 'trashed') && $user->trashed()) {
+
+                /*
+                |--------------------------------------------------------------------------
+                | Restore User If Soft Deleted
+                |--------------------------------------------------------------------------
+                */
+
+                if (
+                    method_exists($user, 'trashed') &&
+                    $user->trashed()
+                ) {
                     $user->restore();
                 }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Update User
+                |--------------------------------------------------------------------------
+                */
 
                 $user->update([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
                     'phone' => $data['phone'],
                 ]);
+
             } else {
+
+                /*
+                |--------------------------------------------------------------------------
+                | Create User
+                |--------------------------------------------------------------------------
+                */
+
                 $user = User::create([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
@@ -478,11 +563,9 @@ class TenantSeeder extends Seeder
             | Assign Tenant Role
             |--------------------------------------------------------------------------
             */
-            if (
-                method_exists($user, 'assignRole') &&
-                \Spatie\Permission\Models\Role::where('name', 'tenant')->exists()
-            ) {
-                $user->assignRole('tenant');
+
+            if (method_exists($user, 'assignRole')) {
+                $user->assignRole($tenantRole);
             }
 
             /*
@@ -490,13 +573,33 @@ class TenantSeeder extends Seeder
             | Create / Update Tenant
             |--------------------------------------------------------------------------
             */
+
             Tenant::withTrashed()->updateOrCreate(
-                ['tenant_number' => $data['tenant_number']],
-                array_merge($data, ['user_id' => $user->id])
+                [
+                    'tenant_number' => $data['tenant_number'],
+                ],
+                array_merge(
+                    $data,
+                    [
+                        'user_id' => $user->id,
+                    ]
+                )
             );
         }
 
-        $this->command?->info(count($tenants) . ' tenants and their user accounts seeded successfully.');
-        $this->command?->info('Tenant login password: Password@123');
+        /*
+        |--------------------------------------------------------------------------
+        | Seeder Information
+        |--------------------------------------------------------------------------
+        */
+
+        $this->command?->info(
+            count($tenants) .
+            ' tenants and their user accounts seeded successfully.'
+        );
+
+        $this->command?->info(
+            'Tenant login password: Password@123'
+        );
     }
 }

@@ -32,7 +32,13 @@ class TenantResource extends JsonResource
             | User Account
             |--------------------------------------------------------------------------
             |
-            | A tenant can optionally be linked to a system user.
+            | user_id is returned directly from the tenants table.
+            |
+            | user is returned when the relationship has been loaded.
+            |
+            | TenantService loads the user relationship using:
+            |
+            |     ->with('user')
             |
             */
 
@@ -75,7 +81,7 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | Identification Documents
+            | Identification
             |--------------------------------------------------------------------------
             */
 
@@ -86,19 +92,53 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | Address Information
+            | Location
             |--------------------------------------------------------------------------
+            |
+            | Full tenant location hierarchy:
+            |
+            | Country
+            | Region
+            | County
+            | City
+            | Area
+            | Postal Code
+            | Address
+            |
             */
 
             'country' => $this->country,
+
+            'region' => $this->region,
 
             'county' => $this->county,
 
             'city' => $this->city,
 
+            'area' => $this->area,
+
             'postal_code' => $this->postal_code,
 
             'address' => $this->address,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Location Object
+            |--------------------------------------------------------------------------
+            |
+            | Convenient nested representation for frontend applications.
+            |
+            */
+
+            'location' => [
+                'country' => $this->country,
+                'region' => $this->region,
+                'county' => $this->county,
+                'city' => $this->city,
+                'area' => $this->area,
+                'postal_code' => $this->postal_code,
+                'address' => $this->address,
+            ],
 
 
             /*
@@ -187,16 +227,54 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | Tenancies
             |--------------------------------------------------------------------------
+            |
+            | Every tenancy can contain:
+            |
+            | - Property
+            | - Apartment
+            | - Unit
+            |
+            | These relationships are loaded by TenantService.
+            |
             */
 
             'tenancies' => $this->when(
                 $this->relationLoaded('tenancies'),
-                fn () => TenancyResource::collection($this->tenancies)
+                function () {
+                    return TenancyResource::collection(
+                        $this->tenancies
+                    );
+                }
             ),
 
             'tenancy_count' => $this->when(
                 $this->relationLoaded('tenancies'),
-                fn () => $this->tenancies->count()
+                function () {
+                    return $this->tenancies->count();
+                }
+            ),
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Active Tenancies
+            |--------------------------------------------------------------------------
+            */
+
+            'active_tenancies' => $this->when(
+                $this->relationLoaded('activeTenancies'),
+                function () {
+                    return TenancyResource::collection(
+                        $this->activeTenancies
+                    );
+                }
+            ),
+
+            'active_tenancy_count' => $this->when(
+                $this->relationLoaded('activeTenancies'),
+                function () {
+                    return $this->activeTenancies->count();
+                }
             ),
 
 

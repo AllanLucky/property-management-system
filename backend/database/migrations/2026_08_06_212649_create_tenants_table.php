@@ -28,7 +28,7 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('tenant_number')
+            $table->string('tenant_number', 50)
                 ->unique();
 
 
@@ -37,13 +37,13 @@ return new class extends Migration
             | User Relationship
             |--------------------------------------------------------------------------
             |
-            | Each tenant can be linked to one user account.
+            | Each tenant can optionally be linked to one user account.
             |
-            | The user_id is nullable here to allow existing/imported tenant
-            | records to exist before their user account is created.
+            | user_id is nullable to support:
             |
-            | New tenants should always be created with a valid user_id
-            | from the TenantController/service.
+            | - Imported tenants
+            | - Tenants created before a user account
+            | - Tenants without login accounts
             |
             */
 
@@ -51,6 +51,7 @@ return new class extends Migration
                 ->nullable()
                 ->unique()
                 ->constrained('users')
+                ->cascadeOnUpdate()
                 ->nullOnDelete();
 
 
@@ -60,18 +61,18 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('first_name');
+            $table->string('first_name', 100);
 
-            $table->string('last_name');
+            $table->string('last_name', 100);
 
-            $table->string('other_names')
+            $table->string('other_names', 150)
                 ->nullable();
 
-            $table->string('email')
+            $table->string('email', 150)
                 ->nullable()
                 ->index();
 
-            $table->string('phone')
+            $table->string('phone', 30)
                 ->unique();
 
             $table->date('date_of_birth')
@@ -90,47 +91,46 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('id_number')
+            $table->string('id_number', 100)
                 ->nullable()
-                ->index();
+                ->unique();
 
-            $table->string('passport_number')
+            $table->string('passport_number', 100)
                 ->nullable()
-                ->index();
+                ->unique();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Emergency Contact
+            | Location Information
             |--------------------------------------------------------------------------
+            |
+            | Country
+            |   └── Region
+            |       └── County
+            |           └── City
+            |               └── Area
+            |                   └── Postal Code
+            |                       └── Address
+            |
             */
 
-            $table->string('emergency_contact_name')
-                ->nullable();
-
-            $table->string('emergency_contact_phone')
-                ->nullable();
-
-            $table->string('emergency_contact_relationship')
-                ->nullable();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Address Information
-            |--------------------------------------------------------------------------
-            */
-
-            $table->string('country')
+            $table->string('country', 100)
                 ->default('Kenya');
 
-            $table->string('county')
+            $table->string('region', 150)
                 ->nullable();
 
-            $table->string('city')
+            $table->string('county', 150)
                 ->nullable();
 
-            $table->string('postal_code')
+            $table->string('city', 150)
+                ->nullable();
+
+            $table->string('area', 150)
+                ->nullable();
+
+            $table->string('postal_code', 30)
                 ->nullable();
 
             $table->text('address')
@@ -143,13 +143,29 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('occupation')
+            $table->string('occupation', 150)
                 ->nullable();
 
-            $table->string('employer')
+            $table->string('employer', 200)
                 ->nullable();
 
-            $table->decimal('monthly_income', 12, 2)
+            $table->decimal('monthly_income', 15, 2)
+                ->nullable();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Emergency Contact
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('emergency_contact_name', 150)
+                ->nullable();
+
+            $table->string('emergency_contact_phone', 30)
+                ->nullable();
+
+            $table->string('emergency_contact_relationship', 100)
                 ->nullable();
 
 
@@ -196,13 +212,21 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Status
             |--------------------------------------------------------------------------
+            |
+            | Supported statuses:
+            |
+            | - pending
+            | - active
+            | - inactive
+            | - blacklisted
+            |
             */
 
             $table->enum('status', [
+                'pending',
                 'active',
                 'inactive',
                 'blacklisted',
-                'pending',
             ])
                 ->default('pending')
                 ->index();
@@ -213,22 +237,22 @@ return new class extends Migration
             | Active Flag
             |--------------------------------------------------------------------------
             |
-            | This flag is separate from the tenant status.
+            | This field provides a simple boolean representation of whether
+            | the tenant account is currently active.
             |
-            | status:
-            |   - active
-            |   - inactive
-            |   - pending
-            |   - blacklisted
+            | Recommended synchronization:
             |
-            | is_active:
-            |   - true  = tenant record is enabled
-            |   - false = tenant record is disabled
+            | pending     => false
+            | active      => true
+            | inactive    => false
+            | blacklisted => false
+            |
+            | The Tenant model/service should keep this synchronized.
             |
             */
 
             $table->boolean('is_active')
-                ->default(true)
+                ->default(false)
                 ->index();
 
 
@@ -244,37 +268,91 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Timestamps & Soft Deletes
+            | Timestamps
             |--------------------------------------------------------------------------
             */
 
             $table->timestamps();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Soft Deletes
+            |--------------------------------------------------------------------------
+            */
 
             $table->softDeletes();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Composite Indexes
+            | Search Indexes
             |--------------------------------------------------------------------------
             */
 
-            $table->index([
-                'first_name',
-                'last_name',
-            ]);
+            $table->index('first_name');
 
-            $table->index([
-                'status',
-                'is_active',
-            ]);
+            $table->index('last_name');
 
-            $table->index([
-                'is_verified',
-                'is_active',
-            ]);
+            $table->index('country');
+
+            $table->index('region');
+
+            $table->index('county');
+
+            $table->index('city');
+
+            $table->index('area');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Composite Status / Active Index
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index(
+                [
+                    'status',
+                    'is_active',
+                ],
+                'tenants_status_active_index'
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Composite Verification / Active Index
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index(
+                [
+                    'is_verified',
+                    'is_active',
+                ],
+                'tenants_verification_active_index'
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Composite Location Index
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index(
+                [
+                    'region',
+                    'county',
+                    'city',
+                    'area',
+                ],
+                'tenants_location_index'
+            );
         });
     }
+
 
     /**
      * Reverse the migrations.
