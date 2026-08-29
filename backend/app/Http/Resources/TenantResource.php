@@ -10,409 +10,365 @@ class TenantResource extends JsonResource
     /**
      * Transform the resource into an array.
      *
-     * The User account is the source of truth for:
+     * Architecture:
      *
-     * - first name
-     * - last name
-     * - other names
-     * - email
-     * - phone
-     * - account status
-     * - roles / permissions
+     * users table
+     * --------------------------------------------------------------------------
+     * User identity, profile, authentication, account and authorization data
+     * belongs to the User model.
      *
-     * Tenant-specific information remains on the tenants table.
+     * tenants table
+     * --------------------------------------------------------------------------
+     * Tenant-specific profile, identification, location, employment,
+     * emergency contact, documents, verification and tenant status data
+     * belongs to the Tenant model.
+     *
+     * Relationships:
+     *
+     * Tenant belongsTo User
+     * Tenant hasMany Tenancies
+     *
+     * IMPORTANT:
+     *
+     * UserResource is the single source of truth for User data.
+     * TenantResource must not duplicate User serialization logic.
      *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
-        /*
-        |--------------------------------------------------------------------------
-        | Linked User
-        |--------------------------------------------------------------------------
-        |
-        | The Tenant model should have:
-        |
-        |     user_id
-        |
-        | and:
-        |
-        |     user()
-        |
-        | relationship.
-        |
-        | TenantService should preferably load:
-        |
-        |     ->with('user')
-        |
-        */
-
-        $user = $this->relationLoaded('user')
-            ? $this->user
-            : null;
-
-        /*
-        |--------------------------------------------------------------------------
-        | User Identity
-        |--------------------------------------------------------------------------
-        |
-        | Prefer values from users table.
-        |
-        | Tenant table values are used as fallback so existing tenant records
-        | do not immediately break if the user relationship is unavailable.
-        |
-        */
-
-        $firstName = $user?->first_name ?? $this->first_name;
-
-        $lastName = $user?->last_name ?? $this->last_name;
-
-        $otherNames = $user?->other_names ?? $this->other_names;
-
-        $email = $user?->email ?? $this->email;
-
-        $phone = $user?->phone ?? $this->phone;
-
-        $fullName = trim(
-            collect([
-                $firstName,
-                $otherNames,
-                $lastName,
-            ])
-                ->filter(fn ($value) => filled($value))
-                ->implode(' ')
-        );
+        $tenant = $this->resource;
 
         return [
 
             /*
             |--------------------------------------------------------------------------
-            | Tenant Identification
+            | TENANT IDENTIFICATION
             |--------------------------------------------------------------------------
             */
 
-            'id' => $this->id,
+            'id' => $tenant->id,
 
-            'tenant_number' => $this->tenant_number,
-
+            'tenant_number' => $tenant->tenant_number,
 
             /*
             |--------------------------------------------------------------------------
-            | Linked User Account
+            | LINKED USER
             |--------------------------------------------------------------------------
+            |
+            | UserResource owns:
+            |
+            | - Identity
+            | - Profile
+            | - Account status
+            | - Approval status
+            | - Verification
+            | - Roles
+            | - Permissions
+            | - Security
+            | - Tracking
+            |
+            | Do not duplicate those fields here.
+            |
             */
 
-            'user_id' => $this->user_id,
+            'user_id' => $tenant->user_id,
 
             'user' => $this->whenLoaded(
                 'user',
-                function () use ($user) {
-                    return $user
-                        ? new UserResource($user)
-                        : null;
-                }
+                fn () => $tenant->user
+                    ? new UserResource($tenant->user)
+                    : null
             ),
 
-
             /*
             |--------------------------------------------------------------------------
-            | User Identity
+            | TENANT PROFILE
             |--------------------------------------------------------------------------
             |
-            | These values are primarily taken from the users table.
+            | These fields belong specifically to the Tenant record.
             |
             */
 
-            'first_name' => $firstName,
-
-            'last_name' => $lastName,
-
-            'other_names' => $otherNames,
-
-            'full_name' => $fullName,
-
-            'email' => $email,
-
-            'phone' => $phone,
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Account Information
-            |--------------------------------------------------------------------------
-            |
-            | These values come from the linked user when the relationship is
-            | loaded. This is useful for the Admin Users / Tenant interface.
-            |
-            */
-
-            'account' => $this->when(
-                $this->relationLoaded('user'),
-                function () use ($user) {
-
-                    if (!$user) {
-                        return null;
-                    }
-
-                    return [
-                        'id' => $user->id,
-
-                        'name' => $user->name
-                            ?? trim(
-                                collect([
-                                    $user->first_name ?? null,
-                                    $user->other_names ?? null,
-                                    $user->last_name ?? null,
-                                ])
-                                    ->filter(fn ($value) => filled($value))
-                                    ->implode(' ')
-                            ),
-
-                        'email' => $user->email,
-
-                        'phone' => $user->phone,
-
-                        'status' => $user->status ?? null,
-
-                        'is_active' => isset($user->is_active)
-                            ? (bool) $user->is_active
-                            : null,
-
-                        'email_verified_at' => $user->email_verified_at
-                            ? $user->email_verified_at->toISOString()
-                            : null,
-
-                        'roles' => method_exists($user, 'getRoleNames')
-                            ? $user->getRoleNames()->values()->all()
-                            : [],
-
-                    ];
-                }
-            ),
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Personal Information
-            |--------------------------------------------------------------------------
-            |
-            | Date of birth and gender remain tenant-specific unless you have
-            | deliberately moved them to users.
-            |
-            */
-
-            'date_of_birth' => $this->date_of_birth
-                ? $this->date_of_birth->format('Y-m-d')
+            'date_of_birth' => $tenant->date_of_birth
+                ? $tenant->date_of_birth->format('Y-m-d')
                 : null,
 
-            'gender' => $this->gender,
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Identification
-            |--------------------------------------------------------------------------
-            |
-            | These belong to the tenant profile, not the authentication user.
-            |
-            */
-
-            'id_number' => $this->id_number,
-
-            'passport_number' => $this->passport_number,
-
+            'gender' => $tenant->gender,
 
             /*
             |--------------------------------------------------------------------------
-            | Location
+            | IDENTIFICATION
             |--------------------------------------------------------------------------
             */
 
-            'country' => $this->country,
-
-            'region' => $this->region,
-
-            'county' => $this->county,
-
-            'city' => $this->city,
-
-            'area' => $this->area,
-
-            'postal_code' => $this->postal_code,
-
-            'address' => $this->address,
-
+            'identification' => [
+                'id_number' => $tenant->id_number,
+                'passport_number' => $tenant->passport_number,
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | Location Object
+            | DIRECT IDENTIFICATION FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | Kept for frontend compatibility.
+            |
+            */
+
+            'id_number' => $tenant->id_number,
+
+            'passport_number' => $tenant->passport_number,
+
+            /*
+            |--------------------------------------------------------------------------
+            | LOCATION
             |--------------------------------------------------------------------------
             */
 
             'location' => [
-                'country' => $this->country,
-
-                'region' => $this->region,
-
-                'county' => $this->county,
-
-                'city' => $this->city,
-
-                'area' => $this->area,
-
-                'postal_code' => $this->postal_code,
-
-                'address' => $this->address,
+                'country' => $tenant->country,
+                'region' => $tenant->region,
+                'county' => $tenant->county,
+                'city' => $tenant->city,
+                'area' => $tenant->area,
+                'postal_code' => $tenant->postal_code,
+                'address' => $tenant->address,
             ],
-
 
             /*
             |--------------------------------------------------------------------------
-            | Employment Information
+            | DIRECT LOCATION FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | Kept for frontend compatibility.
+            |
+            */
+
+            'country' => $tenant->country,
+
+            'region' => $tenant->region,
+
+            'county' => $tenant->county,
+
+            'city' => $tenant->city,
+
+            'area' => $tenant->area,
+
+            'postal_code' => $tenant->postal_code,
+
+            'address' => $tenant->address,
+
+            /*
+            |--------------------------------------------------------------------------
+            | EMPLOYMENT
             |--------------------------------------------------------------------------
             */
 
-            'occupation' => $this->occupation,
-
-            'employer' => $this->employer,
-
-            'monthly_income' => $this->monthly_income,
-
+            'employment' => [
+                'occupation' => $tenant->occupation,
+                'employer' => $tenant->employer,
+                'monthly_income' => $tenant->monthly_income,
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | Emergency Contact
+            | DIRECT EMPLOYMENT FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | Kept for frontend compatibility.
+            |
+            */
+
+            'occupation' => $tenant->occupation,
+
+            'employer' => $tenant->employer,
+
+            'monthly_income' => $tenant->monthly_income,
+
+            /*
+            |--------------------------------------------------------------------------
+            | EMERGENCY CONTACT
             |--------------------------------------------------------------------------
             */
 
             'emergency_contact' => [
-                'name' => $this->emergency_contact_name,
-
-                'phone' => $this->emergency_contact_phone,
-
-                'relationship' => $this->emergency_contact_relationship,
+                'name' => $tenant->emergency_contact_name,
+                'phone' => $tenant->emergency_contact_phone,
+                'relationship' => $tenant->emergency_contact_relationship,
             ],
-
 
             /*
             |--------------------------------------------------------------------------
-            | Tenant Documents
+            | DOCUMENTS
             |--------------------------------------------------------------------------
+            |
+            | Only public document paths/URLs are exposed.
+            |
+            | Internal storage metadata such as public IDs should remain
+            | internal and must not be exposed by this resource.
+            |
             */
 
             'documents' => [
-                'photo' => $this->photo,
-
-                'id_front' => $this->id_front,
-
-                'id_back' => $this->id_back,
+                'photo' => $tenant->photo,
+                'id_front' => $tenant->id_front,
+                'id_back' => $tenant->id_back,
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | TENANT VERIFICATION
+            |--------------------------------------------------------------------------
+            |
+            | This represents verification of the TENANT PROFILE.
+            |
+            | It is intentionally different from:
+            |
+            |     user.verification
+            |
+            | which represents User/email verification.
+            |
+            */
+
+            'verification' => [
+                'is_verified' => (bool) $tenant->is_verified,
+
+                'verified_at' => $tenant->verified_at
+                    ? $tenant->verified_at->toISOString()
+                    : null,
+            ],
 
             /*
             |--------------------------------------------------------------------------
-            | Verification
+            | DIRECT VERIFICATION FIELDS
             |--------------------------------------------------------------------------
+            |
+            | Kept for frontend compatibility.
+            |
             */
 
-            'is_verified' => (bool) $this->is_verified,
+            'is_verified' => (bool) $tenant->is_verified,
 
-            'verification_status' => $this->verification_status,
-
-            'verified_at' => $this->verified_at
-                ? $this->verified_at->toISOString()
+            'verified_at' => $tenant->verified_at
+                ? $tenant->verified_at->toISOString()
                 : null,
 
-
             /*
             |--------------------------------------------------------------------------
-            | Tenant Status
-            |--------------------------------------------------------------------------
-            */
-
-            'status' => $this->status,
-
-            'status_label' => $this->status_label,
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Notes
-            |--------------------------------------------------------------------------
-            */
-
-            'notes' => $this->notes,
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenancies
+            | TENANT STATUS
             |--------------------------------------------------------------------------
             |
-            | A tenant can have multiple tenancies.
+            | Tenant status is independent from User account status.
             |
-            | Each tenancy may contain:
+            | Tenant status:
             |
-            | - property
-            | - apartment
-            | - unit
+            |     pending
+            |     active
+            |     inactive
+            |     blacklisted
+            |
+            | User account status:
+            |
+            |     approval_status
+            |     account_status
             |
             */
 
-            'tenancies' => $this->when(
-                $this->relationLoaded('tenancies'),
-                function () {
-                    return TenancyResource::collection(
-                        $this->tenancies
-                    );
-                }
-            ),
+            'status' => $tenant->status,
 
-            'tenancy_count' => $this->when(
-                $this->relationLoaded('tenancies'),
-                function () {
-                    return $this->tenancies->count();
-                }
-            ),
-
+            'status_label' => $tenant->status_label,
 
             /*
             |--------------------------------------------------------------------------
-            | Active Tenancies
+            | NOTES
             |--------------------------------------------------------------------------
             */
 
-            'active_tenancies' => $this->when(
-                $this->relationLoaded('activeTenancies'),
-                function () {
-                    return TenancyResource::collection(
-                        $this->activeTenancies
-                    );
-                }
-            ),
-
-            'active_tenancy_count' => $this->when(
-                $this->relationLoaded('activeTenancies'),
-                function () {
-                    return $this->activeTenancies->count();
-                }
-            ),
-
+            'notes' => $tenant->notes,
 
             /*
             |--------------------------------------------------------------------------
-            | Timestamps
+            | TENANCIES
+            |--------------------------------------------------------------------------
+            |
+            | A tenant can have multiple tenancy records.
+            |
+            | TenancyResource is responsible for:
+            |
+            | - Property
+            | - Apartment
+            | - Unit
+            | - Rent
+            | - Deposit
+            | - Dates
+            | - Tenancy status
+            |
+            */
+
+            'tenancies' => $this->whenLoaded(
+                'tenancies',
+                fn () => TenancyResource::collection(
+                    $tenant->tenancies
+                )
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | TENANCY COUNT
             |--------------------------------------------------------------------------
             */
 
-            'created_at' => $this->created_at
-                ? $this->created_at->toISOString()
+            'tenancy_count' => $this->whenLoaded(
+                'tenancies',
+                fn () => $tenant->tenancies->count()
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | ACTIVE TENANCIES
+            |--------------------------------------------------------------------------
+            |
+            | Returned only when the activeTenancies relationship has been
+            | explicitly loaded by the controller/service.
+            |
+            */
+
+            'active_tenancies' => $this->whenLoaded(
+                'activeTenancies',
+                fn () => TenancyResource::collection(
+                    $tenant->activeTenancies
+                )
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | ACTIVE TENANCY COUNT
+            |--------------------------------------------------------------------------
+            */
+
+            'active_tenancy_count' => $this->whenLoaded(
+                'activeTenancies',
+                fn () => $tenant->activeTenancies->count()
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | TENANT TIMESTAMPS
+            |--------------------------------------------------------------------------
+            */
+
+            'created_at' => $tenant->created_at
+                ? $tenant->created_at->toISOString()
                 : null,
 
-            'updated_at' => $this->updated_at
-                ? $this->updated_at->toISOString()
+            'updated_at' => $tenant->updated_at
+                ? $tenant->updated_at->toISOString()
                 : null,
 
+            'deleted_at' => $tenant->deleted_at
+                ? $tenant->deleted_at->toISOString()
+                : null,
         ];
     }
 }
