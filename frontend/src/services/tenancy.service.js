@@ -15,7 +15,7 @@ const validateId = (id) => {
   if (
     id === undefined ||
     id === null ||
-    id === ""
+    String(id).trim() === ""
   ) {
     throw new Error("Tenancy ID is required.");
   }
@@ -24,16 +24,13 @@ const validateId = (id) => {
 };
 
 /**
- * Validate generic ID.
+ * Validate related resource ID.
  */
-const validateRelatedId = (
-  id,
-  message
-) => {
+const validateRelatedId = (id, message) => {
   if (
     id === undefined ||
     id === null ||
-    id === ""
+    String(id).trim() === ""
   ) {
     throw new Error(message);
   }
@@ -60,26 +57,20 @@ const validateData = (
 };
 
 /**
- * Return normalized API data.
+ * Normalize Laravel Axios response.
  *
- * Laravel responses normally look like:
+ * Axios response:
  *
  * {
- *   status: true,
- *   code: 200,
- *   message: "...",
- *   data: [...]
+ *   data: {
+ *     status: true,
+ *     code: 200,
+ *     message: "...",
+ *     data: ...
+ *   }
  * }
  *
- * The service returns the complete response object
- * so Redux can access:
- *
- * response.data
- * response.message
- * response.status
- * response.code
- *
- * This is intentional for pagination and metadata.
+ * Returns the Laravel response body.
  */
 const normalizeResponse = (response) => {
   return response?.data ?? null;
@@ -102,30 +93,11 @@ const tenancyService = {
    * Fetch all tenancies.
    *
    * GET /api/tenancies
-   *
-   * Supported parameters:
-   *
-   * - page
-   * - per_page
-   * - search
-   * - status
-   * - tenant_id
-   * - property_id
-   * - apartment_id
-   * - unit_id
-   * - payment_frequency
-   * - start_date
-   * - end_date
-   * - sort_by
-   * - sort_order
    */
   async getTenancies(params = {}) {
-    const response = await api.get(
-      BASE_URL,
-      {
-        params,
-      }
-    );
+    const response = await api.get(BASE_URL, {
+      params,
+    });
 
     return normalizeResponse(response);
   },
@@ -139,7 +111,7 @@ const tenancyService = {
   /**
    * Fetch a single tenancy.
    *
-   * GET /api/tenancies/{tenancy}
+   * GET /api/tenancies/{id}
    */
   async getTenancy(id) {
     const tenancyId = validateId(id);
@@ -185,7 +157,7 @@ const tenancyService = {
   /**
    * Update an existing tenancy.
    *
-   * PUT /api/tenancies/{tenancy}
+   * PUT /api/tenancies/{id}
    */
   async updateTenancy(id, data) {
     const tenancyId = validateId(id);
@@ -204,9 +176,9 @@ const tenancyService = {
   },
 
   /**
-   * Partially update a tenancy.
+   * Partially update an existing tenancy.
    *
-   * PATCH /api/tenancies/{tenancy}
+   * PATCH /api/tenancies/{id}
    */
   async patchTenancy(id, data) {
     const tenancyId = validateId(id);
@@ -233,7 +205,7 @@ const tenancyService = {
   /**
    * Soft delete tenancy.
    *
-   * DELETE /api/tenancies/{tenancy}
+   * DELETE /api/tenancies/{id}
    */
   async deleteTenancy(id) {
     const tenancyId = validateId(id);
@@ -255,10 +227,6 @@ const tenancyService = {
    * Search tenancies.
    *
    * GET /api/tenancies/search
-   *
-   * Example:
-   *
-   * tenancyService.searchTenancies("TEN-123");
    */
   async searchTenancies(
     search = "",
@@ -336,9 +304,7 @@ const tenancyService = {
    *
    * GET /api/tenancies/terminated
    */
-  async getTerminatedTenancies(
-    params = {}
-  ) {
+  async getTerminatedTenancies(params = {}) {
     const response = await api.get(
       `${BASE_URL}/terminated`,
       {
@@ -354,9 +320,7 @@ const tenancyService = {
    *
    * GET /api/tenancies/cancelled
    */
-  async getCancelledTenancies(
-    params = {}
-  ) {
+  async getCancelledTenancies(params = {}) {
     const response = await api.get(
       `${BASE_URL}/cancelled`,
       {
@@ -418,7 +382,7 @@ const tenancyService = {
   /**
    * Activate tenancy.
    *
-   * PATCH /api/tenancies/{tenancy}/activate
+   * PATCH /api/tenancies/{id}/activate
    */
   async activateTenancy(id) {
     const tenancyId = validateId(id);
@@ -433,7 +397,7 @@ const tenancyService = {
   /**
    * Deactivate tenancy.
    *
-   * PATCH /api/tenancies/{tenancy}/deactivate
+   * PATCH /api/tenancies/{id}/deactivate
    */
   async deactivateTenancy(id) {
     const tenancyId = validateId(id);
@@ -454,12 +418,9 @@ const tenancyService = {
   /**
    * Renew tenancy.
    *
-   * PATCH /api/tenancies/{tenancy}/renew
+   * PATCH /api/tenancies/{id}/renew
    */
-  async renewTenancy(
-    id,
-    data = {}
-  ) {
+  async renewTenancy(id, data = {}) {
     const tenancyId = validateId(id);
 
     validateData(
@@ -484,12 +445,9 @@ const tenancyService = {
   /**
    * Terminate tenancy.
    *
-   * PATCH /api/tenancies/{tenancy}/terminate
+   * PATCH /api/tenancies/{id}/terminate
    */
-  async terminateTenancy(
-    id,
-    data = {}
-  ) {
+  async terminateTenancy(id, data = {}) {
     const tenancyId = validateId(id);
 
     validateData(
@@ -514,12 +472,9 @@ const tenancyService = {
   /**
    * Cancel tenancy.
    *
-   * PATCH /api/tenancies/{tenancy}/cancel
+   * PATCH /api/tenancies/{id}/cancel
    */
-  async cancelTenancy(
-    id,
-    data = {}
-  ) {
+  async cancelTenancy(id, data = {}) {
     const tenancyId = validateId(id);
 
     validateData(
@@ -542,20 +497,25 @@ const tenancyService = {
   */
 
   /**
-   * Assign a unit to a tenant.
+   * Assign a unit to an existing tenancy.
+   *
+   * IMPORTANT:
+   *
+   * This is an API action, NOT the frontend page route.
+   *
+   * Laravel:
    *
    * POST /api/tenancies/assign-unit
    *
-   * Expected data:
+   * Expected payload:
    *
    * {
-   *   tenant_id,
-   *   unit_id,
-   *   start_date,
-   *   end_date,
-   *   rent_amount,
-   *   deposit_amount
+   *   tenancy_id: 26,
+   *   unit_id: 344
    * }
+   *
+   * The tenancy ID is sent in the request body because the
+   * Laravel route does not contain /{id}.
    */
   async assignUnit(data) {
     validateData(
@@ -572,7 +532,43 @@ const tenancyService = {
   },
 
   /**
-   * Alias used by some Redux/component code.
+   * Assign a unit using explicit IDs.
+   *
+   * Convenience method for Redux/components.
+   *
+   * POST /api/tenancies/assign-unit
+   *
+   * Sends:
+   *
+   * {
+   *   tenancy_id,
+   *   unit_id
+   * }
+   */
+  async assignUnitToTenancy(
+    tenancyId,
+    unitId
+  ) {
+    const id = validateId(tenancyId);
+
+    const relatedUnitId = validateRelatedId(
+      unitId,
+      "Unit ID is required."
+    );
+
+    const response = await api.post(
+      `${BASE_URL}/assign-unit`,
+      {
+        tenancy_id: id,
+        unit_id: relatedUnitId,
+      }
+    );
+
+    return normalizeResponse(response);
+  },
+
+  /**
+   * Backwards-compatible alias.
    *
    * POST /api/tenancies/assign-unit
    */

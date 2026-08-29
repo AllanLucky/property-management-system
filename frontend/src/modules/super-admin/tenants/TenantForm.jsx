@@ -3,6 +3,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  FileImage,
   FileText,
   Globe2,
   Loader2,
@@ -13,8 +14,10 @@ import {
   ShieldCheck,
   User,
   UserRound,
+  Wallet,
   X,
 } from "lucide-react";
+
 import {
   useEffect,
   useMemo,
@@ -28,8 +31,16 @@ import {
 */
 
 const DEFAULT_FORM = {
+  /*
+  |--------------------------------------------------------------------------
+  | PERSONAL INFORMATION
+  |--------------------------------------------------------------------------
+  */
+
   first_name: "",
   last_name: "",
+  other_names: "",
+
   email: "",
   phone: "",
 
@@ -41,23 +52,65 @@ const DEFAULT_FORM = {
 
   nationality: "Kenyan",
 
+  /*
+  |--------------------------------------------------------------------------
+  | ADDRESS & LOCATION
+  |--------------------------------------------------------------------------
+  */
+
   country: "",
   region: "",
   county: "",
   city: "",
   area: "",
+  postal_code: "",
   address: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | EMERGENCY CONTACT
+  |--------------------------------------------------------------------------
+  */
 
   emergency_contact_name: "",
   emergency_contact_phone: "",
   emergency_contact_relationship: "",
 
+  /*
+  |--------------------------------------------------------------------------
+  | EMPLOYMENT
+  |--------------------------------------------------------------------------
+  */
+
   occupation: "",
   employer: "",
+  monthly_income: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | DOCUMENTS / MEDIA
+  |--------------------------------------------------------------------------
+  */
+
+  photo: "",
+  id_front: "",
+  id_back: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | ACCOUNT
+  |--------------------------------------------------------------------------
+  */
 
   status: "pending",
   is_active: true,
   is_verified: false,
+
+  /*
+  |--------------------------------------------------------------------------
+  | NOTES
+  |--------------------------------------------------------------------------
+  */
 
   notes: "",
 };
@@ -146,11 +199,17 @@ const normalizeTenant = (tenant = {}) => {
 
   const emergencyContact =
     tenant?.emergency_contact &&
-    typeof tenant.emergency_contact === "object"
+      typeof tenant.emergency_contact === "object"
       ? tenant.emergency_contact
       : {};
 
   return {
+    /*
+    |--------------------------------------------------------------------------
+    | PERSONAL INFORMATION
+    |--------------------------------------------------------------------------
+    */
+
     first_name: getValue(
       tenant,
       "first_name",
@@ -161,6 +220,12 @@ const normalizeTenant = (tenant = {}) => {
       tenant,
       "last_name",
       "lastName"
+    ),
+
+    other_names: getValue(
+      tenant,
+      "other_names",
+      "otherNames"
     ),
 
     email: getValue(
@@ -205,6 +270,12 @@ const normalizeTenant = (tenant = {}) => {
         "nationality"
       ) || "Kenyan",
 
+    /*
+    |--------------------------------------------------------------------------
+    | ADDRESS
+    |--------------------------------------------------------------------------
+    */
+
     country:
       tenant?.country?.name ||
       getValue(
@@ -244,6 +315,12 @@ const normalizeTenant = (tenant = {}) => {
         "area_name",
         "area"
       ),
+
+    postal_code: getValue(
+      tenant,
+      "postal_code",
+      "zip_code"
+    ),
 
     address: getValue(
       tenant,
@@ -292,6 +369,12 @@ const normalizeTenant = (tenant = {}) => {
         "relation"
       ),
 
+    /*
+    |--------------------------------------------------------------------------
+    | EMPLOYMENT
+    |--------------------------------------------------------------------------
+    */
+
     occupation: getValue(
       tenant,
       "occupation"
@@ -303,6 +386,39 @@ const normalizeTenant = (tenant = {}) => {
       "company"
     ),
 
+    monthly_income: getValue(
+      tenant,
+      "monthly_income",
+      "income"
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | DOCUMENTS / MEDIA
+    |--------------------------------------------------------------------------
+    */
+
+    photo: getValue(
+      tenant,
+      "photo"
+    ),
+
+    id_front: getValue(
+      tenant,
+      "id_front"
+    ),
+
+    id_back: getValue(
+      tenant,
+      "id_back"
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | ACCOUNT
+    |--------------------------------------------------------------------------
+    */
+
     status:
       getValue(
         tenant,
@@ -313,16 +429,22 @@ const normalizeTenant = (tenant = {}) => {
     is_active:
       tenant?.is_active !== undefined
         ? normalizeBoolean(
-            tenant.is_active
-          )
+          tenant.is_active
+        )
         : true,
 
     is_verified:
       tenant?.is_verified !== undefined
         ? normalizeBoolean(
-            tenant.is_verified
-          )
+          tenant.is_verified
+        )
         : false,
+
+    /*
+    |--------------------------------------------------------------------------
+    | NOTES
+    |--------------------------------------------------------------------------
+    */
 
     notes: getValue(
       tenant,
@@ -344,9 +466,11 @@ const buildInitialForm = (
 ) => {
   return {
     ...DEFAULT_FORM,
+
     ...(isEdit
       ? normalizeTenant(tenant)
       : {}),
+
     ...(initialValues || {}),
   };
 };
@@ -412,12 +536,6 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   | RESET FORM WHEN TENANT CHANGES
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  | Only reset when the actual tenant ID or mode changes.
-  |
-  | Do not put unstable objects/functions here.
-  |
   */
 
   useEffect(() => {
@@ -689,12 +807,33 @@ const TenantForm = ({
 
     /*
     |--------------------------------------------------------------------------
+    | MONTHLY INCOME
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      normalizeString(
+        form.monthly_income
+      )
+    ) {
+      const income =
+        Number(
+          form.monthly_income
+        );
+
+      if (
+        Number.isNaN(income) ||
+        income < 0
+      ) {
+        nextErrors.monthly_income =
+          "Enter a valid monthly income.";
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | EMERGENCY CONTACT
     |--------------------------------------------------------------------------
-    |
-    | The backend treats emergency contact as a complete group.
-    |
-    | Therefore:
     |
     | 0 fields = valid
     | 3 fields = valid
@@ -770,6 +909,12 @@ const TenantForm = ({
     */
 
     const payload = {
+      /*
+      |--------------------------------------------------------------------------
+      | PERSONAL INFORMATION
+      |--------------------------------------------------------------------------
+      */
+
       first_name:
         normalizeString(
           form.first_name
@@ -779,6 +924,11 @@ const TenantForm = ({
         normalizeString(
           form.last_name
         ),
+
+      other_names:
+        normalizeString(
+          form.other_names
+        ) || null,
 
       email:
         normalizeString(
@@ -811,6 +961,12 @@ const TenantForm = ({
           form.nationality
         ) || null,
 
+      /*
+      |--------------------------------------------------------------------------
+      | ADDRESS & LOCATION
+      |--------------------------------------------------------------------------
+      */
+
       country:
         normalizeString(
           form.country
@@ -836,6 +992,11 @@ const TenantForm = ({
           form.area
         ) || null,
 
+      postal_code:
+        normalizeString(
+          form.postal_code
+        ) || null,
+
       address:
         normalizeString(
           form.address
@@ -845,9 +1006,6 @@ const TenantForm = ({
       |--------------------------------------------------------------------------
       | EMERGENCY CONTACT
       |--------------------------------------------------------------------------
-      |
-      | Always send all three fields together.
-      |
       */
 
       emergency_contact_name:
@@ -865,6 +1023,12 @@ const TenantForm = ({
           ? emergencyRelationship
           : null,
 
+      /*
+      |--------------------------------------------------------------------------
+      | EMPLOYMENT
+      |--------------------------------------------------------------------------
+      */
+
       occupation:
         normalizeString(
           form.occupation
@@ -874,6 +1038,47 @@ const TenantForm = ({
         normalizeString(
           form.employer
         ) || null,
+
+      monthly_income:
+        normalizeString(
+          form.monthly_income
+        )
+          ? Number(
+            form.monthly_income
+          )
+          : null,
+
+      /*
+      |--------------------------------------------------------------------------
+      | DOCUMENTS / MEDIA
+      |--------------------------------------------------------------------------
+      |
+      | These are currently sent as their stored path/value.
+      | If your backend expects actual file uploads, your service
+      | should convert these fields to FormData.
+      |
+      */
+
+      photo:
+        normalizeString(
+          form.photo
+        ) || null,
+
+      id_front:
+        normalizeString(
+          form.id_front
+        ) || null,
+
+      id_back:
+        normalizeString(
+          form.id_back
+        ) || null,
+
+      /*
+      |--------------------------------------------------------------------------
+      | ACCOUNT
+      |--------------------------------------------------------------------------
+      */
 
       status:
         form.status || "pending",
@@ -887,6 +1092,12 @@ const TenantForm = ({
         Boolean(
           form.is_verified
         ),
+
+      /*
+      |--------------------------------------------------------------------------
+      | NOTES
+      |--------------------------------------------------------------------------
+      */
 
       notes:
         normalizeString(
@@ -910,7 +1121,8 @@ const TenantForm = ({
 
     setServerError("");
 
-    const isValid = validate();
+    const isValid =
+      validate();
 
     if (!isValid) {
       return;
@@ -938,7 +1150,7 @@ const TenantForm = ({
     } catch (submitError) {
       setServerError(
         submitError?.message ||
-          "Failed to save tenant. Please try again."
+        "Failed to save tenant. Please try again."
       );
 
       throw submitError;
@@ -1020,7 +1232,7 @@ const TenantForm = ({
     return Math.round(
       (completed /
         requiredFields.length) *
-        100
+      100
     );
   }, [form]);
 
@@ -1107,47 +1319,47 @@ const TenantForm = ({
 
         {(serverError ||
           hasErrors) && (
-          <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
-            <div className="flex gap-3">
-              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+            <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
+              <div className="flex gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
 
-              <div>
-                <p className="text-sm font-semibold text-red-800">
-                  Please check the form
-                </p>
-
-                {serverError && (
-                  <p className="mt-1 text-sm text-red-700">
-                    {serverError}
+                <div>
+                  <p className="text-sm font-semibold text-red-800">
+                    Please check the form
                   </p>
-                )}
 
-                {hasErrors && (
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
-                    {Object.entries(
-                      errors
-                    )
-                      .slice(0, 8)
-                      .map(
-                        ([
-                          field,
-                          message,
-                        ]) => (
-                          <li
-                            key={
-                              field
-                            }
-                          >
-                            {message}
-                          </li>
-                        )
-                      )}
-                  </ul>
-                )}
+                  {serverError && (
+                    <p className="mt-1 text-sm text-red-700">
+                      {serverError}
+                    </p>
+                  )}
+
+                  {hasErrors && (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
+                      {Object.entries(
+                        errors
+                      )
+                        .slice(0, 8)
+                        .map(
+                          ([
+                            field,
+                            message,
+                          ]) => (
+                            <li
+                              key={
+                                field
+                              }
+                            >
+                              {message}
+                            </li>
+                          )
+                        )}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
 
       {/* ================================================================
@@ -1188,6 +1400,15 @@ const TenantForm = ({
             required
             placeholder="e.g. Kamau"
             autoComplete="family-name"
+          />
+
+          <InputField
+            label="Other Names"
+            name="other_names"
+            value={form.other_names}
+            onChange={handleChange}
+            placeholder="e.g. Mwangi"
+            hint="Optional additional or middle names."
           />
 
           <InputField
@@ -1358,6 +1579,15 @@ const TenantForm = ({
             placeholder="e.g. Westlands"
           />
 
+          <InputField
+            label="Postal Code"
+            name="postal_code"
+            value={form.postal_code}
+            onChange={handleChange}
+            placeholder="e.g. 00100"
+            autoComplete="postal-code"
+          />
+
           <div className="sm:col-span-2 lg:col-span-3">
             <TextAreaField
               label="Residential Address"
@@ -1378,10 +1608,10 @@ const TenantForm = ({
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
           icon={
-            <FileText className="h-5 w-5" />
+            <Wallet className="h-5 w-5" />
           }
-          title="Employment Information"
-          description="Optional employment and occupation details."
+          title="Employment & Financial Information"
+          description="Employment, occupation and income details."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
@@ -1399,6 +1629,23 @@ const TenantForm = ({
             value={form.employer}
             onChange={handleChange}
             placeholder="e.g. ABC Technologies Ltd"
+          />
+
+          <InputField
+            label="Monthly Income"
+            name="monthly_income"
+            type="number"
+            min="0"
+            step="0.01"
+            value={
+              form.monthly_income
+            }
+            onChange={handleChange}
+            error={fieldError(
+              "monthly_income"
+            )}
+            placeholder="e.g. 85000"
+            hint="Enter the tenant's monthly income in KES."
           />
         </div>
       </section>
@@ -1455,6 +1702,49 @@ const TenantForm = ({
               "emergency_contact_relationship"
             )}
             placeholder="e.g. Spouse, Parent, Sibling"
+          />
+        </div>
+      </section>
+
+      {/* ================================================================
+          DOCUMENTS & MEDIA
+      ================================================================= */}
+
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <SectionHeader
+          icon={
+            <FileImage className="h-5 w-5" />
+          }
+          title="Documents & Media"
+          description="Tenant profile photo and identification document references."
+        />
+
+        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
+          <InputField
+            label="Profile Photo"
+            name="photo"
+            value={form.photo}
+            onChange={handleChange}
+            placeholder="e.g. tenants/profile.jpg"
+            hint="Stored photo path or URL."
+          />
+
+          <InputField
+            label="ID Front"
+            name="id_front"
+            value={form.id_front}
+            onChange={handleChange}
+            placeholder="e.g. tenants/id-front.jpg"
+            hint="Stored ID front path or URL."
+          />
+
+          <InputField
+            label="ID Back"
+            name="id_back"
+            value={form.id_back}
+            onChange={handleChange}
+            placeholder="e.g. tenants/id-back.jpg"
+            hint="Stored ID back path or URL."
           />
         </div>
       </section>
@@ -1586,6 +1876,7 @@ const TenantForm = ({
             "
           >
             <X className="h-4 w-4" />
+
             Cancel
           </button>
 
@@ -1691,6 +1982,8 @@ const InputField = ({
   icon,
   autoComplete,
   disabled = false,
+  min,
+  step,
 }) => {
   const hasError =
     Boolean(error);
@@ -1726,6 +2019,8 @@ const InputField = ({
           placeholder={placeholder}
           autoComplete={autoComplete}
           disabled={disabled}
+          min={min}
+          step={step}
           aria-invalid={hasError}
           aria-describedby={
             hasError
@@ -1750,10 +2045,9 @@ const InputField = ({
             disabled:bg-gray-50
             disabled:text-gray-500
             ${icon ? "pl-10" : ""}
-            ${
-              hasError
-                ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
-                : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            ${hasError
+              ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             }
           `}
         />
@@ -1774,6 +2068,7 @@ const InputField = ({
           className="flex items-center gap-1 text-xs text-red-600"
         >
           <AlertCircle className="h-3.5 w-3.5" />
+
           {error}
         </p>
       )}
@@ -1839,10 +2134,9 @@ const SelectField = ({
             disabled:cursor-not-allowed
             disabled:bg-gray-50
             disabled:text-gray-500
-            ${
-              hasError
-                ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-                : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            ${hasError
+              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             }
           `}
         >
@@ -1868,6 +2162,7 @@ const SelectField = ({
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
+
           {error}
         </p>
       )}
@@ -1930,10 +2225,9 @@ const TextAreaField = ({
           outline-none
           transition
           placeholder:text-gray-400
-          ${
-            hasError
-              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          ${hasError
+            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           }
         `}
       />
@@ -1941,6 +2235,7 @@ const TextAreaField = ({
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
+
           {error}
         </p>
       )}
@@ -2010,3 +2305,4 @@ const ToggleField = ({
 };
 
 export default TenantForm;
+

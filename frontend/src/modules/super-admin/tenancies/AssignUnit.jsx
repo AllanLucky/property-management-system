@@ -11,7 +11,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -35,6 +35,31 @@ const normalizeString = (value) => {
   }
 
   return String(value).trim();
+};
+
+/**
+ * A tenancy ID must be numeric.
+ *
+ * This is important because:
+ *
+ * /super-admin/tenancies/26/assign-unit
+ *
+ * should give:
+ *
+ * id = "26"
+ *
+ * and NEVER:
+ *
+ * id = "assign-unit"
+ */
+const isValidTenancyId = (value) => {
+  const normalized = normalizeString(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  return /^\d+$/.test(normalized) && Number(normalized) > 0;
 };
 
 const getErrorMessage = (error) => {
@@ -180,11 +205,26 @@ const getUnitStatus = (unit) => {
     return "Unknown";
   }
 
-  return (
+  const status =
     unit.status_label ||
     unit.status ||
-    "Unknown"
-  );
+    "Unknown";
+
+  /*
+   * Prevent:
+   *
+   * Objects are not valid as a React child
+   */
+  if (typeof status === "object") {
+    return (
+      status?.label ||
+      status?.name ||
+      status?.value ||
+      "Unknown"
+    );
+  }
+
+  return String(status);
 };
 
 const formatMoney = (value) => {
@@ -218,7 +258,24 @@ const formatMoney = (value) => {
 const AssignUnit = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+
+  /*
+  |--------------------------------------------------------------------------
+  | ROUTE PARAMETER
+  |--------------------------------------------------------------------------
+  */
+
   const { id } = useParams();
+
+  const tenancyId = useMemo(() => {
+    const value = normalizeString(id);
+
+    if (!isValidTenancyId(value)) {
+      return "";
+    }
+
+    return value;
+  }, [id]);
 
   /*
   |--------------------------------------------------------------------------
@@ -232,7 +289,7 @@ const AssignUnit = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | TENANCY
+  | TENANCY STATE
   |--------------------------------------------------------------------------
   */
 
@@ -253,7 +310,7 @@ const AssignUnit = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | UNITS
+  | UNIT STATE
   |--------------------------------------------------------------------------
   */
 
@@ -264,25 +321,32 @@ const AssignUnit = () => {
       return [];
     }
 
-    const availableUnits =
-      tenancyState.availableUnits;
-
-    const tenancyUnits =
-      tenancyState.units;
-
-    const unitOptions =
-      tenancyState.unitOptions;
-
-    if (Array.isArray(availableUnits)) {
-      return availableUnits;
+    /*
+     * Support the different names that may exist
+     * in the tenancy Redux slice.
+     */
+    if (Array.isArray(tenancyState.availableUnits)) {
+      return tenancyState.availableUnits;
     }
 
-    if (Array.isArray(tenancyUnits)) {
-      return tenancyUnits;
+    if (Array.isArray(tenancyState.units)) {
+      return tenancyState.units;
     }
 
-    if (Array.isArray(unitOptions)) {
-      return unitOptions;
+    if (Array.isArray(tenancyState.unitOptions)) {
+      return tenancyState.unitOptions;
+    }
+
+    /*
+     * Some APIs may return units directly inside
+     * the current tenancy.
+     */
+    if (
+      Array.isArray(
+        tenancyState.currentTenancy?.available_units
+      )
+    ) {
+      return tenancyState.currentTenancy.available_units;
     }
 
     return [];
@@ -343,17 +407,21 @@ const AssignUnit = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | CURRENT UNIT
+  | NORMALIZED UNITS
   |--------------------------------------------------------------------------
-  |
-  | Deliberately derived directly.
-  |
-  | Do NOT use:
-  |
-  | useMemo(() => ..., [unitId, currentUnit, tenancy?.unit_id])
-  |
-  | This avoids the React Compiler warning about manually specified
-  | memoization dependencies being less specific than inferred dependencies.
+  */
+
+  const normalizedUnits = useMemo(() => {
+    if (!Array.isArray(units)) {
+      return [];
+    }
+
+    return units.filter(Boolean);
+  }, [units]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | CURRENT UNIT
   |--------------------------------------------------------------------------
   */
 
@@ -364,34 +432,33 @@ const AssignUnit = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | NORMALIZED UNITS
+  | CURRENT UNIT ID
   |--------------------------------------------------------------------------
   */
 
-  const normalizedUnits = Array.isArray(units)
-    ? units.filter(Boolean)
-    : [];
+  const currentUnitId = useMemo(() => {
+    if (currentUnit) {
+      return normalizeString(
+        getId(currentUnit)
+      );
+    }
+
+    return normalizeString(
+      tenancy?.unit_id
+    );
+  }, [
+    currentUnit,
+    tenancy?.unit_id,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
   | EFFECTIVE UNIT ID
   |--------------------------------------------------------------------------
-  |
-  | We derive the value directly instead of synchronizing unitId through
-  | useEffect + setState.
-  |--------------------------------------------------------------------------
   */
 
   const effectiveUnitId =
-    normalizeString(unitId) ||
-    normalizeString(
-      currentUnit
-        ? getId(currentUnit)
-        : ""
-    ) ||
-    normalizeString(
-      tenancy?.unit_id
-    );
+    normalizeString(unitId);
 
   /*
   |--------------------------------------------------------------------------
@@ -399,25 +466,53 @@ const AssignUnit = () => {
   |--------------------------------------------------------------------------
   */
 
-  const selectedUnit =
-    normalizedUnits.find(
-      (unit) =>
-        normalizeString(getId(unit)) ===
-        normalizeString(effectiveUnitId)
-    ) || null;
+  const selectedUnit = useMemo(() => {
+    if (!effectiveUnitId) {
+      return null;
+    }
+
+    return (
+      normalizedUnits.find(
+        (unit) =>
+          normalizeString(
+            getId(unit)
+          ) === effectiveUnitId
+      ) || null
+    );
+  }, [
+    effectiveUnitId,
+    normalizedUnits,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
   | LOAD TENANCY
   |--------------------------------------------------------------------------
   |
-  | This effect only starts the external Redux request.
-  | It does not synchronously call local setState.
-  |--------------------------------------------------------------------------
+  | VERY IMPORTANT:
+  |
+  | Never call:
+  |
+  | fetchTenancy("assign-unit")
+  |
+  | because that produces:
+  |
+  | GET /api/tenancies/assign-unit
+  |
+  | Laravel correctly rejects that because:
+  |
+  | POST /api/tenancies/assign-unit
+  |
+  | is the assignment endpoint.
+  |
   */
 
   useEffect(() => {
-    if (!id) {
+    /*
+     * Do absolutely nothing if the route parameter
+     * is not a numeric tenancy ID.
+     */
+    if (!tenancyId) {
       return undefined;
     }
 
@@ -426,7 +521,9 @@ const AssignUnit = () => {
     const loadTenancy = async () => {
       try {
         await dispatch(
-          fetchTenancy(id)
+          fetchTenancy(
+            Number(tenancyId)
+          )
         ).unwrap();
       } catch (error) {
         if (cancelled) {
@@ -435,6 +532,8 @@ const AssignUnit = () => {
 
         const message =
           getErrorMessage(error);
+
+        setLocalError(message);
 
         dispatch(
           addNotification({
@@ -450,7 +549,37 @@ const AssignUnit = () => {
     return () => {
       cancelled = true;
     };
-  }, [dispatch, id]);
+  }, [
+    dispatch,
+    tenancyId,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | SET CURRENT UNIT
+  |--------------------------------------------------------------------------
+  |
+  | If the tenancy already has a unit, show it as
+  | selected initially.
+  |
+  */
+
+  useEffect(() => {
+    if (!currentUnitId) {
+      return;
+    }
+
+    /*
+     * Do not overwrite a user's selection.
+     */
+    setUnitId((previous) => {
+      if (previous) {
+        return previous;
+      }
+
+      return currentUnitId;
+    });
+  }, [currentUnitId]);
 
   /*
   |--------------------------------------------------------------------------
@@ -471,9 +600,9 @@ const AssignUnit = () => {
   */
 
   const validate = () => {
-    if (!id) {
+    if (!tenancyId) {
       const message =
-        "Tenancy ID is missing.";
+        "Invalid tenancy ID. Please open Assign Unit from a valid tenancy.";
 
       setLocalError(message);
 
@@ -503,13 +632,49 @@ const AssignUnit = () => {
       return false;
     }
 
+    const numericUnitId =
+      Number(effectiveUnitId);
+
+    if (
+      !Number.isInteger(numericUnitId) ||
+      numericUnitId <= 0
+    ) {
+      const message =
+        "Please select a valid unit.";
+
+      setLocalError(message);
+
+      dispatch(
+        addNotification({
+          type: "error",
+          message,
+        })
+      );
+
+      return false;
+    }
+
     return true;
   };
 
   /*
   |--------------------------------------------------------------------------
-  | SUBMIT
+  | SUBMIT ASSIGNMENT
   |--------------------------------------------------------------------------
+  |
+  | Backend:
+  |
+  | POST /api/tenancies/assign-unit
+  |
+  | Payload:
+  |
+  | {
+  |   tenancy_id,
+  |   unit_id
+  | }
+  |
+  | The service should send this POST request.
+  |
   */
 
   const handleSubmit = async (event) => {
@@ -521,59 +686,30 @@ const AssignUnit = () => {
 
     setLocalError("");
 
-    const isValid = validate();
-
-    if (!isValid) {
+    if (!validate()) {
       return;
     }
+
+    const numericTenancyId =
+      Number(tenancyId);
+
+    const numericUnitId =
+      Number(effectiveUnitId);
 
     setSubmitting(true);
 
     try {
-      const numericUnitId =
-        Number(effectiveUnitId);
-
-      if (
-        !Number.isInteger(numericUnitId) ||
-        numericUnitId <= 0
-      ) {
-        const message =
-          "Please select a valid unit.";
-
-        setLocalError(message);
-
-        dispatch(
-          addNotification({
-            type: "error",
-            message,
-          })
-        );
-
-        return;
-      }
-
-      const payload = {
-        unit_id: numericUnitId,
-      };
-
       const response =
         await dispatch(
           assignUnit({
-            id,
+            tenancy_id: numericTenancyId,
             unit_id: numericUnitId,
-            data: payload,
           })
         ).unwrap();
 
       const message =
         response?.message ||
         "Unit assigned successfully.";
-
-      /*
-      |--------------------------------------------------------------------------
-      | SUCCESS NOTIFICATION
-      |--------------------------------------------------------------------------
-      */
 
       dispatch(
         addNotification({
@@ -583,19 +719,15 @@ const AssignUnit = () => {
       );
 
       /*
-      |--------------------------------------------------------------------------
-      | REDIRECT
-      |--------------------------------------------------------------------------
-      */
-
+       * Go back to tenancy details after
+       * successful assignment.
+       */
       navigate(
-        `/super-admin/tenancies/${id}`,
+        `/super-admin/tenancies/${numericTenancyId}`,
         {
           replace: true,
         }
       );
-
-      return response;
     } catch (error) {
       const message =
         getErrorMessage(error);
@@ -608,27 +740,6 @@ const AssignUnit = () => {
           message,
         })
       );
-
-      /*
-      |--------------------------------------------------------------------------
-      | IMPORTANT
-      |--------------------------------------------------------------------------
-      |
-      | Do NOT:
-      |
-      | throw new Error(message)
-      |
-      | Do NOT:
-      |
-      | throw error
-      |
-      | The UI has already handled the error through addNotification.
-      | Re-throwing it can create an unhandled rejected promise / symptom
-      | error in React.
-      |--------------------------------------------------------------------------
-      */
-
-      return null;
     } finally {
       setSubmitting(false);
     }
@@ -645,8 +756,15 @@ const AssignUnit = () => {
       return;
     }
 
+    if (tenancyId) {
+      navigate(
+        `/super-admin/tenancies/${tenancyId}`
+      );
+      return;
+    }
+
     navigate(
-      `/super-admin/tenancies/${id}`
+      "/super-admin/tenancies"
     );
   };
 
@@ -661,18 +779,25 @@ const AssignUnit = () => {
       return;
     }
 
+    if (tenancyId) {
+      navigate(
+        `/super-admin/tenancies/${tenancyId}`
+      );
+      return;
+    }
+
     navigate(
-      `/super-admin/tenancies/${id}`
+      "/super-admin/tenancies"
     );
   };
 
   /*
   |--------------------------------------------------------------------------
-  | INVALID ID
+  | INVALID TENANCY ID
   |--------------------------------------------------------------------------
   */
 
-  if (!id) {
+  if (!tenancyId) {
     return (
       <div className="space-y-6">
         <button
@@ -707,7 +832,10 @@ const AssignUnit = () => {
 
         <ErrorCard
           title="Invalid Tenancy"
-          message="No tenancy ID was provided."
+          message="
+            The Assign Unit page requires a valid numeric tenancy ID.
+            Please open this page from a tenancy record.
+          "
           onBack={() =>
             navigate(
               "/super-admin/tenancies"
@@ -814,9 +942,11 @@ const AssignUnit = () => {
 
         <ErrorCard
           title="Unable to Load Tenancy"
-          message={getErrorMessage(
-            tenancyError
-          )}
+          message={
+            getErrorMessage(
+              tenancyError
+            )
+          }
           onBack={() =>
             navigate(
               "/super-admin/tenancies"
@@ -856,13 +986,28 @@ const AssignUnit = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | CURRENT UNIT DISPLAY
+  |--------------------------------------------------------------------------
+  */
+
+  const currentUnitDisplay =
+    currentUnit
+      ? getName(currentUnit)
+      : tenancy?.unit_id
+        ? `Unit #${tenancy.unit_id}`
+        : "Not assigned";
+
+  /*
+  |--------------------------------------------------------------------------
   | RENDER
   |--------------------------------------------------------------------------
   */
 
   return (
     <div className="space-y-6">
-      {/* HEADER */}
+      {/* ================================================================
+          HEADER
+      ================================================================ */}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -894,12 +1039,14 @@ const AssignUnit = () => {
           </h1>
 
           <p className="mt-1 text-sm text-gray-500">
-            Assign a rental unit to this tenancy.
+            Select a rental unit for this tenancy.
           </p>
         </div>
       </div>
 
-      {/* TENANT SUMMARY */}
+      {/* ================================================================
+          TENANCY INFORMATION
+      ================================================================ */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 px-5 py-4 sm:px-6">
@@ -933,18 +1080,14 @@ const AssignUnit = () => {
 
           <SummaryItem
             label="Current Unit"
-            value={
-              currentUnit
-                ? getName(currentUnit)
-                : tenancy?.unit_id
-                  ? `Unit #${tenancy.unit_id}`
-                  : "Not assigned"
-            }
+            value={currentUnitDisplay}
           />
         </div>
       </section>
 
-      {/* ERROR */}
+      {/* ================================================================
+          ERROR
+      ================================================================ */}
 
       {(localError || tenancyError) && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
@@ -967,7 +1110,9 @@ const AssignUnit = () => {
         </div>
       )}
 
-      {/* FORM */}
+      {/* ================================================================
+          ASSIGNMENT FORM
+      ================================================================ */}
 
       <form
         onSubmit={handleSubmit}
@@ -1062,12 +1207,8 @@ const AssignUnit = () => {
 
                       return (
                         <option
-                          key={String(
-                            value
-                          )}
-                          value={String(
-                            value
-                          )}
+                          key={String(value)}
+                          value={String(value)}
                         >
                           {getName(unit)}
 
@@ -1107,7 +1248,9 @@ const AssignUnit = () => {
           </div>
         </section>
 
-        {/* SELECTED UNIT */}
+        {/* ================================================================
+            SELECTED UNIT
+        ================================================================ */}
 
         {selectedUnit && (
           <section className="rounded-xl border border-primary-100 bg-primary-50/50 shadow-sm">
@@ -1194,7 +1337,9 @@ const AssignUnit = () => {
           </section>
         )}
 
-        {/* ACTIONS */}
+        {/* ================================================================
+            ACTIONS
+        ================================================================ */}
 
         <div className="sticky bottom-0 z-10 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:p-5">
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1237,7 +1382,8 @@ const AssignUnit = () => {
               disabled={
                 submitting ||
                 loading ||
-                !effectiveUnitId
+                !effectiveUnitId ||
+                normalizedUnits.length === 0
               }
               className="
                 inline-flex
@@ -1392,3 +1538,4 @@ const ErrorCard = ({
 };
 
 export default AssignUnit;
+
