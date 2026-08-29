@@ -33,6 +33,9 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | GET /api/tenants
     |--------------------------------------------------------------------------
+    |
+    | Fetch paginated tenants together with their related User account.
+    |
     */
 
     public function index(Request $request): JsonResponse
@@ -44,7 +47,35 @@ class TenantController extends Controller
 
                 'user_id' => $request->input('user_id'),
 
+                /*
+                |--------------------------------------------------------------------------
+                | Tenant status
+                |--------------------------------------------------------------------------
+                |
+                | `status` is the source of truth.
+                |
+                */
+
                 'status' => $request->input('status'),
+
+                /*
+                |--------------------------------------------------------------------------
+                | Active filter
+                |--------------------------------------------------------------------------
+                |
+                | This is kept as an API-level convenience filter.
+                |
+                | TenantService must translate:
+                |
+                | is_active = true
+                |
+                | into:
+                |
+                | status = active
+                |
+                | It must NEVER query a database column called `is_active`.
+                |
+                */
 
                 'is_active' => $request->has('is_active')
                     ? $request->input('is_active')
@@ -87,18 +118,33 @@ class TenantController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Remove null filters
+            | Remove Empty Filters
             |--------------------------------------------------------------------------
-            |
-            | This prevents null values from being treated as actual filters.
-            |
             */
 
             $filters = array_filter(
                 $filters,
-                static fn ($value) => $value !== null && $value !== ''
+                static fn ($value) =>
+                    $value !== null &&
+                    $value !== ''
             );
 
+
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch Tenants
+            |--------------------------------------------------------------------------
+            |
+            | TenantService is responsible for eager loading:
+            |
+            | - user
+            | |-- roles
+            |
+            | - tenancies
+            | - activeTenancy
+            | - activeTenancies
+            |
+            */
 
             $tenants = $this->tenantService->paginate(
                 $filters
@@ -126,6 +172,12 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | POST /api/tenants
     |--------------------------------------------------------------------------
+    |
+    | Creates the tenant profile.
+    |
+    | The tenant may optionally be connected to an existing User through
+    | `user_id`.
+    |
     */
 
     public function store(
@@ -164,6 +216,20 @@ class TenantController extends Controller
             );
 
 
+            /*
+            |--------------------------------------------------------------------------
+            | Reload Relationships
+            |--------------------------------------------------------------------------
+            |
+            | Ensure the User account is available immediately in the response.
+            |
+            */
+
+            $tenant->load([
+                'user',
+            ]);
+
+
             return ApiResponse::created(
                 new TenantResource($tenant),
                 'Tenant created successfully.'
@@ -185,6 +251,9 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | GET /api/tenants/{tenant}
     |--------------------------------------------------------------------------
+    |
+    | Fetch one tenant together with its User account.
+    |
     */
 
     public function show(
@@ -197,15 +266,22 @@ class TenantController extends Controller
             |--------------------------------------------------------------------------
             | Re-fetch through TenantService
             |--------------------------------------------------------------------------
-            |
-            | This ensures the same tenant rules and relationships used by the
-            | rest of the application are applied.
-            |
             */
 
             $tenant = $this->tenantService->find(
                 $tenant->id
             );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Ensure User Relationship Is Loaded
+            |--------------------------------------------------------------------------
+            */
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::success(
@@ -269,6 +345,17 @@ class TenantController extends Controller
             );
 
 
+            /*
+            |--------------------------------------------------------------------------
+            | Reload User
+            |--------------------------------------------------------------------------
+            */
+
+            $updatedTenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($updatedTenant),
                 'Tenant updated successfully.'
@@ -290,6 +377,11 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | DELETE /api/tenants/{tenant}
     |--------------------------------------------------------------------------
+    |
+    | Soft deletes the tenant profile.
+    |
+    | The related User account is NOT deleted.
+    |
     */
 
     public function destroy(
@@ -376,6 +468,17 @@ class TenantController extends Controller
             );
 
 
+            /*
+            |--------------------------------------------------------------------------
+            | Ensure User Relationship
+            |--------------------------------------------------------------------------
+            */
+
+            $tenants->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::collection(
                 TenantResource::collection($tenants),
                 'Tenant search completed successfully.'
@@ -404,6 +507,11 @@ class TenantController extends Controller
         try {
 
             $tenants = $this->tenantService->getActive();
+
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -436,6 +544,11 @@ class TenantController extends Controller
             $tenants = $this->tenantService->getPending();
 
 
+            $tenants->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::collection(
                 TenantResource::collection($tenants),
                 'Pending tenants fetched successfully.'
@@ -466,6 +579,11 @@ class TenantController extends Controller
             $tenants = $this->tenantService->getInactive();
 
 
+            $tenants->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::collection(
                 TenantResource::collection($tenants),
                 'Inactive tenants fetched successfully.'
@@ -494,6 +612,11 @@ class TenantController extends Controller
         try {
 
             $tenants = $this->tenantService->getBlacklisted();
+
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -530,6 +653,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant activated successfully.'
@@ -562,6 +690,11 @@ class TenantController extends Controller
             $tenant = $this->tenantService->deactivate(
                 $tenant
             );
+
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
@@ -598,6 +731,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant blacklisted successfully.'
@@ -630,6 +768,11 @@ class TenantController extends Controller
             $tenant = $this->tenantService->setPending(
                 $tenant
             );
+
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
@@ -666,6 +809,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant verified successfully.'
@@ -700,6 +848,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant verification removed successfully.'
@@ -721,6 +874,9 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | GET /api/tenants/statistics
     |--------------------------------------------------------------------------
+    |
+    | Statistics must use `status`, never a database `is_active` column.
+    |
     */
 
     public function statistics(): JsonResponse
@@ -764,6 +920,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant restored successfully.'
@@ -785,6 +946,12 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | DELETE /api/tenants/{id}/force
     |--------------------------------------------------------------------------
+    |
+    | Permanently deletes the Tenant profile.
+    |
+    | The User account should remain untouched unless your service explicitly
+    | implements account deletion.
+    |
     */
 
     public function forceDelete(
@@ -853,6 +1020,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant photo uploaded successfully.'
@@ -899,6 +1071,11 @@ class TenantController extends Controller
             );
 
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
             return ApiResponse::updated(
                 new TenantResource($tenant),
                 'Tenant ID front uploaded successfully.'
@@ -943,6 +1120,11 @@ class TenantController extends Controller
                 $tenant,
                 $request->file('id_back')
             );
+
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
