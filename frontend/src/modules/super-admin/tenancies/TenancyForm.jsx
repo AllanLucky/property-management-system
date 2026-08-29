@@ -12,7 +12,37 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+/*
+|--------------------------------------------------------------------------
+| BACKEND CONSTANTS
+|--------------------------------------------------------------------------
+|
+| These values MUST match Laravel Tenancy::STATUSES.
+|
+*/
+
+const TENANCY_STATUSES = [
+  "active",
+  "pending",
+  "expired",
+  "terminated",
+  "cancelled",
+];
+
+const PAYMENT_FREQUENCIES = [
+  "daily",
+  "weekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+];
 
 /*
 |--------------------------------------------------------------------------
@@ -31,25 +61,34 @@ const DEFAULT_FORM = {
   start_date: "",
   end_date: "",
 
+  move_in_date: "",
+  move_out_date: "",
+
   rent_amount: "",
   deposit_amount: "",
   service_charge: "",
+  late_fee: "",
 
   payment_frequency: "monthly",
+  due_day: "",
 
   status: "active",
+  is_active: true,
+
+  agreement_file: "",
+  agreement_public_id: "",
 
   notes: "",
 };
 
 /*
 |--------------------------------------------------------------------------
-| HELPERS
+| BASIC HELPERS
 |--------------------------------------------------------------------------
 */
 
 const normalizeString = (value) => {
-  if (value === undefined || value === null) {
+  if (value === null || value === undefined) {
     return "";
   }
 
@@ -58,8 +97,8 @@ const normalizeString = (value) => {
 
 const normalizeNumber = (value) => {
   if (
-    value === undefined ||
     value === null ||
+    value === undefined ||
     value === ""
   ) {
     return "";
@@ -70,6 +109,92 @@ const normalizeNumber = (value) => {
   return Number.isNaN(number) ? "" : number;
 };
 
+const normalizeId = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "";
+  }
+
+  if (
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    if (
+      value.id !== undefined &&
+      value.id !== null &&
+      value.id !== ""
+    ) {
+      return normalizeId(value.id);
+    }
+
+    if (
+      value.value !== undefined &&
+      value.value !== null &&
+      value.value !== ""
+    ) {
+      return normalizeId(value.value);
+    }
+
+    if (value.data) {
+      const nested = normalizeId(value.data);
+
+      if (nested) {
+        return nested;
+      }
+    }
+
+    const possibleKeys = [
+      "property_id",
+      "propertyId",
+      "apartment_id",
+      "apartmentId",
+      "unit_id",
+      "unitId",
+      "tenant_id",
+      "tenantId",
+      "_id",
+    ];
+
+    for (const key of possibleKeys) {
+      if (
+        value[key] !== undefined &&
+        value[key] !== null &&
+        value[key] !== ""
+      ) {
+        const result = normalizeId(value[key]);
+
+        if (result) {
+          return result;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  return String(value).trim();
+};
+
+const sameId = (first, second) => {
+  const firstId = normalizeId(first);
+  const secondId = normalizeId(second);
+
+  if (!firstId || !secondId) {
+    return false;
+  }
+
+  return String(firstId) === String(secondId);
+};
+
+/*
+|--------------------------------------------------------------------------
+| DATE
+|--------------------------------------------------------------------------
+*/
+
 const formatDateForInput = (value) => {
   if (!value) {
     return "";
@@ -77,8 +202,19 @@ const formatDateForInput = (value) => {
 
   const stringValue = String(value);
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(stringValue)
+  ) {
     return stringValue;
+  }
+
+  const directMatch =
+    stringValue.match(
+      /^(\d{4}-\d{2}-\d{2})/
+    );
+
+  if (directMatch) {
+    return directMatch[1];
   }
 
   const date = new Date(value);
@@ -87,14 +223,136 @@ const formatDateForInput = (value) => {
     return "";
   }
 
-  return date.toISOString().split("T")[0];
+  return date
+    .toISOString()
+    .split("T")[0];
 };
 
-const getValue = (source, ...keys) => {
+/*
+|--------------------------------------------------------------------------
+| PAYMENT FREQUENCY
+|--------------------------------------------------------------------------
+*/
+
+const normalizePaymentFrequency = (value) => {
+  const normalized =
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
+
+  if (normalized === "annual") {
+    return "yearly";
+  }
+
+  if (normalized === "biannual") {
+    return "quarterly";
+  }
+
+  return PAYMENT_FREQUENCIES.includes(
+    normalized
+  )
+    ? normalized
+    : "monthly";
+};
+
+/*
+|--------------------------------------------------------------------------
+| STATUS
+|--------------------------------------------------------------------------
+*/
+
+const normalizeStatus = (value) => {
+  let normalized = value;
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    normalized =
+      value.value ??
+      value.name ??
+      value.status ??
+      value.data ??
+      "";
+  }
+
+  normalized = String(
+    normalized ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+  /*
+  | Old frontend value.
+  */
+
+  if (normalized === "inactive") {
+    return "terminated";
+  }
+
+  if (
+    TENANCY_STATUSES.includes(
+      normalized
+    )
+  ) {
+    return normalized;
+  }
+
+  return "active";
+};
+
+/*
+|--------------------------------------------------------------------------
+| BOOLEAN
+|--------------------------------------------------------------------------
+*/
+
+const normalizeBoolean = (
+  value,
+  fallback = false
+) => {
+  if (
+    value === true ||
+    value === 1 ||
+    value === "1" ||
+    value === "true"
+  ) {
+    return true;
+  }
+
+  if (
+    value === false ||
+    value === 0 ||
+    value === "0" ||
+    value === "false"
+  ) {
+    return false;
+  }
+
+  return fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| VALUE HELPER
+|--------------------------------------------------------------------------
+*/
+
+const getValue = (
+  source,
+  ...keys
+) => {
+  if (
+    !source ||
+    typeof source !== "object"
+  ) {
+    return "";
+  }
+
   for (const key of keys) {
     if (
-      source?.[key] !== undefined &&
-      source?.[key] !== null
+      source[key] !== undefined &&
+      source[key] !== null
     ) {
       return source[key];
     }
@@ -103,29 +361,11 @@ const getValue = (source, ...keys) => {
   return "";
 };
 
-const getId = (value) => {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
-    return "";
-  }
-
-  if (
-    typeof value === "object" &&
-    value !== null
-  ) {
-    return (
-      value.id ??
-      value.value ??
-      value._id ??
-      ""
-    );
-  }
-
-  return value;
-};
+/*
+|--------------------------------------------------------------------------
+| COLLECTION NORMALIZER
+|--------------------------------------------------------------------------
+*/
 
 const getCollection = (value) => {
   if (Array.isArray(value)) {
@@ -133,19 +373,50 @@ const getCollection = (value) => {
   }
 
   if (
-    value &&
-    typeof value === "object"
+    !value ||
+    typeof value !== "object"
   ) {
-    if (Array.isArray(value.data)) {
-      return value.data;
+    return [];
+  }
+
+  if (Array.isArray(value.data)) {
+    return value.data;
+  }
+
+  if (Array.isArray(value.items)) {
+    return value.items;
+  }
+
+  if (Array.isArray(value.results)) {
+    return value.results;
+  }
+
+  if (
+    value.data &&
+    typeof value.data === "object"
+  ) {
+    if (
+      Array.isArray(
+        value.data.data
+      )
+    ) {
+      return value.data.data;
     }
 
-    if (Array.isArray(value.items)) {
-      return value.items;
+    if (
+      Array.isArray(
+        value.data.items
+      )
+    ) {
+      return value.data.items;
     }
 
-    if (Array.isArray(value.results)) {
-      return value.results;
+    if (
+      Array.isArray(
+        value.data.results
+      )
+    ) {
+      return value.data.results;
     }
   }
 
@@ -154,125 +425,465 @@ const getCollection = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| NORMALIZE TENANCY
+| APARTMENTS FROM PROPERTIES
 |--------------------------------------------------------------------------
 */
 
-const normalizeTenancy = (tenancy = {}) => {
-  return {
-    property_id: getId(
-      getValue(
-        tenancy,
-        "property_id",
-        "propertyId"
-      ) ||
-      tenancy?.property
-    ),
+const getApartmentsFromProperties = (
+  properties
+) => {
+  const propertyList =
+    getCollection(properties);
 
-    apartment_id: getId(
-      getValue(
-        tenancy,
-        "apartment_id",
-        "apartmentId"
-      ) ||
-      tenancy?.apartment
-    ),
+  const result = [];
 
-    unit_id: getId(
-      getValue(
-        tenancy,
-        "unit_id",
-        "unitId"
-      ) ||
-      tenancy?.unit
-    ),
+  for (const property of propertyList) {
+    const propertyId = normalizeId(
+      property?.id ??
+      property?.property_id ??
+      property?.propertyId
+    );
 
-    tenant_id: getId(
-      getValue(
-        tenancy,
-        "tenant_id",
-        "tenantId"
-      ) ||
-      tenancy?.tenant
-    ),
+    const nestedApartments =
+      getCollection(
+        property?.apartments
+      );
 
-    tenancy_number: getValue(
+    for (const apartment of nestedApartments) {
+      if (
+        !apartment ||
+        typeof apartment !== "object"
+      ) {
+        continue;
+      }
+
+      result.push({
+        ...apartment,
+
+        property_id:
+          apartment?.property_id ??
+          apartment?.propertyId ??
+          propertyId,
+      });
+    }
+  }
+
+  return result;
+};
+
+const mergeUniqueApartments = (
+  explicitApartments,
+  propertyApartments
+) => {
+  const merged = [
+    ...getCollection(
+      explicitApartments
+    ),
+    ...propertyApartments,
+  ];
+
+  const seen = new Set();
+
+  return merged.filter(
+    (apartment) => {
+      const id = normalizeId(
+        apartment?.id ??
+        apartment?.apartment_id ??
+        apartment?.apartmentId
+      );
+
+      if (!id) {
+        return true;
+      }
+
+      if (seen.has(id)) {
+        return false;
+      }
+
+      seen.add(id);
+
+      return true;
+    }
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| ENTITY ID
+|--------------------------------------------------------------------------
+*/
+
+const getEntityId = (
+  entity,
+  ...keys
+) => {
+  if (!entity) {
+    return "";
+  }
+
+  if (
+    typeof entity !== "object"
+  ) {
+    return normalizeId(entity);
+  }
+
+  for (const key of keys) {
+    const value = entity[key];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
+      const id = normalizeId(value);
+
+      if (id) {
+        return id;
+      }
+    }
+  }
+
+  if (entity.data) {
+    const nestedId =
+      getEntityId(
+        entity.data,
+        ...keys
+      );
+
+    if (nestedId) {
+      return nestedId;
+    }
+  }
+
+  if (
+    entity.id !== undefined &&
+    entity.id !== null
+  ) {
+    return normalizeId(
+      entity.id
+    );
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| APARTMENT -> PROPERTY
+|--------------------------------------------------------------------------
+*/
+
+const getPropertyIdFromApartment = (
+  apartment
+) => {
+  if (!apartment) {
+    return "";
+  }
+
+  const directId =
+    getEntityId(
+      apartment,
+      "property_id",
+      "propertyId"
+    );
+
+  if (directId) {
+    return directId;
+  }
+
+  const nestedPropertyId =
+    getEntityId(
+      apartment.property,
+      "id",
+      "property_id",
+      "propertyId"
+    );
+
+  if (nestedPropertyId) {
+    return nestedPropertyId;
+  }
+
+  if (apartment.data) {
+    return getPropertyIdFromApartment(
+      apartment.data
+    );
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| UNIT -> APARTMENT
+|--------------------------------------------------------------------------
+*/
+
+const getApartmentIdFromUnit = (
+  unit
+) => {
+  if (!unit) {
+    return "";
+  }
+
+  const directId =
+    getEntityId(
+      unit,
+      "apartment_id",
+      "apartmentId"
+    );
+
+  if (directId) {
+    return directId;
+  }
+
+  const nestedId =
+    getEntityId(
+      unit.apartment,
+      "id",
+      "apartment_id",
+      "apartmentId"
+    );
+
+  if (nestedId) {
+    return nestedId;
+  }
+
+  if (unit.data) {
+    return getApartmentIdFromUnit(
+      unit.data
+    );
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE TENANCY FOR EDIT
+|--------------------------------------------------------------------------
+*/
+
+const normalizeTenancy = (
+  tenancy = {}
+) => {
+  const propertyValue =
+    getValue(
       tenancy,
-      "tenancy_number",
-      "tenancyNumber",
-      "number"
-    ),
+      "property_id",
+      "propertyId"
+    ) ||
+    tenancy?.property;
 
-    start_date: formatDateForInput(
-      getValue(
-        tenancy,
-        "start_date",
-        "startDate"
-      )
-    ),
+  const apartmentValue =
+    getValue(
+      tenancy,
+      "apartment_id",
+      "apartmentId"
+    ) ||
+    tenancy?.apartment;
 
-    end_date: formatDateForInput(
-      getValue(
-        tenancy,
-        "end_date",
-        "endDate"
-      )
-    ),
+  const unitValue =
+    getValue(
+      tenancy,
+      "unit_id",
+      "unitId"
+    ) ||
+    tenancy?.unit;
 
-    rent_amount: normalizeNumber(
-      getValue(
-        tenancy,
-        "rent_amount",
-        "rentAmount",
-        "rent",
-        "monthly_rent"
-      )
-    ),
+  const tenantValue =
+    getValue(
+      tenancy,
+      "tenant_id",
+      "tenantId"
+    ) ||
+    tenancy?.tenant;
 
-    deposit_amount: normalizeNumber(
-      getValue(
-        tenancy,
-        "deposit_amount",
-        "depositAmount",
-        "deposit",
-        "security_deposit"
-      )
-    ),
+  const statusValue =
+    getValue(
+      tenancy,
+      "status",
+      "tenancy_status"
+    );
 
-    service_charge: normalizeNumber(
-      getValue(
-        tenancy,
-        "service_charge",
-        "serviceCharge"
-      )
-    ),
+  const isActiveValue =
+    getValue(
+      tenancy,
+      "is_active",
+      "isActive"
+    );
 
-    payment_frequency:
+  const paymentFrequency =
+    normalizePaymentFrequency(
       getValue(
         tenancy,
         "payment_frequency",
         "paymentFrequency",
         "frequency"
-      ) || "monthly",
+      )
+    );
+
+  return {
+    property_id:
+      normalizeId(
+        propertyValue
+      ),
+
+    apartment_id:
+      normalizeId(
+        apartmentValue
+      ),
+
+    unit_id:
+      normalizeId(
+        unitValue
+      ),
+
+    tenant_id:
+      normalizeId(
+        tenantValue
+      ),
+
+    tenancy_number:
+      normalizeString(
+        getValue(
+          tenancy,
+          "tenancy_number",
+          "tenancyNumber",
+          "number"
+        )
+      ),
+
+    start_date:
+      formatDateForInput(
+        getValue(
+          tenancy,
+          "start_date",
+          "startDate"
+        )
+      ),
+
+    end_date:
+      formatDateForInput(
+        getValue(
+          tenancy,
+          "end_date",
+          "endDate"
+        )
+      ),
+
+    move_in_date:
+      formatDateForInput(
+        getValue(
+          tenancy,
+          "move_in_date",
+          "moveInDate"
+        )
+      ),
+
+    move_out_date:
+      formatDateForInput(
+        getValue(
+          tenancy,
+          "move_out_date",
+          "moveOutDate"
+        )
+      ),
+
+    rent_amount:
+      normalizeNumber(
+        getValue(
+          tenancy,
+          "rent_amount",
+          "rentAmount",
+          "rent"
+        )
+      ),
+
+    deposit_amount:
+      normalizeNumber(
+        getValue(
+          tenancy,
+          "deposit_amount",
+          "depositAmount",
+          "deposit"
+        )
+      ),
+
+    service_charge:
+      normalizeNumber(
+        getValue(
+          tenancy,
+          "service_charge",
+          "serviceCharge"
+        )
+      ),
+
+    late_fee:
+      normalizeNumber(
+        getValue(
+          tenancy,
+          "late_fee",
+          "lateFee"
+        )
+      ),
+
+    payment_frequency:
+      paymentFrequency,
+
+    due_day:
+      normalizeNumber(
+        getValue(
+          tenancy,
+          "due_day",
+          "dueDay"
+        )
+      ),
 
     status:
-      getValue(
-        tenancy,
-        "status",
-        "tenancy_status"
-      ) || "active",
+      normalizeStatus(
+        statusValue
+      ),
 
-    notes: getValue(
-      tenancy,
-      "notes",
-      "description"
-    ),
+    is_active:
+      normalizeBoolean(
+        isActiveValue,
+        normalizeStatus(
+          statusValue
+        ) === "active"
+      ),
+
+    agreement_file:
+      normalizeString(
+        getValue(
+          tenancy,
+          "agreement_file",
+          "agreementFile"
+        )
+      ),
+
+    agreement_public_id:
+      normalizeString(
+        getValue(
+          tenancy,
+          "agreement_public_id",
+          "agreementPublicId"
+        )
+      ),
+
+    notes:
+      normalizeString(
+        getValue(
+          tenancy,
+          "notes",
+          "description"
+        )
+      ),
   };
 };
 
 /*
 |--------------------------------------------------------------------------
-| BUILD INITIAL FORM
+| INITIAL FORM
 |--------------------------------------------------------------------------
 */
 
@@ -281,15 +892,54 @@ const buildInitialForm = (
   isEdit,
   initialValues
 ) => {
-  return {
+  const normalized =
+    isEdit
+      ? normalizeTenancy(
+        tenancy
+      )
+      : {};
+
+  const merged = {
     ...DEFAULT_FORM,
-
-    ...(isEdit
-      ? normalizeTenancy(tenancy)
-      : {}),
-
+    ...normalized,
     ...(initialValues || {}),
   };
+
+  /*
+  |----------------------------------------------------------------------
+  | Make sure status is always a backend-supported value.
+  |----------------------------------------------------------------------
+  */
+
+  merged.status =
+    normalizeStatus(
+      merged.status
+    );
+
+  merged.payment_frequency =
+    normalizePaymentFrequency(
+      merged.payment_frequency
+    );
+
+  /*
+  |----------------------------------------------------------------------
+  | Keep is_active consistent with status.
+  |----------------------------------------------------------------------
+  */
+
+  if (
+    merged.status !== "active"
+  ) {
+    merged.is_active = false;
+  } else {
+    merged.is_active =
+      normalizeBoolean(
+        merged.is_active,
+        true
+      );
+  }
+
+  return merged;
 };
 
 /*
@@ -298,33 +948,44 @@ const buildInitialForm = (
 |--------------------------------------------------------------------------
 */
 
-const getPropertyName = (property) => {
+const getPropertyName = (
+  property
+) => {
   return (
     property?.name ||
     property?.property_name ||
-    property?.title ||
     property?.propertyName ||
+    property?.title ||
     property?.code ||
+    property?.property_number ||
+    property?.propertyNumber ||
     `Property #${property?.id ?? ""}`
   );
 };
 
-const getApartmentName = (apartment) => {
+const getApartmentName = (
+  apartment
+) => {
   return (
     apartment?.name ||
     apartment?.apartment_name ||
-    apartment?.title ||
     apartment?.apartmentName ||
+    apartment?.title ||
     apartment?.number ||
     apartment?.code ||
+    apartment?.apartment_number ||
+    apartment?.apartmentNumber ||
     `Apartment #${apartment?.id ?? ""}`
   );
 };
 
-const getUnitName = (unit) => {
+const getUnitName = (
+  unit
+) => {
   return (
     unit?.name ||
     unit?.unit_name ||
+    unit?.unitName ||
     unit?.unit_number ||
     unit?.unitNumber ||
     unit?.number ||
@@ -333,16 +994,14 @@ const getUnitName = (unit) => {
   );
 };
 
-const getTenantName = (tenant) => {
-  if (
-    tenant?.full_name
-  ) {
+const getTenantName = (
+  tenant
+) => {
+  if (tenant?.full_name) {
     return tenant.full_name;
   }
 
-  if (
-    tenant?.fullName
-  ) {
+  if (tenant?.fullName) {
     return tenant.fullName;
   }
 
@@ -356,7 +1015,8 @@ const getTenantName = (tenant) => {
     tenant?.lastName ||
     "";
 
-  const name = `${firstName} ${lastName}`.trim();
+  const name =
+    `${firstName} ${lastName}`.trim();
 
   if (name) {
     return name;
@@ -366,6 +1026,7 @@ const getTenantName = (tenant) => {
     tenant?.name ||
     tenant?.email ||
     tenant?.phone ||
+    tenant?.tenant_number ||
     `Tenant #${tenant?.id ?? ""}`
   );
 };
@@ -401,83 +1062,110 @@ const TenancyForm = ({
 
   onCancel,
 }) => {
-  /*
-  |--------------------------------------------------------------------------
-  | EDIT MODE
-  |--------------------------------------------------------------------------
-  */
-
   const isEdit =
     mode === "edit" ||
     Boolean(tenancy?.id);
 
   /*
   |--------------------------------------------------------------------------
-  | FORM STATE
+  | STATE
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | There is intentionally NO useEffect/setState combination here.
-  |
-  | This prevents React's:
-  |
-  | "Calling setState synchronously within an effect..."
-  |
-  | warning.
-  |
   */
 
-  const [form, setForm] = useState(() =>
-    buildInitialForm(
-      tenancy,
-      isEdit,
-      initialValues
-    )
-  );
+  const [form, setForm] =
+    useState(() =>
+      buildInitialForm(
+        tenancy,
+        isEdit,
+        initialValues
+      )
+    );
+
+  const [errors, setErrors] =
+    useState({});
+
+  const [
+    serverError,
+    setServerError,
+  ] = useState("");
 
   /*
   |--------------------------------------------------------------------------
-  | VALIDATION ERRORS
+  | IMPORTANT
   |--------------------------------------------------------------------------
+  | When edit tenancy data arrives after the component mounted,
+  | synchronize the form.
+  |
   */
 
-  const [errors, setErrors] = useState({});
+  useEffect(() => {
+    if (!isEdit || !tenancy) {
+      return;
+    }
+
+    setForm(
+      buildInitialForm(
+        tenancy,
+        true,
+        initialValues
+      )
+    );
+  }, [
+    tenancy?.id,
+    isEdit,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
-  | LOCAL SERVER ERROR
+  | COLLECTIONS
   |--------------------------------------------------------------------------
   */
 
-  const [serverError, setServerError] =
-    useState("");
+  const propertyList =
+    useMemo(
+      () =>
+        getCollection(
+          properties
+        ),
+      [properties]
+    );
 
-  /*
-  |--------------------------------------------------------------------------
-  | NORMALIZE COLLECTIONS
-  |--------------------------------------------------------------------------
-  */
+  const apartmentList =
+    useMemo(() => {
+      const explicitApartments =
+        getCollection(
+          apartments
+        );
 
-  const propertyList = useMemo(
-    () => getCollection(properties),
-    [properties]
-  );
+      const nestedApartments =
+        getApartmentsFromProperties(
+          propertyList
+        );
 
-  const apartmentList = useMemo(
-    () => getCollection(apartments),
-    [apartments]
-  );
+      return mergeUniqueApartments(
+        explicitApartments,
+        nestedApartments
+      );
+    }, [
+      apartments,
+      propertyList,
+    ]);
 
-  const unitList = useMemo(
-    () => getCollection(units),
-    [units]
-  );
+  const unitList =
+    useMemo(
+      () =>
+        getCollection(units),
+      [units]
+    );
 
-  const tenantList = useMemo(
-    () => getCollection(tenants),
-    [tenants]
-  );
+  const tenantList =
+    useMemo(
+      () =>
+        getCollection(
+          tenants
+        ),
+      [tenants]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -485,33 +1173,34 @@ const TenancyForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const filteredApartments = useMemo(() => {
-    if (!form.property_id) {
-      return apartmentList;
-    }
-
-    return apartmentList.filter(
-      (apartment) => {
-        const apartmentPropertyId =
-          getId(
-            getValue(
-              apartment,
-              "property_id",
-              "propertyId"
-            ) ||
-            apartment?.property
-          );
-
-        return (
-          String(apartmentPropertyId) ===
-          String(form.property_id)
+  const filteredApartments =
+    useMemo(() => {
+      const propertyId =
+        normalizeId(
+          form.property_id
         );
+
+      if (!propertyId) {
+        return [];
       }
-    );
-  }, [
-    apartmentList,
-    form.property_id,
-  ]);
+
+      return apartmentList.filter(
+        (apartment) => {
+          const apartmentPropertyId =
+            getPropertyIdFromApartment(
+              apartment
+            );
+
+          return sameId(
+            apartmentPropertyId,
+            propertyId
+          );
+        }
+      );
+    }, [
+      apartmentList,
+      form.property_id,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -519,60 +1208,34 @@ const TenancyForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const filteredUnits = useMemo(() => {
-    let result = unitList;
+  const filteredUnits =
+    useMemo(() => {
+      const apartmentId =
+        normalizeId(
+          form.apartment_id
+        );
 
-    if (form.apartment_id) {
-      result = result.filter(
+      if (!apartmentId) {
+        return [];
+      }
+
+      return unitList.filter(
         (unit) => {
-          const apartmentId =
-            getId(
-              getValue(
-                unit,
-                "apartment_id",
-                "apartmentId"
-              ) ||
-              unit?.apartment
+          const unitApartmentId =
+            getApartmentIdFromUnit(
+              unit
             );
 
-          return (
-            String(apartmentId) ===
-            String(form.apartment_id)
+          return sameId(
+            unitApartmentId,
+            apartmentId
           );
         }
       );
-    }
-
-    if (
-      !form.apartment_id &&
-      form.property_id
-    ) {
-      result = result.filter(
-        (unit) => {
-          const propertyId =
-            getId(
-              getValue(
-                unit,
-                "property_id",
-                "propertyId"
-              ) ||
-              unit?.property
-            );
-
-          return (
-            String(propertyId) ===
-            String(form.property_id)
-          );
-        }
-      );
-    }
-
-    return result;
-  }, [
-    unitList,
-    form.apartment_id,
-    form.property_id,
-  ]);
+    }, [
+      unitList,
+      form.apartment_id,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -580,47 +1243,201 @@ const TenancyForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const handleChange = (event) => {
+  const handleChange = (
+    event
+  ) => {
     const {
       name,
       value,
+      type,
+      checked,
     } = event.target;
 
-    setForm((current) => {
-      const next = {
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      name ===
+      "property_id"
+    ) {
+      setForm((current) => ({
         ...current,
-        [name]: value,
-      };
 
-      /*
-      |--------------------------------------------------------------------------
-      | PROPERTY CHANGED
-      |--------------------------------------------------------------------------
-      */
+        property_id:
+          normalizeId(value),
 
-      if (name === "property_id") {
-        next.apartment_id = "";
-        next.unit_id = "";
-      }
+        apartment_id: "",
+        unit_id: "",
+      }));
 
-      /*
-      |--------------------------------------------------------------------------
-      | APARTMENT CHANGED
-      |--------------------------------------------------------------------------
-      */
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
 
-      if (name === "apartment_id") {
-        next.unit_id = "";
-      }
+        delete next.property_id;
+        delete next.apartment_id;
+        delete next.unit_id;
 
-      return next;
-    });
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | APARTMENT
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      name ===
+      "apartment_id"
+    ) {
+      setForm((current) => ({
+        ...current,
+
+        apartment_id:
+          normalizeId(value),
+
+        unit_id: "",
+      }));
+
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.apartment_id;
+        delete next.unit_id;
+
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATUS
+    |--------------------------------------------------------------------------
+    |
+    | Backend rule:
+    |
+    | active => is_active true
+    | everything else => is_active false
+    |
+    */
+
+    if (
+      name === "status"
+    ) {
+      const normalizedStatus =
+        normalizeStatus(value);
+
+      setForm((current) => ({
+        ...current,
+
+        status:
+          normalizedStatus,
+
+        is_active:
+          normalizedStatus ===
+          "active",
+      }));
+
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.status;
+        delete next.is_active;
+
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | IS ACTIVE
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      name === "is_active"
+    ) {
+      const nextIsActive =
+        type === "checkbox"
+          ? checked
+          : normalizeBoolean(
+            value
+          );
+
+      setForm((current) => ({
+        ...current,
+
+        is_active:
+          nextIsActive,
+
+        /*
+        | If activating, status becomes active.
+        | If deactivating an active tenancy, use pending.
+        | This prevents backend consistency errors.
+        */
+
+        status:
+          nextIsActive
+            ? "active"
+            : current.status ===
+              "active"
+              ? "pending"
+              : current.status,
+      }));
+
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.is_active;
+        delete next.status;
+
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | NORMAL FIELD
+    |--------------------------------------------------------------------------
+    */
+
+    setForm((current) => ({
+      ...current,
+      [name]:
+        type === "checkbox"
+          ? checked
+          : value,
+    }));
 
     setErrors((current) => {
-      if (!current[name]) {
-        return current;
-      }
-
       const next = {
         ...current,
       };
@@ -639,7 +1456,9 @@ const TenancyForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const fieldError = (field) =>
+  const fieldError = (
+    field
+  ) =>
     errors?.[field];
 
   /*
@@ -652,32 +1471,63 @@ const TenancyForm = ({
     const nextErrors = {};
 
     const propertyId =
-      normalizeString(form.property_id);
+      normalizeString(
+        form.property_id
+      );
 
     const apartmentId =
-      normalizeString(form.apartment_id);
+      normalizeString(
+        form.apartment_id
+      );
 
     const unitId =
-      normalizeString(form.unit_id);
+      normalizeString(
+        form.unit_id
+      );
 
     const tenantId =
-      normalizeString(form.tenant_id);
+      normalizeString(
+        form.tenant_id
+      );
 
     const startDate =
-      normalizeString(form.start_date);
+      normalizeString(
+        form.start_date
+      );
 
     const endDate =
-      normalizeString(form.end_date);
+      normalizeString(
+        form.end_date
+      );
+
+    const moveInDate =
+      normalizeString(
+        form.move_in_date
+      );
+
+    const moveOutDate =
+      normalizeString(
+        form.move_out_date
+      );
 
     const rentAmount =
-      normalizeString(form.rent_amount);
+      normalizeString(
+        form.rent_amount
+      );
 
     const status =
-      normalizeString(form.status);
+      normalizeStatus(
+        form.status
+      );
+
+    const paymentFrequency =
+      normalizePaymentFrequency(
+        form.payment_frequency
+      );
 
     /*
     |--------------------------------------------------------------------------
-    | PROPERTY
+    | Required fields
     |--------------------------------------------------------------------------
     */
 
@@ -686,44 +1536,20 @@ const TenancyForm = ({
         "Please select a property.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | APARTMENT
-    |--------------------------------------------------------------------------
-    */
-
     if (!apartmentId) {
       nextErrors.apartment_id =
         "Please select an apartment.";
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | UNIT
-    |--------------------------------------------------------------------------
-    */
 
     if (!unitId) {
       nextErrors.unit_id =
         "Please select a unit.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | TENANT
-    |--------------------------------------------------------------------------
-    */
-
     if (!tenantId) {
       nextErrors.tenant_id =
         "Please select a tenant.";
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | START DATE
-    |--------------------------------------------------------------------------
-    */
 
     if (!startDate) {
       nextErrors.start_date =
@@ -732,22 +1558,37 @@ const TenancyForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | END DATE
+    | Status
     |--------------------------------------------------------------------------
     */
 
     if (
-      endDate &&
-      startDate &&
-      endDate < startDate
+      !TENANCY_STATUSES.includes(
+        status
+      )
     ) {
-      nextErrors.end_date =
-        "End date cannot be before the start date.";
+      nextErrors.status =
+        "Please select a valid tenancy status.";
     }
 
     /*
     |--------------------------------------------------------------------------
-    | RENT
+    | Payment frequency
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !PAYMENT_FREQUENCIES.includes(
+        paymentFrequency
+      )
+    ) {
+      nextErrors.payment_frequency =
+        "Please select a valid payment frequency.";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rent
     |--------------------------------------------------------------------------
     */
 
@@ -756,13 +1597,17 @@ const TenancyForm = ({
         "Rent amount is required.";
     } else if (
       Number.isNaN(
-        Number(form.rent_amount)
+        Number(
+          form.rent_amount
+        )
       )
     ) {
       nextErrors.rent_amount =
         "Enter a valid rent amount.";
     } else if (
-      Number(form.rent_amount) < 0
+      Number(
+        form.rent_amount
+      ) < 0
     ) {
       nextErrors.rent_amount =
         "Rent amount cannot be negative.";
@@ -770,142 +1615,326 @@ const TenancyForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | DEPOSIT
+    | Optional numeric fields
+    |--------------------------------------------------------------------------
+    */
+
+    const numericFields = [
+      [
+        "deposit_amount",
+        "Deposit amount",
+      ],
+      [
+        "service_charge",
+        "Service charge",
+      ],
+      [
+        "late_fee",
+        "Late fee",
+      ],
+      [
+        "due_day",
+        "Due day",
+      ],
+    ];
+
+    numericFields.forEach(
+      ([field, label]) => {
+        if (
+          form[field] !== "" &&
+          form[field] !== null &&
+          form[field] !== undefined
+        ) {
+          if (
+            Number.isNaN(
+              Number(form[field])
+            )
+          ) {
+            nextErrors[field] =
+              `${label} must be a valid number.`;
+          }
+        }
+      }
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Non-negative amounts
+    |--------------------------------------------------------------------------
+    */
+
+    [
+      "deposit_amount",
+      "service_charge",
+      "late_fee",
+    ].forEach((field) => {
+      if (
+        form[field] !== "" &&
+        Number(form[field]) < 0
+      ) {
+        nextErrors[field] =
+          `${field.replaceAll("_", " ")} cannot be negative.`;
+      }
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Due day
     |--------------------------------------------------------------------------
     */
 
     if (
-      form.deposit_amount !== "" &&
-      Number.isNaN(
-        Number(form.deposit_amount)
-      )
+      form.due_day !== "" &&
+      form.due_day !== null &&
+      form.due_day !== undefined
     ) {
-      nextErrors.deposit_amount =
-        "Enter a valid deposit amount.";
-    } else if (
-      form.deposit_amount !== "" &&
-      Number(form.deposit_amount) < 0
-    ) {
-      nextErrors.deposit_amount =
-        "Deposit amount cannot be negative.";
+      const dueDay =
+        Number(form.due_day);
+
+      if (
+        !Number.isInteger(
+          dueDay
+        ) ||
+        dueDay < 1 ||
+        dueDay > 31
+      ) {
+        nextErrors.due_day =
+          "Due day must be between 1 and 31.";
+      }
     }
 
     /*
     |--------------------------------------------------------------------------
-    | SERVICE CHARGE
+    | Dates
     |--------------------------------------------------------------------------
     */
 
     if (
-      form.service_charge !== "" &&
-      Number.isNaN(
-        Number(form.service_charge)
-      )
+      startDate &&
+      endDate &&
+      endDate < startDate
     ) {
-      nextErrors.service_charge =
-        "Enter a valid service charge.";
-    } else if (
-      form.service_charge !== "" &&
-      Number(form.service_charge) < 0
+      nextErrors.end_date =
+        "The end date must be on or after the start date.";
+    }
+
+    if (
+      startDate &&
+      moveInDate &&
+      moveInDate < startDate
     ) {
-      nextErrors.service_charge =
-        "Service charge cannot be negative.";
+      nextErrors.move_in_date =
+        "The move-in date cannot be before the tenancy start date.";
+    }
+
+    if (
+      moveInDate &&
+      moveOutDate &&
+      moveOutDate < moveInDate
+    ) {
+      nextErrors.move_out_date =
+        "The move-out date must be on or after the move-in date.";
+    }
+
+    if (
+      endDate &&
+      moveOutDate &&
+      moveOutDate > endDate
+    ) {
+      nextErrors.move_out_date =
+        "The move-out date cannot be after the tenancy end date.";
     }
 
     /*
     |--------------------------------------------------------------------------
-    | STATUS
+    | ACTIVE STATUS CONSISTENCY
     |--------------------------------------------------------------------------
     */
 
-    if (!status) {
-      nextErrors.status =
-        "Please select tenancy status.";
+    if (
+      status !== "active" &&
+      form.is_active === true
+    ) {
+      nextErrors.is_active =
+        "Only an active tenancy can be marked as active.";
     }
 
-    setErrors(nextErrors);
+    if (
+      form.move_out_date &&
+      form.is_active === true
+    ) {
+      nextErrors.is_active =
+        "A tenancy with a move-out date cannot be active.";
+    }
+
+    setErrors(
+      nextErrors
+    );
 
     return (
-      Object.keys(nextErrors).length ===
-      0
+      Object.keys(
+        nextErrors
+      ).length === 0
     );
   };
 
   /*
   |--------------------------------------------------------------------------
-  | BUILD PAYLOAD
+  | BUILD BACKEND PAYLOAD
   |--------------------------------------------------------------------------
+  |
+  | This matches your Laravel UpdateTenancyRequest.
+  |
   */
 
   const buildPayload = () => {
-    return {
+    const status =
+      normalizeStatus(
+        form.status
+      );
+
+    const isActive =
+      status === "active";
+
+    const payload = {
       property_id:
         form.property_id
-          ? Number(form.property_id)
+          ? Number(
+            form.property_id
+          )
           : null,
 
       apartment_id:
         form.apartment_id
-          ? Number(form.apartment_id)
+          ? Number(
+            form.apartment_id
+          )
           : null,
 
       unit_id:
         form.unit_id
-          ? Number(form.unit_id)
+          ? Number(
+            form.unit_id
+          )
           : null,
 
       tenant_id:
         form.tenant_id
-          ? Number(form.tenant_id)
+          ? Number(
+            form.tenant_id
+          )
           : null,
 
-      /*
-      |--------------------------------------------------------------------------
-      | TENANCY NUMBER
-      |--------------------------------------------------------------------------
-      |
-      | Leave empty/null when creating if the Laravel backend generates it.
-      |
-      */
-
-      tenancy_number:
-        normalizeString(
-          form.tenancy_number
-        ) || null,
-
       start_date:
-        form.start_date || null,
+        form.start_date ||
+        null,
 
       end_date:
-        form.end_date || null,
+        form.end_date ||
+        null,
+
+      move_in_date:
+        form.move_in_date ||
+        null,
+
+      move_out_date:
+        form.move_out_date ||
+        null,
 
       rent_amount:
-        form.rent_amount !== ""
-          ? Number(form.rent_amount)
+        form.rent_amount !==
+          "" &&
+          form.rent_amount !==
+          null
+          ? Number(
+            form.rent_amount
+          )
           : null,
 
       deposit_amount:
-        form.deposit_amount !== ""
-          ? Number(form.deposit_amount)
+        form.deposit_amount !==
+          "" &&
+          form.deposit_amount !==
+          null
+          ? Number(
+            form.deposit_amount
+          )
           : null,
 
       service_charge:
-        form.service_charge !== ""
-          ? Number(form.service_charge)
+        form.service_charge !==
+          "" &&
+          form.service_charge !==
+          null
+          ? Number(
+            form.service_charge
+          )
+          : null,
+
+      late_fee:
+        form.late_fee !==
+          "" &&
+          form.late_fee !==
+          null
+          ? Number(
+            form.late_fee
+          )
           : null,
 
       payment_frequency:
-        form.payment_frequency ||
-        "monthly",
+        normalizePaymentFrequency(
+          form.payment_frequency
+        ),
 
-      status:
-        form.status || "active",
+      due_day:
+        form.due_day !==
+          "" &&
+          form.due_day !==
+          null
+          ? Number(
+            form.due_day
+          )
+          : null,
+
+      status,
+
+      is_active:
+        isActive,
+
+      agreement_file:
+        normalizeString(
+          form.agreement_file
+        ) || null,
+
+      agreement_public_id:
+        normalizeString(
+          form.agreement_public_id
+        ) || null,
 
       notes:
         normalizeString(
           form.notes
         ) || null,
     };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenancy number
+    |--------------------------------------------------------------------------
+    |
+    | Your backend accepts tenancy_number during update.
+    | We only send it when editing.
+    |
+    */
+
+    if (isEdit) {
+      payload.tenancy_number =
+        normalizeString(
+          form.tenancy_number
+        ) || null;
+    }
+
+    return payload;
   };
 
   /*
@@ -921,9 +1950,7 @@ const TenancyForm = ({
 
     setServerError("");
 
-    const valid = validate();
-
-    if (!valid) {
+    if (!validate()) {
       return;
     }
 
@@ -947,9 +1974,13 @@ const TenancyForm = ({
         tenancy
       );
     } catch (submitError) {
+      const message =
+        getErrorMessage(
+          submitError
+        );
+
       setServerError(
-        submitError?.message ||
-        submitError?.error ||
+        message ||
         "Failed to save tenancy. Please try again."
       );
     }
@@ -972,68 +2003,53 @@ const TenancyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | SERVER ERROR MESSAGE
+  | ERROR MESSAGE
   |--------------------------------------------------------------------------
   */
 
   const externalErrorMessage =
-    typeof error === "string"
-      ? error
-      : error?.message ||
-      error?.error ||
-      "";
+    getErrorMessage(error);
 
   const displayedServerError =
     serverError ||
     externalErrorMessage;
 
-  /*
-  |--------------------------------------------------------------------------
-  | HAS ERRORS
-  |--------------------------------------------------------------------------
-  */
-
   const hasErrors =
-    Object.keys(errors).length >
-    0;
+    Object.keys(errors)
+      .length > 0;
 
   /*
   |--------------------------------------------------------------------------
-  | FORM COMPLETION
+  | COMPLETION
   |--------------------------------------------------------------------------
   */
 
-  const completion = useMemo(() => {
-    const requiredFields = [
-      "property_id",
-      "apartment_id",
-      "unit_id",
-      "tenant_id",
-      "start_date",
-      "rent_amount",
-      "status",
-    ];
+  const completion =
+    useMemo(() => {
+      const requiredFields = [
+        "property_id",
+        "apartment_id",
+        "unit_id",
+        "tenant_id",
+        "start_date",
+        "rent_amount",
+        "status",
+      ];
 
-    const completed =
-      requiredFields.filter(
-        (field) =>
-          normalizeString(
-            form[field]
-          ) !== ""
-      ).length;
+      const completed =
+        requiredFields.filter(
+          (field) =>
+            normalizeString(
+              form[field]
+            ) !== ""
+        ).length;
 
-    return Math.round(
-      (completed /
-        requiredFields.length) *
-      100
-    );
-  }, [form]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | FORM TITLE
-  |--------------------------------------------------------------------------
-  */
+      return Math.round(
+        (completed /
+          requiredFields.length) *
+        100
+      );
+    }, [form]);
 
   const formTitle = isEdit
     ? "Update Tenancy"
@@ -1058,8 +2074,12 @@ const TenancyForm = ({
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
 
-          <p className="text-sm text-gray-500">
+          <p className="text-sm font-semibold text-gray-700">
             Loading tenancy...
+          </p>
+
+          <p className="text-xs text-gray-500">
+            Please wait while we load the tenancy information.
           </p>
         </div>
       </div>
@@ -1078,9 +2098,7 @@ const TenancyForm = ({
       noValidate
       className="space-y-6"
     >
-      {/* ================================================================
-          HEADER
-      ================================================================= */}
+      {/* HEADER */}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -1136,8 +2154,10 @@ const TenancyForm = ({
                   </p>
 
                   {displayedServerError && (
-                    <p className="mt-1 text-sm text-red-700">
-                      {displayedServerError}
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
+                      {
+                        displayedServerError
+                      }
                     </p>
                   )}
 
@@ -1146,7 +2166,7 @@ const TenancyForm = ({
                       {Object.entries(
                         errors
                       )
-                        .slice(0, 8)
+                        .slice(0, 10)
                         .map(
                           ([
                             field,
@@ -1157,7 +2177,9 @@ const TenancyForm = ({
                                 field
                               }
                             >
-                              {message}
+                              {
+                                message
+                              }
                             </li>
                           )
                         )}
@@ -1169,9 +2191,7 @@ const TenancyForm = ({
           )}
       </div>
 
-      {/* ================================================================
-          TENANCY ASSIGNMENT
-      ================================================================= */}
+      {/* ASSIGNMENT */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1202,11 +2222,12 @@ const TenancyForm = ({
                 label:
                   "Select property",
               },
-
               ...propertyList.map(
                 (property) => ({
                   value:
-                    property.id,
+                    String(
+                      property.id
+                    ),
                   label:
                     getPropertyName(
                       property
@@ -1237,14 +2258,17 @@ const TenancyForm = ({
                 value: "",
                 label:
                   form.property_id
-                    ? "Select apartment"
+                    ? filteredApartments.length
+                      ? "Select apartment"
+                      : "No apartments available for this property"
                     : "Select property first",
               },
-
               ...filteredApartments.map(
                 (apartment) => ({
                   value:
-                    apartment.id,
+                    String(
+                      apartment.id
+                    ),
                   label:
                     getApartmentName(
                       apartment
@@ -1275,14 +2299,17 @@ const TenancyForm = ({
                 value: "",
                 label:
                   form.apartment_id
-                    ? "Select unit"
+                    ? filteredUnits.length
+                      ? "Select unit"
+                      : "No units available for this apartment"
                     : "Select apartment first",
               },
-
               ...filteredUnits.map(
                 (unit) => ({
                   value:
-                    unit.id,
+                    String(
+                      unit.id
+                    ),
                   label:
                     getUnitName(
                       unit
@@ -1311,11 +2338,12 @@ const TenancyForm = ({
                 label:
                   "Select tenant",
               },
-
               ...tenantList.map(
                 (tenant) => ({
                   value:
-                    tenant.id,
+                    String(
+                      tenant.id
+                    ),
                   label:
                     getTenantName(
                       tenant
@@ -1335,16 +2363,14 @@ const TenancyForm = ({
               onChange={
                 handleChange
               }
-              placeholder="e.g. TEN-DZEL20TI"
+              disabled
               hint="The tenancy number assigned to this tenancy."
             />
           )}
         </div>
       </section>
 
-      {/* ================================================================
-          TENANCY PERIOD
-      ================================================================= */}
+      {/* PERIOD */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1352,10 +2378,10 @@ const TenancyForm = ({
             <CalendarDays className="h-5 w-5" />
           }
           title="Tenancy Period"
-          description="Define when the tenancy starts and when it ends."
+          description="Define the tenancy start, end, move-in and move-out dates."
         />
 
-        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
+        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6">
           <InputField
             label="Start Date"
             name="start_date"
@@ -1385,14 +2411,41 @@ const TenancyForm = ({
             error={fieldError(
               "end_date"
             )}
-            hint="Leave empty for an open-ended tenancy if supported by your backend."
+          />
+
+          <InputField
+            label="Move-In Date"
+            name="move_in_date"
+            type="date"
+            value={
+              form.move_in_date
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "move_in_date"
+            )}
+          />
+
+          <InputField
+            label="Move-Out Date"
+            name="move_out_date"
+            type="date"
+            value={
+              form.move_out_date
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "move_out_date"
+            )}
           />
         </div>
       </section>
 
-      {/* ================================================================
-          FINANCIAL INFORMATION
-      ================================================================= */}
+      {/* FINANCIAL */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1400,7 +2453,7 @@ const TenancyForm = ({
             <Wallet className="h-5 w-5" />
           }
           title="Financial Information"
-          description="Set rent, deposit, service charge and payment frequency."
+          description="Set rent, deposit, service charge, late fee and payment configuration."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6">
@@ -1418,9 +2471,9 @@ const TenancyForm = ({
               "rent_amount"
             )}
             required
-            placeholder="e.g. 25000"
             min="0"
             step="0.01"
+            placeholder="e.g. 60000"
           />
 
           <InputField
@@ -1436,9 +2489,9 @@ const TenancyForm = ({
             error={fieldError(
               "deposit_amount"
             )}
-            placeholder="e.g. 25000"
             min="0"
             step="0.01"
+            placeholder="e.g. 60000"
           />
 
           <InputField
@@ -1454,9 +2507,27 @@ const TenancyForm = ({
             error={fieldError(
               "service_charge"
             )}
-            placeholder="e.g. 3000"
             min="0"
             step="0.01"
+            placeholder="e.g. 5000"
+          />
+
+          <InputField
+            label="Late Fee"
+            name="late_fee"
+            type="number"
+            value={
+              form.late_fee
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "late_fee"
+            )}
+            min="0"
+            step="0.01"
+            placeholder="e.g. 3500"
           />
 
           <SelectField
@@ -1468,31 +2539,66 @@ const TenancyForm = ({
             onChange={
               handleChange
             }
+            error={fieldError(
+              "payment_frequency"
+            )}
+            required
             options={[
               {
-                value: "monthly",
-                label: "Monthly",
+                value:
+                  "daily",
+                label:
+                  "Daily",
               },
               {
-                value: "quarterly",
-                label: "Quarterly",
+                value:
+                  "weekly",
+                label:
+                  "Weekly",
               },
               {
-                value: "biannual",
-                label: "Biannual",
+                value:
+                  "monthly",
+                label:
+                  "Monthly",
               },
               {
-                value: "annual",
-                label: "Annual",
+                value:
+                  "quarterly",
+                label:
+                  "Quarterly",
+              },
+              {
+                value:
+                  "yearly",
+                label:
+                  "Yearly",
               },
             ]}
+          />
+
+          <InputField
+            label="Due Day"
+            name="due_day"
+            type="number"
+            value={
+              form.due_day
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "due_day"
+            )}
+            min="1"
+            max="31"
+            step="1"
+            placeholder="e.g. 1"
           />
         </div>
       </section>
 
-      {/* ================================================================
-          STATUS
-      ================================================================= */}
+      {/* STATUS */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1500,7 +2606,7 @@ const TenancyForm = ({
             <ShieldCheck className="h-5 w-5" />
           }
           title="Tenancy Status"
-          description="Manage the current status of this tenancy."
+          description="Manage the current status and active state of this tenancy."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
@@ -1519,25 +2625,39 @@ const TenancyForm = ({
             required
             options={[
               {
-                value: "active",
-                label: "Active",
+                value: "",
+                label:
+                  "Select status",
               },
               {
-                value: "pending",
-                label: "Pending",
+                value:
+                  "active",
+                label:
+                  "Active",
               },
               {
-                value: "inactive",
-                label: "Inactive",
+                value:
+                  "pending",
+                label:
+                  "Pending",
               },
               {
-                value: "terminated",
+                value:
+                  "expired",
+                label:
+                  "Expired",
+              },
+              {
+                value:
+                  "terminated",
                 label:
                   "Terminated",
               },
               {
-                value: "expired",
-                label: "Expired",
+                value:
+                  "cancelled",
+                label:
+                  "Cancelled",
               },
             ]}
           />
@@ -1548,7 +2668,7 @@ const TenancyForm = ({
                 <ShieldCheck className="h-4 w-4" />
               </div>
 
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-medium text-gray-800">
                   Current tenancy status
                 </p>
@@ -1557,17 +2677,94 @@ const TenancyForm = ({
                   {form.status ===
                     "active"
                     ? "This tenancy is currently active."
-                    : "The tenancy is not currently marked as active."}
+                    : `This tenancy is ${form.status}.`}
                 </p>
+
+                <label className="mt-4 flex cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    checked={
+                      form.is_active ===
+                      true
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    disabled={
+                      form.status !==
+                      "active"
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+
+                  <span className="text-sm font-medium text-gray-700">
+                    Mark tenancy as active
+                  </span>
+                </label>
+
+                {fieldError(
+                  "is_active"
+                ) && (
+                    <p className="mt-2 text-xs text-red-600">
+                      {
+                        fieldError(
+                          "is_active"
+                        )
+                      }
+                    </p>
+                  )}
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ================================================================
-          NOTES
-      ================================================================= */}
+      {/* AGREEMENT */}
+
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <SectionHeader
+          icon={
+            <FileText className="h-5 w-5" />
+          }
+          title="Agreement"
+          description="Store agreement information for this tenancy."
+        />
+
+        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
+          <InputField
+            label="Agreement File"
+            name="agreement_file"
+            value={
+              form.agreement_file
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "agreement_file"
+            )}
+            placeholder="Agreement file path or URL"
+          />
+
+          <InputField
+            label="Agreement Public ID"
+            name="agreement_public_id"
+            value={
+              form.agreement_public_id
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "agreement_public_id"
+            )}
+            placeholder="Optional public ID"
+          />
+        </div>
+      </section>
+
+      {/* NOTES */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1597,9 +2794,7 @@ const TenancyForm = ({
         </div>
       </section>
 
-      {/* ================================================================
-          ACTIONS
-      ================================================================= */}
+      {/* ACTIONS */}
 
       <div className="sticky bottom-0 z-10 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:p-5">
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1628,16 +2823,12 @@ const TenancyForm = ({
               text-gray-700
               transition
               hover:bg-gray-50
-              focus:outline-none
-              focus:ring-2
-              focus:ring-gray-400/20
               disabled:cursor-not-allowed
               disabled:opacity-50
               sm:w-auto
             "
           >
             <X className="h-4 w-4" />
-
             Cancel
           </button>
 
@@ -1662,9 +2853,6 @@ const TenancyForm = ({
               shadow-sm
               transition
               hover:bg-primary-700
-              focus:outline-none
-              focus:ring-2
-              focus:ring-primary-500/30
               disabled:cursor-not-allowed
               disabled:opacity-60
               sm:w-auto
@@ -1695,6 +2883,95 @@ const TenancyForm = ({
     </form>
   );
 };
+
+/*
+|--------------------------------------------------------------------------
+| ERROR MESSAGE HELPER
+|--------------------------------------------------------------------------
+*/
+
+function getErrorMessage(
+  error
+) {
+  if (!error) {
+    return "";
+  }
+
+  if (
+    typeof error === "string"
+  ) {
+    return error;
+  }
+
+  if (error?.message) {
+    return String(
+      error.message
+    );
+  }
+
+  if (error?.error) {
+    return String(
+      error.error
+    );
+  }
+
+  const data =
+    error?.response?.data;
+
+  if (data?.message) {
+    return String(
+      data.message
+    );
+  }
+
+  if (data?.error) {
+    return String(
+      data.error
+    );
+  }
+
+  const validationErrors =
+    data?.errors ||
+    error?.errors;
+
+  if (
+    validationErrors &&
+    typeof validationErrors ===
+    "object"
+  ) {
+    const messages =
+      Object.entries(
+        validationErrors
+      )
+        .flatMap(
+          ([
+            field,
+            values,
+          ]) => {
+            const list =
+              Array.isArray(
+                values
+              )
+                ? values
+                : [values];
+
+            return list.map(
+              (message) =>
+                `${field}: ${message}`
+            );
+          }
+        )
+        .filter(Boolean);
+
+    if (messages.length) {
+      return messages.join(
+        "\n"
+      );
+    }
+  }
+
+  return "";
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -1800,7 +3077,9 @@ const InputField = ({
           id={name}
           name={name}
           type={type}
-          value={value ?? ""}
+          value={
+            value ?? ""
+          }
           onChange={
             onChange
           }
@@ -1818,13 +3097,6 @@ const InputField = ({
           step={step}
           aria-invalid={
             hasError
-          }
-          aria-describedby={
-            hasError
-              ? `${name}-error`
-              : hint
-                ? `${name}-hint`
-                : undefined
           }
           className={`
             h-10
@@ -1851,10 +3123,7 @@ const InputField = ({
       </div>
 
       {hint && !error && (
-        <p
-          id={`${name}-hint`}
-          className="text-xs text-gray-400"
-        >
+        <p className="text-xs text-gray-400">
           {hint}
         </p>
       )}
@@ -1904,7 +3173,9 @@ const SelectField = ({
         <select
           id={name}
           name={name}
-          value={value ?? ""}
+          value={
+            value ?? ""
+          }
           onChange={
             onChange
           }
@@ -1937,11 +3208,14 @@ const SelectField = ({
           `}
         >
           {options.map(
-            (option) => (
+            (
+              option,
+              index
+            ) => (
               <option
-                key={String(
+                key={`${String(
                   option.value
-                )}
+                )}-${index}`}
                 value={
                   option.value
                 }
@@ -1969,7 +3243,7 @@ const SelectField = ({
 
 /*
 |--------------------------------------------------------------------------
-| TEXTAREA FIELD
+| TEXTAREA
 |--------------------------------------------------------------------------
 */
 
@@ -2004,7 +3278,9 @@ const TextAreaField = ({
       <textarea
         id={name}
         name={name}
-        value={value ?? ""}
+        value={
+          value ?? ""
+        }
         onChange={
           onChange
         }
@@ -2041,11 +3317,5 @@ const TextAreaField = ({
     </div>
   );
 };
-
-/*
-|--------------------------------------------------------------------------
-| EXPORT
-|--------------------------------------------------------------------------
-*/
 
 export default TenancyForm;
