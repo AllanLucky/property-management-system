@@ -26,6 +26,9 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Identification
             |--------------------------------------------------------------------------
+            |
+            | Unique identifier assigned to every tenant.
+            |
             */
 
             $table->string('tenant_number', 50)
@@ -34,16 +37,15 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | User Relationship
+            | User Account Relationship
             |--------------------------------------------------------------------------
             |
-            | A tenant may optionally be linked to a user account.
+            | The User account is the authentication/account source.
             |
-            | Nullable support is intentional for:
+            | One user can belong to only one tenant.
             |
-            | - Imported tenants
-            | - Tenants created before account creation
-            | - Tenants without login accounts
+            | The relationship uses nullOnDelete() so deleting a user does not
+            | automatically delete the tenant profile.
             |
             */
 
@@ -89,6 +91,10 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
+            |
+            | At least one of id_number or passport_number is expected at the
+            | application validation level.
+            |
             */
 
             $table->string('id_number', 100)
@@ -104,31 +110,27 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Location Information
             |--------------------------------------------------------------------------
-            |
-            | Country
-            |   └── Region
-            |       └── County
-            |           └── City
-            |               └── Area
-            |                   └── Postal Code
-            |                       └── Address
-            |
             */
 
             $table->string('country', 100)
-                ->default('Kenya');
+                ->default('Kenya')
+                ->index();
 
             $table->string('region', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('county', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('city', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('area', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('postal_code', 30)
                 ->nullable();
@@ -173,6 +175,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Documents
             |--------------------------------------------------------------------------
+            |
+            | File paths are stored here.
+            |
+            | The *_public_id fields are retained in case cloud storage is used
+            | later.
+            |
             */
 
             $table->string('photo')
@@ -198,6 +206,11 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Verification
             |--------------------------------------------------------------------------
+            |
+            | is_verified + verified_at represent tenant profile verification.
+            |
+            | There is intentionally NO is_active column.
+            |
             */
 
             $table->boolean('is_verified')
@@ -213,9 +226,11 @@ return new class extends Migration
             | Tenant Status
             |--------------------------------------------------------------------------
             |
-            | Status is the SINGLE source of truth for tenant activity.
+            | IMPORTANT:
             |
-            | Supported statuses:
+            | status is the SINGLE source of truth for tenant activity.
+            |
+            | Supported values:
             |
             | pending
             | active
@@ -264,50 +279,11 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Search Indexes
+            | Composite Indexes
             |--------------------------------------------------------------------------
-            */
-
-            $table->index(
-                'first_name',
-                'tenants_first_name_index'
-            );
-
-            $table->index(
-                'last_name',
-                'tenants_last_name_index'
-            );
-
-            $table->index(
-                'country',
-                'tenants_country_index'
-            );
-
-            $table->index(
-                'region',
-                'tenants_region_index'
-            );
-
-            $table->index(
-                'county',
-                'tenants_county_index'
-            );
-
-            $table->index(
-                'city',
-                'tenants_city_index'
-            );
-
-            $table->index(
-                'area',
-                'tenants_area_index'
-            );
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Status / Verification Composite Index
-            |--------------------------------------------------------------------------
+            |
+            | These support common TenantService filtering operations.
+            |
             */
 
             $table->index(
@@ -318,13 +294,6 @@ return new class extends Migration
                 'tenants_status_verification_index'
             );
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Location Composite Index
-            |--------------------------------------------------------------------------
-            */
-
             $table->index(
                 [
                     'region',
@@ -333,6 +302,14 @@ return new class extends Migration
                     'area',
                 ],
                 'tenants_location_index'
+            );
+
+            $table->index(
+                [
+                    'user_id',
+                    'status',
+                ],
+                'tenants_user_status_index'
             );
         });
     }
@@ -346,3 +323,4 @@ return new class extends Migration
         Schema::dropIfExists('tenants');
     }
 };
+
