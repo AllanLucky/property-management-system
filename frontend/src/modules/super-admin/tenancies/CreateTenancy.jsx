@@ -5,11 +5,14 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useEffect,
+  useMemo,
   useState,
 } from "react";
 import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 
+import api from "../../../api/axios";
 import { addNotification } from "../../../store/uiSlice";
 import TenancyForm from "./TenancyForm";
 
@@ -19,28 +22,78 @@ import TenancyForm from "./TenancyForm";
  * ============================================================================
  *
  * Responsibilities:
- * - Render the create tenancy page
- * - Submit tenancy data
- * - Display API errors through TenancyForm
- * - Show success notification
+ * - Load properties, apartments, units and tenants needed by TenancyForm
+ * - Keep Create Tenancy independent from the Edit Tenancy page
+ * - Support Laravel response shapes such as:
+ *      { data: [...] }
+ *      { data: { data: [...] } }
+ *      { items: [...] }
+ *      { results: [...] }
+ * - Use apartments returned inside a property response when available
+ * - Fall back to the standalone /apartments endpoint when necessary
+ * - Submit the tenancy payload
+ * - Display useful API errors
+ * - Show a success notification
  * - Redirect after successful creation
  * - Prevent duplicate submissions
- *
- * The actual form state and validation are handled by TenancyForm.
  */
 
 /**
  * ============================================================================
- * ERROR HELPERS
+ * API / COLLECTION HELPERS
  * ============================================================================
  */
+
+/**
+ * Convert common Laravel/Axios collection response shapes into an array.
+ */
+const extractCollection = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value.data)) {
+    return value.data;
+  }
+
+  if (Array.isArray(value.items)) {
+    return value.items;
+  }
+
+  if (Array.isArray(value.results)) {
+    return value.results;
+  }
+
+  if (
+    value.data &&
+    typeof value.data === "object"
+  ) {
+    if (Array.isArray(value.data.data)) {
+      return value.data.data;
+    }
+
+    if (Array.isArray(value.data.items)) {
+      return value.data.items;
+    }
+
+    if (Array.isArray(value.data.results)) {
+      return value.data.results;
+    }
+  }
+
+  return [];
+};
 
 /**
  * Extract a useful error message from Laravel/Axios errors.
  */
 const getErrorMessage = (error) => {
   if (!error) {
-    return "Failed to create tenancy. Please try again.";
+    return "Unable to load tenancy data. Please try again.";
   }
 
   if (typeof error === "string") {
@@ -64,6 +117,27 @@ const getErrorMessage = (error) => {
     return responseData.error;
   }
 
+  if (responseData?.errors) {
+    if (typeof responseData.errors === "string") {
+      return responseData.errors;
+    }
+
+    if (
+      typeof responseData.errors === "object"
+    ) {
+      const messages = Object.values(
+        responseData.errors
+      )
+        .flat()
+        .filter(Boolean)
+        .map(String);
+
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
+  }
+
   if (
     error?.message &&
     typeof error.message === "string"
@@ -71,7 +145,98 @@ const getErrorMessage = (error) => {
     return error.message;
   }
 
-  return "Failed to create tenancy. Please try again.";
+  return "Unable to load tenancy data. Please try again.";
+};
+
+/**
+ * Add parent property_id to nested apartments when the property endpoint
+ * does not include it.
+ */
+const getNestedApartments = (properties) => {
+  const propertyList =
+    extractCollection(properties);
+
+  const apartments = [];
+
+  for (const property of propertyList) {
+    if (
+      !property ||
+      typeof property !== "object"
+    ) {
+      continue;
+    }
+
+    const propertyId =
+      property?.id ??
+      property?.property_id ??
+      property?.propertyId;
+
+    const nestedApartments =
+      extractCollection(
+        property?.apartments
+      );
+
+    for (const apartment of nestedApartments) {
+      if (
+        !apartment ||
+        typeof apartment !== "object"
+      ) {
+        continue;
+      }
+
+      apartments.push({
+        ...apartment,
+        property_id:
+          apartment?.property_id ??
+          apartment?.propertyId ??
+          propertyId,
+      });
+    }
+  }
+
+  return apartments;
+};
+
+/**
+ * Remove duplicate apartments/units/tenants by numeric/string id.
+ */
+const uniqueById = (items) => {
+  const seen = new Set();
+
+  return items.filter((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+
+    const id =
+      item?.id ??
+      item?.property_id ??
+      item?.propertyId ??
+      item?.apartment_id ??
+      item?.apartmentId ??
+      item?.unit_id ??
+      item?.unitId ??
+      item?.tenant_id ??
+      item?.tenantId;
+
+    if (
+      id === undefined ||
+      id === null ||
+      id === ""
+    ) {
+      return true;
+    }
+
+    const key = String(id);
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+
+    return true;
+  });
 };
 
 /**
@@ -84,11 +249,161 @@ const CreateTenancy = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
+  const [properties, setProperties] =
+    useState([]);
+
+  const [apartments, setApartments] =
+    useState([]);
+
+  const [units, setUnits] =
+    useState([]);
+
+  const [tenants, setTenants] =
+    useState([]);
+
+  const [loadingData, setLoadingData] =
+    useState(true);
+
   const [submitting, setSubmitting] =
     useState(false);
 
   const [error, setError] =
     useState(null);
+
+  /**
+   * --------------------------------------------------------------------------
+   * LOAD FORM DATA
+   * --------------------------------------------------------------------------
+   *
+   * We intentionally do not depend on TenancyForm's internal field state.
+   * CreateTenancy owns the data collections and passes them to TenancyForm.
+   *
+   * The property response is checked first for embedded apartments. This
+   * matches property API responses that include:
+   *
+   *   property.apartments = [...]
+   *
+   * If no apartments are embedded, we fall back to /apartments.
+   */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFormData = async () => {
+      setLoadingData(true);
+      setError(null);
+
+      try {
+        /**
+         * Load properties first because they may already contain apartments.
+         */
+        const propertiesResponse =
+          await api.get("/properties");
+
+        if (cancelled) {
+          return;
+        }
+
+        const propertyList =
+          extractCollection(
+            propertiesResponse?.data
+          );
+
+        setProperties(propertyList);
+
+        /**
+         * Apartments can be embedded inside properties.
+         */
+        let apartmentList =
+          uniqueById(
+            getNestedApartments(
+              propertiesResponse?.data
+            )
+          );
+
+        /**
+         * Load tenants and units together.
+         *
+         * Keep these independent so a failure in one endpoint can be reported
+         * clearly instead of silently producing empty dropdowns.
+         */
+        const [
+          tenantsResult,
+          unitsResult,
+        ] = await Promise.all([
+          api.get("/tenants"),
+          api.get("/units"),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setTenants(
+          uniqueById(
+            extractCollection(
+              tenantsResult?.data
+            )
+          )
+        );
+
+        setUnits(
+          uniqueById(
+            extractCollection(
+              unitsResult?.data
+            )
+          )
+        );
+
+        /**
+         * Fallback:
+         * Some property endpoints do not include apartments.
+         *
+         * In that case fetch the standalone apartments collection.
+         */
+        if (apartmentList.length === 0) {
+          const apartmentsResponse =
+            await api.get("/apartments");
+
+          if (cancelled) {
+            return;
+          }
+
+          apartmentList =
+            uniqueById(
+              extractCollection(
+                apartmentsResponse?.data
+              )
+            );
+        }
+
+        if (!cancelled) {
+          setApartments(apartmentList);
+        }
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+
+        const message =
+          getErrorMessage(loadError);
+
+        setError({
+          message,
+        });
+      } finally {
+        if (!cancelled) {
+          setLoadingData(false);
+        }
+      }
+    };
+
+    loadFormData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * --------------------------------------------------------------------------
@@ -120,46 +435,17 @@ const CreateTenancy = () => {
       setError(null);
 
       try {
-        /**
-         * Import the tenancy service only when submission happens.
-         *
-         * Expected export:
-         *
-         * createTenancy(payload)
-         */
-        const tenancyService =
-          await import(
-            "../../../services/tenancy.service"
-          );
-
-        const createTenancy =
-          tenancyService.createTenancy ||
-          tenancyService.default
-            ?.createTenancy;
-
-        if (
-          typeof createTenancy !==
-          "function"
-        ) {
-          throw new Error(
-            "createTenancy service function was not found."
-          );
-        }
-
         const response =
-          await createTenancy(payload);
+          await api.post(
+            "/tenancies",
+            payload
+          );
 
-        /**
-         * Some API services return the raw Axios response,
-         * while others return response.data.
-         *
-         * Support both.
-         */
         const responseData =
           response?.data ?? response;
 
         /**
-         * Treat an explicit API failure as an error.
+         * Treat explicit API failure responses as errors.
          */
         if (
           responseData?.status === false
@@ -170,9 +456,6 @@ const CreateTenancy = () => {
           );
         }
 
-        /**
-         * Success notification.
-         */
         dispatch(
           addNotification({
             type: "success",
@@ -182,9 +465,6 @@ const CreateTenancy = () => {
           })
         );
 
-        /**
-         * Redirect to tenancy list.
-         */
         navigate(
           "/super-admin/tenancies",
           {
@@ -197,19 +477,9 @@ const CreateTenancy = () => {
             submitError
           );
 
-        /**
-         * Keep the error object available to
-         * TenancyForm.
-         */
         setError({
           message,
         });
-
-        /**
-         * Do not show a success notification.
-         *
-         * The form receives the error and displays it.
-         */
 
         throw submitError;
       } finally {
@@ -222,6 +492,39 @@ const CreateTenancy = () => {
       submitting,
     ]
   );
+
+  /**
+   * --------------------------------------------------------------------------
+   * FORM COLLECTIONS
+   * --------------------------------------------------------------------------
+   *
+   * These memoized references prevent unnecessary TenancyForm renders when
+   * the underlying collections have not changed.
+   */
+
+  const formProperties =
+    useMemo(
+      () => properties,
+      [properties]
+    );
+
+  const formApartments =
+    useMemo(
+      () => apartments,
+      [apartments]
+    );
+
+  const formUnits =
+    useMemo(
+      () => units,
+      [units]
+    );
+
+  const formTenants =
+    useMemo(
+      () => tenants,
+      [tenants]
+    );
 
   /**
    * ==========================================================================
@@ -254,8 +557,6 @@ const CreateTenancy = () => {
           {/* -------------------------------------------------------------- */}
 
           <div className="flex items-center gap-3">
-            {/* Back button */}
-
             <button
               type="button"
               onClick={handleCancel}
@@ -288,13 +589,9 @@ const CreateTenancy = () => {
               <ArrowLeft className="h-4 w-4" />
             </button>
 
-            {/* Page icon */}
-
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
               <Building2 className="h-5 w-5" />
             </div>
-
-            {/* Page title */}
 
             <div className="min-w-0">
               <h1 className="text-lg font-semibold text-gray-900">
@@ -302,22 +599,24 @@ const CreateTenancy = () => {
               </h1>
 
               <p className="mt-0.5 text-sm text-gray-500">
-                Create a new tenancy and assign
-                it to a tenant and unit.
+                Create a new tenancy and assign it
+                to a tenant and unit.
               </p>
             </div>
           </div>
 
           {/* -------------------------------------------------------------- */}
-          {/* SUBMITTING INDICATOR */}
+          {/* LOADING / SUBMITTING INDICATOR */}
           {/* -------------------------------------------------------------- */}
 
-          {submitting && (
+          {(loadingData || submitting) && (
             <div className="inline-flex items-center gap-2 self-start text-sm text-gray-500 lg:self-auto">
               <Loader2 className="h-4 w-4 animate-spin" />
 
               <span>
-                Creating tenancy...
+                {submitting
+                  ? "Creating tenancy..."
+                  : "Loading tenancy data..."}
               </span>
             </div>
           )}
@@ -325,15 +624,37 @@ const CreateTenancy = () => {
       </div>
 
       {/* ================================================================== */}
+      {/* LOAD ERROR */}
+      {/* ================================================================== */}
+
+      {error && !loadingData && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          <p className="font-semibold">
+            Unable to load tenancy data
+          </p>
+
+          <p className="mt-1">
+            {error.message ||
+              "Please try again."}
+          </p>
+        </div>
+      )}
+
+      {/* ================================================================== */}
       {/* TENANCY FORM */}
       {/* ================================================================== */}
 
       <TenancyForm
+        key="create-tenancy-form"
         mode="create"
-        loading={false}
+        loading={loadingData}
         submitting={submitting}
         error={error}
         initialValues={{}}
+        properties={formProperties}
+        apartments={formApartments}
+        units={formUnits}
+        tenants={formTenants}
         onSubmit={handleSubmit}
         onCancel={handleCancel}
       />

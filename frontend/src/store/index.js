@@ -117,7 +117,7 @@ export const store = configureStore({
     | TENANCIES
     |--------------------------------------------------------------------------
     */
-    tenancies: tenancyReducer,
+    tenancy: tenancyReducer,
 
     /*
     |--------------------------------------------------------------------------
