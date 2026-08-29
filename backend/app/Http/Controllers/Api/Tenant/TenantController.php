@@ -40,26 +40,33 @@ class TenantController extends Controller
         try {
 
             $filters = [
-
                 'search' => $request->input('search'),
+
+                'user_id' => $request->input('user_id'),
 
                 'status' => $request->input('status'),
 
                 'is_active' => $request->has('is_active')
-                    ? $request->boolean('is_active')
+                    ? $request->input('is_active')
                     : null,
 
                 'is_verified' => $request->has('is_verified')
-                    ? $request->boolean('is_verified')
+                    ? $request->input('is_verified')
                     : null,
 
                 'gender' => $request->input('gender'),
 
                 'country' => $request->input('country'),
 
+                'region' => $request->input('region'),
+
                 'county' => $request->input('county'),
 
                 'city' => $request->input('city'),
+
+                'area' => $request->input('area'),
+
+                'postal_code' => $request->input('postal_code'),
 
                 'sort_by' => $request->input(
                     'sort_by',
@@ -76,6 +83,21 @@ class TenantController extends Controller
                     15
                 ),
             ];
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Remove null filters
+            |--------------------------------------------------------------------------
+            |
+            | This prevents null values from being treated as actual filters.
+            |
+            */
+
+            $filters = array_filter(
+                $filters,
+                static fn ($value) => $value !== null && $value !== ''
+            );
 
 
             $tenants = $this->tenantService->paginate(
@@ -112,8 +134,33 @@ class TenantController extends Controller
 
         try {
 
+            $data = $request->validated();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Uploaded Documents
+            |--------------------------------------------------------------------------
+            */
+
+            $photo = $request->file('photo');
+
+            $idFront = $request->file('id_front');
+
+            $idBack = $request->file('id_back');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create Tenant
+            |--------------------------------------------------------------------------
+            */
+
             $tenant = $this->tenantService->create(
-                $request->validated()
+                $data,
+                $photo,
+                $idFront,
+                $idBack
             );
 
 
@@ -146,17 +193,19 @@ class TenantController extends Controller
 
         try {
 
+            /*
+            |--------------------------------------------------------------------------
+            | Re-fetch through TenantService
+            |--------------------------------------------------------------------------
+            |
+            | This ensures the same tenant rules and relationships used by the
+            | rest of the application are applied.
+            |
+            */
+
             $tenant = $this->tenantService->find(
                 $tenant->id
             );
-
-
-            if (!$tenant) {
-
-                return ApiResponse::notFound(
-                    'Tenant not found.'
-                );
-            }
 
 
             return ApiResponse::success(
@@ -189,9 +238,34 @@ class TenantController extends Controller
 
         try {
 
+            $data = $request->validated();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Uploaded Documents
+            |--------------------------------------------------------------------------
+            */
+
+            $photo = $request->file('photo');
+
+            $idFront = $request->file('id_front');
+
+            $idBack = $request->file('id_back');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Update Tenant
+            |--------------------------------------------------------------------------
+            */
+
             $updatedTenant = $this->tenantService->update(
                 $tenant,
-                $request->validated()
+                $data,
+                $photo,
+                $idFront,
+                $idBack
             );
 
 
@@ -287,6 +361,12 @@ class TenantController extends Controller
             $limit = (int) $request->input(
                 'limit',
                 20
+            );
+
+
+            $limit = max(
+                1,
+                min($limit, 100)
             );
 
 
@@ -647,8 +727,7 @@ class TenantController extends Controller
     {
         try {
 
-            $statistics =
-                $this->tenantService->statistics();
+            $statistics = $this->tenantService->statistics();
 
 
             return ApiResponse::success(
@@ -683,14 +762,6 @@ class TenantController extends Controller
             $tenant = $this->tenantService->restore(
                 $id
             );
-
-
-            if (!$tenant) {
-
-                return ApiResponse::notFound(
-                    'Tenant not found.'
-                );
-            }
 
 
             return ApiResponse::updated(
@@ -752,6 +823,145 @@ class TenantController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | UPLOAD PHOTO
+    |--------------------------------------------------------------------------
+    | POST /api/tenants/{tenant}/photo
+    |--------------------------------------------------------------------------
+    */
+
+    public function uploadPhoto(
+        Request $request,
+        Tenant $tenant
+    ): JsonResponse {
+
+        try {
+
+            $request->validate([
+                'photo' => [
+                    'required',
+                    'file',
+                    'image',
+                    'mimes:jpg,jpeg,png,webp',
+                    'max:5120',
+                ],
+            ]);
+
+
+            $tenant = $this->tenantService->uploadPhoto(
+                $tenant,
+                $request->file('photo')
+            );
+
+
+            return ApiResponse::updated(
+                new TenantResource($tenant),
+                'Tenant photo uploaded successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to upload tenant photo.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPLOAD FRONT ID
+    |--------------------------------------------------------------------------
+    | POST /api/tenants/{tenant}/id-front
+    |--------------------------------------------------------------------------
+    */
+
+    public function uploadIdFront(
+        Request $request,
+        Tenant $tenant
+    ): JsonResponse {
+
+        try {
+
+            $request->validate([
+                'id_front' => [
+                    'required',
+                    'file',
+                    'mimes:jpg,jpeg,png,webp,pdf',
+                    'max:5120',
+                ],
+            ]);
+
+
+            $tenant = $this->tenantService->uploadIdFront(
+                $tenant,
+                $request->file('id_front')
+            );
+
+
+            return ApiResponse::updated(
+                new TenantResource($tenant),
+                'Tenant ID front uploaded successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to upload tenant ID front.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPLOAD BACK ID
+    |--------------------------------------------------------------------------
+    | POST /api/tenants/{tenant}/id-back
+    |--------------------------------------------------------------------------
+    */
+
+    public function uploadIdBack(
+        Request $request,
+        Tenant $tenant
+    ): JsonResponse {
+
+        try {
+
+            $request->validate([
+                'id_back' => [
+                    'required',
+                    'file',
+                    'mimes:jpg,jpeg,png,webp,pdf',
+                    'max:5120',
+                ],
+            ]);
+
+
+            $tenant = $this->tenantService->uploadIdBack(
+                $tenant,
+                $request->file('id_back')
+            );
+
+
+            return ApiResponse::updated(
+                new TenantResource($tenant),
+                'Tenant ID back uploaded successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to upload tenant ID back.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
     | EXCEPTION ERRORS
     |--------------------------------------------------------------------------
     */
@@ -762,8 +972,11 @@ class TenantController extends Controller
 
         /*
         |--------------------------------------------------------------------------
-        | Do not expose internal exception details in production.
+        | Production Safety
         |--------------------------------------------------------------------------
+        |
+        | Internal exception information should not be exposed in production.
+        |
         */
 
         if (

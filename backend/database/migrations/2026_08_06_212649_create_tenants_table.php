@@ -37,12 +37,12 @@ return new class extends Migration
             | User Relationship
             |--------------------------------------------------------------------------
             |
-            | Each tenant can optionally be linked to one user account.
+            | A tenant may optionally be linked to a user account.
             |
-            | user_id is nullable to support:
+            | Nullable support is intentional for:
             |
             | - Imported tenants
-            | - Tenants created before a user account
+            | - Tenants created before account creation
             | - Tenants without login accounts
             |
             */
@@ -213,12 +213,14 @@ return new class extends Migration
             | Tenant Status
             |--------------------------------------------------------------------------
             |
+            | Status is the SINGLE source of truth for tenant activity.
+            |
             | Supported statuses:
             |
-            | - pending
-            | - active
-            | - inactive
-            | - blacklisted
+            | pending
+            | active
+            | inactive
+            | blacklisted
             |
             */
 
@@ -229,30 +231,6 @@ return new class extends Migration
                 'blacklisted',
             ])
                 ->default('pending')
-                ->index();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Active Flag
-            |--------------------------------------------------------------------------
-            |
-            | This field provides a simple boolean representation of whether
-            | the tenant account is currently active.
-            |
-            | Recommended synchronization:
-            |
-            | pending     => false
-            | active      => true
-            | inactive    => false
-            | blacklisted => false
-            |
-            | The Tenant model/service should keep this synchronized.
-            |
-            */
-
-            $table->boolean('is_active')
-                ->default(false)
                 ->index();
 
 
@@ -290,54 +268,60 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->index('first_name');
+            $table->index(
+                'first_name',
+                'tenants_first_name_index'
+            );
 
-            $table->index('last_name');
+            $table->index(
+                'last_name',
+                'tenants_last_name_index'
+            );
 
-            $table->index('country');
+            $table->index(
+                'country',
+                'tenants_country_index'
+            );
 
-            $table->index('region');
+            $table->index(
+                'region',
+                'tenants_region_index'
+            );
 
-            $table->index('county');
+            $table->index(
+                'county',
+                'tenants_county_index'
+            );
 
-            $table->index('city');
+            $table->index(
+                'city',
+                'tenants_city_index'
+            );
 
-            $table->index('area');
+            $table->index(
+                'area',
+                'tenants_area_index'
+            );
 
 
             /*
             |--------------------------------------------------------------------------
-            | Composite Status / Active Index
+            | Status / Verification Composite Index
             |--------------------------------------------------------------------------
             */
 
             $table->index(
                 [
                     'status',
-                    'is_active',
-                ],
-                'tenants_status_active_index'
-            );
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Composite Verification / Active Index
-            |--------------------------------------------------------------------------
-            */
-
-            $table->index(
-                [
                     'is_verified',
-                    'is_active',
                 ],
-                'tenants_verification_active_index'
+                'tenants_status_verification_index'
             );
 
 
             /*
             |--------------------------------------------------------------------------
-            | Composite Location Index
+            | Location Composite Index
             |--------------------------------------------------------------------------
             */
 
