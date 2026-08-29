@@ -1,10 +1,9 @@
-// frontend/src/modules/super-admin/tenancies/TenancyList.jsx
-
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 
 import {
@@ -35,6 +34,7 @@ import TenancyStats from "./TenancyStats";
 import TenancyFilters from "./TenancyFilters";
 import TenancyTable from "./TenancyTable";
 import TenancyPagination from "./TenancyPagination";
+import TenancyEmptyState from "./TenancyEmptyState";
 
 /*
 |--------------------------------------------------------------------------
@@ -46,77 +46,112 @@ const DEFAULT_PER_PAGE = 15;
 
 /*
 |--------------------------------------------------------------------------
-| Debug Configuration
-|--------------------------------------------------------------------------
-|
-| Set this to false when you no longer want tenancy console logs.
-|
-*/
-
-const TENANCY_DEBUG = true;
-
-/*
-|--------------------------------------------------------------------------
-| Debug Helpers
-|--------------------------------------------------------------------------
-*/
-
-const tenancyLog = (...args) => {
-  if (!TENANCY_DEBUG) {
-    return;
-  }
-
-  console.log(
-    "[TenancyList]",
-    ...args
-  );
-};
-
-const tenancyGroup = (
-  title,
-  callback
-) => {
-  if (!TENANCY_DEBUG) {
-    callback?.();
-    return;
-  }
-
-  console.group(
-    `[TenancyList] ${title}`
-  );
-
-  try {
-    callback?.();
-  } finally {
-    console.groupEnd();
-  }
-};
-
-/*
-|--------------------------------------------------------------------------
 | Loading Component
 |--------------------------------------------------------------------------
 */
 
 const TenancyLoading = () => {
   return (
-    <div
-      className="flex min-h-[300px] items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm"
+    <section
+      className="
+        overflow-hidden
+        rounded-2xl
+        border
+        border-gray-200
+        bg-white
+        shadow-sm
+        dark:border-gray-700
+        dark:bg-gray-800
+      "
       role="status"
       aria-live="polite"
       aria-label="Loading tenancies"
     >
-      <div className="flex flex-col items-center justify-center gap-3">
-        <Loader2
-          className="h-8 w-8 animate-spin text-gray-600"
-          aria-hidden="true"
-        />
+      <div
+        className="
+          flex
+          min-h-[360px]
+          flex-col
+          items-center
+          justify-center
+          px-6
+          py-12
+        "
+      >
+        <div
+          className="
+            flex
+            h-16
+            w-16
+            items-center
+            justify-center
+            rounded-2xl
+            bg-indigo-50
+            dark:bg-indigo-950/40
+          "
+        >
+          <Loader2
+            className="
+              h-8
+              w-8
+              animate-spin
+              text-indigo-600
+              dark:text-indigo-400
+            "
+            aria-hidden="true"
+          />
+        </div>
 
-        <p className="text-sm font-medium text-gray-600">
-          Loading tenancies...
+        <h3
+          className="
+            mt-5
+            text-sm
+            font-semibold
+            text-gray-900
+            dark:text-white
+          "
+        >
+          Loading tenancies
+        </h3>
+
+        <p
+          className="
+            mt-1
+            max-w-sm
+            text-center
+            text-sm
+            text-gray-500
+            dark:text-gray-400
+          "
+        >
+          Please wait while we retrieve the latest
+          tenancy records.
         </p>
+
+        <div
+          className="
+            mt-5
+            h-1
+            w-32
+            overflow-hidden
+            rounded-full
+            bg-gray-100
+            dark:bg-gray-700
+          "
+        >
+          <div
+            className="
+              h-full
+              w-1/2
+              animate-[loading_1.2s_ease-in-out_infinite]
+              rounded-full
+              bg-indigo-600
+              dark:bg-indigo-400
+            "
+          />
+        </div>
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -132,23 +167,61 @@ const TenancyError = ({
   loading = false,
 }) => {
   return (
-    <div
-      className="rounded-xl border border-red-200 bg-red-50 p-6"
+    <section
+      className="
+        rounded-2xl
+        border
+        border-red-200
+        bg-red-50
+        p-6
+        dark:border-red-900/50
+        dark:bg-red-950/20
+      "
       role="alert"
     >
       <div className="flex flex-col items-center justify-center text-center">
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+        <div
+          className="
+            mb-4
+            flex
+            h-14
+            w-14
+            items-center
+            justify-center
+            rounded-2xl
+            bg-red-100
+            text-red-600
+            dark:bg-red-950/60
+            dark:text-red-400
+          "
+        >
           <AlertCircle
-            className="h-6 w-6 text-red-600"
+            className="h-7 w-7"
             aria-hidden="true"
           />
         </div>
 
-        <h3 className="text-base font-semibold text-red-800">
+        <h3
+          className="
+            text-base
+            font-semibold
+            text-red-900
+            dark:text-red-200
+          "
+        >
           Failed to load tenancies
         </h3>
 
-        <p className="mt-1 max-w-lg text-sm text-red-600">
+        <p
+          className="
+            mt-1
+            max-w-lg
+            text-sm
+            leading-6
+            text-red-700
+            dark:text-red-300
+          "
+        >
           {message ||
             "Something went wrong while loading tenancies."}
         </p>
@@ -157,13 +230,37 @@ const TenancyError = ({
           type="button"
           onClick={onRetry}
           disabled={loading}
-          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="
+            mt-5
+            inline-flex
+            items-center
+            gap-2
+            rounded-xl
+            bg-red-600
+            px-4
+            py-2.5
+            text-sm
+            font-semibold
+            text-white
+            shadow-sm
+            transition
+            hover:bg-red-700
+            focus:outline-none
+            focus:ring-2
+            focus:ring-red-500
+            focus:ring-offset-2
+            disabled:cursor-not-allowed
+            disabled:opacity-60
+            dark:focus:ring-offset-gray-900
+          "
         >
           <RefreshCw
-            className={`h-4 w-4 ${loading
-              ? "animate-spin"
-              : ""
-              }`}
+            className={
+              `h-4 w-4 ${loading
+                ? "animate-spin"
+                : ""
+              }`
+            }
             aria-hidden="true"
           />
 
@@ -172,60 +269,20 @@ const TenancyError = ({
             : "Try again"}
         </button>
       </div>
-    </div>
+    </section>
   );
 };
 
 /*
 |--------------------------------------------------------------------------
-| Empty Component
+| Helpers
 |--------------------------------------------------------------------------
 */
 
-const TenancyEmpty = ({
-  hasFilters,
-  onClearFilters,
-}) => {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-10 shadow-sm">
-      <div className="flex flex-col items-center justify-center text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
-          <AlertCircle
-            className="h-7 w-7 text-gray-400"
-            aria-hidden="true"
-          />
-        </div>
-
-        <h3 className="text-base font-semibold text-gray-900">
-          No tenancies found
-        </h3>
-
-        <p className="mt-1 max-w-md text-sm text-gray-500">
-          {hasFilters
-            ? "No tenancies match your current filters."
-            : "There are no tenancies available yet."}
-        </p>
-
-        {hasFilters && (
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="mt-4 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-/*
-|--------------------------------------------------------------------------
-| Helper: Normalize Value
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Normalize nullable values before sending
+ * them to the API.
+ */
 const cleanValue = (value) => {
   if (
     value === undefined ||
@@ -235,6 +292,32 @@ const cleanValue = (value) => {
   }
 
   return value;
+};
+
+/**
+ * Normalize tenancy collections returned
+ * by Redux/API.
+ */
+const normalizeTenancies = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    value &&
+    Array.isArray(value.data)
+  ) {
+    return value.data;
+  }
+
+  if (
+    value?.data &&
+    Array.isArray(value.data.data)
+  ) {
+    return value.data.data;
+  }
+
+  return [];
 };
 
 /*
@@ -278,109 +361,54 @@ const TenancyList = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | Initial Request Tracking
+  | Request Tracking
   |--------------------------------------------------------------------------
   */
 
   const initialRequestRef =
     useRef(false);
 
+  const initialRequestCompletedRef =
+    useRef(false);
+
+  const previousFiltersRef =
+    useRef(null);
+
   /*
   |--------------------------------------------------------------------------
-  | Request Counter
+  | Initial Request State
   |--------------------------------------------------------------------------
   |
-  | Useful for identifying duplicate requests.
+  | IMPORTANT:
+  |
+  | We intentionally start with false.
+  |
+  | This allows the UI to show the initial loader
+  | immediately after a browser refresh, before
+  | Redux has updated loading=true.
   |
   */
 
-  const requestCountRef =
-    useRef(0);
+  const [
+    initialRequestCompleted,
+    setInitialRequestCompleted,
+  ] = useState(false);
 
   /*
   |--------------------------------------------------------------------------
-  | Normalize Tenancy Data
+  | Normalize Tenancies
   |--------------------------------------------------------------------------
   */
 
   const tenancyData = useMemo(() => {
-    /*
-     * Case 1:
-     *
-     * Redux already contains:
-     *
-     * [
-     *   {...},
-     *   {...}
-     * ]
-     */
+    const normalized =
+      normalizeTenancies(tenancies);
 
-    if (Array.isArray(tenancies)) {
-      return tenancies;
-    }
-
-    /*
-     * Case 2:
-     *
-     * Redux contains:
-     *
-     * {
-     *   data: [...]
-     * }
-     */
-
-    if (
-      tenancies &&
-      Array.isArray(
-        tenancies.data
-      )
-    ) {
-      return tenancies.data;
-    }
-
-    /*
-     * Case 3:
-     *
-     * Redux contains:
-     *
-     * {
-     *   data: {
-     *     data: [...]
-     *   }
-     * }
-     */
-
-    if (
-      tenancies &&
-      tenancies.data &&
-      Array.isArray(
-        tenancies.data.data
-      )
-    ) {
-      return tenancies.data.data;
-    }
-
-    /*
-     * Case 4:
-     *
-     * Laravel paginator:
-     *
-     * {
-     *   current_page: 1,
-     *   data: [...]
-     * }
-     */
-
-    if (
-      tenancies &&
-      Array.isArray(
-        tenancies.data
-      )
-    ) {
-      return tenancies.data;
-    }
-
-    return [];
+    return normalized.filter(
+      (tenancy) =>
+        tenancy &&
+        typeof tenancy === "object"
+    );
   }, [tenancies]);
 
   /*
@@ -389,8 +417,8 @@ const TenancyList = () => {
   |--------------------------------------------------------------------------
   */
 
-  const requestFilters = useMemo(() => {
-    const normalizedFilters = {
+  const requestFilters = useMemo(
+    () => ({
       page:
         Number(filters?.page) || 1,
 
@@ -452,23 +480,151 @@ const TenancyList = () => {
         cleanValue(
           filters?.sort_order
         ),
-    };
+    }),
+    [
+      filters?.page,
+      filters?.per_page,
+      filters?.search,
+      filters?.status,
+      filters?.property_id,
+      filters?.apartment_id,
+      filters?.unit_id,
+      filters?.tenant_id,
+      filters?.payment_frequency,
+      filters?.start_date,
+      filters?.end_date,
+      filters?.sort_by,
+      filters?.sort_order,
+    ]
+  );
 
-    return normalizedFilters;
+  /*
+  |--------------------------------------------------------------------------
+  | Loading States
+  |--------------------------------------------------------------------------
+  |
+  | Initial loading:
+  |
+  | - Browser refresh
+  | - First page load
+  | - First tenancy request
+  |
+  | Refreshing:
+  |
+  | - Existing tenancy data is already visible
+  | - A new request is running
+  |
+  */
+
+  const initialLoading =
+    !initialRequestCompleted;
+
+  const refreshing =
+    initialRequestCompleted &&
+    loading;
+
+  /*
+  |--------------------------------------------------------------------------
+  | Error Message
+  |--------------------------------------------------------------------------
+  */
+
+  const errorMessage = useMemo(() => {
+    if (!error) {
+      return null;
+    }
+
+    if (typeof error === "string") {
+      return error;
+    }
+
+    if (
+      typeof error?.message === "string" &&
+      error.message.trim()
+    ) {
+      return error.message;
+    }
+
+    if (
+      typeof error?.error === "string" &&
+      error.error.trim()
+    ) {
+      return error.error;
+    }
+
+    if (
+      typeof error?.errors?.message ===
+      "string" &&
+      error.errors.message.trim()
+    ) {
+      return error.errors.message;
+    }
+
+    if (
+      typeof error?.response?.data?.message ===
+      "string" &&
+      error.response.data.message.trim()
+    ) {
+      return error.response.data.message;
+    }
+
+    return "Unable to load tenancies.";
+  }, [error]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Filter State
+  |--------------------------------------------------------------------------
+  */
+
+  const hasFilters = useMemo(
+    () =>
+      Boolean(
+        filters?.search ||
+        filters?.status ||
+        filters?.property_id ||
+        filters?.apartment_id ||
+        filters?.unit_id ||
+        filters?.tenant_id ||
+        filters?.payment_frequency ||
+        filters?.start_date ||
+        filters?.end_date
+      ),
+    [
+      filters?.search,
+      filters?.status,
+      filters?.property_id,
+      filters?.apartment_id,
+      filters?.unit_id,
+      filters?.tenant_id,
+      filters?.payment_frequency,
+      filters?.start_date,
+      filters?.end_date,
+    ]
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Pagination Total
+  |--------------------------------------------------------------------------
+  */
+
+  const total = useMemo(() => {
+    const value = Number(
+      pagination?.total
+    );
+
+    if (
+      Number.isFinite(value) &&
+      value >= 0
+    ) {
+      return value;
+    }
+
+    return tenancyData.length;
   }, [
-    filters?.page,
-    filters?.per_page,
-    filters?.search,
-    filters?.status,
-    filters?.property_id,
-    filters?.apartment_id,
-    filters?.unit_id,
-    filters?.tenant_id,
-    filters?.payment_frequency,
-    filters?.start_date,
-    filters?.end_date,
-    filters?.sort_by,
-    filters?.sort_order,
+    pagination?.total,
+    tenancyData.length,
   ]);
 
   /*
@@ -478,302 +634,96 @@ const TenancyList = () => {
   */
 
   const loadTenancies = useCallback(
-    (
-      customFilters = requestFilters
-    ) => {
-      requestCountRef.current += 1;
+    async (customFilters) => {
+      const finalFilters =
+        customFilters ||
+        requestFilters;
 
-      const requestNumber =
-        requestCountRef.current;
-
-      tenancyGroup(
-        `REQUEST #${requestNumber}`,
-        () => {
-          tenancyLog(
-            "Dispatching fetchTenancies..."
+      try {
+        const result =
+          await dispatch(
+            fetchTenancies(
+              finalFilters
+            )
           );
 
-          tenancyLog(
-            "Request filters:",
-            customFilters
-          );
+        /*
+         * Mark the first request as complete
+         * only after the Redux thunk resolves.
+         */
+        if (
+          !initialRequestCompletedRef.current
+        ) {
+          initialRequestCompletedRef.current =
+            true;
 
-          tenancyLog(
-            "Current Redux tenancies before request:",
-            tenancies
-          );
-
-          tenancyLog(
-            "Current normalized tenancy count:",
-            tenancyData.length
-          );
-
-          tenancyLog(
-            "Current loading:",
-            loading
-          );
-
-          tenancyLog(
-            "Current error:",
-            error
+          setInitialRequestCompleted(
+            true
           );
         }
-      );
 
-      const action = dispatch(
-        fetchTenancies(
-          customFilters
-        )
-      );
+        return result;
+      } catch (requestError) {
+        /*
+         * Even if the request fails, the initial
+         * loading screen must stop so the error
+         * component can be displayed.
+         */
+        if (
+          !initialRequestCompletedRef.current
+        ) {
+          initialRequestCompletedRef.current =
+            true;
 
-      /*
-       * Log thunk result.
-       *
-       * This is especially useful for detecting
-       * rejected API requests.
-       */
-
-      action
-        ?.then?.((result) => {
-          tenancyGroup(
-            `REQUEST #${requestNumber} RESULT`,
-            () => {
-              tenancyLog(
-                "Thunk result:",
-                result
-              );
-
-              tenancyLog(
-                "Thunk type:",
-                result?.type
-              );
-
-              tenancyLog(
-                "Thunk payload:",
-                result?.payload
-              );
-
-              tenancyLog(
-                "Thunk meta:",
-                result?.meta
-              );
-
-              if (
-                result?.meta?.requestStatus ===
-                "fulfilled"
-              ) {
-                tenancyLog(
-                  "Request completed successfully."
-                );
-              }
-
-              if (
-                result?.meta?.requestStatus ===
-                "rejected"
-              ) {
-                console.error(
-                  "[TenancyList] Request rejected:",
-                  result
-                );
-              }
-            }
+          setInitialRequestCompleted(
+            true
           );
-        })
-        ?.catch?.((requestError) => {
-          console.error(
-            `[TenancyList] REQUEST #${requestNumber} promise error:`,
-            requestError
-          );
-        });
+        }
 
-      return action;
+        throw requestError;
+      }
     },
     [
       dispatch,
       requestFilters,
-      tenancies,
-      tenancyData.length,
-      loading,
-      error,
     ]
   );
 
   /*
   |--------------------------------------------------------------------------
-  | Log Redux State
-  |--------------------------------------------------------------------------
-  |
-  | This effect runs whenever the relevant Redux data changes.
-  |
-  | This will help identify whether the problem is:
-  |
-  | API -> service -> thunk -> Redux -> component
-  |
-  */
-
-  useEffect(() => {
-    tenancyGroup(
-      "REDUX STATE",
-      () => {
-        tenancyLog(
-          "Raw tenancies:",
-          tenancies
-        );
-
-        tenancyLog(
-          "Raw tenancies type:",
-          Array.isArray(tenancies)
-            ? "array"
-            : typeof tenancies
-        );
-
-        tenancyLog(
-          "Raw tenancy count:",
-          Array.isArray(tenancies)
-            ? tenancies.length
-            : "not an array"
-        );
-
-        tenancyLog(
-          "Normalized tenancyData:",
-          tenancyData
-        );
-
-        tenancyLog(
-          "Normalized tenancy count:",
-          tenancyData.length
-        );
-
-        tenancyLog(
-          "Pagination:",
-          pagination
-        );
-
-        tenancyLog(
-          "Filters:",
-          filters
-        );
-
-        tenancyLog(
-          "Request filters:",
-          requestFilters
-        );
-
-        tenancyLog(
-          "Loading:",
-          loading
-        );
-
-        tenancyLog(
-          "Error:",
-          error
-        );
-
-        tenancyLog(
-          "Statistics:",
-          statistics
-        );
-      }
-    );
-  }, [
-    tenancies,
-    tenancyData,
-    pagination,
-    filters,
-    requestFilters,
-    loading,
-    error,
-    statistics,
-  ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Log First Tenancy
-  |--------------------------------------------------------------------------
-  */
-
-  useEffect(() => {
-    if (
-      tenancyData.length === 0
-    ) {
-      tenancyLog(
-        "No normalized tenancy records available."
-      );
-
-      return;
-    }
-
-    tenancyLog(
-      "First tenancy record:",
-      tenancyData[0]
-    );
-
-    tenancyLog(
-      "Tenancy IDs:",
-      tenancyData.map(
-        (tenancy) =>
-          tenancy?.id
-      )
-    );
-
-    tenancyLog(
-      "Tenancy numbers:",
-      tenancyData.map(
-        (tenancy) =>
-          tenancy?.tenancy_number
-      )
-    );
-  }, [tenancyData]);
-
-  /*
-  |--------------------------------------------------------------------------
   | Initial Fetch
   |--------------------------------------------------------------------------
+  |
+  | This runs immediately when the page mounts.
+  |
+  | Because initialLoading is based on
+  | initialRequestCompleted instead of Redux loading,
+  | the loader is visible immediately during a
+  | browser refresh.
+  |
   */
 
   useEffect(() => {
-    if (
-      initialRequestRef.current
-    ) {
-      tenancyLog(
-        "Initial request already executed. Skipping."
-      );
-
+    if (initialRequestRef.current) {
       return;
     }
 
     initialRequestRef.current = true;
 
-    tenancyGroup(
-      "INITIAL LOAD",
-      () => {
-        tenancyLog(
-          "Initial tenancy request starting..."
-        );
-
-        tenancyLog(
-          "Initial request filters:",
-          requestFilters
-        );
-      }
-    );
+    previousFiltersRef.current =
+      requestFilters;
 
     loadTenancies(
       requestFilters
-    );
+    ).catch(() => {
+      /*
+       * Redux manages the request error.
+       */
+    });
   }, [
     loadTenancies,
     requestFilters,
   ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Previous Request Filters
-  |--------------------------------------------------------------------------
-  */
-
-  const previousFiltersRef =
-    useRef(null);
 
   /*
   |--------------------------------------------------------------------------
@@ -782,63 +732,23 @@ const TenancyList = () => {
   */
 
   useEffect(() => {
-    if (
-      !initialRequestRef.current
-    ) {
+    if (!initialRequestCompleted) {
       return;
     }
 
     const previous =
       previousFiltersRef.current;
 
-    /*
-     * First execution after initial request.
-     */
-
-    if (previous === null) {
+    if (!previous) {
       previousFiltersRef.current =
         requestFilters;
-
-      tenancyLog(
-        "Stored initial request filters. No duplicate request."
-      );
 
       return;
     }
 
-    const previousString =
-      JSON.stringify(
-        previous
-      );
-
-    const currentString =
-      JSON.stringify(
-        requestFilters
-      );
-
     const changed =
-      previousString !==
-      currentString;
-
-    tenancyGroup(
-      "FILTER COMPARISON",
-      () => {
-        tenancyLog(
-          "Previous filters:",
-          previous
-        );
-
-        tenancyLog(
-          "Current filters:",
-          requestFilters
-        );
-
-        tenancyLog(
-          "Filters changed:",
-          changed
-        );
-      }
-    );
+      JSON.stringify(previous) !==
+      JSON.stringify(requestFilters);
 
     if (!changed) {
       return;
@@ -847,14 +757,15 @@ const TenancyList = () => {
     previousFiltersRef.current =
       requestFilters;
 
-    tenancyLog(
-      "Filters changed. Reloading tenancies..."
-    );
-
     loadTenancies(
       requestFilters
-    );
+    ).catch(() => {
+      /*
+       * Redux manages rejected requests.
+       */
+    });
   }, [
+    initialRequestCompleted,
     requestFilters,
     loadTenancies,
   ]);
@@ -867,25 +778,6 @@ const TenancyList = () => {
 
   const handleRetry =
     useCallback(() => {
-      tenancyGroup(
-        "RETRY",
-        () => {
-          tenancyLog(
-            "Retry clicked."
-          );
-
-          tenancyLog(
-            "Retry filters:",
-            requestFilters
-          );
-
-          tenancyLog(
-            "Current tenancy count:",
-            tenancyData.length
-          );
-        }
-      );
-
       dispatch(
         clearTenancyError()
       );
@@ -893,14 +785,17 @@ const TenancyList = () => {
       previousFiltersRef.current =
         requestFilters;
 
-      loadTenancies(
+      return loadTenancies(
         requestFilters
-      );
+      ).catch(() => {
+        /*
+         * Redux manages the error state.
+         */
+      });
     }, [
       dispatch,
       loadTenancies,
       requestFilters,
-      tenancyData.length,
     ]);
 
   /*
@@ -911,32 +806,23 @@ const TenancyList = () => {
 
   const handleClearFilters =
     useCallback(() => {
-      const clearedFilters = {
-        search: "",
-        status: "",
-        property_id: "",
-        apartment_id: "",
-        unit_id: "",
-        tenant_id: "",
-        payment_frequency: "",
-        start_date: "",
-        end_date: "",
-        sort_by: "",
-        sort_order: "",
-        per_page:
-          DEFAULT_PER_PAGE,
-        page: 1,
-      };
-
-      tenancyLog(
-        "Clearing tenancy filters:",
-        clearedFilters
-      );
-
       dispatch(
-        setTenancyFilters(
-          clearedFilters
-        )
+        setTenancyFilters({
+          search: "",
+          status: "",
+          property_id: "",
+          apartment_id: "",
+          unit_id: "",
+          tenant_id: "",
+          payment_frequency: "",
+          start_date: "",
+          end_date: "",
+          sort_by: "created_at",
+          sort_order: "desc",
+          per_page:
+            DEFAULT_PER_PAGE,
+          page: 1,
+        })
       );
     }, [dispatch]);
 
@@ -949,20 +835,11 @@ const TenancyList = () => {
   const handleFiltersChange =
     useCallback(
       (nextFilters) => {
-        const updatedFilters = {
-          ...(nextFilters || {}),
-          page: 1,
-        };
-
-        tenancyLog(
-          "Tenancy filters changed:",
-          updatedFilters
-        );
-
         dispatch(
-          setTenancyFilters(
-            updatedFilters
-          )
+          setTenancyFilters({
+            ...(nextFilters || {}),
+            page: 1,
+          })
         );
       },
       [dispatch]
@@ -977,17 +854,10 @@ const TenancyList = () => {
   const handlePageChange =
     useCallback(
       (page) => {
-        const nextPage =
-          Number(page) || 1;
-
-        tenancyLog(
-          "Tenancy page changed:",
-          nextPage
-        );
-
         dispatch(
           setTenancyFilters({
-            page: nextPage,
+            page:
+              Number(page) || 1,
           })
         );
       },
@@ -1003,218 +873,17 @@ const TenancyList = () => {
   const handlePerPageChange =
     useCallback(
       (perPage) => {
-        const nextPerPage =
-          Number(perPage) ||
-          DEFAULT_PER_PAGE;
-
-        tenancyLog(
-          "Tenancies per page changed:",
-          nextPerPage
-        );
-
         dispatch(
           setTenancyFilters({
             per_page:
-              nextPerPage,
+              Number(perPage) ||
+              DEFAULT_PER_PAGE,
             page: 1,
           })
         );
       },
       [dispatch]
     );
-
-  /*
-  |--------------------------------------------------------------------------
-  | Has Filters
-  |--------------------------------------------------------------------------
-  */
-
-  const hasFilters = useMemo(() => {
-    return Boolean(
-      filters?.search ||
-      filters?.status ||
-      filters?.property_id ||
-      filters?.apartment_id ||
-      filters?.unit_id ||
-      filters?.tenant_id ||
-      filters?.payment_frequency ||
-      filters?.start_date ||
-      filters?.end_date
-    );
-  }, [
-    filters?.search,
-    filters?.status,
-    filters?.property_id,
-    filters?.apartment_id,
-    filters?.unit_id,
-    filters?.tenant_id,
-    filters?.payment_frequency,
-    filters?.start_date,
-    filters?.end_date,
-  ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Pagination Total
-  |--------------------------------------------------------------------------
-  */
-
-  const total = useMemo(() => {
-    const paginationTotal =
-      Number(
-        pagination?.total
-      );
-
-    if (
-      Number.isFinite(
-        paginationTotal
-      ) &&
-      paginationTotal >= 0
-    ) {
-      return paginationTotal;
-    }
-
-    return tenancyData.length;
-  }, [
-    pagination?.total,
-    tenancyData.length,
-  ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Error Message
-  |--------------------------------------------------------------------------
-  */
-
-  const errorMessage =
-    useMemo(() => {
-      if (!error) {
-        return null;
-      }
-
-      if (
-        typeof error ===
-        "string"
-      ) {
-        return error;
-      }
-
-      return (
-        error?.message ||
-        error?.error ||
-        error?.errors?.message ||
-        "Unable to load tenancies."
-      );
-    }, [error]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Loading States
-  |--------------------------------------------------------------------------
-  */
-
-  const initialLoading =
-    loading &&
-    tenancyData.length === 0;
-
-  const refreshing =
-    loading &&
-    tenancyData.length > 0;
-
-  /*
-  |--------------------------------------------------------------------------
-  | Render Decision Logging
-  |--------------------------------------------------------------------------
-  */
-
-  useEffect(() => {
-    tenancyGroup(
-      "RENDER STATE",
-      () => {
-        tenancyLog(
-          "tenancyData.length:",
-          tenancyData.length
-        );
-
-        tenancyLog(
-          "initialLoading:",
-          initialLoading
-        );
-
-        tenancyLog(
-          "refreshing:",
-          refreshing
-        );
-
-        tenancyLog(
-          "errorMessage:",
-          errorMessage
-        );
-
-        tenancyLog(
-          "hasFilters:",
-          hasFilters
-        );
-
-        tenancyLog(
-          "total:",
-          total
-        );
-
-        if (
-          initialLoading
-        ) {
-          tenancyLog(
-            "UI decision: SHOW LOADING"
-          );
-        } else if (
-          errorMessage
-        ) {
-          tenancyLog(
-            "UI decision: SHOW ERROR"
-          );
-        } else if (
-          tenancyData.length > 0
-        ) {
-          tenancyLog(
-            "UI decision: SHOW TABLE"
-          );
-        } else {
-          tenancyLog(
-            "UI decision: SHOW EMPTY STATE"
-          );
-
-          console.warn(
-            "[TenancyList] EMPTY STATE ACTIVE",
-            {
-              rawTenancies:
-                tenancies,
-              normalizedTenancies:
-                tenancyData,
-              filters,
-              requestFilters,
-              pagination,
-              loading,
-              error,
-            }
-          );
-        }
-      }
-    );
-  }, [
-    tenancyData,
-    initialLoading,
-    refreshing,
-    errorMessage,
-    hasFilters,
-    total,
-    tenancies,
-    filters,
-    requestFilters,
-    pagination,
-    loading,
-    error,
-  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1225,42 +894,54 @@ const TenancyList = () => {
   return (
     <div className="space-y-6">
 
-      {/* ------------------------------------------------------------------
-          Header
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          HEADER
+      ================================================================ */}
 
       <TenancyHeader />
 
-      {/* ------------------------------------------------------------------
-          Statistics
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          STATISTICS
+      ================================================================ */}
 
       <TenancyStats
         statistics={statistics}
         loading={loading}
       />
 
-      {/* ------------------------------------------------------------------
-          Filters
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          FILTERS
+      ================================================================ */}
 
       <TenancyFilters
         filters={filters}
         onChange={
           handleFiltersChange
         }
-        onClear={
+        onReset={
           handleClearFilters
+        }
+        onApply={
+          handleFiltersChange
         }
         loading={loading}
       />
 
-      {/* ------------------------------------------------------------------
-          Error
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          INITIAL LOADING
+      ================================================================ */}
 
-      {errorMessage &&
-        !initialLoading && (
+      {initialLoading && (
+        <TenancyLoading />
+      )}
+
+      {/* ================================================================
+          INITIAL ERROR
+      ================================================================ */}
+
+      {!initialLoading &&
+        errorMessage &&
+        tenancyData.length === 0 && (
           <TenancyError
             message={errorMessage}
             onRetry={handleRetry}
@@ -1268,31 +949,191 @@ const TenancyList = () => {
           />
         )}
 
-      {/* ------------------------------------------------------------------
-          Initial Loading
-      ------------------------------------------------------------------ */}
-
-      {initialLoading && (
-        <TenancyLoading />
-      )}
-
-      {/* ------------------------------------------------------------------
-          Table
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          TENANCY DATA
+      ================================================================ */}
 
       {!initialLoading &&
-        !errorMessage &&
-        tenancyData.length >
-        0 && (
+        tenancyData.length > 0 && (
           <>
-            <TenancyTable
-              tenancies={
-                tenancyData
-              }
-              loading={
-                false
-              }
-            />
+            <div
+              className="
+                relative
+                overflow-hidden
+                rounded-2xl
+              "
+            >
+              <TenancyTable
+                tenancies={tenancyData}
+                loading={refreshing}
+              />
+
+              {/* ========================================================
+                  TABLE REFRESH OVERLAY
+              ======================================================== */}
+
+              {refreshing && (
+                <div
+                  className="
+                    absolute
+                    inset-0
+                    z-10
+                    flex
+                    items-center
+                    justify-center
+                    bg-white/50
+                    backdrop-blur-[1px]
+                    dark:bg-gray-900/50
+                  "
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Refreshing tenancies"
+                >
+                  <div
+                    className="
+                      flex
+                      items-center
+                      gap-3
+                      rounded-xl
+                      border
+                      border-gray-200
+                      bg-white
+                      px-4
+                      py-3
+                      text-sm
+                      font-medium
+                      text-gray-700
+                      shadow-lg
+                      dark:border-gray-700
+                      dark:bg-gray-800
+                      dark:text-gray-200
+                    "
+                  >
+                    <Loader2
+                      className="
+                        h-5
+                        w-5
+                        animate-spin
+                        text-indigo-600
+                        dark:text-indigo-400
+                      "
+                      aria-hidden="true"
+                    />
+
+                    Refreshing tenancies...
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ==========================================================
+                BACKGROUND REFRESH ERROR
+            ========================================================== */}
+
+            {errorMessage && (
+              <div
+                className="
+                  flex
+                  flex-col
+                  gap-3
+                  rounded-xl
+                  border
+                  border-amber-200
+                  bg-amber-50
+                  px-4
+                  py-3
+                  sm:flex-row
+                  sm:items-center
+                  sm:justify-between
+                  dark:border-amber-900/50
+                  dark:bg-amber-950/20
+                "
+                role="alert"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertCircle
+                    className="
+                      mt-0.5
+                      h-4
+                      w-4
+                      shrink-0
+                      text-amber-600
+                      dark:text-amber-400
+                    "
+                  />
+
+                  <div>
+                    <p
+                      className="
+                        text-xs
+                        font-semibold
+                        text-amber-800
+                        dark:text-amber-300
+                      "
+                    >
+                      Unable to refresh tenancy data.
+                    </p>
+
+                    <p
+                      className="
+                        mt-0.5
+                        text-xs
+                        text-amber-700
+                        dark:text-amber-400
+                      "
+                    >
+                      {errorMessage}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  disabled={loading}
+                  className="
+                    inline-flex
+                    items-center
+                    justify-center
+                    gap-2
+                    self-start
+                    rounded-lg
+                    border
+                    border-amber-300
+                    bg-white
+                    px-3
+                    py-2
+                    text-xs
+                    font-semibold
+                    text-amber-800
+                    transition
+                    hover:bg-amber-100
+                    disabled:cursor-not-allowed
+                    disabled:opacity-50
+                    sm:self-auto
+                    dark:border-amber-800
+                    dark:bg-amber-950/30
+                    dark:text-amber-300
+                    dark:hover:bg-amber-950/50
+                  "
+                >
+                  <RefreshCw
+                    className={
+                      `h-3.5 w-3.5 ${loading
+                        ? "animate-spin"
+                        : ""
+                      }`
+                    }
+                  />
+
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* ==========================================================
+                PAGINATION
+            ========================================================== */}
 
             <TenancyPagination
               pagination={{
@@ -1305,49 +1146,78 @@ const TenancyList = () => {
               onPerPageChange={
                 handlePerPageChange
               }
-              loading={
-                loading
-              }
+              loading={loading}
             />
           </>
         )}
 
-      {/* ------------------------------------------------------------------
-          Empty State
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          EMPTY STATE
+      ================================================================ */}
 
       {!initialLoading &&
+        !loading &&
         !errorMessage &&
-        tenancyData.length ===
-        0 && (
-          <TenancyEmpty
-            hasFilters={
-              hasFilters
+        initialRequestCompleted &&
+        tenancyData.length === 0 && (
+          <TenancyEmptyState
+            hasFilters={hasFilters}
+            searchQuery={
+              filters?.search || ""
             }
+            onCreate={() => {
+              window.location.href =
+                "/super-admin/tenancies/create";
+            }}
             onClearFilters={
               handleClearFilters
             }
+            onRetry={handleRetry}
+            showCreateButton={
+              !hasFilters
+            }
+            showRetryButton={false}
+            loading={loading}
           />
         )}
 
-      {/* ------------------------------------------------------------------
-          Refreshing Existing Data
-      ------------------------------------------------------------------ */}
+      {/* ================================================================
+          GLOBAL REFRESH INDICATOR
+      ================================================================ */}
 
       {refreshing && (
         <div
-          className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-sm"
+          className="
+            flex
+            items-center
+            justify-center
+            gap-2
+            rounded-xl
+            border
+            border-indigo-100
+            bg-indigo-50
+            px-4
+            py-2.5
+            text-sm
+            font-medium
+            text-indigo-700
+            dark:border-indigo-900/50
+            dark:bg-indigo-950/30
+            dark:text-indigo-300
+          "
           role="status"
           aria-live="polite"
         >
           <Loader2
-            className="h-4 w-4 animate-spin"
+            className="
+              h-4
+              w-4
+              animate-spin
+            "
             aria-hidden="true"
           />
 
-          <span>
-            Updating tenancies...
-          </span>
+          Updating tenancy records...
         </div>
       )}
     </div>
