@@ -28,7 +28,8 @@ import {
 |--------------------------------------------------------------------------
 |
 | IMPORTANT:
-| We use user_id to connect the tenant profile to an existing user account.
+|
+| user_id connects the tenant profile to an existing user account.
 |
 | We DO NOT use tenant_id when creating a tenant.
 |
@@ -44,10 +45,8 @@ const DEFAULT_FORM = {
 
   id_number: "",
   passport_number: "",
-
   gender: "",
   date_of_birth: "",
-
   nationality: "Kenyan",
 
   country: "",
@@ -65,7 +64,6 @@ const DEFAULT_FORM = {
   employer: "",
 
   status: "pending",
-
   is_active: true,
   is_verified: false,
 
@@ -78,6 +76,9 @@ const DEFAULT_FORM = {
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Normalize boolean values returned by Laravel/MySQL.
+ */
 const normalizeBoolean = (value, fallback = false) => {
   if (
     value === true ||
@@ -106,14 +107,33 @@ const normalizeBoolean = (value, fallback = false) => {
   return fallback;
 };
 
+/**
+ * Always return a safe string.
+ *
+ * This is important because API responses may sometimes contain
+ * objects instead of primitive values.
+ */
 const normalizeString = (value) => {
   if (value === undefined || value === null) {
     return "";
   }
 
+  if (typeof value === "object") {
+    return normalizeString(
+      value.name ??
+      value.label ??
+      value.value ??
+      value.title ??
+      ""
+    );
+  }
+
   return String(value).trim();
 };
 
+/**
+ * Convert API date values to HTML date input format.
+ */
 const formatDateForInput = (value) => {
   if (!value) {
     return "";
@@ -134,9 +154,16 @@ const formatDateForInput = (value) => {
   return date.toISOString().split("T")[0];
 };
 
+/**
+ * Safely get the first available value from an object.
+ */
 const getValue = (source, ...keys) => {
+  if (!source || typeof source !== "object") {
+    return "";
+  }
+
   for (const key of keys) {
-    const value = source?.[key];
+    const value = source[key];
 
     if (
       value !== undefined &&
@@ -163,7 +190,7 @@ const getValue = (source, ...keys) => {
 */
 
 const getUserId = (tenant) => {
-  if (!tenant) {
+  if (!tenant || typeof tenant !== "object") {
     return "";
   }
 
@@ -195,6 +222,10 @@ const getLocationValue = (
   objectKey,
   ...fallbackKeys
 ) => {
+  if (!tenant || typeof tenant !== "object") {
+    return "";
+  }
+
   const nestedValue = tenant?.[objectKey];
 
   if (
@@ -204,7 +235,9 @@ const getLocationValue = (
     return normalizeString(
       nestedValue.name ??
       nestedValue.label ??
-      nestedValue.value
+      nestedValue.value ??
+      nestedValue.title ??
+      ""
     );
   }
 
@@ -224,6 +257,12 @@ const getLocationValue = (
 */
 
 const normalizeTenant = (tenant = {}) => {
+  const safeTenant =
+    tenant &&
+      typeof tenant === "object"
+      ? tenant
+      : {};
+
   /*
   |--------------------------------------------------------------------------
   | EMERGENCY CONTACT
@@ -231,9 +270,9 @@ const normalizeTenant = (tenant = {}) => {
   */
 
   const emergencyContact =
-    tenant?.emergency_contact &&
-      typeof tenant.emergency_contact === "object"
-      ? tenant.emergency_contact
+    safeTenant?.emergency_contact &&
+      typeof safeTenant.emergency_contact === "object"
+      ? safeTenant.emergency_contact
       : {};
 
   /*
@@ -243,9 +282,9 @@ const normalizeTenant = (tenant = {}) => {
   */
 
   const user =
-    tenant?.user &&
-      typeof tenant.user === "object"
-      ? tenant.user
+    safeTenant?.user &&
+      typeof safeTenant.user === "object"
+      ? safeTenant.user
       : {};
 
   return {
@@ -255,7 +294,7 @@ const normalizeTenant = (tenant = {}) => {
     |--------------------------------------------------------------------------
     */
 
-    user_id: getUserId(tenant),
+    user_id: getUserId(safeTenant),
 
     /*
     |--------------------------------------------------------------------------
@@ -265,7 +304,7 @@ const normalizeTenant = (tenant = {}) => {
 
     first_name: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "first_name",
         "firstName"
       ) ||
@@ -278,7 +317,7 @@ const normalizeTenant = (tenant = {}) => {
 
     last_name: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "last_name",
         "lastName"
       ) ||
@@ -291,7 +330,7 @@ const normalizeTenant = (tenant = {}) => {
 
     email: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "email"
       ) ||
       getValue(
@@ -302,7 +341,7 @@ const normalizeTenant = (tenant = {}) => {
 
     phone: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "phone",
         "phone_number"
       ) ||
@@ -315,7 +354,7 @@ const normalizeTenant = (tenant = {}) => {
 
     id_number: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "id_number",
         "national_id",
         "national_id_number"
@@ -324,7 +363,7 @@ const normalizeTenant = (tenant = {}) => {
 
     passport_number: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "passport_number",
         "passport"
       )
@@ -332,14 +371,14 @@ const normalizeTenant = (tenant = {}) => {
 
     gender: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "gender"
       )
-    ),
+    ).toLowerCase(),
 
     date_of_birth: formatDateForInput(
       getValue(
-        tenant,
+        safeTenant,
         "date_of_birth",
         "dob",
         "birth_date"
@@ -349,7 +388,7 @@ const normalizeTenant = (tenant = {}) => {
     nationality:
       normalizeString(
         getValue(
-          tenant,
+          safeTenant,
           "nationality"
         )
       ) || "Kenyan",
@@ -361,38 +400,38 @@ const normalizeTenant = (tenant = {}) => {
     */
 
     country: getLocationValue(
-      tenant,
+      safeTenant,
       "country",
       "country_name"
     ),
 
     region: getLocationValue(
-      tenant,
+      safeTenant,
       "region",
       "region_name"
     ),
 
     county: getLocationValue(
-      tenant,
+      safeTenant,
       "county",
       "county_name"
     ),
 
     city: getLocationValue(
-      tenant,
+      safeTenant,
       "city",
       "city_name"
     ),
 
     area: getLocationValue(
-      tenant,
+      safeTenant,
       "area",
       "area_name"
     ),
 
     address: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "address",
         "street_address",
         "residential_address"
@@ -408,7 +447,7 @@ const normalizeTenant = (tenant = {}) => {
     emergency_contact_name:
       normalizeString(
         getValue(
-          tenant,
+          safeTenant,
           "emergency_contact_name"
         ) ||
         getValue(
@@ -422,7 +461,7 @@ const normalizeTenant = (tenant = {}) => {
     emergency_contact_phone:
       normalizeString(
         getValue(
-          tenant,
+          safeTenant,
           "emergency_contact_phone"
         ) ||
         getValue(
@@ -436,7 +475,7 @@ const normalizeTenant = (tenant = {}) => {
     emergency_contact_relationship:
       normalizeString(
         getValue(
-          tenant,
+          safeTenant,
           "emergency_contact_relationship"
         ) ||
         getValue(
@@ -454,14 +493,14 @@ const normalizeTenant = (tenant = {}) => {
 
     occupation: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "occupation"
       )
     ),
 
     employer: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "employer",
         "company"
       )
@@ -476,25 +515,25 @@ const normalizeTenant = (tenant = {}) => {
     status:
       normalizeString(
         getValue(
-          tenant,
+          safeTenant,
           "status",
           "tenant_status"
         )
-      ) || "pending",
+      ).toLowerCase() || "pending",
 
     is_active: normalizeBoolean(
-      tenant?.is_active,
+      safeTenant?.is_active,
       true
     ),
 
     is_verified: normalizeBoolean(
-      tenant?.is_verified,
+      safeTenant?.is_verified,
       false
     ),
 
     notes: normalizeString(
       getValue(
-        tenant,
+        safeTenant,
         "notes"
       )
     ),
@@ -506,51 +545,94 @@ const normalizeTenant = (tenant = {}) => {
 | NORMALIZE USER OPTION
 |--------------------------------------------------------------------------
 |
-| Supports different API structures.
+| Supports:
+|
+| user
+| tenant user
+| nested user
+| different API naming conventions
 |
 */
 
 const normalizeUserOption = (user = {}) => {
+  const safeUser =
+    user &&
+      typeof user === "object"
+      ? user
+      : {};
+
+  const nestedUser =
+    safeUser?.user &&
+      typeof safeUser.user === "object"
+      ? safeUser.user
+      : {};
+
   const id =
-    user?.id ??
-    user?.user_id ??
+    safeUser?.id ??
+    safeUser?.user_id ??
+    nestedUser?.id ??
     "";
 
   const firstName =
-    user?.first_name ??
-    user?.firstName ??
-    user?.user?.first_name ??
-    user?.user?.firstName ??
+    safeUser?.first_name ??
+    safeUser?.firstName ??
+    nestedUser?.first_name ??
+    nestedUser?.firstName ??
     "";
 
   const lastName =
-    user?.last_name ??
-    user?.lastName ??
-    user?.user?.last_name ??
-    user?.user?.lastName ??
+    safeUser?.last_name ??
+    safeUser?.lastName ??
+    nestedUser?.last_name ??
+    nestedUser?.lastName ??
     "";
 
   const email =
-    user?.email ??
-    user?.user?.email ??
+    safeUser?.email ??
+    nestedUser?.email ??
     "";
 
   const phone =
-    user?.phone ??
-    user?.phone_number ??
-    user?.user?.phone ??
-    user?.user?.phone_number ??
+    safeUser?.phone ??
+    safeUser?.phone_number ??
+    nestedUser?.phone ??
+    nestedUser?.phone_number ??
     "";
 
-  const name = `${firstName} ${lastName}`.trim();
+  const safeFirstName =
+    normalizeString(firstName);
+
+  const safeLastName =
+    normalizeString(lastName);
+
+  const safeEmail =
+    normalizeString(email);
+
+  const safePhone =
+    normalizeString(phone);
+
+  const name =
+    `${safeFirstName} ${safeLastName}`.trim();
+
+  const safeId =
+    id !== "" &&
+      id !== null &&
+      id !== undefined
+      ? String(id)
+      : "";
 
   return {
-    id: id !== "" ? String(id) : "",
-    first_name: normalizeString(firstName),
-    last_name: normalizeString(lastName),
-    email: normalizeString(email),
-    phone: normalizeString(phone),
-    name: name || email || `User #${id}`,
+    id: safeId,
+    first_name: safeFirstName,
+    last_name: safeLastName,
+    email: safeEmail,
+    phone: safePhone,
+    name:
+      name ||
+      safeEmail ||
+      (safeId
+        ? `User #${safeId}`
+        : "Unnamed User"),
   };
 };
 
@@ -570,23 +652,97 @@ const buildInitialForm = (
       ? normalizeTenant(tenant)
       : {};
 
-  return {
+  const safeInitialValues =
+    initialValues &&
+      typeof initialValues === "object"
+      ? initialValues
+      : {};
+
+  const form = {
     ...DEFAULT_FORM,
     ...normalizedTenant,
-    ...(initialValues || {}),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Always normalize user_id to string for select compatibility.
-    |--------------------------------------------------------------------------
-    */
-
-    user_id: String(
-      initialValues?.user_id ??
-      normalizedTenant?.user_id ??
-      ""
-    ),
+    ...safeInitialValues,
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Always normalize user_id for select compatibility.
+  |--------------------------------------------------------------------------
+  */
+
+  form.user_id = String(
+    safeInitialValues?.user_id ??
+    normalizedTenant?.user_id ??
+    ""
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Normalize booleans.
+  |--------------------------------------------------------------------------
+  */
+
+  form.is_active =
+    normalizeBoolean(
+      form.is_active,
+      true
+    );
+
+  form.is_verified =
+    normalizeBoolean(
+      form.is_verified,
+      false
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Normalize date.
+  |--------------------------------------------------------------------------
+  */
+
+  form.date_of_birth =
+    formatDateForInput(
+      form.date_of_birth
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Normalize text fields.
+  |--------------------------------------------------------------------------
+  */
+
+  const stringFields = [
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "id_number",
+    "passport_number",
+    "gender",
+    "nationality",
+    "country",
+    "region",
+    "county",
+    "city",
+    "area",
+    "address",
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "emergency_contact_relationship",
+    "occupation",
+    "employer",
+    "status",
+    "notes",
+  ];
+
+  stringFields.forEach((field) => {
+    form[field] =
+      normalizeString(
+        form[field]
+      );
+  });
+
+  return form;
 };
 
 /*
@@ -597,28 +753,12 @@ const buildInitialForm = (
 
 const TenantForm = ({
   tenant = null,
-
-  /*
-  |--------------------------------------------------------------------------
-  | Existing users with tenant role.
-  |
-  | Parent should pass:
-  |
-  | users={tenantUsers}
-  |--------------------------------------------------------------------------
-  */
-
   users = [],
-
   mode = "create",
-
   loading = false,
   submitting = false,
-
   error = null,
-
   initialValues = {},
-
   onSubmit,
   onCancel,
 }) => {
@@ -678,13 +818,77 @@ const TenantForm = ({
 
     return users
       .map(normalizeUserOption)
-      .filter((user) => user.id !== "");
+      .filter(
+        (user) => user.id !== ""
+      );
   }, [users]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | CURRENT USER OPTION
+  |--------------------------------------------------------------------------
+  |
+  | In edit mode, the current tenant user might not exist in the
+  | users array because the backend may return only available users.
+  |
+  | We add the current user as an option so the select never loses
+  | the selected value.
+  |
+  */
+
+  const userOptions = useMemo(() => {
+    const options = [
+      ...normalizedUsers,
+    ];
+
+    const currentUserId =
+      String(form.user_id || "");
+
+    if (
+      currentUserId &&
+      !options.some(
+        (user) =>
+          String(user.id) ===
+          currentUserId
+      )
+    ) {
+      const tenantUser =
+        normalizeUserOption(
+          tenant?.user || {
+            id: currentUserId,
+            first_name:
+              tenant?.first_name,
+            last_name:
+              tenant?.last_name,
+            email:
+              tenant?.email,
+            phone:
+              tenant?.phone,
+          }
+        );
+
+      if (tenantUser.id) {
+        options.unshift(
+          tenantUser
+        );
+      }
+    }
+
+    return options;
+  }, [
+    normalizedUsers,
+    form.user_id,
+    tenant,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
   | RESET WHEN TENANT / MODE CHANGES
   |--------------------------------------------------------------------------
+  |
+  | Do not depend on the complete tenant object or initialValues object.
+  | Parent components may create new object references on every render.
+  |
   */
 
   useEffect(() => {
@@ -701,6 +905,7 @@ const TenantForm = ({
   }, [
     tenant?.id,
     tenant?.user_id,
+    tenant?.user?.id,
     mode,
     isEdit,
   ]);
@@ -716,22 +921,87 @@ const TenantForm = ({
       return;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | String error
+    |--------------------------------------------------------------------------
+    */
+
     if (typeof error === "string") {
       setServerError(error);
       return;
     }
 
-    const message =
-      error?.message ||
-      error?.error ||
-      error?.errors?.message ||
-      "Something went wrong. Please check the form and try again.";
+    /*
+    |--------------------------------------------------------------------------
+    | Laravel / Axios error response
+    |--------------------------------------------------------------------------
+    */
 
-    setServerError(
-      typeof message === "string"
-        ? message
-        : "Something went wrong. Please check the form and try again."
-    );
+    const responseData =
+      error?.response?.data ||
+      error?.data ||
+      error;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Extract Laravel validation errors.
+    |--------------------------------------------------------------------------
+    */
+
+    const validationErrors =
+      responseData?.errors;
+
+    if (
+      validationErrors &&
+      typeof validationErrors ===
+      "object"
+    ) {
+      const normalizedErrors = {};
+
+      Object.entries(
+        validationErrors
+      ).forEach(
+        ([field, message]) => {
+          if (Array.isArray(message)) {
+            normalizedErrors[field] =
+              message
+                .filter(Boolean)
+                .join(" ");
+          } else if (
+            message !== null &&
+            message !== undefined
+          ) {
+            normalizedErrors[field] =
+              normalizeString(message);
+          }
+        }
+      );
+
+      if (
+        Object.keys(
+          normalizedErrors
+        ).length
+      ) {
+        setErrors(
+          normalizedErrors
+        );
+      }
+    }
+
+    const message =
+      responseData?.message ||
+      responseData?.error ||
+      error?.message ||
+      "";
+
+    if (typeof message === "string") {
+      setServerError(message);
+    } else {
+      setServerError(
+        "Something went wrong. Please check the form and try again."
+      );
+    }
   }, [error]);
 
   /*
@@ -769,6 +1039,20 @@ const TenantForm = ({
 
       delete next[name];
 
+      /*
+      |--------------------------------------------------------------------------
+      | If id_number gets entered, remove the ID/passport combined error.
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        name === "id_number" ||
+        name === "passport_number"
+      ) {
+        delete next.id_number;
+        delete next.passport_number;
+      }
+
       return next;
     });
 
@@ -780,7 +1064,7 @@ const TenantForm = ({
   | HANDLE USER CHANGE
   |--------------------------------------------------------------------------
   |
-  | When an existing tenant user is selected, we automatically populate:
+  | Selecting a user automatically populates:
   |
   | first_name
   | last_name
@@ -789,13 +1073,19 @@ const TenantForm = ({
   |
   */
 
-  const handleUserChange = (event) => {
-    const userId = event.target.value;
+  const handleUserChange = (
+    event
+  ) => {
+    const userId =
+      String(
+        event.target.value || ""
+      );
 
     const selectedUser =
-      normalizedUsers.find(
+      userOptions.find(
         (user) =>
-          String(user.id) === String(userId)
+          String(user.id) ===
+          userId
       );
 
     setForm((current) => ({
@@ -975,6 +1265,17 @@ const TenantForm = ({
     |--------------------------------------------------------------------------
     | EMAIL
     |--------------------------------------------------------------------------
+    |
+    | FIXED:
+    |
+    | The previous regex contained:
+    |
+    | **\.
+    |
+    | Correct regex:
+    |
+    | \.
+    |
     */
 
     if (!email) {
@@ -998,11 +1299,19 @@ const TenantForm = ({
     if (!phone) {
       nextErrors.phone =
         "Phone number is required.";
-    } else if (
-      phone.length < 7
-    ) {
-      nextErrors.phone =
-        "Enter a valid phone number.";
+    } else {
+      const phoneDigits =
+        phone.replace(
+          /\D/g,
+          ""
+        );
+
+      if (
+        phoneDigits.length < 7
+      ) {
+        nextErrors.phone =
+          "Enter a valid phone number.";
+      }
     }
 
     /*
@@ -1025,7 +1334,11 @@ const TenantForm = ({
     |--------------------------------------------------------------------------
     */
 
-    if (!form.gender) {
+    if (
+      !normalizeString(
+        form.gender
+      )
+    ) {
       nextErrors.gender =
         "Please select gender.";
     }
@@ -1036,9 +1349,35 @@ const TenantForm = ({
     |--------------------------------------------------------------------------
     */
 
-    if (!form.status) {
+    if (
+      !normalizeString(
+        form.status
+      )
+    ) {
       nextErrors.status =
         "Please select tenant status.";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DATE OF BIRTH
+    |--------------------------------------------------------------------------
+    */
+
+    if (form.date_of_birth) {
+      const birthDate =
+        new Date(
+          form.date_of_birth
+        );
+
+      if (
+        Number.isNaN(
+          birthDate.getTime()
+        )
+      ) {
+        nextErrors.date_of_birth =
+          "Enter a valid date of birth.";
+      }
     }
 
     /*
@@ -1047,7 +1386,9 @@ const TenantForm = ({
     |--------------------------------------------------------------------------
     |
     | 0 fields = valid
+    |
     | 3 fields = valid
+    |
     | 1 or 2 fields = invalid
     |
     */
@@ -1076,11 +1417,14 @@ const TenantForm = ({
       }
     }
 
-    setErrors(nextErrors);
+    setErrors(
+      nextErrors
+    );
 
     return (
-      Object.keys(nextErrors)
-        .length === 0
+      Object.keys(
+        nextErrors
+      ).length === 0
     );
   };
 
@@ -1113,15 +1457,23 @@ const TenantForm = ({
         emergencyRelationship
       );
 
-    const payload = {
+    /*
+    |--------------------------------------------------------------------------
+    | Laravel Payload
+    |--------------------------------------------------------------------------
+    */
+
+    return {
       /*
       |--------------------------------------------------------------------------
       | USER RELATION
       |--------------------------------------------------------------------------
       |
-      | This is the important field.
+      | IMPORTANT:
       |
-      | DO NOT send tenant_id here.
+      | Send user_id.
+      |
+      | Do NOT send tenant_id.
       |
       */
 
@@ -1283,8 +1635,6 @@ const TenantForm = ({
           form.notes
         ) || null,
     };
-
-    return payload;
   };
 
   /*
@@ -1300,7 +1650,8 @@ const TenantForm = ({
 
     setServerError("");
 
-    const isValid = validate();
+    const isValid =
+      validate();
 
     if (!isValid) {
       return;
@@ -1326,13 +1677,58 @@ const TenantForm = ({
         tenant
       );
     } catch (submitError) {
-      const message =
+      const responseData =
         submitError?.response
-          ?.data?.message ||
+          ?.data;
+
+      /*
+      |--------------------------------------------------------------------------
+      | Laravel validation errors
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        responseData?.errors &&
+        typeof responseData.errors ===
+        "object"
+      ) {
+        const validationErrors =
+          {};
+
+        Object.entries(
+          responseData.errors
+        ).forEach(
+          ([field, message]) => {
+            validationErrors[field] =
+              Array.isArray(message)
+                ? message
+                  .filter(Boolean)
+                  .join(" ")
+                : normalizeString(
+                  message
+                );
+          }
+        );
+
+        setErrors(
+          validationErrors
+        );
+      }
+
+      const message =
+        responseData?.message ||
         submitError?.message ||
         "Failed to save tenant. Please try again.";
 
-      setServerError(message);
+      setServerError(
+        normalizeString(message)
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Keep original error available to parent.
+      |--------------------------------------------------------------------------
+      */
 
       throw submitError;
     }
@@ -1375,7 +1771,18 @@ const TenantForm = ({
 
   const fieldError = (
     field
-  ) => errors?.[field];
+  ) => {
+    const error =
+      errors?.[field];
+
+    if (Array.isArray(error)) {
+      return error.join(" ");
+    }
+
+    return normalizeString(
+      error
+    );
+  };
 
   /*
   |--------------------------------------------------------------------------
@@ -1384,8 +1791,9 @@ const TenantForm = ({
   */
 
   const hasErrors =
-    Object.keys(errors).length >
-    0;
+    Object.keys(
+      errors
+    ).length > 0;
 
   /*
   |--------------------------------------------------------------------------
@@ -1533,7 +1941,9 @@ const TenantForm = ({
                                 field
                               }
                             >
-                              {message}
+                              {normalizeString(
+                                message
+                              )}
                             </li>
                           )
                         )}
@@ -1563,7 +1973,9 @@ const TenantForm = ({
             label="Tenant User"
             name="user_id"
             value={form.user_id}
-            onChange={handleUserChange}
+            onChange={
+              handleUserChange
+            }
             error={fieldError(
               "user_id"
             )}
@@ -1579,12 +1991,12 @@ const TenantForm = ({
               {
                 value: "",
                 label:
-                  normalizedUsers.length
+                  userOptions.length
                     ? "Select tenant user"
                     : "No tenant users available",
               },
 
-              ...normalizedUsers.map(
+              ...userOptions.map(
                 (user) => ({
                   value: user.id,
 
@@ -1603,22 +2015,29 @@ const TenantForm = ({
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
 
               <p className="text-xs leading-5 text-blue-700">
-                Only select a user who already has the{" "}
-                <strong>tenant</strong>{" "}
+                Only select a user who already has
+                the{" "}
+                <strong>
+                  tenant
+                </strong>{" "}
                 role. The selected user's ID will be
-                stored as <strong>user_id</strong> on
-                the tenant profile.
+                stored as{" "}
+                <strong>
+                  user_id
+                </strong>{" "}
+                on the tenant profile.
               </p>
             </div>
           </div>
 
-          {normalizedUsers.length === 0 && (
-            <p className="mt-2 text-xs text-amber-600">
-              No tenant users were provided. Create
-              or assign users the tenant role first,
-              then return here.
-            </p>
-          )}
+          {userOptions.length ===
+            0 && (
+              <p className="mt-2 text-xs text-amber-600">
+                No tenant users were provided.
+                Create or assign users the tenant
+                role first, then return here.
+              </p>
+            )}
         </div>
       </section>
 
@@ -1647,6 +2066,7 @@ const TenantForm = ({
             required
             placeholder="e.g. John"
             autoComplete="given-name"
+            disabled={submitting}
           />
 
           <InputField
@@ -1660,6 +2080,7 @@ const TenantForm = ({
             required
             placeholder="e.g. Kamau"
             autoComplete="family-name"
+            disabled={submitting}
           />
 
           <InputField
@@ -1677,6 +2098,7 @@ const TenantForm = ({
               <Mail className="h-4 w-4" />
             }
             autoComplete="email"
+            disabled={submitting}
           />
 
           <InputField
@@ -1694,6 +2116,7 @@ const TenantForm = ({
               <Phone className="h-4 w-4" />
             }
             autoComplete="tel"
+            disabled={submitting}
           />
 
           <InputField
@@ -1706,6 +2129,7 @@ const TenantForm = ({
             )}
             placeholder="e.g. 12345678"
             hint="Provide either National ID or Passport number."
+            disabled={submitting}
           />
 
           <InputField
@@ -1715,7 +2139,11 @@ const TenantForm = ({
               form.passport_number
             }
             onChange={handleChange}
+            error={fieldError(
+              "passport_number"
+            )}
             placeholder="e.g. A12345678"
+            disabled={submitting}
           />
 
           <SelectField
@@ -1727,6 +2155,7 @@ const TenantForm = ({
               "gender"
             )}
             required
+            disabled={submitting}
             options={[
               {
                 value: "",
@@ -1756,9 +2185,13 @@ const TenantForm = ({
               form.date_of_birth
             }
             onChange={handleChange}
+            error={fieldError(
+              "date_of_birth"
+            )}
             icon={
               <CalendarDays className="h-4 w-4" />
             }
+            disabled={submitting}
           />
 
           <InputField
@@ -1772,6 +2205,7 @@ const TenantForm = ({
             icon={
               <Globe2 className="h-4 w-4" />
             }
+            disabled={submitting}
           />
         </div>
       </section>
@@ -1796,6 +2230,7 @@ const TenantForm = ({
             value={form.country}
             onChange={handleChange}
             placeholder="e.g. Kenya"
+            disabled={submitting}
           />
 
           <InputField
@@ -1804,6 +2239,7 @@ const TenantForm = ({
             value={form.region}
             onChange={handleChange}
             placeholder="e.g. Nairobi Region"
+            disabled={submitting}
           />
 
           <InputField
@@ -1812,6 +2248,7 @@ const TenantForm = ({
             value={form.county}
             onChange={handleChange}
             placeholder="e.g. Nairobi"
+            disabled={submitting}
           />
 
           <InputField
@@ -1820,6 +2257,7 @@ const TenantForm = ({
             value={form.city}
             onChange={handleChange}
             placeholder="e.g. Nairobi"
+            disabled={submitting}
           />
 
           <InputField
@@ -1828,6 +2266,7 @@ const TenantForm = ({
             value={form.area}
             onChange={handleChange}
             placeholder="e.g. Westlands"
+            disabled={submitting}
           />
 
           <div className="sm:col-span-2 lg:col-span-3">
@@ -1836,8 +2275,12 @@ const TenantForm = ({
               name="address"
               value={form.address}
               onChange={handleChange}
+              error={fieldError(
+                "address"
+              )}
               placeholder="Enter the tenant's residential address..."
               rows={3}
+              disabled={submitting}
             />
           </div>
         </div>
@@ -1863,6 +2306,7 @@ const TenantForm = ({
             value={form.occupation}
             onChange={handleChange}
             placeholder="e.g. Software Engineer"
+            disabled={submitting}
           />
 
           <InputField
@@ -1871,6 +2315,7 @@ const TenantForm = ({
             value={form.employer}
             onChange={handleChange}
             placeholder="e.g. ABC Technologies Ltd"
+            disabled={submitting}
           />
         </div>
       </section>
@@ -1900,6 +2345,7 @@ const TenantForm = ({
               "emergency_contact_name"
             )}
             placeholder="e.g. Jane Kamau"
+            disabled={submitting}
           />
 
           <InputField
@@ -1914,6 +2360,7 @@ const TenantForm = ({
               "emergency_contact_phone"
             )}
             placeholder="e.g. 0712345678"
+            disabled={submitting}
           />
 
           <InputField
@@ -1927,6 +2374,7 @@ const TenantForm = ({
               "emergency_contact_relationship"
             )}
             placeholder="e.g. Spouse, Parent, Sibling"
+            disabled={submitting}
           />
         </div>
       </section>
@@ -1954,6 +2402,7 @@ const TenantForm = ({
               "status"
             )}
             required
+            disabled={submitting}
             options={[
               {
                 value: "pending",
@@ -1983,6 +2432,7 @@ const TenantForm = ({
               form.is_active
             }
             onChange={handleChange}
+            disabled={submitting}
           />
 
           <ToggleField
@@ -1993,6 +2443,7 @@ const TenantForm = ({
               form.is_verified
             }
             onChange={handleChange}
+            disabled={submitting}
           />
         </div>
       </section>
@@ -2016,8 +2467,12 @@ const TenantForm = ({
             name="notes"
             value={form.notes}
             onChange={handleChange}
+            error={fieldError(
+              "notes"
+            )}
             placeholder="Enter any additional notes about this tenant..."
             rows={5}
+            disabled={submitting}
           />
         </div>
       </section>
@@ -2058,6 +2513,7 @@ const TenantForm = ({
             "
           >
             <X className="h-4 w-4" />
+
             Cancel
           </button>
 
@@ -2170,6 +2626,12 @@ const InputField = ({
   const hasError =
     Boolean(error);
 
+  const errorId =
+    `${name}-error`;
+
+  const hintId =
+    `${name}-hint`;
+
   return (
     <div className="space-y-1.5">
       <label
@@ -2196,17 +2658,26 @@ const InputField = ({
           id={name}
           name={name}
           type={type}
-          value={value ?? ""}
+          value={
+            value === null ||
+              value === undefined
+              ? ""
+              : normalizeString(
+                value
+              )
+          }
           onChange={onChange}
           placeholder={placeholder}
           autoComplete={autoComplete}
           disabled={disabled}
-          aria-invalid={hasError}
+          aria-invalid={
+            hasError
+          }
           aria-describedby={
             hasError
-              ? `${name}-error`
+              ? errorId
               : hint
-                ? `${name}-hint`
+                ? hintId
                 : undefined
           }
           className={`
@@ -2235,7 +2706,7 @@ const InputField = ({
 
       {hint && !error && (
         <p
-          id={`${name}-hint`}
+          id={hintId}
           className="text-xs text-gray-400"
         >
           {hint}
@@ -2244,12 +2715,14 @@ const InputField = ({
 
       {error && (
         <p
-          id={`${name}-error`}
+          id={errorId}
           className="flex items-center gap-1 text-xs text-red-600"
         >
           <AlertCircle className="h-3.5 w-3.5" />
 
-          {error}
+          {normalizeString(
+            error
+          )}
         </p>
       )}
     </div>
@@ -2294,10 +2767,17 @@ const SelectField = ({
         <select
           id={name}
           name={name}
-          value={value ?? ""}
+          value={
+            value === null ||
+              value === undefined
+              ? ""
+              : String(value)
+          }
           onChange={onChange}
           disabled={disabled}
-          aria-invalid={hasError}
+          aria-invalid={
+            hasError
+          }
           className={`
             h-10
             w-full
@@ -2320,20 +2800,30 @@ const SelectField = ({
             }
           `}
         >
-          {options.map(
-            (option) => (
-              <option
-                key={String(
-                  option.value
-                )}
-                value={
-                  option.value
-                }
-              >
-                {option.label}
-              </option>
-            )
-          )}
+          {Array.isArray(
+            options
+          ) &&
+            options.map(
+              (
+                option,
+                index
+              ) => (
+                <option
+                  key={`${String(
+                    option?.value ??
+                    ""
+                  )}-${index}`}
+                  value={
+                    option?.value ??
+                    ""
+                  }
+                >
+                  {normalizeString(
+                    option?.label
+                  )}
+                </option>
+              )
+            )}
         </select>
 
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -2343,7 +2833,9 @@ const SelectField = ({
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
 
-          {error}
+          {normalizeString(
+            error
+          )}
         </p>
       )}
     </div>
@@ -2365,6 +2857,7 @@ const TextAreaField = ({
   required = false,
   placeholder,
   rows = 4,
+  disabled = false,
 }) => {
   const hasError =
     Boolean(error);
@@ -2387,11 +2880,21 @@ const TextAreaField = ({
       <textarea
         id={name}
         name={name}
-        value={value ?? ""}
+        value={
+          value === null ||
+            value === undefined
+            ? ""
+            : normalizeString(
+              value
+            )
+        }
         onChange={onChange}
         rows={rows}
         placeholder={placeholder}
-        aria-invalid={hasError}
+        disabled={disabled}
+        aria-invalid={
+          hasError
+        }
         className={`
           w-full
           resize-y
@@ -2405,6 +2908,9 @@ const TextAreaField = ({
           outline-none
           transition
           placeholder:text-gray-400
+          disabled:cursor-not-allowed
+          disabled:bg-gray-50
+          disabled:text-gray-500
           ${hasError
             ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
             : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
@@ -2416,7 +2922,9 @@ const TextAreaField = ({
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
 
-          {error}
+          {normalizeString(
+            error
+          )}
         </p>
       )}
     </div>
@@ -2435,13 +2943,13 @@ const ToggleField = ({
   name,
   checked = false,
   onChange,
+  disabled = false,
 }) => {
   return (
     <label
       htmlFor={name}
-      className="
+      className={`
         flex
-        cursor-pointer
         items-center
         justify-between
         gap-4
@@ -2451,8 +2959,11 @@ const ToggleField = ({
         bg-gray-50
         p-4
         transition
-        hover:bg-gray-100
-      "
+        ${disabled
+          ? "cursor-not-allowed opacity-60"
+          : "cursor-pointer hover:bg-gray-100"
+        }
+      `}
     >
       <div>
         <p className="text-sm font-medium text-gray-800">
@@ -2473,6 +2984,7 @@ const ToggleField = ({
             checked
           )}
           onChange={onChange}
+          disabled={disabled}
           className="peer sr-only"
         />
 
@@ -2485,3 +2997,4 @@ const ToggleField = ({
 };
 
 export default TenantForm;
+

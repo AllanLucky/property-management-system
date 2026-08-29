@@ -7,14 +7,14 @@ import api from "./axios";
 |
 | All tenant-related HTTP requests are kept in this file.
 |
-| Normal delete:
-|   DELETE /api/tenants/{tenantId}
+| Backend response format:
 |
-| Restore:
-|   PATCH /api/tenants/{tenantId}/restore
-|
-| Permanent delete:
-|   DELETE /api/tenants/{tenantId}/force
+| {
+|   status: true,
+|   code: 200,
+|   message: "...",
+|   data: [...]
+| }
 |
 |--------------------------------------------------------------------------
 */
@@ -26,18 +26,9 @@ import api from "./axios";
 */
 
 /**
- * Preserve the useful Laravel error response.
+ * Preserve the original Axios error.
  *
- * This allows the service/redux layer to receive:
- *
- * {
- *   message,
- *   code,
- *   errors,
- *   response
- * }
- *
- * instead of losing the actual backend error.
+ * The service layer is responsible for normalizing it.
  */
 const handleApiError = (error) => {
   const response = error?.response;
@@ -46,23 +37,24 @@ const handleApiError = (error) => {
   const message =
     responseData?.message ||
     responseData?.error ||
+    responseData?.errors?.message ||
     error?.message ||
-    "Something went wrong.";
+    "Something went wrong while processing the tenant request.";
 
-  console.error(
-    "[Tenant API Error]",
-    {
-      message,
-      status: response?.status,
-      code: responseData?.code,
-      errors: responseData?.errors,
-      response: responseData,
-    }
-  );
+  console.error("[Tenant API Error]", {
+    message,
+    status: response?.status ?? null,
+    code: responseData?.code ?? null,
+    errors: responseData?.errors ?? null,
+    response: responseData ?? null,
+  });
 
   /*
-   * Preserve the Axios error so normalizeError()
-   * in the service layer can still access response.data.
+   * IMPORTANT:
+   *
+   * Do not return the error.
+   * Throw the original Axios error so tenant.service.js
+   * can inspect response.data.
    */
   throw error;
 };
@@ -70,16 +62,82 @@ const handleApiError = (error) => {
 
 /*
 |--------------------------------------------------------------------------
-| VALIDATE TENANT ID
+| TENANT ID VALIDATION
 |--------------------------------------------------------------------------
 */
 
-const validateTenantId = (tenantId) => {
+/**
+ * Validate tenant ID.
+ *
+ * Supports:
+ *
+ * 12
+ * "12"
+ * { id: 12 }
+ * { tenant_id: 12 }
+ * { tenant: { id: 12 } }
+ */
+const getTenantId = (tenantOrId) => {
   if (
-    tenantId === undefined ||
-    tenantId === null ||
-    tenantId === ""
+    tenantOrId === null ||
+    tenantOrId === undefined
   ) {
+    return null;
+  }
+
+  /*
+   * Primitive ID.
+   */
+  if (
+    typeof tenantOrId === "string" ||
+    typeof tenantOrId === "number"
+  ) {
+    const id = String(
+      tenantOrId
+    ).trim();
+
+    return id || null;
+  }
+
+  /*
+   * Object ID.
+   */
+  if (
+    typeof tenantOrId === "object"
+  ) {
+    const id =
+      tenantOrId?.id ??
+      tenantOrId?.tenant_id ??
+      tenantOrId?.tenant?.id ??
+      tenantOrId?.data?.id ??
+      tenantOrId?.data?.tenant_id ??
+      tenantOrId?.data?.tenant?.id;
+
+    if (
+      id !== null &&
+      id !== undefined &&
+      String(id).trim() !== ""
+    ) {
+      return String(id).trim();
+    }
+  }
+
+  return null;
+};
+
+
+/**
+ * Require a valid tenant ID.
+ */
+const validateTenantId = (
+  tenantOrId
+) => {
+  const tenantId =
+    getTenantId(
+      tenantOrId
+    );
+
+  if (!tenantId) {
     throw new Error(
       "Tenant ID is required."
     );
@@ -99,21 +157,40 @@ const validateTenantId = (tenantId) => {
  * Get paginated tenants.
  *
  * GET /api/tenants
+ *
+ * Example:
+ *
+ * /api/tenants?page=1&per_page=15
  */
 export const getTenants = async (
   params = {}
 ) => {
   try {
-    const response = await api.get(
-      "/tenants",
-      {
-        params,
-      }
-    );
+    const response =
+      await api.get(
+        "/tenants",
+        {
+          params,
+        }
+      );
 
+    /*
+     * Return Laravel response envelope.
+     *
+     * Example:
+     *
+     * {
+     *   status: true,
+     *   code: 200,
+     *   message: "...",
+     *   data: [...]
+     * }
+     */
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
@@ -125,23 +202,27 @@ export const getTenants = async (
 */
 
 /**
- * Get a single tenant.
- *
  * GET /api/tenants/{tenantId}
  */
 export const getTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.get(
-      `/tenants/${tenantId}`
-    );
+    const response =
+      await api.get(
+        `/tenants/${tenantId}`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
@@ -153,28 +234,32 @@ export const getTenant = async (
 */
 
 /**
- * Create a tenant.
- *
  * POST /api/tenants
  */
 export const createTenant = async (
   tenantData
 ) => {
   try {
-    if (!tenantData) {
+    if (
+      !tenantData ||
+      typeof tenantData !== "object"
+    ) {
       throw new Error(
         "Tenant data is required."
       );
     }
 
-    const response = await api.post(
-      "/tenants",
-      tenantData
-    );
+    const response =
+      await api.post(
+        "/tenants",
+        tenantData
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
@@ -186,31 +271,38 @@ export const createTenant = async (
 */
 
 /**
- * Update a tenant.
- *
  * PUT /api/tenants/{tenantId}
  */
 export const updateTenant = async (
-  tenantId,
+  tenantOrId,
   tenantData
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    if (!tenantData) {
+    if (
+      !tenantData ||
+      typeof tenantData !== "object"
+    ) {
       throw new Error(
         "Tenant data is required."
       );
     }
 
-    const response = await api.put(
-      `/tenants/${tenantId}`,
-      tenantData
-    );
+    const response =
+      await api.put(
+        `/tenants/${tenantId}`,
+        tenantData
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
@@ -222,39 +314,32 @@ export const updateTenant = async (
 */
 
 /**
- * Soft-delete tenant.
+ * Soft delete tenant.
  *
  * DELETE /api/tenants/{tenantId}
- *
- * This is the method used by:
- *
- * TenantTable
- *     ↓
- * onDelete()
- *     ↓
- * useTenant.removeTenant()
- *     ↓
- * tenantSlice.deleteTenant()
- *     ↓
- * tenantService.deleteTenant()
- *     ↓
- * tenantAPI.deleteTenant()
- *
  */
 export const deleteTenant = async (
-  tenantId
+  tenantOrId
 ) => {
-  try {
-    validateTenantId(tenantId);
+  const tenantId =
+    validateTenantId(
+      tenantOrId
+    );
 
+  try {
     console.log(
       "[Tenant API] DELETE tenant:",
-      tenantId
+      {
+        tenantId,
+        endpoint:
+          `/tenants/${tenantId}`,
+      }
     );
 
-    const response = await api.delete(
-      `/tenants/${tenantId}`
-    );
+    const response =
+      await api.delete(
+        `/tenants/${tenantId}`
+      );
 
     console.log(
       "[Tenant API] DELETE response:",
@@ -264,16 +349,24 @@ export const deleteTenant = async (
     return response.data;
   } catch (error) {
     console.error(
-      "[Tenant API] DELETE tenant failed:",
+      "[Tenant API] DELETE failed:",
       {
         tenantId,
-        status: error?.response?.status,
-        response: error?.response?.data,
-        message: error?.message,
+        status:
+          error?.response?.status ??
+          null,
+        response:
+          error?.response?.data ??
+          null,
+        message:
+          error?.message ??
+          null,
       }
     );
 
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
@@ -285,334 +378,467 @@ export const deleteTenant = async (
 */
 
 /**
- * Search tenants.
- *
  * GET /api/tenants/search
  *
  * Query:
- *   ?search=value&limit=20
+ *
+ * ?search=esther&limit=20
  */
 export const searchTenants = async (
   search,
   limit = 20
 ) => {
   try {
-    const response = await api.get(
-      "/tenants/search",
-      {
-        params: {
-          search,
-          limit,
-        },
-      }
-    );
+    const searchValue =
+      String(
+        search ?? ""
+      ).trim();
+
+    if (!searchValue) {
+      return {
+        status: true,
+        code: 200,
+        message:
+          "No search value supplied.",
+        data: [],
+      };
+    }
+
+    const response =
+      await api.get(
+        "/tenants/search",
+        {
+          params: {
+            search:
+              searchValue,
+            limit,
+          },
+        }
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
 /*
 |--------------------------------------------------------------------------
-| STATUS LISTS
+| ACTIVE TENANTS
 |--------------------------------------------------------------------------
 */
 
 /**
- * Get active tenants.
- *
  * GET /api/tenants/active
  */
-export const getActiveTenants = async () => {
-  try {
-    const response = await api.get(
-      "/tenants/active"
-    );
+export const getActiveTenants =
+  async () => {
+    try {
+      const response =
+        await api.get(
+          "/tenants/active"
+        );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
-  }
-};
-
-
-/**
- * Get pending tenants.
- *
- * GET /api/tenants/pending
- */
-export const getPendingTenants = async () => {
-  try {
-    const response = await api.get(
-      "/tenants/pending"
-    );
-
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
-  }
-};
-
-
-/**
- * Get inactive tenants.
- *
- * GET /api/tenants/inactive
- */
-export const getInactiveTenants = async () => {
-  try {
-    const response = await api.get(
-      "/tenants/inactive"
-    );
-
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
-  }
-};
-
-
-/**
- * Get blacklisted tenants.
- *
- * GET /api/tenants/blacklisted
- */
-export const getBlacklistedTenants = async () => {
-  try {
-    const response = await api.get(
-      "/tenants/blacklisted"
-    );
-
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
-  }
-};
+      return response.data;
+    } catch (error) {
+      return handleApiError(
+        error
+      );
+    }
+  };
 
 
 /*
 |--------------------------------------------------------------------------
-| STATUS ACTIONS
+| PENDING TENANTS
 |--------------------------------------------------------------------------
 */
 
 /**
- * Activate tenant.
- *
+ * GET /api/tenants/pending
+ */
+export const getPendingTenants =
+  async () => {
+    try {
+      const response =
+        await api.get(
+          "/tenants/pending"
+        );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(
+        error
+      );
+    }
+  };
+
+
+/*
+|--------------------------------------------------------------------------
+| INACTIVE TENANTS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * GET /api/tenants/inactive
+ */
+export const getInactiveTenants =
+  async () => {
+    try {
+      const response =
+        await api.get(
+          "/tenants/inactive"
+        );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(
+        error
+      );
+    }
+  };
+
+
+/*
+|--------------------------------------------------------------------------
+| BLACKLISTED TENANTS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * GET /api/tenants/blacklisted
+ */
+export const getBlacklistedTenants =
+  async () => {
+    try {
+      const response =
+        await api.get(
+          "/tenants/blacklisted"
+        );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(
+        error
+      );
+    }
+  };
+
+
+/*
+|--------------------------------------------------------------------------
+| ACTIVATE TENANT
+|--------------------------------------------------------------------------
+*/
+
+/**
  * PATCH /api/tenants/{tenantId}/activate
  */
 export const activateTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/activate`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/activate`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
+/*
+|--------------------------------------------------------------------------
+| DEACTIVATE TENANT
+|--------------------------------------------------------------------------
+*/
+
 /**
- * Deactivate tenant.
- *
  * PATCH /api/tenants/{tenantId}/deactivate
  */
 export const deactivateTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/deactivate`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/deactivate`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
+/*
+|--------------------------------------------------------------------------
+| BLACKLIST TENANT
+|--------------------------------------------------------------------------
+*/
+
 /**
- * Blacklist tenant.
- *
  * PATCH /api/tenants/{tenantId}/blacklist
  */
 export const blacklistTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/blacklist`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/blacklist`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
+/*
+|--------------------------------------------------------------------------
+| SET PENDING
+|--------------------------------------------------------------------------
+*/
+
 /**
- * Set tenant to pending.
- *
  * PATCH /api/tenants/{tenantId}/pending
  */
 export const setTenantPending = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/pending`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/pending`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
 /*
 |--------------------------------------------------------------------------
-| VERIFICATION
+| VERIFY TENANT
 |--------------------------------------------------------------------------
 */
 
 /**
- * Verify tenant.
- *
  * PATCH /api/tenants/{tenantId}/verify
  */
 export const verifyTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/verify`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/verify`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
+/*
+|--------------------------------------------------------------------------
+| UNVERIFY TENANT
+|--------------------------------------------------------------------------
+*/
+
 /**
- * Remove tenant verification.
- *
  * PATCH /api/tenants/{tenantId}/unverify
  */
 export const unverifyTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/unverify`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/unverify`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
 /*
 |--------------------------------------------------------------------------
-| STATISTICS
+| TENANT STATISTICS
 |--------------------------------------------------------------------------
 */
 
 /**
- * Get tenant statistics.
- *
  * GET /api/tenants/statistics
+ *
+ * IMPORTANT:
+ *
+ * The backend should calculate statistics from the
+ * actual tenants.status column.
+ *
+ * Do NOT calculate statistics using:
+ *
+ * tenants.is_active
+ *
+ * because that column does not exist in the current
+ * tenants table.
  */
-export const getTenantStatistics = async () => {
-  try {
-    const response = await api.get(
-      "/tenants/statistics"
-    );
+export const getTenantStatistics =
+  async () => {
+    try {
+      const response =
+        await api.get(
+          "/tenants/statistics"
+        );
 
-    return response.data;
-  } catch (error) {
-    return handleApiError(error);
-  }
-};
+      return response.data;
+    } catch (error) {
+      console.error(
+        "[Tenant API] Statistics failed:",
+        {
+          status:
+            error?.response?.status ??
+            null,
+          response:
+            error?.response?.data ??
+            null,
+          message:
+            error?.message ??
+            null,
+        }
+      );
+
+      return handleApiError(
+        error
+      );
+    }
+  };
 
 
 /*
 |--------------------------------------------------------------------------
-| SOFT DELETE / RESTORE
+| RESTORE TENANT
 |--------------------------------------------------------------------------
 */
 
 /**
- * Restore a soft-deleted tenant.
- *
  * PATCH /api/tenants/{tenantId}/restore
  */
 export const restoreTenant = async (
-  tenantId
+  tenantOrId
 ) => {
   try {
-    validateTenantId(tenantId);
+    const tenantId =
+      validateTenantId(
+        tenantOrId
+      );
 
-    const response = await api.patch(
-      `/tenants/${tenantId}/restore`
-    );
+    const response =
+      await api.patch(
+        `/tenants/${tenantId}/restore`
+      );
 
     return response.data;
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
 
 /*
 |--------------------------------------------------------------------------
-| FORCE DELETE
+| FORCE DELETE TENANT
 |--------------------------------------------------------------------------
 */
 
 /**
- * Permanently delete a tenant.
+ * Permanently delete tenant.
  *
  * DELETE /api/tenants/{tenantId}/force
  */
 export const forceDeleteTenant = async (
-  tenantId
+  tenantOrId
 ) => {
-  try {
-    validateTenantId(tenantId);
+  const tenantId =
+    validateTenantId(
+      tenantOrId
+    );
 
+  try {
     console.log(
       "[Tenant API] FORCE DELETE tenant:",
-      tenantId
+      {
+        tenantId,
+        endpoint:
+          `/tenants/${tenantId}/force`,
+      }
     );
 
-    const response = await api.delete(
-      `/tenants/${tenantId}/force`
-    );
+    const response =
+      await api.delete(
+        `/tenants/${tenantId}/force`
+      );
 
     console.log(
       "[Tenant API] FORCE DELETE response:",
@@ -625,13 +851,21 @@ export const forceDeleteTenant = async (
       "[Tenant API] FORCE DELETE failed:",
       {
         tenantId,
-        status: error?.response?.status,
-        response: error?.response?.data,
-        message: error?.message,
+        status:
+          error?.response?.status ??
+          null,
+        response:
+          error?.response?.data ??
+          null,
+        message:
+          error?.message ??
+          null,
       }
     );
 
-    return handleApiError(error);
+    return handleApiError(
+      error
+    );
   }
 };
 
@@ -685,7 +919,7 @@ const tenantAPI = {
   getTenantStatistics,
 
   /*
-   * Soft delete / restore
+   * Restore
    */
   restoreTenant,
 
