@@ -59,18 +59,6 @@ const getResponseEnvelope = (response) => {
 
 /**
  * Get Laravel response data.
- *
- * Example:
- *
- * {
- *   status: true,
- *   code: 200,
- *   data: {...}
- * }
- *
- * returns:
- *
- * {...}
  */
 const getResponseData = (response) => {
   const payload = getResponseEnvelope(response);
@@ -135,7 +123,7 @@ const getResponseCode = (response) => {
 */
 
 /**
- * Extract tenant collection from all supported Laravel response shapes.
+ * Extract collection from all supported Laravel response shapes.
  */
 const getCollectionData = (response) => {
   const payload = getResponseEnvelope(response);
@@ -299,22 +287,10 @@ const getPagination = (response) => {
  * Extract tenant ID from:
  *
  * deleteTenant(15)
- *
  * deleteTenant("15")
- *
- * deleteTenant({
- *   id: 15
- * })
- *
- * deleteTenant({
- *   tenant_id: 15
- * })
- *
- * deleteTenant({
- *   tenant: {
- *     id: 15
- *   }
- * })
+ * deleteTenant({ id: 15 })
+ * deleteTenant({ tenant_id: 15 })
+ * deleteTenant({ tenant: { id: 15 } })
  */
 const getTenantId = (tenantOrId) => {
   if (
@@ -487,6 +463,188 @@ const normalizeError = (error) => {
 
 /*
 |--------------------------------------------------------------------------
+| AVAILABLE TENANT USER NORMALIZATION
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Normalize an existing user who can be attached to a tenant.
+ *
+ * IMPORTANT:
+ *
+ * These are EXISTING users from the users table.
+ *
+ * We are NOT creating a new user here.
+ *
+ * The selected user's ID becomes:
+ *
+ * tenant.user_id
+ *
+ * Expected backend response:
+ *
+ * {
+ *   id: 4,
+ *   first_name: "Allan",
+ *   last_name: "Nonda",
+ *   name: "Allan Nonda",
+ *   email: "allantsory.dev@gmail.com",
+ *   phone: "0792491361"
+ * }
+ */
+const normalizeAvailableTenantUser = (
+  user
+) => {
+  if (
+    !user ||
+    typeof user !== "object"
+  ) {
+    return null;
+  }
+
+  const id =
+    user?.id ??
+    user?.user_id ??
+    null;
+
+  /*
+   * Ignore users without an ID.
+   */
+  if (
+    id === null ||
+    id === undefined ||
+    String(id).trim() === ""
+  ) {
+    return null;
+  }
+
+  const firstName =
+    user?.first_name ??
+    user?.firstName ??
+    "";
+
+  const lastName =
+    user?.last_name ??
+    user?.lastName ??
+    "";
+
+  const name =
+    user?.name ??
+    user?.full_name ??
+    user?.fullName ??
+    [
+      firstName,
+      lastName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  const email =
+    user?.email ??
+    "";
+
+  const phone =
+    user?.phone ??
+    user?.phone_number ??
+    "";
+
+  return {
+    /*
+     * Preserve any additional backend fields.
+     */
+    ...user,
+
+    /*
+     * User ID.
+     */
+    id,
+
+    /*
+     * Identity.
+     */
+    first_name:
+      String(
+        firstName ?? ""
+      ).trim(),
+
+    last_name:
+      String(
+        lastName ?? ""
+      ).trim(),
+
+    name:
+      String(
+        name || "Unnamed User"
+      ).trim(),
+
+    /*
+     * Contact.
+     */
+    email:
+      String(
+        email ?? ""
+      ).trim(),
+
+    phone:
+      String(
+        phone ?? ""
+      ).trim(),
+  };
+};
+
+
+/**
+ * Normalize available tenant users collection.
+ */
+const normalizeAvailableTenantUsers = (
+  users
+) => {
+  if (!Array.isArray(users)) {
+    return [];
+  }
+
+  /*
+   * Normalize and remove invalid records.
+   */
+  const normalized =
+    users
+      .map(
+        normalizeAvailableTenantUser
+      )
+      .filter(Boolean);
+
+  /*
+   * Prevent duplicate users.
+   */
+  const uniqueUsers =
+    new Map();
+
+  normalized.forEach(
+    (user) => {
+      const key =
+        String(
+          user.id
+        );
+
+      if (
+        !uniqueUsers.has(key)
+      ) {
+        uniqueUsers.set(
+          key,
+          user
+        );
+      }
+    }
+  );
+
+  return Array.from(
+    uniqueUsers.values()
+  );
+};
+
+
+/*
+|--------------------------------------------------------------------------
 | TENANCY NORMALIZATION
 |--------------------------------------------------------------------------
 */
@@ -500,8 +658,6 @@ const normalizeError = (error) => {
  * ├── property
  * ├── apartment
  * └── unit
- *
- * We intentionally do not remove or flatten those relationships.
  */
 const normalizeTenancy = (tenancy) => {
   if (!tenancy) {
@@ -577,7 +733,7 @@ const normalizeTenancies = (
  *
  * IMPORTANT:
  *
- * TenantResource now keeps User identity inside:
+ * TenantResource keeps User identity inside:
  *
  * tenant.user
  *
@@ -666,8 +822,6 @@ const normalizeTenant = (tenant) => {
    * The backend returns:
    *
    * tenant.status
-   *
-   * and User has its own account status.
    */
   const tenantStatus =
     tenant?.status ??
@@ -984,10 +1138,7 @@ const normalizeTenant = (tenant) => {
     },
 
     /*
-     * IMPORTANT:
-     *
-     * Do not expect verification_status from the tenants table
-     * unless the backend explicitly returns it.
+     * Verification status.
      */
     verification_status:
       tenant?.verification_status ??
@@ -1006,8 +1157,7 @@ const normalizeTenant = (tenant) => {
     /*
      * Derived active flag.
      *
-     * This is calculated from the API response.
-     * It does NOT require an is_active database column.
+     * This does NOT require an is_active database column.
      */
     is_active:
       tenant?.is_active !== undefined
@@ -1027,8 +1177,6 @@ const normalizeTenant = (tenant) => {
 
     /*
      * Tenancies.
-     *
-     * Property, apartment and unit relationships are preserved.
      */
     tenancies,
 
@@ -1177,6 +1325,107 @@ export const getTenant = async (
     );
   }
 };
+
+
+/*
+|--------------------------------------------------------------------------
+| GET AVAILABLE TENANT USERS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Fetch existing users who already have the tenant role
+ * and are not already attached to a tenant.
+ *
+ * IMPORTANT:
+ *
+ * This endpoint does NOT create users.
+ *
+ * It only returns existing User records that can be
+ * selected when creating a Tenant profile.
+ *
+ * Expected API response:
+ *
+ * {
+ *   "status": true,
+ *   "code": 200,
+ *   "message": "Available tenant users fetched successfully.",
+ *   "data": [
+ *     {
+ *       "id": 4,
+ *       "first_name": "Allan",
+ *       "last_name": "Nonda",
+ *       "name": "Allan Nonda",
+ *       "email": "allantsory.dev@gmail.com",
+ *       "phone": "0792491361"
+ *     }
+ *   ]
+ * }
+ *
+ * Service returns:
+ *
+ * [
+ *   {
+ *     id: 4,
+ *     first_name: "Allan",
+ *     last_name: "Nonda",
+ *     name: "Allan Nonda",
+ *     email: "allantsory.dev@gmail.com",
+ *     phone: "0792491361"
+ *   }
+ * ]
+ */
+export const getAvailableTenantUsers =
+  async () => {
+    try {
+      const response =
+        await tenantAPI.getAvailableTenantUsers();
+
+      const users =
+        getCollectionData(
+          response
+        );
+
+      const normalizedUsers =
+        normalizeAvailableTenantUsers(
+          users
+        );
+
+      console.log(
+        "[TenantService] Available tenant users:",
+        normalizedUsers
+      );
+
+      return normalizedUsers;
+    } catch (error) {
+      const normalized =
+        normalizeError(
+          error
+        );
+
+      console.error(
+        "[TenantService] Failed to fetch available tenant users:",
+        {
+          message:
+            normalized.message,
+
+          status:
+            normalized.status,
+
+          code:
+            normalized.code,
+
+          errors:
+            normalized.errors,
+
+          response:
+            normalized.response?.data,
+        }
+      );
+
+      throw normalized;
+    }
+  };
 
 
 /*
@@ -1369,14 +1618,19 @@ export const deleteTenant = async (
       "[TenantService] Failed to delete tenant:",
       {
         tenantId,
+
         message:
           normalized.message,
+
         status:
           normalized.status,
+
         code:
           normalized.code,
+
         errors:
           normalized.errors,
+
         response:
           normalized.response?.data,
       }
@@ -1938,14 +2192,19 @@ export const forceDeleteTenant = async (
       "[TenantService] Failed to permanently delete tenant:",
       {
         tenantId,
+
         message:
           normalized.message,
+
         status:
           normalized.status,
+
         code:
           normalized.code,
+
         errors:
           normalized.errors,
+
         response:
           normalized.response?.data,
       }
@@ -1963,29 +2222,55 @@ export const forceDeleteTenant = async (
 */
 
 const tenantService = {
+  /*
+   * Tenant CRUD.
+   */
   getTenants,
   getTenant,
   createTenant,
   updateTenant,
   deleteTenant,
 
+  /*
+   * Search.
+   */
   searchTenants,
 
+  /*
+   * Existing users available for tenant assignment.
+   */
+  getAvailableTenantUsers,
+
+  /*
+   * Status lists.
+   */
   getActiveTenants,
   getPendingTenants,
   getInactiveTenants,
   getBlacklistedTenants,
 
+  /*
+   * Tenant actions.
+   */
   activateTenant,
   deactivateTenant,
   blacklistTenant,
   setTenantPending,
 
+  /*
+   * Verification.
+   */
   verifyTenant,
   unverifyTenant,
 
+  /*
+   * Statistics.
+   */
   getTenantStatistics,
 
+  /*
+   * Restore/delete.
+   */
   restoreTenant,
   forceDeleteTenant,
 };
