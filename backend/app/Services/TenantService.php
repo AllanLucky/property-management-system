@@ -26,14 +26,14 @@ class TenantService
     /**
      * Relationships required by TenantResource.
      *
-     * User is the source of:
+     * The User relationship is the source of the account identity:
      * - name
+     * - first_name
+     * - last_name
      * - email
      * - phone
      * - account information
      * - roles
-     *
-     * Tenant stores only tenant-specific information.
      */
     protected function tenantRelations(): array
     {
@@ -80,12 +80,7 @@ class TenantService
      * 1. Have the tenant role.
      * 2. Are not already linked to a tenant profile.
      *
-     * IMPORTANT:
-     *
      * This does NOT create users.
-     *
-     * It only returns existing User accounts that can be
-     * selected when creating a Tenant profile.
      */
     public function getAvailableTenantUsers(
         ?string $search = null,
@@ -99,14 +94,8 @@ class TenantService
         $query = User::query()
             ->role('tenant')
             ->whereDoesntHave('tenant')
-            ->orderBy(
-                'first_name',
-                'asc'
-            )
-            ->orderBy(
-                'last_name',
-                'asc'
-            );
+            ->orderBy('first_name', 'asc')
+            ->orderBy('last_name', 'asc');
 
         /*
         |--------------------------------------------------------------------------
@@ -119,7 +108,6 @@ class TenantService
 
             if ($search !== '') {
                 $query->where(function (Builder $userQuery) use ($search) {
-
                     $userQuery
                         ->where(
                             'first_name',
@@ -157,8 +145,6 @@ class TenantService
 
     /**
      * Get a single available tenant user.
-     *
-     * This is useful when editing or validating a selected user.
      */
     public function getAvailableTenantUser(
         int|string $userId
@@ -212,7 +198,7 @@ class TenantService
     /**
      * Make sure the user is not already attached to another tenant.
      *
-     * This protects against creating duplicate tenant profiles.
+     * This protects against duplicate tenant profiles.
      */
     protected function ensureUserIsAvailable(
         int|string $userId,
@@ -236,6 +222,79 @@ class TenantService
             throw new RuntimeException(
                 'This user account is already linked to another tenant.'
             );
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Synchronize User Identity
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Synchronize identity fields from the existing User.
+     *
+     * The application architecture uses users as the source of truth
+     * for identity information. However, the current tenants table
+     * still contains required identity columns such as first_name.
+     *
+     * Therefore, these fields are mirrored from User during tenant
+     * creation/update so MySQL does not receive NULL/missing required
+     * identity values.
+     *
+     * IMPORTANT:
+     *
+     * This does NOT create another User.
+     */
+    protected function syncUserIdentity(
+        array &$data,
+        User $user
+    ): void {
+        /*
+        |--------------------------------------------------------------------------
+        | First Name
+        |--------------------------------------------------------------------------
+        */
+
+        $data['first_name'] = $user->first_name;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Last Name
+        |--------------------------------------------------------------------------
+        */
+
+        $data['last_name'] = $user->last_name;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Email
+        |--------------------------------------------------------------------------
+        */
+
+        $data['email'] = $user->email;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Phone
+        |--------------------------------------------------------------------------
+        */
+
+        $data['phone'] = $user->phone;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Name
+        |--------------------------------------------------------------------------
+        |
+        | Only populate name when the tenants table/model supports it.
+        | The current architecture primarily uses the user relationship,
+        | so name is not required for tenant creation.
+        |
+        */
+
+        if (array_key_exists('name', $data)) {
+            unset($data['name']);
         }
     }
 
@@ -348,7 +407,6 @@ class TenantService
                         ->orWhereHas(
                             'user',
                             function (Builder $userQuery) use ($search) {
-
                                 $userQuery
                                     ->where(
                                         'name',
@@ -433,14 +491,11 @@ class TenantService
             if ($isActive !== null) {
 
                 if ($isActive) {
-
                     $query->where(
                         'status',
                         Tenant::STATUS_ACTIVE
                     );
-
                 } else {
-
                     $query->where(
                         'status',
                         '!=',
@@ -577,7 +632,6 @@ class TenantService
             );
 
             if ($isVerified !== null) {
-
                 $query->where(
                     'is_verified',
                     $isVerified
@@ -768,11 +822,11 @@ class TenantService
      *
      * IMPORTANT:
      *
-     * This method NEVER creates a User.
-     *
-     * The user must already exist and must have the tenant role.
-     *
-     * Only a Tenant profile is created.
+     * - This method NEVER creates a User.
+     * - The selected user must already exist.
+     * - The selected user must have the tenant role.
+     * - The selected user cannot already have a tenant profile.
+     * - Identity fields are synchronized from the User.
      */
     public function create(
         array $data,
@@ -827,20 +881,26 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Remove User-owned fields
+                | Synchronize Identity From User
                 |--------------------------------------------------------------------------
                 |
-                | These values belong to users and must NOT be duplicated
-                | inside tenants.
+                | IMPORTANT:
+                |
+                | The frontend may submit first_name, last_name, email,
+                | and phone, but these values must come from the selected
+                | User account.
+                |
+                | This also fixes the MySQL error:
+                |
+                | Field 'first_name' doesn't have a default value
+                |
+                | because first_name is populated before Tenant::create().
                 |
                 */
 
-                unset(
-                    $data['name'],
-                    $data['first_name'],
-                    $data['last_name'],
-                    $data['email'],
-                    $data['phone']
+                $this->syncUserIdentity(
+                    $data,
+                    $user
                 );
 
                 /*
@@ -863,7 +923,8 @@ class TenantService
                 |--------------------------------------------------------------------------
                 */
 
-                $data['user_id'] = $user->id;
+                $data['user_id'] =
+                    $user->id;
 
                 $data['country'] =
                     $data['country']
@@ -875,8 +936,11 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Remove Unsupported Fields
+                | Remove Unsupported Field
                 |--------------------------------------------------------------------------
+                |
+                | There is no is_active column on tenants.
+                |
                 */
 
                 unset(
@@ -897,18 +961,20 @@ class TenantService
 
                 if (!$data['is_verified']) {
 
-                    $data['verified_at'] = null;
+                    $data['verified_at'] =
+                        null;
 
                 } elseif (
                     empty($data['verified_at'])
                 ) {
 
-                    $data['verified_at'] = now();
+                    $data['verified_at'] =
+                        now();
                 }
 
                 /*
                 |--------------------------------------------------------------------------
-                | Create ONLY Tenant Profile
+                | Create Tenant Profile
                 |--------------------------------------------------------------------------
                 */
 
@@ -965,7 +1031,10 @@ class TenantService
     /**
      * Update tenant-specific information.
      *
-     * User identity fields are NOT updated here.
+     * User ID cannot be changed through a normal update.
+     *
+     * Identity fields are synchronized from the linked User so the
+     * required tenant columns remain populated.
      */
     public function update(
         Tenant $tenant,
@@ -985,6 +1054,20 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
+                | Make Sure Tenant Has a User
+                |--------------------------------------------------------------------------
+                */
+
+                $user = $tenant->user;
+
+                if (!$user) {
+                    throw new RuntimeException(
+                        'This tenant does not have a linked user account.'
+                    );
+                }
+
+                /*
+                |--------------------------------------------------------------------------
                 | Tenant Number Protection
                 |--------------------------------------------------------------------------
                 */
@@ -998,10 +1081,7 @@ class TenantService
                 | User ID Protection
                 |--------------------------------------------------------------------------
                 |
-                | The tenant remains connected to the same user.
-                |
-                | If a user transfer is required later, create a dedicated
-                | transferUser() operation.
+                | The tenant remains connected to the same User.
                 |
                 */
 
@@ -1011,16 +1091,17 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Never duplicate User fields
+                | Synchronize Identity From User
                 |--------------------------------------------------------------------------
+                |
+                | Do not allow the tenant form to replace identity fields
+                | with different values.
+                |
                 */
 
-                unset(
-                    $data['name'],
-                    $data['first_name'],
-                    $data['last_name'],
-                    $data['email'],
-                    $data['phone']
+                $this->syncUserIdentity(
+                    $data,
+                    $user
                 );
 
                 /*
@@ -1954,3 +2035,4 @@ class TenantService
             Tenant::STATUS_BLACKLISTED;
     }
 }
+
