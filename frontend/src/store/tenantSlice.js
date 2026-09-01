@@ -451,22 +451,29 @@ const normalizeTenantArrayResponse = (
 /**
  * Normalize available tenant users.
  *
- * Backend:
+ * This supports both:
+ *
+ * [
+ *   {
+ *     id: 4,
+ *     first_name: "Allan",
+ *     last_name: "Nonda",
+ *     name: "Allan Nonda",
+ *     email: "...",
+ *     phone: "..."
+ *   }
+ * ]
+ *
+ * and Laravel envelopes:
  *
  * {
- *   status: true,
- *   code: 200,
- *   message: "...",
- *   data: [
- *     {
- *       id: 4,
- *       first_name: "Allan",
- *       last_name: "Nonda",
- *       name: "Allan Nonda",
- *       email: "...",
- *       phone: "..."
- *     }
- *   ]
+ *   data: [...]
+ * }
+ *
+ * {
+ *   data: {
+ *     data: [...]
+ *   }
  * }
  */
 const normalizeAvailableTenantUsers = (
@@ -488,20 +495,26 @@ const normalizeAvailableTenantUsers = (
     users = response.data.data;
   }
 
-  return users
-    .filter(
-      (user) =>
-        user &&
-        (
+  const normalizedUsers =
+    users
+      .filter((user) => {
+        if (
+          !user ||
+          typeof user !== "object"
+        ) {
+          return false;
+        }
+
+        return (
           user?.id !== undefined ||
           user?.user_id !== undefined
-        )
-    )
-    .map(
-      (user) => {
+        );
+      })
+      .map((user) => {
         const id =
           user?.id ??
-          user?.user_id;
+          user?.user_id ??
+          null;
 
         const firstName =
           user?.first_name ??
@@ -516,37 +529,91 @@ const normalizeAvailableTenantUsers = (
         const name =
           user?.name ??
           user?.full_name ??
-          [firstName, lastName]
+          user?.fullName ??
+          [
+            firstName,
+            lastName,
+          ]
             .filter(Boolean)
-            .join(" ");
+            .join(" ")
+            .trim();
 
         return {
           ...user,
 
+          /*
+           * The ID used by the dropdown.
+           */
           id,
 
+          /*
+           * The ID submitted to tenants.user_id.
+           */
           user_id:
             user?.user_id ??
             id,
 
           first_name:
-            firstName,
+            String(
+              firstName ?? ""
+            ).trim(),
 
           last_name:
-            lastName,
+            String(
+              lastName ?? ""
+            ).trim(),
 
-          name,
+          name:
+            String(
+              name ||
+              "Unnamed User"
+            ).trim(),
 
           email:
-            user?.email ?? "",
+            String(
+              user?.email ?? ""
+            ).trim(),
 
           phone:
-            user?.phone ??
-            user?.phone_number ??
-            "",
+            String(
+              user?.phone ??
+              user?.phone_number ??
+              ""
+            ).trim(),
         };
+      });
+
+  /*
+   * Prevent duplicate users.
+   *
+   * The backend should already prevent this,
+   * but keeping the frontend list unique protects
+   * the dropdown from duplicate options.
+   */
+  const seen = new Set();
+
+  return normalizedUsers.filter(
+    (user) => {
+      const key =
+        String(
+          user?.id ??
+          user?.user_id ??
+          ""
+        );
+
+      if (!key) {
+        return false;
       }
-    );
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    }
+  );
 };
 
 
@@ -927,20 +994,24 @@ export const fetchAvailableTenantUsers =
           "Redux: Fetching available tenant users..."
         );
 
-        const response =
+        /*
+         * tenant.service.js already unwraps and
+         * normalizes the API response.
+         */
+        const users =
           await tenantService.getAvailableTenantUsers();
 
-        const users =
+        const normalizedUsers =
           normalizeAvailableTenantUsers(
-            response
+            users
           );
 
         console.log(
           "Redux: Available tenant users:",
-          users
+          normalizedUsers
         );
 
-        return users;
+        return normalizedUsers;
       } catch (error) {
         console.error(
           "Redux: Failed to fetch available tenant users:",
@@ -2219,10 +2290,15 @@ const tenantSlice = createSlice({
           state.loadingAvailableTenantUsers =
             false;
 
+          /*
+           * The thunk returns a clean array.
+           */
           state.availableTenantUsers =
-            normalizeAvailableTenantUsers(
+            Array.isArray(
               action.payload
-            );
+            )
+              ? action.payload
+              : [];
 
           state.availableTenantUsersError =
             null;
@@ -2247,6 +2323,7 @@ const tenantSlice = createSlice({
 
           state.availableTenantUsersError =
             action.payload ||
+            action.error?.message ||
             "Failed to fetch available tenant users.";
         }
       );
@@ -2450,8 +2527,8 @@ const tenantSlice = createSlice({
              * The selected user has now been
              * linked to a tenant profile.
              *
-             * Therefore remove that user from
-             * the available-user list.
+             * Remove that user from the
+             * available-user list.
              */
             const createdUserId =
               createdTenant?.user_id ??
@@ -3490,10 +3567,15 @@ export const selectTenant = (
  */
 export const selectAvailableTenantUsers = (
   state
-) =>
-  getTenantState(state)
-    .availableTenantUsers ||
-  [];
+) => {
+  const users =
+    getTenantState(state)
+      .availableTenantUsers;
+
+  return Array.isArray(users)
+    ? users
+    : [];
+};
 
 
 /**
@@ -3635,24 +3717,11 @@ export const selectTenantSearching = (
 | AVAILABLE TENANT USERS LOADING
 |--------------------------------------------------------------------------
 |
-| IMPORTANT:
-|
-| We export BOTH names:
-|
-| selectLoadingAvailableTenantUsers
-|
-| and
-|
-| selectTenantLoadingAvailableUsers
-|
-| This keeps compatibility with useTenant.js.
-|
+| Both selector names are intentionally exported
+| for compatibility with existing components/hooks.
 |--------------------------------------------------------------------------
 */
 
-/**
- * Primary selector.
- */
 export const selectLoadingAvailableTenantUsers = (
   state
 ) =>
@@ -3662,9 +3731,6 @@ export const selectLoadingAvailableTenantUsers = (
   );
 
 
-/**
- * Compatibility alias used by useTenant.js.
- */
 export const selectTenantLoadingAvailableUsers = (
   state
 ) =>
