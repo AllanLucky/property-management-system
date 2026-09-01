@@ -1,35 +1,6 @@
+
 import api from "./axios";
 
-/*
-|--------------------------------------------------------------------------
-| TENANT API
-|--------------------------------------------------------------------------
-|
-| All tenant-related HTTP requests are kept in this file.
-|
-| Backend response format:
-|
-| {
-|   status: true,
-|   code: 200,
-|   message: "...",
-|   data: [...]
-| }
-|
-|--------------------------------------------------------------------------
-*/
-
-/*
-|--------------------------------------------------------------------------
-| RESPONSE ERROR HANDLER
-|--------------------------------------------------------------------------
-*/
-
-/**
- * Preserve the original Axios error.
- *
- * The service layer is responsible for normalizing it.
- */
 const handleApiError = (error) => {
   const response = error?.response;
   const responseData = response?.data;
@@ -193,6 +164,87 @@ export const getTenants = async (
     );
   }
 };
+
+
+/*
+|--------------------------------------------------------------------------
+| GET AVAILABLE TENANT USERS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get existing users who have the tenant role
+ * and are not already linked to a tenant profile.
+ *
+ * IMPORTANT:
+ *
+ * This does NOT create a new user.
+ *
+ * It fetches existing users from the users table
+ * so the Create Tenant form can allow an existing
+ * tenant-role user to be selected.
+ *
+ * GET /api/tenants/available-users
+ *
+ * Expected backend response:
+ *
+ * {
+ *   status: true,
+ *   code: 200,
+ *   message: "Available tenant users fetched successfully.",
+ *   data: [
+ *     {
+ *       id: 4,
+ *       first_name: "Allan",
+ *       last_name: "Nonda",
+ *       name: "Allan Nonda",
+ *       email: "allantsory.dev@gmail.com",
+ *       phone: "0792491361"
+ *     }
+ *   ]
+ * }
+ */
+export const getAvailableTenantUsers =
+  async () => {
+    try {
+      console.log(
+        "[Tenant API] Fetching available tenant users..."
+      );
+
+      const response =
+        await api.get(
+          "/tenants/available-users"
+        );
+
+      console.log(
+        "[Tenant API] Available tenant users response:",
+        response.data
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error(
+        "[Tenant API] Failed to fetch available tenant users:",
+        {
+          status:
+            error?.response?.status ??
+            null,
+
+          response:
+            error?.response?.data ??
+            null,
+
+          message:
+            error?.message ??
+            null,
+        }
+      );
+
+      return handleApiError(
+        error
+      );
+    }
+  };
 
 
 /*
@@ -887,6 +939,14 @@ const tenantAPI = {
   deleteTenant,
 
   /*
+   * Available tenant users
+   *
+   * Existing users with the tenant role
+   * who can be linked to a tenant profile.
+   */
+  getAvailableTenantUsers,
+
+  /*
    * Search
    */
   searchTenants,
@@ -930,3 +990,4 @@ const tenantAPI = {
 };
 
 export default tenantAPI;
+

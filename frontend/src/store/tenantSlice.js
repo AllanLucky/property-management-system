@@ -24,6 +24,24 @@ const initialState = {
 
   /*
   |--------------------------------------------------------------------------
+  | AVAILABLE TENANT USERS
+  |--------------------------------------------------------------------------
+  |
+  | Existing users who already have the `tenant` Spatie role.
+  |
+  | These users can be linked to a tenant profile through:
+  |
+  | tenant.user_id
+  |
+  | We do NOT create users here.
+  |
+  |--------------------------------------------------------------------------
+  */
+
+  availableTenantUsers: [],
+
+  /*
+  |--------------------------------------------------------------------------
   | PAGINATION
   |--------------------------------------------------------------------------
   */
@@ -93,6 +111,7 @@ const initialState = {
 
   loading: false,
   loadingTenant: false,
+
   creating: false,
   updating: false,
   deleting: false,
@@ -103,6 +122,14 @@ const initialState = {
   loadingInactive: false,
   loadingBlacklisted: false,
   loadingStatistics: false,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE TENANT USERS LOADING
+  |--------------------------------------------------------------------------
+  */
+
+  loadingAvailableTenantUsers: false,
 
   actionLoading: false,
 
@@ -119,6 +146,14 @@ const initialState = {
   searchError: null,
   actionError: null,
   statisticsError: null,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE TENANT USERS ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  availableTenantUsersError: null,
 
   /*
   |--------------------------------------------------------------------------
@@ -139,7 +174,7 @@ const initialState = {
 /**
  * Safely extract a tenant ID.
  *
- * Supported:
+ * Supports:
  *
  * 15
  * "15"
@@ -184,22 +219,6 @@ const getTenantId = (tenant) => {
 
 /**
  * Extract useful Laravel/Axios error message.
- *
- * IMPORTANT:
- *
- * Axios normally has:
- *
- * error.message
- *
- * such as:
- *
- * "Request failed with status code 422"
- *
- * But Laravel usually gives the useful message inside:
- *
- * error.response.data.message
- *
- * Therefore Laravel response is checked FIRST.
  */
 const getErrorMessage = (error) => {
   if (!error) {
@@ -220,9 +239,7 @@ const getErrorMessage = (error) => {
    *   message: "Validation failed."
    * }
    */
-  if (
-    responseData?.message
-  ) {
+  if (responseData?.message) {
     return String(
       responseData.message
     );
@@ -235,9 +252,7 @@ const getErrorMessage = (error) => {
    *   error: "Something went wrong."
    * }
    */
-  if (
-    responseData?.error
-  ) {
+  if (responseData?.error) {
     return String(
       responseData.error
     );
@@ -282,11 +297,7 @@ const getErrorMessage = (error) => {
   }
 
   /*
-   * Nested Laravel error:
-   *
-   * errors: {
-   *   error: "SQLSTATE..."
-   * }
+   * Nested Laravel error.
    */
   if (
     responseData?.errors?.error
@@ -323,22 +334,15 @@ const getErrorMessage = (error) => {
    */
   if (
     error?.message &&
-    error.message !==
-    "Request failed with status code 422" &&
-    error.message !==
-    "Request failed with status code 400" &&
-    error.message !==
-    "Request failed with status code 401" &&
-    error.message !==
-    "Request failed with status code 403" &&
-    error.message !==
-    "Request failed with status code 404" &&
-    error.message !==
-    "Request failed with status code 409" &&
-    error.message !==
-    "Request failed with status code 422" &&
-    error.message !==
-    "Request failed with status code 500"
+    ![
+      "Request failed with status code 400",
+      "Request failed with status code 401",
+      "Request failed with status code 403",
+      "Request failed with status code 404",
+      "Request failed with status code 409",
+      "Request failed with status code 422",
+      "Request failed with status code 500",
+    ].includes(error.message)
   ) {
     return String(
       error.message
@@ -357,31 +361,11 @@ const getErrorMessage = (error) => {
 
 /**
  * Normalize paginated tenant response.
- *
- * Supports:
- *
- * {
- *   data: [...],
- *   pagination: {...}
- * }
- *
- * Laravel Resource:
- *
- * {
- *   data: [...],
- *   meta: {...}
- * }
- *
- * Direct array:
- *
- * [...]
  */
 const normalizeTenantListResponse = (
   response
 ) => {
-  if (
-    Array.isArray(response)
-  ) {
+  if (Array.isArray(response)) {
     return {
       data: response,
       pagination: null,
@@ -444,15 +428,11 @@ const normalizeTenantListResponse = (
 const normalizeTenantArrayResponse = (
   response
 ) => {
-  if (
-    Array.isArray(response)
-  ) {
+  if (Array.isArray(response)) {
     return response;
   }
 
-  if (
-    Array.isArray(response?.data)
-  ) {
+  if (Array.isArray(response?.data)) {
     return response.data;
   }
 
@@ -465,6 +445,108 @@ const normalizeTenantArrayResponse = (
   }
 
   return [];
+};
+
+
+/**
+ * Normalize available tenant users.
+ *
+ * Backend:
+ *
+ * {
+ *   status: true,
+ *   code: 200,
+ *   message: "...",
+ *   data: [
+ *     {
+ *       id: 4,
+ *       first_name: "Allan",
+ *       last_name: "Nonda",
+ *       name: "Allan Nonda",
+ *       email: "...",
+ *       phone: "..."
+ *     }
+ *   ]
+ * }
+ */
+const normalizeAvailableTenantUsers = (
+  response
+) => {
+  let users = [];
+
+  if (Array.isArray(response)) {
+    users = response;
+  } else if (
+    Array.isArray(response?.data)
+  ) {
+    users = response.data;
+  } else if (
+    Array.isArray(
+      response?.data?.data
+    )
+  ) {
+    users = response.data.data;
+  }
+
+  return users
+    .filter(
+      (user) =>
+        user &&
+        (
+          user?.id !== undefined ||
+          user?.user_id !== undefined
+        )
+    )
+    .map(
+      (user) => {
+        const id =
+          user?.id ??
+          user?.user_id;
+
+        const firstName =
+          user?.first_name ??
+          user?.firstName ??
+          "";
+
+        const lastName =
+          user?.last_name ??
+          user?.lastName ??
+          "";
+
+        const name =
+          user?.name ??
+          user?.full_name ??
+          [firstName, lastName]
+            .filter(Boolean)
+            .join(" ");
+
+        return {
+          ...user,
+
+          id,
+
+          user_id:
+            user?.user_id ??
+            id,
+
+          first_name:
+            firstName,
+
+          last_name:
+            lastName,
+
+          name,
+
+          email:
+            user?.email ?? "",
+
+          phone:
+            user?.phone ??
+            user?.phone_number ??
+            "",
+        };
+      }
+    );
 };
 
 
@@ -519,7 +601,7 @@ const normalizeTenantResponse = (
 
 
 /**
- * Extract message from a response.
+ * Extract message from response.
  */
 const getResponseMessage = (
   response,
@@ -547,9 +629,7 @@ const removeTenantFromList = (
   list,
   tenantId
 ) => {
-  if (
-    !Array.isArray(list)
-  ) {
+  if (!Array.isArray(list)) {
     return [];
   }
 
@@ -568,9 +648,7 @@ const updateTenantInList = (
   list,
   tenant
 ) => {
-  if (
-    !Array.isArray(list)
-  ) {
+  if (!Array.isArray(list)) {
     return tenant
       ? [tenant]
       : [];
@@ -639,9 +717,7 @@ const removeTenantFromStatusLists = (
 
 
 /**
- * Add tenant to the correct status list.
- *
- * The backend status is authoritative.
+ * Add tenant to correct status list.
  */
 const syncTenantStatusLists = (
   state,
@@ -664,9 +740,7 @@ const syncTenantStatusLists = (
       tenant?.status || ""
     ).toLowerCase();
 
-  if (
-    status === "active"
-  ) {
+  if (status === "active") {
     state.activeTenants =
       updateTenantInList(
         state.activeTenants,
@@ -676,9 +750,7 @@ const syncTenantStatusLists = (
     return;
   }
 
-  if (
-    status === "pending"
-  ) {
+  if (status === "pending") {
     state.pendingTenants =
       updateTenantInList(
         state.pendingTenants,
@@ -688,9 +760,7 @@ const syncTenantStatusLists = (
     return;
   }
 
-  if (
-    status === "inactive"
-  ) {
+  if (status === "inactive") {
     state.inactiveTenants =
       updateTenantInList(
         state.inactiveTenants,
@@ -700,9 +770,7 @@ const syncTenantStatusLists = (
     return;
   }
 
-  if (
-    status === "blacklisted"
-  ) {
+  if (status === "blacklisted") {
     state.blacklistedTenants =
       updateTenantInList(
         state.blacklistedTenants,
@@ -832,6 +900,60 @@ const normalizePagination = (
 | ASYNC THUNKS
 |--------------------------------------------------------------------------
 */
+
+/*
+|--------------------------------------------------------------------------
+| FETCH AVAILABLE TENANT USERS
+|--------------------------------------------------------------------------
+|
+| Fetches existing users that already have
+| the tenant Spatie role.
+|
+| GET /api/tenants/available-users
+|
+|--------------------------------------------------------------------------
+*/
+
+export const fetchAvailableTenantUsers =
+  createAsyncThunk(
+    "tenant/fetchAvailableTenantUsers",
+
+    async (
+      _,
+      { rejectWithValue }
+    ) => {
+      try {
+        console.log(
+          "Redux: Fetching available tenant users..."
+        );
+
+        const response =
+          await tenantService.getAvailableTenantUsers();
+
+        const users =
+          normalizeAvailableTenantUsers(
+            response
+          );
+
+        console.log(
+          "Redux: Available tenant users:",
+          users
+        );
+
+        return users;
+      } catch (error) {
+        console.error(
+          "Redux: Failed to fetch available tenant users:",
+          error
+        );
+
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
+    }
+  );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -1091,14 +1213,6 @@ export const deleteTenant =
             "Tenant ID is required."
           );
         }
-
-        console.log(
-          "Redux: Delete tenant request:",
-          {
-            tenant,
-            tenantId,
-          }
-        );
 
         const response =
           await tenantService.deleteTenant(
@@ -1631,23 +1745,6 @@ export const fetchTenantStatistics =
         const response =
           await tenantService.getTenantStatistics();
 
-        /*
-         * Supports:
-         *
-         * {
-         *   total: 10,
-         *   active: 5
-         * }
-         *
-         * OR:
-         *
-         * {
-         *   data: {
-         *     total: 10,
-         *     active: 5
-         *   }
-         * }
-         */
         if (
           response?.data !== undefined &&
           response?.data !== null &&
@@ -1751,11 +1848,6 @@ export const forceDeleteTenant =
           );
         }
 
-        console.log(
-          "Redux: Force delete tenant:",
-          tenantId
-        );
-
         const response =
           await tenantService.forceDeleteTenant(
             tenantId
@@ -1827,6 +1919,45 @@ const tenantSlice = createSlice({
     ) => {
       state.tenant =
         action.payload || null;
+    },
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | SET AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    */
+
+    setAvailableTenantUsers: (
+      state,
+      action
+    ) => {
+      state.availableTenantUsers =
+        normalizeAvailableTenantUsers(
+          action.payload
+        );
+
+      state.availableTenantUsersError =
+        null;
+    },
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | CLEAR AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    */
+
+    clearAvailableTenantUsers: (
+      state
+    ) => {
+      state.availableTenantUsers = [];
+
+      state.loadingAvailableTenantUsers =
+        false;
+
+      state.availableTenantUsersError =
+        null;
     },
 
 
@@ -1994,6 +2125,7 @@ const tenantSlice = createSlice({
       state.searchError = null;
       state.actionError = null;
       state.statisticsError = null;
+      state.availableTenantUsersError = null;
     },
 
 
@@ -2020,8 +2152,9 @@ const tenantSlice = createSlice({
       ...initialState,
 
       tenants: [],
-
       tenant: null,
+
+      availableTenantUsers: [],
 
       pagination: {
         ...initialState.pagination,
@@ -2039,6 +2172,10 @@ const tenantSlice = createSlice({
       blacklistedTenants: [],
 
       statistics: null,
+
+      loadingAvailableTenantUsers: false,
+
+      availableTenantUsersError: null,
     }),
   },
 
@@ -2052,6 +2189,68 @@ const tenantSlice = createSlice({
   extraReducers: (
     builder
   ) => {
+
+    /*
+    |--------------------------------------------------------------------------
+    | FETCH AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    */
+
+    builder
+      .addCase(
+        fetchAvailableTenantUsers.pending,
+        (
+          state
+        ) => {
+          state.loadingAvailableTenantUsers =
+            true;
+
+          state.availableTenantUsersError =
+            null;
+        }
+      )
+
+      .addCase(
+        fetchAvailableTenantUsers.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingAvailableTenantUsers =
+            false;
+
+          state.availableTenantUsers =
+            normalizeAvailableTenantUsers(
+              action.payload
+            );
+
+          state.availableTenantUsersError =
+            null;
+
+          console.log(
+            "Redux: Available tenant users stored:",
+            state.availableTenantUsers
+          );
+        }
+      )
+
+      .addCase(
+        fetchAvailableTenantUsers.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingAvailableTenantUsers =
+            false;
+
+          state.availableTenantUsers = [];
+
+          state.availableTenantUsersError =
+            action.payload ||
+            "Failed to fetch available tenant users.";
+        }
+      );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -2094,10 +2293,6 @@ const tenantSlice = createSlice({
             };
           }
 
-          /*
-           * Keep current filter/page
-           * synchronized with backend.
-           */
           if (
             action.payload?.pagination
               ?.current_page !== undefined
@@ -2228,9 +2423,6 @@ const tenantSlice = createSlice({
             state.tenant =
               createdTenant;
 
-            /*
-             * Add to beginning of list.
-             */
             state.tenants = [
               createdTenant,
               ...state.tenants.filter(
@@ -2240,9 +2432,6 @@ const tenantSlice = createSlice({
               ),
             ];
 
-            /*
-             * Update status list.
-             */
             syncTenantStatusLists(
               state,
               createdTenant
@@ -2256,6 +2445,32 @@ const tenantSlice = createSlice({
             normalizePagination(
               state
             );
+
+            /*
+             * The selected user has now been
+             * linked to a tenant profile.
+             *
+             * Therefore remove that user from
+             * the available-user list.
+             */
+            const createdUserId =
+              createdTenant?.user_id ??
+              createdTenant?.user?.id;
+
+            if (
+              createdUserId !==
+              undefined &&
+              createdUserId !== null
+            ) {
+              state.availableTenantUsers =
+                state.availableTenantUsers.filter(
+                  (user) =>
+                    String(user?.id) !==
+                    String(createdUserId) &&
+                    String(user?.user_id) !==
+                    String(createdUserId)
+                );
+            }
           }
 
           state.createError = null;
@@ -3195,16 +3410,24 @@ const tenantSlice = createSlice({
 export const {
   setTenants,
   setTenant,
+
+  setAvailableTenantUsers,
+  clearAvailableTenantUsers,
+
   clearTenant,
+
   setTenantFilters,
   setTenantSearch,
   setTenantStatus,
   setTenantPage,
   setTenantPerPage,
+
   resetTenantFilters,
+
   clearTenantSearch,
   clearTenantError,
   clearTenantSuccess,
+
   resetTenantState,
 } = tenantSlice.actions;
 
@@ -3214,11 +3437,11 @@ export const {
 | ROOT STATE HELPER
 |--------------------------------------------------------------------------
 |
-| Supports both:
+| Supports:
 |
 | state.tenant
 |
-| and older:
+| and legacy:
 |
 | state.tenants
 |
@@ -3242,60 +3465,110 @@ const getTenantState = (
 |--------------------------------------------------------------------------
 */
 
+/**
+ * All tenants.
+ */
 export const selectTenants = (
   state
 ) =>
   getTenantState(state).tenants ||
   [];
 
+
+/**
+ * Single tenant.
+ */
 export const selectTenant = (
   state
 ) =>
   getTenantState(state).tenant ||
   null;
 
+
+/**
+ * Available existing tenant users.
+ */
+export const selectAvailableTenantUsers = (
+  state
+) =>
+  getTenantState(state)
+    .availableTenantUsers ||
+  [];
+
+
+/**
+ * Tenant pagination.
+ */
 export const selectTenantPagination = (
   state
 ) =>
   getTenantState(state).pagination ||
   initialState.pagination;
 
+
+/**
+ * Tenant filters.
+ */
 export const selectTenantFilters = (
   state
 ) =>
   getTenantState(state).filters ||
   initialState.filters;
 
+
+/**
+ * Tenant statistics.
+ */
 export const selectTenantStatistics = (
   state
 ) =>
   getTenantState(state).statistics ||
   null;
 
+
+/**
+ * Search results.
+ */
 export const selectTenantSearchResults = (
   state
 ) =>
   getTenantState(state).searchResults ||
   [];
 
+
+/**
+ * Active tenants.
+ */
 export const selectActiveTenants = (
   state
 ) =>
   getTenantState(state).activeTenants ||
   [];
 
+
+/**
+ * Pending tenants.
+ */
 export const selectPendingTenants = (
   state
 ) =>
   getTenantState(state).pendingTenants ||
   [];
 
+
+/**
+ * Inactive tenants.
+ */
 export const selectInactiveTenants = (
   state
 ) =>
   getTenantState(state).inactiveTenants ||
   [];
 
+
+/**
+ * Blacklisted tenants.
+ */
 export const selectBlacklistedTenants = (
   state
 ) =>
@@ -3316,12 +3589,14 @@ export const selectTenantLoading = (
     getTenantState(state).loading
   );
 
+
 export const selectTenantLoadingTenant = (
   state
 ) =>
   Boolean(
     getTenantState(state).loadingTenant
   );
+
 
 export const selectTenantCreating = (
   state
@@ -3330,12 +3605,14 @@ export const selectTenantCreating = (
     getTenantState(state).creating
   );
 
+
 export const selectTenantUpdating = (
   state
 ) =>
   Boolean(
     getTenantState(state).updating
   );
+
 
 export const selectTenantDeleting = (
   state
@@ -3344,12 +3621,58 @@ export const selectTenantDeleting = (
     getTenantState(state).deleting
   );
 
+
 export const selectTenantSearching = (
   state
 ) =>
   Boolean(
     getTenantState(state).searching
   );
+
+
+/*
+|--------------------------------------------------------------------------
+| AVAILABLE TENANT USERS LOADING
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| We export BOTH names:
+|
+| selectLoadingAvailableTenantUsers
+|
+| and
+|
+| selectTenantLoadingAvailableUsers
+|
+| This keeps compatibility with useTenant.js.
+|
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Primary selector.
+ */
+export const selectLoadingAvailableTenantUsers = (
+  state
+) =>
+  Boolean(
+    getTenantState(state)
+      .loadingAvailableTenantUsers
+  );
+
+
+/**
+ * Compatibility alias used by useTenant.js.
+ */
+export const selectTenantLoadingAvailableUsers = (
+  state
+) =>
+  Boolean(
+    getTenantState(state)
+      .loadingAvailableTenantUsers
+  );
+
 
 export const selectTenantActionLoading = (
   state
@@ -3358,12 +3681,14 @@ export const selectTenantActionLoading = (
     getTenantState(state).actionLoading
   );
 
+
 export const selectTenantLoadingActive = (
   state
 ) =>
   Boolean(
     getTenantState(state).loadingActive
   );
+
 
 export const selectTenantLoadingPending = (
   state
@@ -3372,6 +3697,7 @@ export const selectTenantLoadingPending = (
     getTenantState(state).loadingPending
   );
 
+
 export const selectTenantLoadingInactive = (
   state
 ) =>
@@ -3379,12 +3705,14 @@ export const selectTenantLoadingInactive = (
     getTenantState(state).loadingInactive
   );
 
+
 export const selectTenantLoadingBlacklisted = (
   state
 ) =>
   Boolean(
     getTenantState(state).loadingBlacklisted
   );
+
 
 export const selectTenantLoadingStatistics = (
   state
@@ -3406,11 +3734,13 @@ export const selectTenantError = (
   getTenantState(state).error ||
   null;
 
+
 export const selectTenantCreateError = (
   state
 ) =>
   getTenantState(state).createError ||
   null;
+
 
 export const selectTenantUpdateError = (
   state
@@ -3418,11 +3748,13 @@ export const selectTenantUpdateError = (
   getTenantState(state).updateError ||
   null;
 
+
 export const selectTenantDeleteError = (
   state
 ) =>
   getTenantState(state).deleteError ||
   null;
+
 
 export const selectTenantSearchError = (
   state
@@ -3430,16 +3762,29 @@ export const selectTenantSearchError = (
   getTenantState(state).searchError ||
   null;
 
+
 export const selectTenantActionError = (
   state
 ) =>
   getTenantState(state).actionError ||
   null;
 
+
 export const selectTenantStatisticsError = (
   state
 ) =>
   getTenantState(state).statisticsError ||
+  null;
+
+
+/**
+ * Available tenant users error.
+ */
+export const selectAvailableTenantUsersError = (
+  state
+) =>
+  getTenantState(state)
+    .availableTenantUsersError ||
   null;
 
 
@@ -3463,3 +3808,4 @@ export const selectTenantSuccessMessage = (
 */
 
 export default tenantSlice.reducer;
+
