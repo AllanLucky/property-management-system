@@ -12,6 +12,7 @@ import {
   fetchPendingTenants,
   fetchInactiveTenants,
   fetchBlacklistedTenants,
+  fetchAvailableTenantUsers,
   activateTenant,
   deactivateTenant,
   blacklistTenant,
@@ -44,6 +45,7 @@ import {
   selectPendingTenants,
   selectInactiveTenants,
   selectBlacklistedTenants,
+  selectAvailableTenantUsers,
 
   selectTenantLoading,
   selectTenantLoadingTenant,
@@ -53,6 +55,7 @@ import {
   selectTenantSearching,
   selectTenantActionLoading,
   selectTenantLoadingStatistics,
+  selectTenantLoadingAvailableUsers,
 
   selectTenantError,
   selectTenantCreateError,
@@ -60,6 +63,7 @@ import {
   selectTenantDeleteError,
   selectTenantActionError,
   selectTenantStatisticsError,
+  selectAvailableTenantUsersError,
   selectTenantSuccessMessage,
 } from "../store/tenantSlice";
 
@@ -399,6 +403,23 @@ export const useTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | AVAILABLE TENANT USERS
+  |--------------------------------------------------------------------------
+  |
+  | These are existing users from the users table who already have
+  | the "tenant" Spatie role and are not yet linked to a tenant.
+  |
+  | They are used by CreateTenant / TenantForm to select the
+  | existing user account instead of creating another user.
+  |
+  */
+
+  const availableTenantUsers = useSelector(
+    selectAvailableTenantUsers
+  );
+
+  /*
+  |--------------------------------------------------------------------------
   | LOADING
   |--------------------------------------------------------------------------
   */
@@ -435,6 +456,10 @@ export const useTenant = () => {
     selectTenantLoadingStatistics
   );
 
+  const loadingAvailableUsers = useSelector(
+    selectTenantLoadingAvailableUsers
+  );
+
   /*
   |--------------------------------------------------------------------------
   | ERRORS
@@ -465,6 +490,10 @@ export const useTenant = () => {
     selectTenantStatisticsError
   );
 
+  const availableTenantUsersError = useSelector(
+    selectAvailableTenantUsersError
+  );
+
   const successMessage = useSelector(
     selectTenantSuccessMessage
   );
@@ -485,6 +514,28 @@ export const useTenant = () => {
     },
     [dispatch]
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | FETCH AVAILABLE TENANT USERS
+  |--------------------------------------------------------------------------
+  |
+  | Fetches existing users who have the tenant role and are not yet
+  | attached to a tenant profile.
+  |
+  */
+
+  const getAvailableTenantUsers =
+    useCallback(
+      async () => {
+        return executeTenantAction(
+          dispatch,
+          fetchAvailableTenantUsers(),
+          "Failed to fetch available tenant users:"
+        );
+      },
+      [dispatch]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -1139,6 +1190,14 @@ export const useTenant = () => {
 
     /*
     |--------------------------------------------------------------------------
+    | AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    */
+
+    availableTenantUsers,
+
+    /*
+    |--------------------------------------------------------------------------
     | LOADING
     |--------------------------------------------------------------------------
     */
@@ -1151,6 +1210,8 @@ export const useTenant = () => {
     searching,
     actionLoading,
     loadingStatistics,
+
+    loadingAvailableUsers,
 
     /*
     |--------------------------------------------------------------------------
@@ -1165,6 +1226,8 @@ export const useTenant = () => {
     actionError,
     statisticsError,
 
+    availableTenantUsersError,
+
     successMessage,
 
     /*
@@ -1178,6 +1241,14 @@ export const useTenant = () => {
     addTenant,
     editTenant,
     removeTenant,
+
+    /*
+    |--------------------------------------------------------------------------
+    | AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    */
+
+    getAvailableTenantUsers,
 
     /*
     |--------------------------------------------------------------------------
@@ -1279,4 +1350,3 @@ export const useTenant = () => {
 };
 
 export default useTenant;
-
