@@ -7,27 +7,8 @@ import tenantAPI from "../api/tenant.api";
 */
 
 /**
- * Get the actual Laravel API payload.
- *
- * Supports Axios response:
- *
- * {
- *   data: {
- *     status: true,
- *     code: 200,
- *     message: "...",
- *     data: {...}
- *   }
- * }
- *
- * And direct Laravel response:
- *
- * {
- *   status: true,
- *   code: 200,
- *   message: "...",
- *   data: {...}
- * }
+ * Unwrap Axios response while also supporting an already-unwrapped
+ * Laravel response.
  */
 const unwrapResponse = (response) => {
   if (!response) {
@@ -35,7 +16,18 @@ const unwrapResponse = (response) => {
   }
 
   /*
-   * Axios response
+   * Axios response:
+   *
+   * {
+   *   data: {
+   *     status: true,
+   *     code: 200,
+   *     message: "...",
+   *     data: [...]
+   *   },
+   *   status: 200,
+   *   headers: {...}
+   * }
    */
   if (
     response &&
@@ -51,7 +43,7 @@ const unwrapResponse = (response) => {
   }
 
   /*
-   * Already unwrapped Laravel response
+   * Already-unwrapped Laravel response.
    */
   return response;
 };
@@ -67,6 +59,18 @@ const getResponseEnvelope = (response) => {
 
 /**
  * Get Laravel response data.
+ *
+ * Example:
+ *
+ * {
+ *   status: true,
+ *   code: 200,
+ *   data: {...}
+ * }
+ *
+ * returns:
+ *
+ * {...}
  */
 const getResponseData = (response) => {
   const payload = getResponseEnvelope(response);
@@ -84,7 +88,7 @@ const getResponseData = (response) => {
 
 
 /**
- * Get Laravel response message.
+ * Get response message.
  */
 const getResponseMessage = (
   response,
@@ -101,7 +105,7 @@ const getResponseMessage = (
 
 
 /**
- * Get Laravel response status.
+ * Get response status.
  */
 const getResponseStatus = (response) => {
   const payload = getResponseEnvelope(response);
@@ -111,7 +115,7 @@ const getResponseStatus = (response) => {
 
 
 /**
- * Get Laravel response code.
+ * Get response code.
  */
 const getResponseCode = (response) => {
   const payload = getResponseEnvelope(response);
@@ -131,19 +135,7 @@ const getResponseCode = (response) => {
 */
 
 /**
- * Get collection data.
- *
- * Supports:
- *
- * 1. data: []
- *
- * 2. data: {
- *      data: []
- *    }
- *
- * 3. direct []
- *
- * 4. Laravel paginator.
+ * Extract tenant collection from all supported Laravel response shapes.
  */
 const getCollectionData = (response) => {
   const payload = getResponseEnvelope(response);
@@ -156,7 +148,7 @@ const getCollectionData = (response) => {
   }
 
   /*
-   * Laravel:
+   * Standard Laravel:
    *
    * {
    *   data: []
@@ -167,7 +159,7 @@ const getCollectionData = (response) => {
   }
 
   /*
-   * Nested paginator:
+   * Nested paginator/resource:
    *
    * {
    *   data: {
@@ -180,8 +172,6 @@ const getCollectionData = (response) => {
   }
 
   /*
-   * Sometimes response may itself contain:
-   *
    * {
    *   data: {
    *     tenants: []
@@ -192,11 +182,57 @@ const getCollectionData = (response) => {
     return payload.data.tenants;
   }
 
+  /*
+   * {
+   *   tenants: []
+   * }
+   */
   if (Array.isArray(payload?.tenants)) {
     return payload.tenants;
   }
 
   return [];
+};
+
+
+/**
+ * Normalize pagination metadata.
+ */
+const normalizePagination = (meta = {}) => {
+  return {
+    current_page: Number(
+      meta?.current_page ??
+      meta?.currentPage ??
+      1
+    ),
+
+    last_page: Number(
+      meta?.last_page ??
+      meta?.lastPage ??
+      1
+    ),
+
+    per_page: Number(
+      meta?.per_page ??
+      meta?.perPage ??
+      15
+    ),
+
+    total: Number(
+      meta?.total ??
+      0
+    ),
+
+    from: Number(
+      meta?.from ??
+      0
+    ),
+
+    to: Number(
+      meta?.to ??
+      0
+    ),
+  };
 };
 
 
@@ -207,95 +243,21 @@ const getPagination = (response) => {
   const payload = getResponseEnvelope(response);
 
   /*
-   * Laravel Resource pagination.
+   * Laravel resource pagination.
    */
   if (payload?.meta) {
-    return {
-      current_page:
-        Number(
-          payload.meta.current_page ??
-          payload.meta.currentPage ??
-          1
-        ),
-
-      last_page:
-        Number(
-          payload.meta.last_page ??
-          payload.meta.lastPage ??
-          1
-        ),
-
-      per_page:
-        Number(
-          payload.meta.per_page ??
-          payload.meta.perPage ??
-          15
-        ),
-
-      total:
-        Number(
-          payload.meta.total ??
-          0
-        ),
-
-      from:
-        Number(
-          payload.meta.from ??
-          0
-        ),
-
-      to:
-        Number(
-          payload.meta.to ??
-          0
-        ),
-    };
+    return normalizePagination(
+      payload.meta
+    );
   }
 
   /*
-   * Nested Laravel paginator.
+   * Nested paginator.
    */
   if (payload?.data?.meta) {
-    return {
-      current_page:
-        Number(
-          payload.data.meta.current_page ??
-          payload.data.meta.currentPage ??
-          1
-        ),
-
-      last_page:
-        Number(
-          payload.data.meta.last_page ??
-          payload.data.meta.lastPage ??
-          1
-        ),
-
-      per_page:
-        Number(
-          payload.data.meta.per_page ??
-          payload.data.meta.perPage ??
-          15
-        ),
-
-      total:
-        Number(
-          payload.data.meta.total ??
-          0
-        ),
-
-      from:
-        Number(
-          payload.data.meta.from ??
-          0
-        ),
-
-      to:
-        Number(
-          payload.data.meta.to ??
-          0
-        ),
-    };
+    return normalizePagination(
+      payload.data.meta
+    );
   }
 
   /*
@@ -306,43 +268,9 @@ const getPagination = (response) => {
     payload?.last_page !== undefined ||
     payload?.total !== undefined
   ) {
-    return {
-      current_page:
-        Number(
-          payload.current_page ??
-          1
-        ),
-
-      last_page:
-        Number(
-          payload.last_page ??
-          1
-        ),
-
-      per_page:
-        Number(
-          payload.per_page ??
-          15
-        ),
-
-      total:
-        Number(
-          payload.total ??
-          0
-        ),
-
-      from:
-        Number(
-          payload.from ??
-          0
-        ),
-
-      to:
-        Number(
-          payload.to ??
-          0
-        ),
-    };
+    return normalizePagination(
+      payload
+    );
   }
 
   /*
@@ -352,53 +280,12 @@ const getPagination = (response) => {
     payload?.data?.current_page !== undefined ||
     payload?.data?.last_page !== undefined
   ) {
-    return {
-      current_page:
-        Number(
-          payload.data.current_page ??
-          1
-        ),
-
-      last_page:
-        Number(
-          payload.data.last_page ??
-          1
-        ),
-
-      per_page:
-        Number(
-          payload.data.per_page ??
-          15
-        ),
-
-      total:
-        Number(
-          payload.data.total ??
-          0
-        ),
-
-      from:
-        Number(
-          payload.data.from ??
-          0
-        ),
-
-      to:
-        Number(
-          payload.data.to ??
-          0
-        ),
-    };
+    return normalizePagination(
+      payload.data
+    );
   }
 
-  return {
-    current_page: 1,
-    last_page: 1,
-    per_page: 15,
-    total: 0,
-    from: 0,
-    to: 0,
-  };
+  return normalizePagination();
 };
 
 
@@ -409,15 +296,24 @@ const getPagination = (response) => {
 */
 
 /**
- * Extract tenant ID from either:
+ * Extract tenant ID from:
  *
  * deleteTenant(15)
  *
- * or:
+ * deleteTenant("15")
  *
  * deleteTenant({
- *   id: 15,
- *   tenant_number: "TNT-000015"
+ *   id: 15
+ * })
+ *
+ * deleteTenant({
+ *   tenant_id: 15
+ * })
+ *
+ * deleteTenant({
+ *   tenant: {
+ *     id: 15
+ *   }
  * })
  */
 const getTenantId = (tenantOrId) => {
@@ -434,33 +330,47 @@ const getTenantId = (tenantOrId) => {
   if (
     typeof tenantOrId === "object"
   ) {
-    return (
+    const id =
       tenantOrId?.id ??
       tenantOrId?.tenant_id ??
       tenantOrId?.tenant?.id ??
-      null
-    );
+      tenantOrId?.data?.id ??
+      tenantOrId?.data?.tenant_id ??
+      tenantOrId?.data?.tenant?.id ??
+      null;
+
+    if (
+      id !== null &&
+      id !== undefined &&
+      String(id).trim() !== ""
+    ) {
+      return String(id).trim();
+    }
+
+    return null;
   }
 
   /*
    * Primitive ID.
    */
-  return tenantOrId;
+  const id = String(
+    tenantOrId
+  ).trim();
+
+  return id || null;
 };
 
 
 /**
- * Validate tenant ID.
+ * Require tenant ID.
  */
 const requireTenantId = (tenantOrId) => {
   const tenantId =
-    getTenantId(tenantOrId);
+    getTenantId(
+      tenantOrId
+    );
 
-  if (
-    tenantId === null ||
-    tenantId === undefined ||
-    tenantId === ""
-  ) {
+  if (!tenantId) {
     throw new Error(
       "Tenant ID is required."
     );
@@ -479,13 +389,12 @@ const requireTenantId = (tenantOrId) => {
 /**
  * Normalize Axios/Laravel errors.
  *
- * IMPORTANT:
- * Keeps the actual Laravel error details so the UI
- * does not only show "Failed to delete tenant."
+ * Keeps the real Laravel error response so the UI can display
+ * useful validation/server information.
  */
 const normalizeError = (error) => {
   /*
-   * Already normalized error.
+   * Already normalized.
    */
   if (
     error &&
@@ -494,6 +403,25 @@ const normalizeError = (error) => {
     error.message
   ) {
     return error;
+  }
+
+  /*
+   * Plain string.
+   */
+  if (
+    typeof error === "string"
+  ) {
+    const normalized =
+      new Error(
+        error
+      );
+
+    normalized.status = null;
+    normalized.code = null;
+    normalized.errors = null;
+    normalized.raw = error;
+
+    return normalized;
   }
 
   const response =
@@ -508,17 +436,11 @@ const normalizeError = (error) => {
   const errors =
     responseData?.errors ??
     nestedData?.errors ??
+    error?.errors ??
     null;
 
   /*
-   * Laravel may return:
-   *
-   * {
-   *   message: "...",
-   *   errors: {
-   *      error: "..."
-   *   }
-   * }
+   * Laravel validation/server error.
    */
   const serverError =
     errors?.error ??
@@ -533,21 +455,21 @@ const normalizeError = (error) => {
     error?.message ??
     "Something went wrong while processing the tenant request.";
 
-  const normalized = new Error(
-    String(message)
-  );
+  const normalized =
+    new Error(
+      String(message)
+    );
 
-  /*
-   * Preserve useful properties.
-   */
   normalized.status =
     response?.status ??
     responseData?.code ??
+    error?.status ??
     null;
 
   normalized.code =
     responseData?.code ??
     response?.status ??
+    error?.code ??
     null;
 
   normalized.errors =
@@ -565,12 +487,110 @@ const normalizeError = (error) => {
 
 /*
 |--------------------------------------------------------------------------
+| TENANCY NORMALIZATION
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Preserve tenancy data returned by Laravel.
+ *
+ * The backend response can contain:
+ *
+ * tenancy
+ * ├── property
+ * ├── apartment
+ * └── unit
+ *
+ * We intentionally do not remove or flatten those relationships.
+ */
+const normalizeTenancy = (tenancy) => {
+  if (!tenancy) {
+    return null;
+  }
+
+  return {
+    ...tenancy,
+
+    id:
+      tenancy?.id ??
+      null,
+
+    tenancy_number:
+      tenancy?.tenancy_number ??
+      "",
+
+    property_id:
+      tenancy?.property_id ??
+      null,
+
+    apartment_id:
+      tenancy?.apartment_id ??
+      null,
+
+    unit_id:
+      tenancy?.unit_id ??
+      null,
+
+    tenant_id:
+      tenancy?.tenant_id ??
+      null,
+
+    property:
+      tenancy?.property ??
+      null,
+
+    apartment:
+      tenancy?.apartment ??
+      null,
+
+    unit:
+      tenancy?.unit ??
+      null,
+  };
+};
+
+
+/**
+ * Normalize tenancy collection.
+ */
+const normalizeTenancies = (
+  tenancies
+) => {
+  if (!Array.isArray(tenancies)) {
+    return [];
+  }
+
+  return tenancies
+    .map(normalizeTenancy)
+    .filter(Boolean);
+};
+
+
+/*
+|--------------------------------------------------------------------------
 | TENANT NORMALIZATION
 |--------------------------------------------------------------------------
 */
 
 /**
  * Normalize a single tenant.
+ *
+ * IMPORTANT:
+ *
+ * TenantResource now keeps User identity inside:
+ *
+ * tenant.user
+ *
+ * Therefore the frontend reads:
+ *
+ * tenant.user.first_name
+ * tenant.user.last_name
+ * tenant.user.full_name
+ * tenant.user.email
+ * tenant.user.phone
+ *
+ * We also expose convenient top-level aliases for existing
+ * frontend components.
  */
 const normalizeTenant = (tenant) => {
   if (!tenant) {
@@ -585,37 +605,50 @@ const normalizeTenant = (tenant) => {
     typeof tenant.data === "object" &&
     !Array.isArray(tenant.data)
   ) {
-    tenant = tenant.data;
+    tenant =
+      tenant.data;
   }
 
+  /*
+   * USER
+   */
+  const user =
+    tenant?.user ??
+    null;
+
+  /*
+   * USER IDENTITY
+   *
+   * User is the source of truth.
+   */
   const firstName =
+    user?.first_name ??
     tenant?.first_name ??
-    tenant?.user?.first_name ??
     "";
 
   const lastName =
+    user?.last_name ??
     tenant?.last_name ??
-    tenant?.user?.last_name ??
     "";
 
   const otherNames =
+    user?.other_names ??
     tenant?.other_names ??
-    tenant?.user?.other_names ??
     "";
 
   const email =
+    user?.email ??
     tenant?.email ??
-    tenant?.user?.email ??
     "";
 
   const phone =
+    user?.phone ??
     tenant?.phone ??
-    tenant?.user?.phone ??
     "";
 
   const fullName =
+    user?.full_name ??
     tenant?.full_name ??
-    tenant?.user?.full_name ??
     [
       firstName,
       otherNames,
@@ -625,9 +658,80 @@ const normalizeTenant = (tenant) => {
       .join(" ")
       .trim();
 
+  /*
+   * TENANT STATUS
+   *
+   * Do NOT read tenants.is_active from the database.
+   *
+   * The backend returns:
+   *
+   * tenant.status
+   *
+   * and User has its own account status.
+   */
+  const tenantStatus =
+    tenant?.status ??
+    tenant?.tenant_status ??
+    "";
+
+  /*
+   * TENANT VERIFICATION
+   */
+  const isVerified =
+    tenant?.is_verified !== undefined
+      ? Boolean(
+        tenant.is_verified
+      )
+      : Boolean(
+        tenant?.verification?.is_verified ??
+        false
+      );
+
+  /*
+   * TENANCIES
+   */
+  const tenancies =
+    normalizeTenancies(
+      tenant?.tenancies
+    );
+
+  /*
+   * ACTIVE TENANCIES
+   */
+  const activeTenancies =
+    normalizeTenancies(
+      tenant?.active_tenancies
+    );
+
+  /*
+   * TENANCY COUNT
+   */
+  const tenancyCount =
+    tenant?.tenancy_count !== undefined
+      ? Number(
+        tenant.tenancy_count
+      )
+      : tenancies.length;
+
+  /*
+   * ACTIVE TENANCY COUNT
+   */
+  const activeTenancyCount =
+    tenant?.active_tenancy_count !== undefined
+      ? Number(
+        tenant.active_tenancy_count
+      )
+      : activeTenancies.length;
+
   return {
+    /*
+     * Preserve the complete backend response.
+     */
     ...tenant,
 
+    /*
+     * Tenant identification.
+     */
     id:
       tenant?.id ??
       null,
@@ -638,9 +742,17 @@ const normalizeTenant = (tenant) => {
 
     user_id:
       tenant?.user_id ??
-      tenant?.user?.id ??
+      user?.id ??
       null,
 
+    /*
+     * User relationship.
+     */
+    user,
+
+    /*
+     * Frontend compatibility aliases.
+     */
     first_name:
       firstName,
 
@@ -658,61 +770,291 @@ const normalizeTenant = (tenant) => {
 
     phone,
 
-    status:
-      tenant?.status ??
-      tenant?.tenant_status ??
-      tenant?.account_status ??
-      "",
+    /*
+     * Tenant profile.
+     */
+    date_of_birth:
+      tenant?.date_of_birth ??
+      user?.profile?.date_of_birth ??
+      null,
+
+    gender:
+      tenant?.gender ??
+      user?.profile?.gender ??
+      null,
 
     /*
-     * Do NOT assume is_active exists in the database.
-     *
-     * The backend recently showed that tenants does not
-     * have an is_active column.
-     *
-     * Therefore this is only derived from the returned
-     * status when necessary.
+     * Identification.
      */
-    is_active:
-      tenant?.is_active !== undefined
-        ? Boolean(tenant.is_active)
-        : String(
-            tenant?.status ??
-            ""
-          ).toLowerCase() === "active",
+    id_number:
+      tenant?.id_number ??
+      tenant?.identification?.id_number ??
+      null,
 
+    passport_number:
+      tenant?.passport_number ??
+      tenant?.identification?.passport_number ??
+      null,
+
+    identification: {
+      id_number:
+        tenant?.id_number ??
+        tenant?.identification?.id_number ??
+        null,
+
+      passport_number:
+        tenant?.passport_number ??
+        tenant?.identification?.passport_number ??
+        null,
+    },
+
+    /*
+     * Location.
+     */
+    country:
+      tenant?.country ??
+      tenant?.location?.country ??
+      null,
+
+    region:
+      tenant?.region ??
+      tenant?.location?.region ??
+      null,
+
+    county:
+      tenant?.county ??
+      tenant?.location?.county ??
+      null,
+
+    city:
+      tenant?.city ??
+      tenant?.location?.city ??
+      null,
+
+    area:
+      tenant?.area ??
+      tenant?.location?.area ??
+      null,
+
+    postal_code:
+      tenant?.postal_code ??
+      tenant?.location?.postal_code ??
+      null,
+
+    address:
+      tenant?.address ??
+      tenant?.location?.address ??
+      user?.profile?.address ??
+      null,
+
+    location: {
+      country:
+        tenant?.country ??
+        tenant?.location?.country ??
+        null,
+
+      region:
+        tenant?.region ??
+        tenant?.location?.region ??
+        null,
+
+      county:
+        tenant?.county ??
+        tenant?.location?.county ??
+        null,
+
+      city:
+        tenant?.city ??
+        tenant?.location?.city ??
+        null,
+
+      area:
+        tenant?.area ??
+        tenant?.location?.area ??
+        null,
+
+      postal_code:
+        tenant?.postal_code ??
+        tenant?.location?.postal_code ??
+        null,
+
+      address:
+        tenant?.address ??
+        tenant?.location?.address ??
+        user?.profile?.address ??
+        null,
+    },
+
+    /*
+     * Employment.
+     */
+    occupation:
+      tenant?.occupation ??
+      tenant?.employment?.occupation ??
+      null,
+
+    employer:
+      tenant?.employer ??
+      tenant?.employment?.employer ??
+      null,
+
+    monthly_income:
+      tenant?.monthly_income ??
+      tenant?.employment?.monthly_income ??
+      null,
+
+    employment: {
+      occupation:
+        tenant?.occupation ??
+        tenant?.employment?.occupation ??
+        null,
+
+      employer:
+        tenant?.employer ??
+        tenant?.employment?.employer ??
+        null,
+
+      monthly_income:
+        tenant?.monthly_income ??
+        tenant?.employment?.monthly_income ??
+        null,
+    },
+
+    /*
+     * Emergency contact.
+     */
+    emergency_contact: {
+      name:
+        tenant?.emergency_contact?.name ??
+        tenant?.emergency_contact_name ??
+        null,
+
+      phone:
+        tenant?.emergency_contact?.phone ??
+        tenant?.emergency_contact_phone ??
+        null,
+
+      relationship:
+        tenant?.emergency_contact?.relationship ??
+        tenant?.emergency_contact_relationship ??
+        null,
+    },
+
+    /*
+     * Documents.
+     */
+    documents: {
+      photo:
+        tenant?.documents?.photo ??
+        tenant?.photo ??
+        null,
+
+      id_front:
+        tenant?.documents?.id_front ??
+        tenant?.id_front ??
+        null,
+
+      id_back:
+        tenant?.documents?.id_back ??
+        tenant?.id_back ??
+        null,
+    },
+
+    /*
+     * Tenant verification.
+     *
+     * This is NOT the same as User email verification.
+     */
     is_verified:
-      Boolean(
-        tenant?.is_verified ??
-        false
-      ),
+      isVerified,
 
+    verified_at:
+      tenant?.verified_at ??
+      tenant?.verification?.verified_at ??
+      null,
+
+    verification: {
+      is_verified:
+        isVerified,
+
+      verified_at:
+        tenant?.verified_at ??
+        tenant?.verification?.verified_at ??
+        null,
+    },
+
+    /*
+     * IMPORTANT:
+     *
+     * Do not expect verification_status from the tenants table
+     * unless the backend explicitly returns it.
+     */
     verification_status:
       tenant?.verification_status ??
       "",
+
+    /*
+     * Tenant status.
+     */
+    status:
+      tenantStatus,
 
     status_label:
       tenant?.status_label ??
       "",
 
-    tenancies:
-      Array.isArray(
-        tenant?.tenancies
-      )
-        ? tenant.tenancies
-        : [],
+    /*
+     * Derived active flag.
+     *
+     * This is calculated from the API response.
+     * It does NOT require an is_active database column.
+     */
+    is_active:
+      tenant?.is_active !== undefined
+        ? Boolean(
+          tenant.is_active
+        )
+        : String(
+          tenantStatus
+        ).toLowerCase() === "active",
+
+    /*
+     * Notes.
+     */
+    notes:
+      tenant?.notes ??
+      null,
+
+    /*
+     * Tenancies.
+     *
+     * Property, apartment and unit relationships are preserved.
+     */
+    tenancies,
 
     tenancy_count:
-      Number(
-        tenant?.tenancy_count ??
-        (
-          Array.isArray(
-            tenant?.tenancies
-          )
-            ? tenant.tenancies.length
-            : 0
-        )
-      ),
+      tenancyCount,
+
+    active_tenancies:
+      activeTenancies,
+
+    active_tenancy_count:
+      activeTenancyCount,
+
+    /*
+     * Timestamps.
+     */
+    created_at:
+      tenant?.created_at ??
+      null,
+
+    updated_at:
+      tenant?.updated_at ??
+      null,
+
+    deleted_at:
+      tenant?.deleted_at ??
+      null,
   };
 };
 
@@ -964,18 +1306,6 @@ export const updateTenant = async (
 
 /**
  * Soft delete tenant.
- *
- * Supports both:
- *
- * deleteTenant(15)
- *
- * and:
- *
- * deleteTenant(tenant)
- *
- * The API request is always:
- *
- * DELETE /tenants/{id}
  */
 export const deleteTenant = async (
   tenantOrId
@@ -1101,7 +1431,7 @@ export const searchTenants = async (
 */
 
 /**
- * Get active tenants.
+ * Active tenants.
  */
 export const getActiveTenants =
   async () => {
@@ -1123,7 +1453,7 @@ export const getActiveTenants =
 
 
 /**
- * Get pending tenants.
+ * Pending tenants.
  */
 export const getPendingTenants =
   async () => {
@@ -1145,7 +1475,7 @@ export const getPendingTenants =
 
 
 /**
- * Get inactive tenants.
+ * Inactive tenants.
  */
 export const getInactiveTenants =
   async () => {
@@ -1167,7 +1497,7 @@ export const getInactiveTenants =
 
 
 /**
- * Get blacklisted tenants.
+ * Blacklisted tenants.
  */
 export const getBlacklistedTenants =
   async () => {
@@ -1198,18 +1528,18 @@ const normalizeTenantActionResponse = (
   response,
   fallbackMessage
 ) => {
+  const data =
+    getResponseData(
+      response
+    );
+
   return {
     tenant:
       normalizeTenant(
-        getResponseData(
-          response
-        )
+        data
       ),
 
-    data:
-      getResponseData(
-        response
-      ),
+    data,
 
     message:
       getResponseMessage(
@@ -1439,6 +1769,11 @@ export const getTenantStatistics =
           response
         );
 
+      /*
+       * The backend must calculate statistics from
+       * tenant.status rather than a nonexistent
+       * tenants.is_active column.
+       */
       if (
         statistics &&
         typeof statistics === "object" &&
@@ -1447,9 +1782,6 @@ export const getTenantStatistics =
         return {
           ...statistics,
 
-          /*
-           * Safe defaults.
-           */
           total:
             Number(
               statistics.total ??
@@ -1549,17 +1881,6 @@ export const restoreTenant = async (
 |--------------------------------------------------------------------------
 */
 
-/**
- * Permanently delete tenant.
- *
- * Supports:
- *
- * forceDeleteTenant(15)
- *
- * or:
- *
- * forceDeleteTenant(tenant)
- */
 export const forceDeleteTenant = async (
   tenantOrId
 ) => {
@@ -1670,3 +1991,4 @@ const tenantService = {
 };
 
 export default tenantService;
+
