@@ -49,6 +49,7 @@ class User extends Authenticatable
 
     public const STATUS_BANNED = 'banned';
 
+
     public const STATUSES = [
         self::STATUS_ACTIVE,
         self::STATUS_INACTIVE,
@@ -69,6 +70,7 @@ class User extends Authenticatable
 
     public const APPROVAL_REJECTED = 'rejected';
 
+
     public const APPROVALS = [
         self::APPROVAL_PENDING,
         self::APPROVAL_APPROVED,
@@ -85,55 +87,68 @@ class User extends Authenticatable
     protected $fillable = [
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Personal Information
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         'first_name',
+
         'last_name',
+
         'slug',
+
         'email',
+
         'phone',
+
         'gender',
+
         'nationality',
+
         'address',
+
         'date_of_birth',
+
         'bio',
 
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Authentication
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         'password',
 
         'otp',
+
         'otp_expires_at',
 
         'is_verified',
 
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Profile Image
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         'image',
+
         'image_public_id',
 
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Account Management
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         'approval_status',
+
         'account_status',
+
         'is_banner',
 
         'last_login_at',
@@ -147,10 +162,15 @@ class User extends Authenticatable
     */
 
     protected $hidden = [
+
         'password',
+
         'remember_token',
+
         'otp',
+
         'image_public_id',
+
         'deleted_at',
     ];
 
@@ -162,11 +182,17 @@ class User extends Authenticatable
     */
 
     protected $appends = [
+
         'full_name',
+
         'image_url',
+
         'initials',
+
         'is_active',
+
         'is_verified_user',
+
         'is_super_admin',
     ];
 
@@ -176,11 +202,10 @@ class User extends Authenticatable
     | EAGER LOADED RELATIONSHIPS
     |--------------------------------------------------------------------------
     |
-    | Roles are automatically loaded because they are commonly required
-    | throughout the application.
+    | Roles are loaded automatically because role information is frequently
+    | required throughout the application.
     |
-    | Tenant is NOT globally eager loaded to avoid unnecessary queries
-    | for users who are not tenants.
+    | Tenant is NOT globally eager loaded because most users are not tenants.
     |
     */
 
@@ -200,7 +225,9 @@ class User extends Authenticatable
         return [
 
             /*
+            |--------------------------------------------------------------------------
             | Dates
+            |--------------------------------------------------------------------------
             */
 
             'email_verified_at' => 'datetime',
@@ -215,7 +242,9 @@ class User extends Authenticatable
 
 
             /*
-            | Boolean values
+            |--------------------------------------------------------------------------
+            | Boolean Values
+            |--------------------------------------------------------------------------
             */
 
             'is_verified' => 'boolean',
@@ -224,7 +253,9 @@ class User extends Authenticatable
 
 
             /*
+            |--------------------------------------------------------------------------
             | Password
+            |--------------------------------------------------------------------------
             */
 
             'password' => 'hashed',
@@ -237,12 +268,13 @@ class User extends Authenticatable
     | TENANT RELATIONSHIP
     |--------------------------------------------------------------------------
     |
-    | One User can belong to one Tenant.
+    | One User can have one Tenant profile.
     |
-    | tenants.user_id -> users.id
+    | users.id
+    |     ↓
+    | tenants.user_id
     |
-    | The tenants.user_id column is unique, therefore a user can have
-    | only one tenant profile.
+    | The tenants.user_id column should be UNIQUE.
     |
     */
 
@@ -250,7 +282,8 @@ class User extends Authenticatable
     {
         return $this->hasOne(
             Tenant::class,
-            'user_id'
+            'user_id',
+            'id'
         );
     }
 
@@ -286,9 +319,13 @@ class User extends Authenticatable
 
     public function getInitialsAttribute(): string
     {
-        $firstName = trim((string) $this->first_name);
+        $firstName = trim(
+            (string) $this->first_name
+        );
 
-        $lastName = trim((string) $this->last_name);
+        $lastName = trim(
+            (string) $this->last_name
+        );
 
         return strtoupper(
             Str::substr($firstName, 0, 1) .
@@ -315,9 +352,9 @@ class User extends Authenticatable
     | ACTIVE ACCOUNT
     |--------------------------------------------------------------------------
     |
-    | This is computed from account_status.
+    | Computed from account_status.
     |
-    | It is NOT a database column.
+    | There is NO is_active database column.
     |
     */
 
@@ -426,6 +463,26 @@ class User extends Authenticatable
     }
 
 
+    public function scopeSuspended(
+        Builder $query
+    ): Builder {
+        return $query->where(
+            'account_status',
+            self::STATUS_SUSPENDED
+        );
+    }
+
+
+    public function scopeBanned(
+        Builder $query
+    ): Builder {
+        return $query->where(
+            'account_status',
+            self::STATUS_BANNED
+        );
+    }
+
+
     /*
     |--------------------------------------------------------------------------
     | APPROVAL SCOPES
@@ -452,23 +509,125 @@ class User extends Authenticatable
     }
 
 
+    public function scopeRejected(
+        Builder $query
+    ): Builder {
+        return $query->where(
+            'approval_status',
+            self::APPROVAL_REJECTED
+        );
+    }
+
+
     /*
     |--------------------------------------------------------------------------
     | ROLE SCOPES
     |--------------------------------------------------------------------------
+    |
+    | These scopes make it easy to retrieve users by their Spatie role.
+    |
+    | Examples:
+    |
+    | User::tenants()->get();
+    | User::admins()->get();
+    | User::agents()->get();
+    |
     */
 
     public function scopeAdmins(
         Builder $query
-    ) {
+    ): Builder {
         return $query->role('admin');
     }
 
 
     public function scopeSuperAdmins(
         Builder $query
-    ) {
+    ): Builder {
         return $query->role('super-admin');
+    }
+
+
+    public function scopeAgents(
+        Builder $query
+    ): Builder {
+        return $query->role('agent');
+    }
+
+
+    public function scopeLandlords(
+        Builder $query
+    ): Builder {
+        return $query->role('landlord');
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | TENANT ROLE SCOPE
+    |--------------------------------------------------------------------------
+    |
+    | This retrieves ALL users who have the tenant Spatie role.
+    |
+    | IMPORTANT:
+    |
+    | This does NOT check the tenants table.
+    |
+    | Therefore:
+    |
+    | User with tenant role + tenant profile
+    |     -> included
+    |
+    | User with tenant role + no tenant profile
+    |     -> included
+    |
+    | User without tenant role
+    |     -> excluded
+    |
+    */
+
+    public function scopeTenants(
+        Builder $query
+    ): Builder {
+        return $query->role('tenant');
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | USERS WITHOUT TENANT PROFILE
+    |--------------------------------------------------------------------------
+    |
+    | Useful when creating a NEW tenant profile.
+    |
+    | This returns tenant-role users who do not already have a tenant profile.
+    |
+    */
+
+    public function scopeWithoutTenantProfile(
+        Builder $query
+    ): Builder {
+        return $query
+            ->role('tenant')
+            ->whereDoesntHave('tenant');
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | USERS WITH TENANT PROFILE
+    |--------------------------------------------------------------------------
+    |
+    | Returns tenant-role users who already have a tenant profile.
+    |
+    */
+
+    public function scopeWithTenantProfile(
+        Builder $query
+    ): Builder {
+        return $query
+            ->role('tenant')
+            ->whereHas('tenant');
     }
 
 
@@ -484,26 +643,55 @@ class User extends Authenticatable
 
 
         /*
-        |----------------------------------------------------------------------
-        | Creating
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
+        | CREATING
+        |--------------------------------------------------------------------------
         */
 
         static::creating(function (User $user) {
 
-            $user->account_status ??= self::STATUS_INACTIVE;
+            /*
+            |--------------------------------------------------------------------------
+            | Default Account Status
+            |--------------------------------------------------------------------------
+            */
 
-            $user->approval_status ??= self::APPROVAL_PENDING;
+            $user->account_status ??=
+                self::STATUS_INACTIVE;
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Default Approval Status
+            |--------------------------------------------------------------------------
+            */
+
+            $user->approval_status ??=
+                self::APPROVAL_PENDING;
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Default Verification
+            |--------------------------------------------------------------------------
+            */
 
             $user->is_verified ??= false;
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Default Banner
+            |--------------------------------------------------------------------------
+            */
 
             $user->is_banner ??= false;
 
 
             /*
-            |------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Generate Unique Slug
-            |------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($user->slug)) {
@@ -522,7 +710,10 @@ class User extends Authenticatable
                         $slug
                     )->exists()
                 ) {
-                    $slug = $baseSlug . '-' . $counter++;
+                    $slug =
+                        $baseSlug .
+                        '-' .
+                        $counter++;
                 }
 
                 $user->slug = $slug;
@@ -531,9 +722,13 @@ class User extends Authenticatable
 
 
         /*
-        |----------------------------------------------------------------------
-        | Delete Cloudinary Image On Permanent Delete
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
+        | FORCE DELETE
+        |--------------------------------------------------------------------------
+        |
+        | Delete the user's Cloudinary image when the User itself is
+        | permanently deleted.
+        |
         */
 
         static::forceDeleted(function (User $user) {
