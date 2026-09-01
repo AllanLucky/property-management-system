@@ -24,6 +24,11 @@ import {
   useState,
 } from "react";
 
+/*
+|--------------------------------------------------------------------------
+| STABLE EMPTY VALUES
+|--------------------------------------------------------------------------
+*/
 
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
@@ -35,10 +40,9 @@ const EMPTY_OBJECT = {};
 |
 | IMPORTANT:
 |
-| user_id connects the tenant profile to an EXISTING user account.
+| user_id refers to an EXISTING users.id.
 |
-| We DO NOT create another user from this form.
-| We DO NOT use tenant_id when creating a tenant.
+| This form does NOT create a new user account.
 |
 */
 
@@ -135,13 +139,10 @@ const DEFAULT_FORM = {
 
 /*
 |--------------------------------------------------------------------------
-| HELPERS
+| NORMALIZE BOOLEAN
 |--------------------------------------------------------------------------
 */
 
-/**
- * Normalize boolean values returned by Laravel/MySQL.
- */
 const normalizeBoolean = (
   value,
   fallback = false
@@ -173,12 +174,17 @@ const normalizeBoolean = (
   return fallback;
 };
 
-/**
- * Always return a safe string.
- *
- * This prevents React errors when the API returns
- * an object instead of a primitive value.
- */
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE STRING
+|--------------------------------------------------------------------------
+|
+| Prevents:
+|
+| Objects are not valid as a React child
+|
+*/
+
 const normalizeString = (value) => {
   if (
     value === undefined ||
@@ -195,6 +201,7 @@ const normalizeString = (value) => {
       value?.label ??
       value?.value ??
       value?.title ??
+      value?.text ??
       ""
     );
   }
@@ -202,9 +209,12 @@ const normalizeString = (value) => {
   return String(value).trim();
 };
 
-/**
- * Convert API date values to HTML date input format.
- */
+/*
+|--------------------------------------------------------------------------
+| FORMAT DATE
+|--------------------------------------------------------------------------
+*/
+
 const formatDateForInput = (
   value
 ) => {
@@ -239,9 +249,12 @@ const formatDateForInput = (
     .split("T")[0];
 };
 
-/**
- * Safely get the first available value.
- */
+/*
+|--------------------------------------------------------------------------
+| SAFE VALUE
+|--------------------------------------------------------------------------
+*/
+
 const getValue = (
   source,
   ...keys
@@ -359,19 +372,19 @@ const normalizeTenant = (
 ) => {
   const safeTenant =
     tenant &&
-      typeof tenant === "object"
+    typeof tenant === "object"
       ? tenant
       : {};
 
   const user =
     safeTenant?.user &&
-      typeof safeTenant.user === "object"
+    typeof safeTenant.user === "object"
       ? safeTenant.user
       : {};
 
   const emergencyContact =
     safeTenant?.emergency_contact &&
-      typeof safeTenant.emergency_contact === "object"
+    typeof safeTenant.emergency_contact === "object"
       ? safeTenant.emergency_contact
       : {};
 
@@ -717,7 +730,7 @@ const normalizeTenant = (
 | NORMALIZE USER OPTION
 |--------------------------------------------------------------------------
 |
-| Expected API response:
+| Backend:
 |
 | {
 |   id: 4,
@@ -728,8 +741,6 @@ const normalizeTenant = (
 |   phone: "0792491361"
 | }
 |
-| We also support nested user objects.
-|
 */
 
 const normalizeUserOption = (
@@ -737,13 +748,13 @@ const normalizeUserOption = (
 ) => {
   const safeUser =
     user &&
-      typeof user === "object"
+    typeof user === "object"
       ? user
       : {};
 
   const nestedUser =
     safeUser?.user &&
-      typeof safeUser.user === "object"
+    typeof safeUser.user === "object"
       ? safeUser.user
       : {};
 
@@ -782,8 +793,10 @@ const normalizeUserOption = (
   const suppliedName =
     safeUser?.name ??
     safeUser?.full_name ??
+    safeUser?.fullName ??
     nestedUser?.name ??
     nestedUser?.full_name ??
+    nestedUser?.fullName ??
     "";
 
   const safeFirstName =
@@ -815,37 +828,87 @@ const normalizeUserOption = (
     `${safeFirstName} ${safeLastName}`
       .trim();
 
+  const safeId =
+    id !== "" &&
+    id !== null &&
+    id !== undefined
+      ? String(id)
+      : "";
+
   const name =
     safeSuppliedName ||
     generatedName ||
     safeEmail ||
     (
-      id !== "" &&
-        id !== null &&
-        id !== undefined
-        ? `User #${id}`
+      safeId
+        ? `User #${safeId}`
         : "Unnamed User"
     );
 
-  const safeId =
-    id !== "" &&
-      id !== null &&
-      id !== undefined
-      ? String(id)
-      : "";
-
   return {
+    ...safeUser,
+
     id: safeId,
+
+    user_id:
+      safeId,
+
     first_name:
       safeFirstName,
+
     last_name:
       safeLastName,
+
     email:
       safeEmail,
+
     phone:
       safePhone,
+
     name,
   };
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE USER COLLECTION
+|--------------------------------------------------------------------------
+*/
+
+const normalizeUserCollection = (
+  users
+) => {
+  if (
+    !Array.isArray(users)
+  ) {
+    return [];
+  }
+
+  const normalized =
+    users
+      .map(
+        normalizeUserOption
+      )
+      .filter(
+        (user) =>
+          Boolean(user.id)
+      );
+
+  const uniqueUsers =
+    new Map();
+
+  normalized.forEach(
+    (user) => {
+      uniqueUsers.set(
+        String(user.id),
+        user
+      );
+    }
+  );
+
+  return Array.from(
+    uniqueUsers.values()
+  );
 };
 
 /*
@@ -862,13 +925,13 @@ const buildInitialForm = (
   const normalizedTenant =
     isEdit
       ? normalizeTenant(
-        tenant
-      )
+          tenant
+        )
       : {};
 
   const safeInitialValues =
     initialValues &&
-      typeof initialValues === "object"
+    typeof initialValues === "object"
       ? initialValues
       : {};
 
@@ -897,7 +960,7 @@ const buildInitialForm = (
 
   /*
   |--------------------------------------------------------------------------
-  | BOOLEANS
+  | BOOLEAN VALUES
   |--------------------------------------------------------------------------
   */
 
@@ -992,7 +1055,31 @@ const buildInitialForm = (
 
 const TenantForm = ({
   tenant = null,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE TENANT USERS
+  |--------------------------------------------------------------------------
+  */
+
   users = EMPTY_ARRAY,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE USER LOADING
+  |--------------------------------------------------------------------------
+  */
+
+  availableUsersLoading = false,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE USER ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  availableUsersError = null,
+
   mode = "create",
   loading = false,
   submitting = false,
@@ -1030,86 +1117,69 @@ const TenantForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | NORMALIZE USERS
+  | NORMALIZE AVAILABLE USERS
   |--------------------------------------------------------------------------
   */
 
   const normalizedUsers =
-    useMemo(() => {
-      if (
-        !Array.isArray(users)
-      ) {
-        return [];
-      }
-
-      const mapped =
-        users
-          .map(
-            normalizeUserOption
-          )
-          .filter(
-            (user) =>
-              user.id !== ""
-          );
-
-      /*
-      |--------------------------------------------------------------------------
-      | Remove duplicate user IDs.
-      |--------------------------------------------------------------------------
-      */
-
-      const uniqueUsers =
-        new Map();
-
-      mapped.forEach(
-        (user) => {
-          uniqueUsers.set(
-            String(user.id),
-            user
-          );
-        }
-      );
-
-      return Array.from(
-        uniqueUsers.values()
-      );
-    }, [users]);
+    useMemo(
+      () =>
+        normalizeUserCollection(
+          users
+        ),
+      [users]
+    );
 
   /*
   |--------------------------------------------------------------------------
-  | USER OPTIONS
+  | CURRENT TENANT USER
   |--------------------------------------------------------------------------
-  |
-  | In edit mode, the current tenant user may not be returned by
-  | the "available users" endpoint because that endpoint normally
-  | returns users who are not already tenants.
-  |
-  | Therefore we inject the current tenant user into the options.
-  |
   */
 
-  const userOptions =
+  const currentTenantUser =
     useMemo(() => {
-      const options = [
-        ...normalizedUsers,
-      ];
+      if (!isEdit) {
+        return null;
+      }
 
       const currentUserId =
         String(
           form.user_id || ""
         );
 
-      if (
-        currentUserId &&
-        !options.some(
+      if (!currentUserId) {
+        return null;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | First try the available-user list.
+      |--------------------------------------------------------------------------
+      */
+
+      const existingUser =
+        normalizedUsers.find(
           (user) =>
             String(user.id) ===
             currentUserId
-        )
-      ) {
-        const tenantUser =
-          normalizeUserOption(
-            tenant?.user || {
+        );
+
+      if (existingUser) {
+        return existingUser;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | If the current tenant user is not in the available-user
+      | endpoint, construct it from the tenant relationship.
+      |--------------------------------------------------------------------------
+      */
+
+      const tenantUser =
+        tenant?.user &&
+        typeof tenant.user === "object"
+          ? tenant.user
+          : {
               id: currentUserId,
 
               first_name:
@@ -1126,47 +1196,66 @@ const TenantForm = ({
 
               phone:
                 tenant?.phone,
-            }
-          );
+            };
 
-        if (
-          tenantUser.id
-        ) {
-          options.unshift(
-            tenantUser
-          );
-        }
-      }
+      const normalized =
+        normalizeUserOption({
+          ...tenantUser,
+          id: currentUserId,
+        });
 
-      return options;
+      return normalized.id
+        ? normalized
+        : null;
     }, [
-      normalizedUsers,
+      isEdit,
       form.user_id,
+      normalizedUsers,
       tenant,
     ]);
 
   /*
   |--------------------------------------------------------------------------
-  | RESET FORM WHEN TENANT CHANGES
+  | USER OPTIONS
+  |--------------------------------------------------------------------------
+  */
+
+  const userOptions =
+    useMemo(() => {
+      const options = [
+        ...normalizedUsers,
+      ];
+
+      if (
+        currentTenantUser &&
+        !options.some(
+          (user) =>
+            String(user.id) ===
+            String(
+              currentTenantUser.id
+            )
+        )
+      ) {
+        options.unshift(
+          currentTenantUser
+        );
+      }
+
+      return options;
+    }, [
+      normalizedUsers,
+      currentTenantUser,
+    ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESET FORM WHEN EDIT TARGET CHANGES
   |--------------------------------------------------------------------------
   |
-  | IMPORTANT FIX:
-  |
-  | DO NOT put `initialValues` here.
-  |
-  | If the parent passes:
-  |
-  |   initialValues={{}}
-  |
-  | React receives a NEW object on every render.
-  |
-  | This effect calls setForm(), causing another render, which creates
-  | another object, which triggers the effect again, producing:
-  |
-  | Maximum update depth exceeded.
-  |
-  | We therefore reset only when the actual tenant/edit target changes.
-  |
+  | We intentionally do not use the entire `initialValues` object
+  | as an effect dependency because parents may create a new object
+  | reference on every render.
+  |--------------------------------------------------------------------------
   */
 
   useEffect(() => {
@@ -1227,10 +1316,7 @@ const TenantForm = ({
       Object.entries(
         validationErrors
       ).forEach(
-        ([
-          field,
-          message,
-        ]) => {
+        ([field, message]) => {
           normalizedErrors[
             field
           ] =
@@ -1238,11 +1324,14 @@ const TenantForm = ({
               message
             )
               ? message
-                .filter(Boolean)
-                .join(" ")
+                  .filter(Boolean)
+                  .map(
+                    normalizeString
+                  )
+                  .join(" ")
               : normalizeString(
-                message
-              );
+                  message
+                );
         }
       );
 
@@ -1269,6 +1358,42 @@ const TenantForm = ({
         : "Something went wrong. Please check the form and try again."
     );
   }, [error]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE USER ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  useEffect(() => {
+    if (
+      !availableUsersError
+    ) {
+      return;
+    }
+
+    const responseData =
+      availableUsersError?.response
+        ?.data ||
+      availableUsersError?.data ||
+      availableUsersError;
+
+    const message =
+      responseData?.message ||
+      responseData?.error ||
+      availableUsersError?.message ||
+      "";
+
+    if (message) {
+      setServerError(
+        normalizeString(
+          message
+        )
+      );
+    }
+  }, [
+    availableUsersError,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1308,12 +1433,6 @@ const TenantForm = ({
           ...current,
         };
 
-        /*
-        |--------------------------------------------------------------------------
-        | ID / PASSPORT SHARE THE SAME VALIDATION RULE.
-        |--------------------------------------------------------------------------
-        */
-
         if (
           name === "id_number" ||
           name === "passport_number"
@@ -1343,8 +1462,6 @@ const TenantForm = ({
   | email
   | phone
   |
-  | These values can still be edited afterwards if necessary.
-  |
   */
 
   const handleUserChange = (
@@ -1358,9 +1475,8 @@ const TenantForm = ({
     const selectedUser =
       userOptions.find(
         (user) =>
-          String(
-            user.id
-          ) === userId
+          String(user.id) ===
+          userId
       );
 
     setForm(
@@ -1372,22 +1488,22 @@ const TenantForm = ({
 
         ...(selectedUser
           ? {
-            first_name:
-              selectedUser.first_name ||
-              current.first_name,
+              first_name:
+                selectedUser.first_name ||
+                current.first_name,
 
-            last_name:
-              selectedUser.last_name ||
-              current.last_name,
+              last_name:
+                selectedUser.last_name ||
+                current.last_name,
 
-            email:
-              selectedUser.email ||
-              current.email,
+              email:
+                selectedUser.email ||
+                current.email,
 
-            phone:
-              selectedUser.phone ||
-              current.phone,
-          }
+              phone:
+                selectedUser.phone ||
+                current.phone,
+            }
           : {}),
       })
     );
@@ -1756,25 +1872,27 @@ const TenantForm = ({
         emergencyRelationship
       );
 
+    const userId =
+      normalizeString(
+        form.user_id
+      );
+
     return {
       /*
       |--------------------------------------------------------------------------
-      | USER RELATION
+      | EXISTING USER RELATION
       |--------------------------------------------------------------------------
       |
-      | IMPORTANT:
+      | This MUST be the existing users.id.
       |
-      | user_id is the existing users.id.
-      |
-      | tenant_id is NOT sent.
+      | No tenant_id is sent.
       |
       */
 
-      user_id: form.user_id
-        ? Number(
-          form.user_id
-        )
-        : null,
+      user_id:
+        userId
+          ? Number(userId)
+          : null,
 
       /*
       |--------------------------------------------------------------------------
@@ -1825,8 +1943,8 @@ const TenantForm = ({
       date_of_birth:
         form.date_of_birth
           ? formatDateForInput(
-            form.date_of_birth
-          )
+              form.date_of_birth
+            )
           : null,
 
       nationality:
@@ -1917,8 +2035,8 @@ const TenantForm = ({
           form.monthly_income
         )
           ? Number(
-            form.monthly_income
-          )
+              form.monthly_income
+            )
           : null,
 
       /*
@@ -2015,7 +2133,7 @@ const TenantForm = ({
         tenant
       );
     } catch (
-    submitError
+      submitError
     ) {
       const responseData =
         submitError?.response
@@ -2025,7 +2143,8 @@ const TenantForm = ({
 
       if (
         responseData?.errors &&
-        typeof responseData.errors === "object"
+        typeof responseData.errors ===
+          "object"
       ) {
         const validationErrors =
           {};
@@ -2033,10 +2152,7 @@ const TenantForm = ({
         Object.entries(
           responseData.errors
         ).forEach(
-          ([
-            field,
-            message,
-          ]) => {
+          ([field, message]) => {
             validationErrors[
               field
             ] =
@@ -2044,11 +2160,14 @@ const TenantForm = ({
                 message
               )
                 ? message
-                  .filter(Boolean)
-                  .join(" ")
+                    .filter(Boolean)
+                    .map(
+                      normalizeString
+                    )
+                    .join(" ")
                 : normalizeString(
-                  message
-                );
+                    message
+                  );
           }
         );
 
@@ -2071,7 +2190,7 @@ const TenantForm = ({
 
       /*
       |--------------------------------------------------------------------------
-      | Keep original error available to parent.
+      | KEEP ORIGINAL ERROR AVAILABLE TO PARENT
       |--------------------------------------------------------------------------
       */
 
@@ -2100,13 +2219,15 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const formTitle = isEdit
-    ? "Update Tenant"
-    : "Create Tenant";
+  const formTitle =
+    isEdit
+      ? "Update Tenant"
+      : "Create Tenant";
 
-  const submitLabel = isEdit
-    ? "Update Tenant"
-    : "Create Tenant";
+  const submitLabel =
+    isEdit
+      ? "Update Tenant"
+      : "Create Tenant";
 
   const fieldError = (
     field
@@ -2117,9 +2238,11 @@ const TenantForm = ({
     if (
       Array.isArray(error)
     ) {
-      return error.join(
-        " "
-      );
+      return error
+        .map(
+          normalizeString
+        )
+        .join(" ");
     }
 
     return normalizeString(
@@ -2249,52 +2372,52 @@ const TenantForm = ({
 
         {(serverError ||
           hasErrors) && (
-            <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
-              <div className="flex gap-3">
-                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
 
-                <div>
-                  <p className="text-sm font-semibold text-red-800">
-                    Please check the form
+              <div>
+                <p className="text-sm font-semibold text-red-800">
+                  Please check the form
+                </p>
+
+                {serverError && (
+                  <p className="mt-1 text-sm text-red-700">
+                    {serverError}
                   </p>
+                )}
 
-                  {serverError && (
-                    <p className="mt-1 text-sm text-red-700">
-                      {serverError}
-                    </p>
-                  )}
-
-                  {hasErrors && (
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
-                      {Object.entries(
-                        errors
+                {hasErrors && (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
+                    {Object.entries(
+                      errors
+                    )
+                      .slice(
+                        0,
+                        8
                       )
-                        .slice(
-                          0,
-                          8
+                      .map(
+                        ([
+                          field,
+                          message,
+                        ]) => (
+                          <li
+                            key={
+                              field
+                            }
+                          >
+                            {normalizeString(
+                              message
+                            )}
+                          </li>
                         )
-                        .map(
-                          ([
-                            field,
-                            message,
-                          ]) => (
-                            <li
-                              key={
-                                field
-                              }
-                            >
-                              {normalizeString(
-                                message
-                              )}
-                            </li>
-                          )
-                        )}
-                    </ul>
-                  )}
-                </div>
+                      )}
+                  </ul>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        )}
       </div>
 
       {/* TENANT USER ACCOUNT */}
@@ -2323,33 +2446,84 @@ const TenantForm = ({
             )}
             required
             disabled={
-              submitting
+              submitting ||
+              availableUsersLoading
             }
             options={[
               {
                 value: "",
                 label:
-                  userOptions.length > 0
-                    ? "Select tenant user"
-                    : "No tenant users available",
+                  availableUsersLoading
+                    ? "Loading tenant users..."
+                    : userOptions.length >
+                        0
+                      ? "Select tenant user"
+                      : "No tenant users available",
               },
 
               ...userOptions.map(
                 (user) => ({
                   value:
-                    user.id,
+                    String(
+                      user.id
+                    ),
 
                   label:
-                    user.name +
+                    normalizeString(
+                      user.name
+                    ) +
                     (
                       user.email
-                        ? ` — ${user.email}`
+                        ? ` — ${normalizeString(
+                            user.email
+                          )}`
                         : ""
                     ),
                 })
               ),
             ]}
           />
+
+          {/* USER LOADING */}
+
+          {availableUsersLoading && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+
+              <p className="text-xs text-blue-700">
+                Loading available tenant users...
+              </p>
+            </div>
+          )}
+
+          {/* USER API ERROR */}
+
+          {availableUsersError && (
+            <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+              <div className="flex gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+
+                <div>
+                  <p className="text-xs font-semibold text-red-800">
+                    Unable to load tenant users.
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-red-700">
+                    {normalizeString(
+                      availableUsersError?.response
+                        ?.data?.message ||
+                      availableUsersError
+                        ?.data?.message ||
+                      availableUsersError?.message ||
+                      availableUsersError
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* INFORMATION */}
 
           <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
             <div className="flex gap-2">
@@ -2360,7 +2534,8 @@ const TenantForm = ({
                 <strong>
                   tenant
                 </strong>{" "}
-                role. The selected user's ID will be stored as{" "}
+                role. The selected user's ID will be
+                stored as{" "}
                 <strong>
                   user_id
                 </strong>{" "}
@@ -2369,21 +2544,27 @@ const TenantForm = ({
             </div>
           </div>
 
-          {userOptions.length ===
-            0 && (
+          {/* NO USERS */}
+
+          {!availableUsersLoading &&
+            userOptions.length ===
+              0 && (
               <p className="mt-2 text-xs text-amber-600">
-                No tenant users were provided.
-                Create or assign users the tenant
-                role first, then return here.
+                No tenant users are currently available.
+                Make sure users have the tenant role and
+                are not already linked to another tenant.
               </p>
             )}
 
-          {userOptions.length >
-            0 && (
+          {/* USER COUNT */}
+
+          {!availableUsersLoading &&
+            userOptions.length >
+              0 && (
               <p className="mt-2 text-xs text-gray-400">
                 {userOptions.length} tenant user
                 {userOptions.length ===
-                  1
+                1
                   ? ""
                   : "s"}{" "}
                 available.
@@ -2568,16 +2749,22 @@ const TenantForm = ({
                   "Select gender",
               },
               {
-                value: "male",
-                label: "Male",
+                value:
+                  "male",
+                label:
+                  "Male",
               },
               {
-                value: "female",
-                label: "Female",
+                value:
+                  "female",
+                label:
+                  "Female",
               },
               {
-                value: "other",
-                label: "Other",
+                value:
+                  "other",
+                label:
+                  "Other",
               },
             ]}
           />
@@ -2984,7 +3171,8 @@ const TenantForm = ({
               {
                 value:
                   "active",
-                label: "Active",
+                label:
+                  "Active",
               },
               {
                 value:
@@ -3208,11 +3396,11 @@ const InputField = ({
           type={type}
           value={
             value === null ||
-              value === undefined
+            value === undefined
               ? ""
               : normalizeString(
-                value
-              )
+                  value
+                )
           }
           onChange={
             onChange
@@ -3238,13 +3426,15 @@ const InputField = ({
                 ? hintId
                 : undefined
           }
-          className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${icon
-            ? "pl-10"
-            : ""
-            } ${hasError
+          className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+            icon
+              ? "pl-10"
+              : ""
+          } ${
+            hasError
               ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
               : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            }`}
+          }`}
         />
       </div>
 
@@ -3314,7 +3504,7 @@ const SelectField = ({
           name={name}
           value={
             value === null ||
-              value === undefined
+            value === undefined
               ? ""
               : String(value)
           }
@@ -3327,10 +3517,11 @@ const SelectField = ({
           aria-invalid={
             hasError
           }
-          className={`h-10 w-full appearance-none rounded-lg border bg-white px-3 pr-10 text-sm text-gray-900 outline-none transition disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${hasError
-            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            }`}
+          className={`h-10 w-full appearance-none rounded-lg border bg-white px-3 pr-10 text-sm text-gray-900 outline-none transition disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+            hasError
+              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          }`}
         >
           {Array.isArray(
             options
@@ -3343,7 +3534,7 @@ const SelectField = ({
                 <option
                   key={`${String(
                     option?.value ??
-                    ""
+                      ""
                   )}-${index}`}
                   value={
                     option?.value ??
@@ -3414,11 +3605,11 @@ const TextAreaField = ({
         name={name}
         value={
           value === null ||
-            value === undefined
+          value === undefined
             ? ""
             : normalizeString(
-              value
-            )
+                value
+              )
         }
         onChange={
           onChange
@@ -3433,10 +3624,11 @@ const TextAreaField = ({
         aria-invalid={
           hasError
         }
-        className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${hasError
-          ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-          : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-          }`}
+        className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+          hasError
+            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+        }`}
       />
 
       {error && (
@@ -3469,10 +3661,11 @@ const ToggleField = ({
   return (
     <label
       htmlFor={name}
-      className={`flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 transition ${disabled
-        ? "cursor-not-allowed opacity-60"
-        : "cursor-pointer hover:bg-gray-100"
-        }`}
+      className={`flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 transition ${
+        disabled
+          ? "cursor-not-allowed opacity-60"
+          : "cursor-pointer hover:bg-gray-100"
+      }`}
     >
       <div>
         <p className="text-sm font-medium text-gray-800">
@@ -3510,4 +3703,3 @@ const ToggleField = ({
 };
 
 export default TenantForm;
-

@@ -3,15 +3,27 @@ import {
   Loader2,
   UserRoundPen,
 } from "lucide-react";
+
 import {
   Link,
   useNavigate,
   useParams,
 } from "react-router-dom";
+
 import Swal from "sweetalert2";
-import { useEffect, useMemo } from "react";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+} from "react";
+
+import {
+  useSelector,
+} from "react-redux";
 
 import TenantForm from "./TenantForm";
+
 import { useTenant } from "../../../hooks/useTenant";
 
 /*
@@ -23,11 +35,13 @@ import { useTenant } from "../../../hooks/useTenant";
 |
 | 1. Read tenant ID from the route.
 | 2. Load the tenant from the API.
-| 3. Display a loading state while fetching.
-| 4. Display an error/not-found state when loading fails.
-| 5. Pass the loaded tenant to TenantForm.
-| 6. Submit tenant updates through useTenant().
-| 7. Redirect to the tenant details page after success.
+| 3. Load available users with the tenant role.
+| 4. Display a loading state while fetching.
+| 5. Display an error/not-found state when loading fails.
+| 6. Pass the loaded tenant to TenantForm.
+| 7. Pass available tenant users to TenantForm.
+| 8. Submit tenant updates through useTenant().
+| 9. Redirect to the tenant details page after success.
 |
 |--------------------------------------------------------------------------
 */
@@ -52,6 +66,10 @@ const EditTenant = () => {
     editTenant,
     clear,
     clearError,
+    availableTenantUsers,
+    loadingAvailableUsers,
+    availableTenantUsersError,
+    getAvailableTenantUsers,
   } = useTenant();
 
   /*
@@ -76,10 +94,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | NORMALIZE TENANT ID
   |--------------------------------------------------------------------------
-  |
-  | Route params are strings.
-  | The backend may expect a numeric ID.
-  |
   */
 
   const tenantId = useMemo(() => {
@@ -93,6 +107,274 @@ const EditTenant = () => {
       ? parsed
       : null;
   }, [id]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | NORMALIZE AVAILABLE USERS
+  |--------------------------------------------------------------------------
+  |
+  | Protect the form from unexpected Redux/API shapes.
+  |
+  */
+
+  const normalizedAvailableUsers = useMemo(() => {
+    if (
+      !Array.isArray(
+        availableTenantUsers
+      )
+    ) {
+      return [];
+    }
+
+    const seen = new Set();
+
+    return availableTenantUsers
+      .map((user) => {
+        if (
+          !user ||
+          typeof user !== "object"
+        ) {
+          return null;
+        }
+
+        const userId =
+          user?.id ??
+          user?.user_id ??
+          null;
+
+        if (
+          userId === null ||
+          userId === undefined ||
+          String(userId).trim() === ""
+        ) {
+          return null;
+        }
+
+        const normalizedId =
+          String(userId);
+
+        if (
+          seen.has(normalizedId)
+        ) {
+          return null;
+        }
+
+        seen.add(normalizedId);
+
+        const firstName =
+          user?.first_name ??
+          user?.firstName ??
+          "";
+
+        const lastName =
+          user?.last_name ??
+          user?.lastName ??
+          "";
+
+        const name =
+          user?.name ??
+          user?.full_name ??
+          user?.fullName ??
+          [
+            firstName,
+            lastName,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+
+        return {
+          ...user,
+
+          id: userId,
+
+          user_id:
+            user?.user_id ??
+            userId,
+
+          first_name:
+            String(
+              firstName ?? ""
+            ).trim(),
+
+          last_name:
+            String(
+              lastName ?? ""
+            ).trim(),
+
+          name:
+            String(
+              name || "Unnamed User"
+            ).trim(),
+
+          email:
+            String(
+              user?.email ?? ""
+            ).trim(),
+
+          phone:
+            String(
+              user?.phone ??
+              user?.phone_number ??
+              ""
+            ).trim(),
+        };
+      })
+      .filter(Boolean);
+  }, [
+    availableTenantUsers,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | CURRENT TENANT USER
+  |--------------------------------------------------------------------------
+  |
+  | The available-users endpoint intentionally returns users that are not
+  | already assigned to another tenant.
+  |
+  | When editing an existing tenant, its current user may therefore not
+  | appear in availableTenantUsers.
+  |
+  | We add the current user back into the form options so the existing
+  | assignment remains selectable.
+  |
+  */
+
+  const tenantUser = useMemo(() => {
+    if (!tenant) {
+      return null;
+    }
+
+    const user =
+      tenant?.user || {};
+
+    const userId =
+      tenant?.user_id ??
+      user?.id ??
+      user?.user_id ??
+      null;
+
+    if (
+      userId === null ||
+      userId === undefined ||
+      String(userId).trim() === ""
+    ) {
+      return null;
+    }
+
+    const firstName =
+      tenant?.first_name ??
+      user?.first_name ??
+      "";
+
+    const lastName =
+      tenant?.last_name ??
+      user?.last_name ??
+      "";
+
+    const name =
+      user?.name ??
+      user?.full_name ??
+      user?.fullName ??
+      tenant?.full_name ??
+      tenant?.name ??
+      [
+        firstName,
+        lastName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+    return {
+      ...user,
+
+      id: userId,
+
+      user_id:
+        user?.user_id ??
+        userId,
+
+      first_name:
+        String(
+          firstName ?? ""
+        ).trim(),
+
+      last_name:
+        String(
+          lastName ?? ""
+        ).trim(),
+
+      name:
+        String(
+          name || "Current Tenant User"
+        ).trim(),
+
+      email:
+        String(
+          tenant?.email ??
+          user?.email ??
+          ""
+        ).trim(),
+
+      phone:
+        String(
+          tenant?.phone ??
+          user?.phone ??
+          user?.phone_number ??
+          ""
+        ).trim(),
+    };
+  }, [tenant]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | FORM USERS
+  |--------------------------------------------------------------------------
+  |
+  | Start with the available tenant users.
+  |
+  | Then inject the currently assigned user when editing if that user is
+  | not already included.
+  |
+  */
+
+  const formUsers = useMemo(() => {
+    const users = [
+      ...normalizedAvailableUsers,
+    ];
+
+    if (!tenantUser) {
+      return users;
+    }
+
+    const currentUserId =
+      String(
+        tenantUser.id
+      );
+
+    const alreadyIncluded =
+      users.some(
+        (user) =>
+          String(
+            user?.id ??
+            user?.user_id ??
+            ""
+          ) === currentUserId
+      );
+
+    if (!alreadyIncluded) {
+      users.unshift({
+        ...tenantUser,
+      });
+    }
+
+    return users;
+  }, [
+    normalizedAvailableUsers,
+    tenantUser,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -143,16 +425,6 @@ const EditTenant = () => {
 
         await getTenant(tenantId);
       } catch (fetchError) {
-        /*
-        |--------------------------------------------------------------------------
-        | ERROR
-        |--------------------------------------------------------------------------
-        |
-        | useTenant() already stores the API error.
-        | We only log it here for development/debugging.
-        |
-        */
-
         if (!cancelled) {
           console.error(
             "Failed to load tenant:",
@@ -174,22 +446,112 @@ const EditTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | LOAD AVAILABLE TENANT USERS
+  |--------------------------------------------------------------------------
+  |
+  | This is separate from loading the tenant itself.
+  |
+  | The endpoint returns users who already have the tenant role and are
+  | currently available to be linked to a tenant.
+  |
+  */
+
+  const loadAvailableUsers =
+    useCallback(
+      async () => {
+        try {
+          console.log(
+            "[EditTenant] Fetching available tenant users..."
+          );
+
+          const result =
+            await getAvailableTenantUsers();
+
+          console.log(
+            "[EditTenant] Available tenant users:",
+            result
+          );
+
+          return result;
+        } catch (fetchError) {
+          console.error(
+            "[EditTenant] Failed to load available tenant users:",
+            fetchError
+          );
+
+          return null;
+        }
+      },
+      [getAvailableTenantUsers]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | FETCH AVAILABLE USERS WHEN PAGE OPENS
+  |--------------------------------------------------------------------------
+  |
+  | We intentionally keep this effect dependent on the callback supplied
+  | by useTenant. The callback itself should be memoized by useTenant.
+  |
+  */
+
+  useEffect(() => {
+    loadAvailableUsers();
+  }, [
+    loadAvailableUsers,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | DEBUG AVAILABLE USERS
+  |--------------------------------------------------------------------------
+  */
+
+  useEffect(() => {
+    console.log(
+      "[EditTenant] Available tenant users:",
+      formUsers
+    );
+
+    console.log(
+      "[EditTenant] Available tenant users loading:",
+      loadingAvailableUsers
+    );
+
+    console.log(
+      "[EditTenant] Available tenant users error:",
+      availableTenantUsersError
+    );
+  }, [
+    formUsers,
+    loadingAvailableUsers,
+    availableTenantUsersError,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
   | UPDATE TENANT
   |--------------------------------------------------------------------------
   */
 
-  const handleUpdate = async (payload) => {
+  const handleUpdate = async (
+    payload
+  ) => {
     if (!tenantId) {
-      const errorObject = new Error(
-        "Tenant ID is missing."
-      );
+      const errorObject =
+        new Error(
+          "Tenant ID is missing."
+        );
 
       await Swal.fire({
         icon: "error",
-        title: "Unable to Update Tenant",
-        text: errorObject.message,
+        title:
+          "Unable to Update Tenant",
+        text:
+          errorObject.message,
         confirmButtonText: "OK",
-        confirmButtonColor: "#dc2626",
+        confirmButtonColor:
+          "#dc2626",
       });
 
       throw errorObject;
@@ -222,10 +584,11 @@ const EditTenant = () => {
       |--------------------------------------------------------------------------
       */
 
-      const result = await editTenant(
-        tenantId,
-        payload
-      );
+      const result =
+        await editTenant(
+          tenantId,
+          payload
+        );
 
       /*
       |--------------------------------------------------------------------------
@@ -240,10 +603,14 @@ const EditTenant = () => {
 
       await Swal.fire({
         icon: "success",
-        title: "Tenant Updated",
-        text: successMessage,
-        confirmButtonText: "View Tenant",
-        confirmButtonColor: "#2563eb",
+        title:
+          "Tenant Updated",
+        text:
+          successMessage,
+        confirmButtonText:
+          "View Tenant",
+        confirmButtonColor:
+          "#2563eb",
       });
 
       /*
@@ -253,7 +620,9 @@ const EditTenant = () => {
       */
 
       navigate(
-        TENANT_ROUTES.show(tenantId)
+        TENANT_ROUTES.show(
+          tenantId
+        )
       );
 
       return result;
@@ -276,8 +645,10 @@ const EditTenant = () => {
       */
 
       const possibleMessage =
-        submitError?.response?.data?.message ||
-        submitError?.response?.data?.error ||
+        submitError?.response
+          ?.data?.message ||
+        submitError?.response
+          ?.data?.error ||
         submitError?.message ||
         submitError?.error ||
         updateError?.message ||
@@ -285,7 +656,8 @@ const EditTenant = () => {
         updateError;
 
       const displayMessage =
-        typeof possibleMessage === "string"
+        typeof possibleMessage ===
+          "string"
           ? possibleMessage
           : possibleMessage?.message ||
           "Failed to update tenant. Please try again.";
@@ -298,19 +670,20 @@ const EditTenant = () => {
 
       await Swal.fire({
         icon: "error",
-        title: "Unable to Update Tenant",
-        text: displayMessage,
-        confirmButtonText: "Try Again",
-        confirmButtonColor: "#dc2626",
+        title:
+          "Unable to Update Tenant",
+        text:
+          displayMessage,
+        confirmButtonText:
+          "Try Again",
+        confirmButtonColor:
+          "#dc2626",
       });
 
       /*
       |--------------------------------------------------------------------------
-      | IMPORTANT
+      | RE-THROW
       |--------------------------------------------------------------------------
-      |
-      | Re-throw so TenantForm can also handle its local submitting state.
-      |
       */
 
       throw submitError;
@@ -326,7 +699,9 @@ const EditTenant = () => {
   const handleCancel = () => {
     if (tenantId) {
       navigate(
-        TENANT_ROUTES.show(tenantId)
+        TENANT_ROUTES.show(
+          tenantId
+        )
       );
 
       return;
@@ -355,18 +730,58 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const getErrorMessage = (value) => {
+  const getErrorMessage = (
+    value
+  ) => {
     if (!value) {
       return "";
     }
 
-    if (typeof value === "string") {
+    if (
+      typeof value ===
+      "string"
+    ) {
       return value;
     }
 
+    if (
+      value?.response?.data
+    ) {
+      return (
+        value.response.data.message ||
+        value.response.data.error ||
+        getErrorMessage(
+          value.response.data
+        )
+      );
+    }
+
+    if (
+      value?.errors &&
+      typeof value.errors ===
+      "object"
+    ) {
+      const messages =
+        Object.values(
+          value.errors
+        )
+          .flat()
+          .filter(
+            (message) =>
+              typeof message ===
+              "string"
+          );
+
+      if (
+        messages.length
+      ) {
+        return messages.join(
+          " "
+        );
+      }
+    }
+
     return (
-      value?.response?.data?.message ||
-      value?.response?.data?.error ||
       value?.message ||
       value?.error ||
       "Unable to process tenant request."
@@ -383,6 +798,7 @@ const EditTenant = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* HEADER */}
+
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -403,7 +819,9 @@ const EditTenant = () => {
               </div>
 
               <Link
-                to={TENANT_ROUTES.index}
+                to={
+                  TENANT_ROUTES.index
+                }
                 className="
                   inline-flex
                   w-full
@@ -429,6 +847,7 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
+
                 Back to Tenants
               </Link>
             </div>
@@ -436,6 +855,7 @@ const EditTenant = () => {
         </div>
 
         {/* CONTENT */}
+
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-red-200 bg-white p-8 text-center shadow-sm">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
@@ -447,13 +867,17 @@ const EditTenant = () => {
             </h2>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-              We could not determine which tenant you want to edit.
-              Please return to the tenant list and select a valid tenant.
+              We could not determine which
+              tenant you want to edit. Please
+              return to the tenant list and
+              select a valid tenant.
             </p>
 
             <button
               type="button"
-              onClick={handleBack}
+              onClick={
+                handleBack
+              }
               className="
                 mt-5
                 inline-flex
@@ -476,6 +900,7 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
+
               Back to Tenants
             </button>
           </div>
@@ -490,10 +915,14 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  if (loadingTenant && !tenant) {
+  if (
+    loadingTenant &&
+    !tenant
+  ) {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* HEADER */}
+
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -514,7 +943,9 @@ const EditTenant = () => {
               </div>
 
               <Link
-                to={TENANT_ROUTES.index}
+                to={
+                  TENANT_ROUTES.index
+                }
                 className="
                   inline-flex
                   w-full
@@ -540,6 +971,7 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
+
                 Back to Tenants
               </Link>
             </div>
@@ -547,6 +979,7 @@ const EditTenant = () => {
         </div>
 
         {/* LOADING CONTENT */}
+
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="flex min-h-[450px] items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="flex flex-col items-center text-center">
@@ -574,16 +1007,23 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  if (!loadingTenant && !tenant) {
-    const loadError = error || updateError;
+  if (
+    !loadingTenant &&
+    !tenant
+  ) {
+    const loadError =
+      error || updateError;
 
     const errorMessage =
-      getErrorMessage(loadError) ||
+      getErrorMessage(
+        loadError
+      ) ||
       "Failed to load tenant.";
 
     return (
       <div className="min-h-screen bg-gray-50">
         {/* HEADER */}
+
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -604,7 +1044,9 @@ const EditTenant = () => {
               </div>
 
               <Link
-                to={TENANT_ROUTES.index}
+                to={
+                  TENANT_ROUTES.index
+                }
                 className="
                   inline-flex
                   w-full
@@ -627,6 +1069,7 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
+
                 Back to Tenants
               </Link>
             </div>
@@ -634,6 +1077,7 @@ const EditTenant = () => {
         </div>
 
         {/* CONTENT */}
+
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
@@ -645,9 +1089,10 @@ const EditTenant = () => {
             </h2>
 
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-gray-500">
-              The tenant you are trying to edit does not exist,
-              may have been deleted, or could not be loaded from
-              the server.
+              The tenant you are trying to edit
+              does not exist, may have been
+              deleted, or could not be loaded
+              from the server.
             </p>
 
             {loadError && (
@@ -664,7 +1109,9 @@ const EditTenant = () => {
 
             <button
               type="button"
-              onClick={handleBack}
+              onClick={
+                handleBack
+              }
               className="
                 mt-5
                 inline-flex
@@ -687,6 +1134,7 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
+
               Back to Tenants
             </button>
           </div>
@@ -714,16 +1162,24 @@ const EditTenant = () => {
   const tenantName =
     tenant?.full_name ||
     tenant?.name ||
-    [firstName, lastName]
+    [
+      firstName,
+      lastName,
+    ]
       .filter(Boolean)
       .join(" ") ||
     "Tenant";
 
   const initials =
     (
-      String(firstName).charAt(0) +
-      String(lastName).charAt(0)
-    ).toUpperCase() || "T";
+      String(
+        firstName
+      ).charAt(0) +
+      String(
+        lastName
+      ).charAt(0)
+    ).toUpperCase() ||
+    "T";
 
   const tenantEmail =
     tenant?.email ||
@@ -737,16 +1193,22 @@ const EditTenant = () => {
   */
 
   const tenantStatus =
-    typeof tenant?.status === "string"
+    typeof tenant?.status ===
+      "string"
       ? tenant.status.toLowerCase()
       : "";
 
   const statusLabel =
     tenantStatus
       ? tenantStatus
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (char) =>
-          char.toUpperCase()
+        .replace(
+          /_/g,
+          " "
+        )
+        .replace(
+          /\b\w/g,
+          (char) =>
+            char.toUpperCase()
         )
       : "";
 
@@ -760,7 +1222,9 @@ const EditTenant = () => {
     updateError || error;
 
   const currentErrorMessage =
-    getErrorMessage(currentError) ||
+    getErrorMessage(
+      currentError
+    ) ||
     "Unable to update tenant.";
 
   /*
@@ -791,7 +1255,8 @@ const EditTenant = () => {
                 </h1>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Update tenant information and account details.
+                  Update tenant information and
+                  account details.
                 </p>
               </div>
             </div>
@@ -799,7 +1264,9 @@ const EditTenant = () => {
             {/* BACK */}
 
             <Link
-              to={TENANT_ROUTES.show(tenantId)}
+              to={TENANT_ROUTES.show(
+                tenantId
+              )}
               className="
                 inline-flex
                 w-full
@@ -825,6 +1292,7 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
+
               Back to Tenant
             </Link>
           </div>
@@ -862,7 +1330,9 @@ const EditTenant = () => {
                   <p className="mt-0.5 text-xs text-gray-400">
                     Tenant Number:{" "}
                     <span className="font-medium text-gray-500">
-                      {tenant.tenant_number}
+                      {
+                        tenant.tenant_number
+                      }
                     </span>
                   </p>
                 )}
@@ -882,7 +1352,8 @@ const EditTenant = () => {
                     py-1
                     text-xs
                     font-medium
-                    ${tenantStatus === "active"
+                    ${tenantStatus ===
+                      "active"
                       ? "bg-green-50 text-green-700"
                       : tenantStatus ===
                         "blacklisted"
@@ -910,14 +1381,107 @@ const EditTenant = () => {
                   </span>
                 )}
 
-              {tenant?.is_active === false && (
-                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                  Inactive Account
-                </span>
-              )}
+              {tenant?.is_active ===
+                false && (
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                    Inactive Account
+                  </span>
+                )}
             </div>
           </div>
         </div>
+
+        {/* ==============================================================
+            AVAILABLE USERS STATUS
+        =============================================================== */}
+
+        {loadingAvailableUsers && (
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+
+            <div>
+              <p className="text-sm font-semibold text-blue-800">
+                Loading tenant users...
+              </p>
+
+              <p className="mt-1 text-xs text-blue-700">
+                Fetching existing users with the
+                tenant role.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {availableTenantUsersError && (
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-amber-800">
+                  Unable to load available tenant
+                  users
+                </p>
+
+                <p className="mt-1 text-sm text-amber-700">
+                  {getErrorMessage(
+                    availableTenantUsersError
+                  )}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={
+                    loadAvailableUsers
+                  }
+                  disabled={
+                    loadingAvailableUsers
+                  }
+                  className="
+                    mt-2
+                    inline-flex
+                    items-center
+                    gap-2
+                    rounded-md
+                    border
+                    border-amber-300
+                    bg-white
+                    px-3
+                    py-1.5
+                    text-xs
+                    font-semibold
+                    text-amber-800
+                    shadow-sm
+                    transition
+                    hover:bg-amber-100
+                    disabled:cursor-not-allowed
+                    disabled:opacity-50
+                  "
+                >
+                  {loadingAvailableUsers && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loadingAvailableUsers &&
+          !availableTenantUsersError &&
+          formUsers.length > 0 && (
+            <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+              <p className="text-sm font-medium text-green-800">
+                {formUsers.length} tenant{" "}
+                {formUsers.length === 1
+                  ? "user"
+                  : "users"}{" "}
+                available for this tenant account.
+              </p>
+            </div>
+          )}
 
         {/* ==============================================================
             ERROR
@@ -951,6 +1515,13 @@ const EditTenant = () => {
           loading={loadingTenant}
           submitting={updating}
           error={updateError}
+          users={formUsers}
+          availableUsersLoading={
+            loadingAvailableUsers
+          }
+          availableUsersError={
+            availableTenantUsersError
+          }
           onSubmit={handleUpdate}
           onCancel={handleCancel}
         />
@@ -960,3 +1531,4 @@ const EditTenant = () => {
 };
 
 export default EditTenant;
+
