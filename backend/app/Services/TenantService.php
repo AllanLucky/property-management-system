@@ -26,8 +26,6 @@ class TenantService
     /**
      * Relationships required by TenantResource.
      *
-     * IMPORTANT:
-     *
      * User is the source of:
      * - name
      * - email
@@ -72,6 +70,115 @@ class TenantService
 
     /*
     |--------------------------------------------------------------------------
+    | Available Tenant Users
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Get existing users who:
+     *
+     * 1. Have the tenant role.
+     * 2. Are not already linked to a tenant profile.
+     *
+     * IMPORTANT:
+     *
+     * This does NOT create users.
+     *
+     * It only returns existing User accounts that can be
+     * selected when creating a Tenant profile.
+     */
+    public function getAvailableTenantUsers(
+        ?string $search = null,
+        int $limit = 100
+    ): Collection {
+        $limit = max(
+            1,
+            min($limit, 100)
+        );
+
+        $query = User::query()
+            ->role('tenant')
+            ->whereDoesntHave('tenant')
+            ->orderBy(
+                'first_name',
+                'asc'
+            )
+            ->orderBy(
+                'last_name',
+                'asc'
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Search Existing Tenant Users
+        |--------------------------------------------------------------------------
+        */
+
+        if ($search !== null) {
+            $search = trim($search);
+
+            if ($search !== '') {
+                $query->where(function (Builder $userQuery) use ($search) {
+
+                    $userQuery
+                        ->where(
+                            'first_name',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'last_name',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'email',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'phone',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhere(
+                            'name',
+                            'like',
+                            "%{$search}%"
+                        );
+                });
+            }
+        }
+
+        return $query
+            ->limit($limit)
+            ->get();
+    }
+
+    /**
+     * Get a single available tenant user.
+     *
+     * This is useful when editing or validating a selected user.
+     */
+    public function getAvailableTenantUser(
+        int|string $userId
+    ): User {
+        $user = User::query()
+            ->role('tenant')
+            ->whereDoesntHave('tenant')
+            ->find($userId);
+
+        if (!$user) {
+            throw new ModelNotFoundException(
+                'The selected tenant user does not exist, does not have the tenant role, or is already linked to a tenant.'
+            );
+        }
+
+        return $user;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | User Validation
     |--------------------------------------------------------------------------
     */
@@ -84,7 +191,8 @@ class TenantService
     protected function getTenantUser(
         int|string $userId
     ): User {
-        $user = User::find($userId);
+        $user = User::query()
+            ->find($userId);
 
         if (!$user) {
             throw new RuntimeException(
@@ -103,13 +211,18 @@ class TenantService
 
     /**
      * Make sure the user is not already attached to another tenant.
+     *
+     * This protects against creating duplicate tenant profiles.
      */
     protected function ensureUserIsAvailable(
         int|string $userId,
         ?Tenant $except = null
     ): void {
         $query = Tenant::query()
-            ->where('user_id', $userId);
+            ->where(
+                'user_id',
+                $userId
+            );
 
         if ($except) {
             $query->where(
@@ -243,6 +356,16 @@ class TenantService
                                         "%{$search}%"
                                     )
                                     ->orWhere(
+                                        'first_name',
+                                        'like',
+                                        "%{$search}%"
+                                    )
+                                    ->orWhere(
+                                        'last_name',
+                                        'like',
+                                        "%{$search}%"
+                                    )
+                                    ->orWhere(
                                         'email',
                                         'like',
                                         "%{$search}%"
@@ -295,7 +418,7 @@ class TenantService
         | Active Filter
         |--------------------------------------------------------------------------
         |
-        | There is NO is_active column.
+        | There is NO is_active column on tenants.
         |
         */
 
@@ -454,6 +577,7 @@ class TenantService
             );
 
             if ($isVerified !== null) {
+
                 $query->where(
                     'is_verified',
                     $isVerified
@@ -582,7 +706,7 @@ class TenantService
     /**
      * Find tenant by phone.
      *
-     * Phone now belongs to users.
+     * Phone belongs to users.
      */
     public function findByPhone(
         string $phone
@@ -602,7 +726,7 @@ class TenantService
     /**
      * Find tenant by email.
      *
-     * Email now belongs to users.
+     * Email belongs to users.
      */
     public function findByEmail(
         string $email
@@ -640,17 +764,15 @@ class TenantService
     */
 
     /**
-     * Create a tenant from an existing User account.
+     * Create a tenant profile from an EXISTING User account.
      *
      * IMPORTANT:
      *
-     * The following values are NOT copied into tenants:
+     * This method NEVER creates a User.
      *
-     * - name
-     * - email
-     * - phone
+     * The user must already exist and must have the tenant role.
      *
-     * They remain in users and are returned through the user relationship.
+     * Only a Tenant profile is created.
      */
     public function create(
         array $data,
@@ -668,7 +790,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | User
+                | Validate user_id
                 |--------------------------------------------------------------------------
                 */
 
@@ -685,7 +807,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Fetch full User details
+                | Fetch Existing User
                 |--------------------------------------------------------------------------
                 */
 
@@ -695,7 +817,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Prevent duplicate tenant profile
+                | Prevent Duplicate Tenant Profile
                 |--------------------------------------------------------------------------
                 */
 
@@ -708,7 +830,8 @@ class TenantService
                 | Remove User-owned fields
                 |--------------------------------------------------------------------------
                 |
-                | These belong to users table and must NOT be duplicated.
+                | These values belong to users and must NOT be duplicated
+                | inside tenants.
                 |
                 */
 
@@ -736,7 +859,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Defaults
+                | Tenant Defaults
                 |--------------------------------------------------------------------------
                 */
 
@@ -752,7 +875,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Remove unsupported fields
+                | Remove Unsupported Fields
                 |--------------------------------------------------------------------------
                 */
 
@@ -785,7 +908,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Create Tenant
+                | Create ONLY Tenant Profile
                 |--------------------------------------------------------------------------
                 */
 
@@ -822,7 +945,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Return complete tenant
+                | Return Complete Tenant
                 |--------------------------------------------------------------------------
                 */
 
@@ -843,9 +966,6 @@ class TenantService
      * Update tenant-specific information.
      *
      * User identity fields are NOT updated here.
-     *
-     * If the user's name, email or phone changes,
-     * update the User record through User management.
      */
     public function update(
         Tenant $tenant,
@@ -878,10 +998,10 @@ class TenantService
                 | User ID Protection
                 |--------------------------------------------------------------------------
                 |
-                | A tenant should remain connected to its existing user.
+                | The tenant remains connected to the same user.
                 |
-                | If you need to transfer a tenant to another user,
-                | that should be a dedicated operation.
+                | If a user transfer is required later, create a dedicated
+                | transferUser() operation.
                 |
                 */
 
@@ -905,7 +1025,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Remove unsupported field
+                | Remove Unsupported Field
                 |--------------------------------------------------------------------------
                 */
 
@@ -983,7 +1103,7 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
-                | Return complete tenant
+                | Return Complete Tenant
                 |--------------------------------------------------------------------------
                 */
 
@@ -1549,6 +1669,16 @@ class TenantService
                             $userQuery
                                 ->where(
                                     'name',
+                                    'like',
+                                    "%{$search}%"
+                                )
+                                ->orWhere(
+                                    'first_name',
+                                    'like',
+                                    "%{$search}%"
+                                )
+                                ->orWhere(
+                                    'last_name',
                                     'like',
                                     "%{$search}%"
                                 )
