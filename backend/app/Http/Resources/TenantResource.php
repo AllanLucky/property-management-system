@@ -10,28 +10,101 @@ class TenantResource extends JsonResource
     /**
      * Transform the resource into an array.
      *
-     * Architecture:
+     * ==========================================================================
+     * TENANT / USER ARCHITECTURE
+     * ==========================================================================
      *
-     * users table
+     * The application uses a two-layer architecture:
+     *
+     * USERS
      * --------------------------------------------------------------------------
-     * User identity, profile, authentication, account and authorization data
-     * belongs to the User model.
+     * The users table is the source of truth for the person's account and
+     * identity information:
      *
-     * tenants table
+     * - first_name
+     * - last_name
+     * - email
+     * - phone
+     * - gender
+     * - nationality
+     * - address
+     * - date_of_birth
+     * - profile image
+     * - account_status
+     * - approval_status
+     * - verification
+     * - roles
+     * - permissions
+     * - authentication/security
+     *
+     *
+     * TENANTS
      * --------------------------------------------------------------------------
-     * Tenant-specific profile, identification, location, employment,
-     * emergency contact, documents, verification and tenant status data
-     * belongs to the Tenant model.
+     * The tenants table represents the person's tenant profile.
      *
-     * Relationships:
+     * It contains tenant-specific information:
      *
-     * Tenant belongsTo User
-     * Tenant hasMany Tenancies
+     * - tenant_number
+     * - user_id
+     * - identification
+     * - tenant location
+     * - employment
+     * - emergency contact
+     * - tenant documents
+     * - tenant verification
+     * - tenant status
+     * - notes
      *
-     * IMPORTANT:
      *
-     * UserResource is the single source of truth for User data.
-     * TenantResource must not duplicate User serialization logic.
+     * IMPORTANT
+     * ==========================================================================
+     *
+     * A Tenant is NOT another User.
+     *
+     * A tenant profile is attached to an existing User account through:
+     *
+     *     tenants.user_id -> users.id
+     *
+     * Therefore TenantResource must NOT duplicate User identity data as if it
+     * belongs to the tenants table.
+     *
+     * Example:
+     *
+     * users
+     * --------------------------------------------------------------------------
+     * id           = 19
+     * first_name   = Esther
+     * last_name    = Atieno
+     * email        = esther.atieno@example.com
+     * phone        = +254711000012
+     * role         = tenant
+     *
+     * tenants
+     * --------------------------------------------------------------------------
+     * id             = 12
+     * tenant_number  = TNT-000012
+     * user_id        = 19
+     *
+     * The API therefore exposes:
+     *
+     *     tenant.user
+     *
+     * for User information.
+     *
+     *
+     * RELATIONSHIPS
+     * ==========================================================================
+     *
+     * Tenant
+     *     belongsTo User
+     *
+     * Tenant
+     *     hasMany Tenancies
+     *
+     * Tenant
+     *     hasMany ActiveTenancies
+     *
+     * ==========================================================================
      *
      * @return array<string, mixed>
      */
@@ -56,19 +129,11 @@ class TenantResource extends JsonResource
             | LINKED USER
             |--------------------------------------------------------------------------
             |
-            | UserResource owns:
+            | The User account already exists.
             |
-            | - Identity
-            | - Profile
-            | - Account status
-            | - Approval status
-            | - Verification
-            | - Roles
-            | - Permissions
-            | - Security
-            | - Tracking
+            | TenantResource never creates a User.
             |
-            | Do not duplicate those fields here.
+            | UserResource remains responsible for User serialization.
             |
             */
 
@@ -76,18 +141,20 @@ class TenantResource extends JsonResource
 
             'user' => $this->whenLoaded(
                 'user',
-                fn () => $tenant->user
-                    ? new UserResource($tenant->user)
-                    : null
+                function () use ($tenant) {
+
+                    if (!$tenant->user) {
+                        return null;
+                    }
+
+                    return new UserResource($tenant->user);
+                }
             ),
 
             /*
             |--------------------------------------------------------------------------
             | TENANT PROFILE
             |--------------------------------------------------------------------------
-            |
-            | These fields belong specifically to the Tenant record.
-            |
             */
 
             'date_of_birth' => $tenant->date_of_birth
@@ -100,6 +167,9 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | IDENTIFICATION
             |--------------------------------------------------------------------------
+            |
+            | These fields belong to the tenant profile.
+            |
             */
 
             'identification' => [
@@ -141,7 +211,7 @@ class TenantResource extends JsonResource
             | DIRECT LOCATION FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for frontend compatibility.
+            | Kept for existing frontend forms and components.
             |
             */
 
@@ -200,13 +270,18 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | DOCUMENTS
+            | TENANT DOCUMENTS
             |--------------------------------------------------------------------------
             |
-            | Only public document paths/URLs are exposed.
+            | Public document paths/URLs are exposed.
             |
-            | Internal storage metadata such as public IDs should remain
-            | internal and must not be exposed by this resource.
+            | Cloud storage internal identifiers such as:
+            |
+            | - photo_public_id
+            | - id_front_public_id
+            | - id_back_public_id
+            |
+            | remain hidden.
             |
             */
 
@@ -218,16 +293,27 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
+            | DIRECT DOCUMENT FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | Kept for existing frontend compatibility.
+            |
+            */
+
+            'photo' => $tenant->photo,
+
+            'id_front' => $tenant->id_front,
+
+            'id_back' => $tenant->id_back,
+
+            /*
+            |--------------------------------------------------------------------------
             | TENANT VERIFICATION
             |--------------------------------------------------------------------------
             |
-            | This represents verification of the TENANT PROFILE.
+            | This is tenant-profile verification.
             |
-            | It is intentionally different from:
-            |
-            |     user.verification
-            |
-            | which represents User/email verification.
+            | It is separate from the User account verification.
             |
             */
 
@@ -259,25 +345,56 @@ class TenantResource extends JsonResource
             | TENANT STATUS
             |--------------------------------------------------------------------------
             |
-            | Tenant status is independent from User account status.
+            | Tenant status belongs to the tenants table.
             |
-            | Tenant status:
+            | It is independent from:
+            |
+            |     user.account_status
+            |
+            |     user.approval_status
+            |
+            | Supported tenant statuses:
             |
             |     pending
             |     active
             |     inactive
             |     blacklisted
             |
-            | User account status:
-            |
-            |     approval_status
-            |     account_status
-            |
             */
 
             'status' => $tenant->status,
 
             'status_label' => $tenant->status_label,
+
+            /*
+            |--------------------------------------------------------------------------
+            | COMPUTED STATUS FLAGS
+            |--------------------------------------------------------------------------
+            |
+            | These are calculated values.
+            |
+            | There is intentionally NO `is_active` database column.
+            |
+            */
+
+            'is_active' => $tenant->status === TenantResource::STATUS_ACTIVE,
+
+            'is_inactive' => $tenant->status === TenantResource::STATUS_INACTIVE,
+
+            'is_pending' => $tenant->status === TenantResource::STATUS_PENDING,
+
+            'is_blacklisted' => $tenant->status === TenantResource::STATUS_BLACKLISTED,
+
+            /*
+            |--------------------------------------------------------------------------
+            | ACCOUNT STATE
+            |--------------------------------------------------------------------------
+            |
+            | The Tenant model exposes account_state as a computed attribute.
+            |
+            */
+
+            'account_state' => $tenant->account_state,
 
             /*
             |--------------------------------------------------------------------------
@@ -292,25 +409,29 @@ class TenantResource extends JsonResource
             | TENANCIES
             |--------------------------------------------------------------------------
             |
-            | A tenant can have multiple tenancy records.
+            | Only returned when the relationship was explicitly loaded.
             |
             | TenancyResource is responsible for:
             |
-            | - Property
-            | - Apartment
-            | - Unit
-            | - Rent
-            | - Deposit
-            | - Dates
-            | - Tenancy status
+            | - property
+            | - apartment
+            | - unit
+            | - rent
+            | - deposit
+            | - dates
+            | - payment frequency
+            | - tenancy status
             |
             */
 
             'tenancies' => $this->whenLoaded(
                 'tenancies',
-                fn () => TenancyResource::collection(
-                    $tenant->tenancies
-                )
+                function () use ($tenant) {
+
+                    return TenancyResource::collection(
+                        $tenant->tenancies
+                    );
+                }
             ),
 
             /*
@@ -321,24 +442,26 @@ class TenantResource extends JsonResource
 
             'tenancy_count' => $this->whenLoaded(
                 'tenancies',
-                fn () => $tenant->tenancies->count()
+                function () use ($tenant) {
+
+                    return $tenant->tenancies->count();
+                }
             ),
 
             /*
             |--------------------------------------------------------------------------
             | ACTIVE TENANCIES
             |--------------------------------------------------------------------------
-            |
-            | Returned only when the activeTenancies relationship has been
-            | explicitly loaded by the controller/service.
-            |
             */
 
             'active_tenancies' => $this->whenLoaded(
                 'activeTenancies',
-                fn () => TenancyResource::collection(
-                    $tenant->activeTenancies
-                )
+                function () use ($tenant) {
+
+                    return TenancyResource::collection(
+                        $tenant->activeTenancies
+                    );
+                }
             ),
 
             /*
@@ -349,7 +472,29 @@ class TenantResource extends JsonResource
 
             'active_tenancy_count' => $this->whenLoaded(
                 'activeTenancies',
-                fn () => $tenant->activeTenancies->count()
+                function () use ($tenant) {
+
+                    return $tenant->activeTenancies->count();
+                }
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | CURRENT TENANCY
+            |--------------------------------------------------------------------------
+            |
+            | Returned only when activeTenancy has been explicitly loaded.
+            |
+            */
+
+            'current_tenancy' => $this->whenLoaded(
+                'activeTenancy',
+                function () use ($tenant) {
+
+                    return $tenant->activeTenancy
+                        ? new TenancyResource($tenant->activeTenancy)
+                        : null;
+                }
             ),
 
             /*
@@ -371,4 +516,24 @@ class TenantResource extends JsonResource
                 : null,
         ];
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATUS CONSTANTS
+    |--------------------------------------------------------------------------
+    |
+    | These mirror Tenant model statuses.
+    |
+    | Keeping them here prevents hard-coded strings in the resource.
+    |
+    */
+
+    private const STATUS_PENDING = 'pending';
+
+    private const STATUS_ACTIVE = 'active';
+
+    private const STATUS_INACTIVE = 'inactive';
+
+    private const STATUS_BLACKLISTED = 'blacklisted';
 }
+
