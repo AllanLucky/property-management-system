@@ -36,13 +36,25 @@ import {
 |
 | Responsibilities:
 |
-| - Render the tenant creation page.
-| - Fetch users who already have the tenant role.
-| - Pass available tenant users to TenantForm.
-| - Connect TenantForm to Redux.
-| - Submit tenant data through createTenant thunk.
-| - Display success/error feedback.
-| - Redirect to the tenant list after successful creation.
+| 1. Render the tenant creation page.
+| 2. Fetch existing users who already have the tenant role.
+| 3. Allow selecting one existing User account.
+| 4. Pass the selected user to TenantForm.
+| 5. Submit tenant profile data through createTenant().
+| 6. Display success/error feedback.
+| 7. Redirect to the tenant list after successful creation.
+|
+| IMPORTANT:
+|
+| A Tenant is linked to an EXISTING User account.
+|
+| This page must NOT create another User account.
+|
+| The selected User's ID becomes:
+|
+|     tenants.user_id
+|
+| TenantForm is responsible for constructing the create payload.
 |
 |--------------------------------------------------------------------------
 */
@@ -56,32 +68,30 @@ const CreateTenant = () => {
   | TENANT REDUX STATE
   |--------------------------------------------------------------------------
   |
-  | Support both possible Redux registrations:
+  | Support both:
   |
   | state.tenant
   | state.tenants
   |
   */
 
-  const tenantState = useSelector(
-    (state) => {
-      if (
-        state?.tenant &&
-        typeof state.tenant === "object"
-      ) {
-        return state.tenant;
-      }
-
-      if (
-        state?.tenants &&
-        typeof state.tenants === "object"
-      ) {
-        return state.tenants;
-      }
-
-      return {};
+  const tenantState = useSelector((state) => {
+    if (
+      state?.tenant &&
+      typeof state.tenant === "object"
+    ) {
+      return state.tenant;
     }
-  );
+
+    if (
+      state?.tenants &&
+      typeof state.tenants === "object"
+    ) {
+      return state.tenants;
+    }
+
+    return {};
+  });
 
   /*
   |--------------------------------------------------------------------------
@@ -101,33 +111,183 @@ const CreateTenant = () => {
   | AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
   |
-  | The backend endpoint:
+  | These are existing User accounts that:
+  |
+  | - have the tenant role
+  | - are not already linked to a tenant
+  |
+  | Backend endpoint:
   |
   | GET /api/tenants/available-users
   |
-  | returns:
-  |
-  | {
-  |   status: true,
-  |   code: 200,
-  |   data: [...]
-  | }
-  |
   */
 
-  const availableTenantUsers = Array.isArray(
-    tenantState?.availableTenantUsers
-  )
-    ? tenantState.availableTenantUsers
-    : [];
+  const availableTenantUsers =
+    Array.isArray(
+      tenantState?.availableTenantUsers
+    )
+      ? tenantState.availableTenantUsers
+      : [];
 
-  const loadingAvailableUsers = Boolean(
-    tenantState?.loadingAvailableTenantUsers
-  );
+  const loadingAvailableUsers =
+    Boolean(
+      tenantState?.loadingAvailableTenantUsers
+    );
 
   const availableTenantUsersError =
     tenantState?.availableTenantUsersError ||
     null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | ERROR MESSAGE HELPER
+  |--------------------------------------------------------------------------
+  */
+
+  const getErrorMessage = useCallback(
+    (
+      value,
+      fallback = "Unable to create tenant."
+    ) => {
+      if (!value) {
+        return fallback;
+      }
+
+      /*
+      |----------------------------------------------------------------------
+      | STRING
+      |----------------------------------------------------------------------
+      */
+
+      if (typeof value === "string") {
+        return value;
+      }
+
+      /*
+      |----------------------------------------------------------------------
+      | OBJECT
+      |----------------------------------------------------------------------
+      */
+
+      if (
+        typeof value === "object" &&
+        value !== null
+      ) {
+        /*
+        |--------------------------------------------------------------------
+        | Axios response
+        |--------------------------------------------------------------------
+        */
+
+        if (value?.response?.data) {
+          return getErrorMessage(
+            value.response.data,
+            fallback
+          );
+        }
+
+        /*
+        |--------------------------------------------------------------------
+        | Direct message
+        |--------------------------------------------------------------------
+        */
+
+        if (
+          typeof value.message ===
+          "string"
+        ) {
+          return value.message;
+        }
+
+        /*
+        |--------------------------------------------------------------------
+        | Error
+        |--------------------------------------------------------------------
+        */
+
+        if (
+          typeof value.error ===
+          "string"
+        ) {
+          return value.error;
+        }
+
+        /*
+        |--------------------------------------------------------------------
+        | Detail
+        |--------------------------------------------------------------------
+        */
+
+        if (
+          typeof value.detail ===
+          "string"
+        ) {
+          return value.detail;
+        }
+
+        /*
+        |--------------------------------------------------------------------
+        | Laravel validation errors
+        |--------------------------------------------------------------------
+        |
+        | {
+        |   errors: {
+        |     email: [
+        |       "The email has already been taken."
+        |     ]
+        |   }
+        | }
+        |
+        */
+
+        if (
+          value.errors &&
+          typeof value.errors ===
+          "object"
+        ) {
+          const validationMessages =
+            Object.values(
+              value.errors
+            )
+              .flat()
+              .filter(
+                (message) =>
+                  typeof message ===
+                  "string"
+              );
+
+          if (
+            validationMessages.length >
+            0
+          ) {
+            return validationMessages.join(
+              " "
+            );
+          }
+        }
+
+        /*
+        |--------------------------------------------------------------------
+        | Nested payload
+        |--------------------------------------------------------------------
+        */
+
+        if (
+          value.payload &&
+          typeof value.payload ===
+          "object"
+        ) {
+          return getErrorMessage(
+            value.payload,
+            fallback
+          );
+        }
+      }
+
+      return fallback;
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -136,47 +296,42 @@ const CreateTenant = () => {
   */
 
   const loadAvailableTenantUsers =
-    useCallback(
-      async () => {
-        try {
-          console.log(
-            "[CreateTenant] Fetching available tenant users..."
+    useCallback(async () => {
+      try {
+        const result =
+          await dispatch(
+            fetchAvailableTenantUsers()
           );
 
-          const result =
-            await dispatch(
-              fetchAvailableTenantUsers()
-            );
-
-          if (
-            fetchAvailableTenantUsers.fulfilled.match(
-              result
-            )
-          ) {
-            console.log(
-              "[CreateTenant] Available tenant users loaded:",
-              result?.payload
-            );
-          } else {
-            console.error(
-              "[CreateTenant] Failed to load available tenant users:",
-              result?.payload ||
-              result?.error
-            );
-          }
+        if (
+          fetchAvailableTenantUsers.fulfilled.match(
+            result
+          )
+        ) {
+          console.log(
+            "[CreateTenant] Available tenant users loaded:",
+            result?.payload
+          );
 
           return result;
-        } catch (fetchError) {
-          console.error(
-            "[CreateTenant] Unexpected error loading available tenant users:",
-            fetchError
-          );
-
-          return null;
         }
-      },
-      [dispatch]
-    );
+
+        console.error(
+          "[CreateTenant] Failed to load available tenant users:",
+          result?.payload ||
+          result?.error
+        );
+
+        return result;
+      } catch (fetchError) {
+        console.error(
+          "[CreateTenant] Unexpected error loading available tenant users:",
+          fetchError
+        );
+
+        return null;
+      }
+    }, [dispatch]);
 
   /*
   |--------------------------------------------------------------------------
@@ -192,165 +347,6 @@ const CreateTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | DEBUG
-  |--------------------------------------------------------------------------
-  */
-
-  useEffect(() => {
-    console.log(
-      "[CreateTenant] Available tenant users:",
-      availableTenantUsers
-    );
-
-    console.log(
-      "[CreateTenant] Loading available users:",
-      loadingAvailableUsers
-    );
-
-    console.log(
-      "[CreateTenant] Available users error:",
-      availableTenantUsersError
-    );
-  }, [
-    availableTenantUsers,
-    loadingAvailableUsers,
-    availableTenantUsersError,
-  ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | HELPERS
-  |--------------------------------------------------------------------------
-  */
-
-  const getErrorMessage = (
-    value,
-    fallback = "Unable to create tenant."
-  ) => {
-    if (!value) {
-      return fallback;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | STRING
-    |--------------------------------------------------------------------------
-    */
-
-    if (typeof value === "string") {
-      return value;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | OBJECT
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-      typeof value === "object" &&
-      value !== null
-    ) {
-      /*
-      |----------------------------------------------------------------------
-      | Direct message
-      |----------------------------------------------------------------------
-      */
-
-      if (
-        typeof value.message ===
-        "string"
-      ) {
-        return value.message;
-      }
-
-      /*
-      |----------------------------------------------------------------------
-      | Error
-      |----------------------------------------------------------------------
-      */
-
-      if (
-        typeof value.error ===
-        "string"
-      ) {
-        return value.error;
-      }
-
-      /*
-      |----------------------------------------------------------------------
-      | Detail
-      |----------------------------------------------------------------------
-      */
-
-      if (
-        typeof value.detail ===
-        "string"
-      ) {
-        return value.detail;
-      }
-
-      /*
-      |----------------------------------------------------------------------
-      | Laravel validation errors
-      |----------------------------------------------------------------------
-      |
-      | {
-      |   errors: {
-      |     email: [
-      |       "The email has already been taken."
-      |     ]
-      |   }
-      | }
-      |
-      */
-
-      if (
-        value.errors &&
-        typeof value.errors ===
-        "object"
-      ) {
-        const validationMessages =
-          Object.values(
-            value.errors
-          )
-            .flat()
-            .filter(
-              (message) =>
-                typeof message ===
-                "string"
-            );
-
-        if (
-          validationMessages.length
-        ) {
-          return validationMessages.join(
-            " "
-          );
-        }
-      }
-
-      /*
-      |----------------------------------------------------------------------
-      | Axios-style response
-      |----------------------------------------------------------------------
-      */
-
-      if (
-        value.response?.data
-      ) {
-        return getErrorMessage(
-          value.response.data,
-          fallback
-        );
-      }
-    }
-
-    return fallback;
-  };
-
-  /*
-  |--------------------------------------------------------------------------
   | CREATE TENANT
   |--------------------------------------------------------------------------
   */
@@ -360,7 +356,7 @@ const CreateTenant = () => {
   ) => {
     /*
     |--------------------------------------------------------------------------
-    | SAFETY CHECK
+    | PREVENT DUPLICATE SUBMISSIONS
     |--------------------------------------------------------------------------
     */
 
@@ -368,49 +364,65 @@ const CreateTenant = () => {
       return;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | CLEAR PREVIOUS ERROR
+    |--------------------------------------------------------------------------
+    */
+
+    dispatch(
+      clearTenantError()
+    );
+
     try {
       /*
       |--------------------------------------------------------------------------
-      | CLEAR PREVIOUS ERROR
-      |--------------------------------------------------------------------------
-      */
-
-      dispatch(
-        clearTenantError()
-      );
-
-      /*
-      |--------------------------------------------------------------------------
-      | DEBUG PAYLOAD
-      |--------------------------------------------------------------------------
-      */
-
-      console.log(
-        "[CreateTenant] Creating tenant with payload:",
-        payload
-      );
-
-      /*
-      |--------------------------------------------------------------------------
-      | VALIDATE USER ID
+      | VALIDATE LINKED USER
       |--------------------------------------------------------------------------
       |
-      | The tenant must be linked to an existing
-      | User account.
+      | A tenant must always be connected to
+      | an existing User account.
       |
       */
+
+      const userId =
+        payload?.user_id;
 
       if (
-        payload?.user_id ===
-        null ||
-        payload?.user_id ===
-        undefined ||
-        payload?.user_id === ""
+        userId === null ||
+        userId === undefined ||
+        String(userId).trim() === ""
       ) {
         throw new Error(
           "Please select an existing tenant user."
         );
       }
+
+      /*
+      |--------------------------------------------------------------------------
+      | NORMALIZE USER ID
+      |--------------------------------------------------------------------------
+      |
+      | Ensure the API receives a numeric
+      | user_id rather than a select string.
+      |
+      */
+
+      const createPayload = {
+        ...payload,
+        user_id: Number(userId),
+      };
+
+      /*
+      |--------------------------------------------------------------------------
+      | DEBUG
+      |--------------------------------------------------------------------------
+      */
+
+      console.log(
+        "[CreateTenant] Creating tenant:",
+        createPayload
+      );
 
       /*
       |--------------------------------------------------------------------------
@@ -420,7 +432,9 @@ const CreateTenant = () => {
 
       const result =
         await dispatch(
-          createTenant(payload)
+          createTenant(
+            createPayload
+          )
         );
 
       /*
@@ -449,12 +463,13 @@ const CreateTenant = () => {
           confirmButtonColor:
             "#2563eb",
           allowOutsideClick: false,
+          allowEscapeKey: false,
         });
 
         /*
-        |--------------------------------------------------------------------------
+        |--------------------------------------------------------------------
         | REDIRECT
-        |--------------------------------------------------------------------------
+        |--------------------------------------------------------------------
         */
 
         navigate(
@@ -487,11 +502,10 @@ const CreateTenant = () => {
         message
       );
     } catch (submitError) {
-      /*
-      |--------------------------------------------------------------------------
-      | ERROR MESSAGE
-      |--------------------------------------------------------------------------
-      */
+      console.error(
+        "[CreateTenant] Tenant creation failed:",
+        submitError
+      );
 
       const message =
         getErrorMessage(
@@ -518,12 +532,11 @@ const CreateTenant = () => {
 
       /*
       |--------------------------------------------------------------------------
-      | IMPORTANT
+      | RE-THROW
       |--------------------------------------------------------------------------
       |
-      | TenantForm also handles rejected submissions
-      | locally. Re-throw so TenantForm can display
-      | its own error state.
+      | TenantForm can also use the rejected
+      | submission to maintain its own error state.
       |
       */
 
@@ -549,7 +562,21 @@ const CreateTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | REDUX ERROR MESSAGE
+  | BACK TO TENANTS
+  |--------------------------------------------------------------------------
+  */
+
+  const handleBackClick = (
+    event
+  ) => {
+    if (creating) {
+      event.preventDefault();
+    }
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | ERROR MESSAGES
   |--------------------------------------------------------------------------
   */
 
@@ -558,6 +585,14 @@ const CreateTenant = () => {
       ? getErrorMessage(
         error,
         "Unable to create tenant."
+      )
+      : "";
+
+  const availableUsersErrorMessage =
+    availableTenantUsersError
+      ? getErrorMessage(
+        availableTenantUsersError,
+        "Unable to fetch available tenant users."
       )
       : "";
 
@@ -591,8 +626,8 @@ const CreateTenant = () => {
                 </h1>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Add a new tenant to your
-                  estate management system.
+                  Create a tenant profile using
+                  an existing tenant user account.
                 </p>
               </div>
             </div>
@@ -603,13 +638,13 @@ const CreateTenant = () => {
 
             <Link
               to="/super-admin/tenants"
-              onClick={(event) => {
-                if (creating) {
-                  event.preventDefault();
-                }
-              }}
-              aria-disabled={creating}
-              className="
+              onClick={
+                handleBackClick
+              }
+              aria-disabled={
+                creating
+              }
+              className={`
                 inline-flex
                 w-full
                 items-center
@@ -630,10 +665,12 @@ const CreateTenant = () => {
                 focus:outline-none
                 focus:ring-2
                 focus:ring-primary-500/20
-                disabled:cursor-not-allowed
-                disabled:opacity-50
                 sm:w-auto
-              "
+                ${creating
+                  ? "pointer-events-none cursor-not-allowed opacity-50"
+                  : ""
+                }
+              `}
             >
               <ArrowLeft className="h-4 w-4" />
 
@@ -649,7 +686,7 @@ const CreateTenant = () => {
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         {/* ---------------------------------------------------------------
-            REDUX ERROR BANNER
+            REDUX ERROR
         ---------------------------------------------------------------- */}
 
         {errorMessage && (
@@ -660,12 +697,12 @@ const CreateTenant = () => {
             <div className="flex items-start gap-3">
               <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500" />
 
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-red-800">
                   Tenant creation failed
                 </p>
 
-                <p className="mt-1 break-words text-sm text-red-700">
+                <p className="mt-1 break-words text-sm leading-6 text-red-700">
                   {errorMessage}
                 </p>
 
@@ -676,6 +713,9 @@ const CreateTenant = () => {
                       clearTenantError()
                     )
                   }
+                  disabled={
+                    creating
+                  }
                   className="
                     mt-2
                     text-xs
@@ -683,7 +723,10 @@ const CreateTenant = () => {
                     text-red-700
                     underline
                     underline-offset-2
+                    transition
                     hover:text-red-900
+                    disabled:cursor-not-allowed
+                    disabled:opacity-50
                   "
                 >
                   Dismiss
@@ -719,9 +762,9 @@ const CreateTenant = () => {
                 Loading tenant users...
               </p>
 
-              <p className="text-xs text-blue-700">
-                Fetching existing users with the
-                tenant role.
+              <p className="mt-1 text-xs leading-5 text-blue-700">
+                Fetching existing User accounts
+                with the tenant role.
               </p>
             </div>
           </div>
@@ -731,7 +774,7 @@ const CreateTenant = () => {
             AVAILABLE USERS ERROR
         ---------------------------------------------------------------- */}
 
-        {availableTenantUsersError && (
+        {availableUsersErrorMessage && (
           <div
             role="alert"
             className="
@@ -752,11 +795,10 @@ const CreateTenant = () => {
                   Unable to load tenant users
                 </p>
 
-                <p className="mt-1 break-words text-sm text-amber-700">
-                  {getErrorMessage(
-                    availableTenantUsersError,
-                    "Unable to fetch available tenant users."
-                  )}
+                <p className="mt-1 break-words text-sm leading-6 text-amber-700">
+                  {
+                    availableUsersErrorMessage
+                  }
                 </p>
 
                 <button
@@ -765,7 +807,8 @@ const CreateTenant = () => {
                     loadAvailableTenantUsers
                   }
                   disabled={
-                    loadingAvailableUsers
+                    loadingAvailableUsers ||
+                    creating
                   }
                   className="
                     mt-2
@@ -800,11 +843,11 @@ const CreateTenant = () => {
         )}
 
         {/* ---------------------------------------------------------------
-            DEBUG / USER COUNT
+            AVAILABLE USERS SUMMARY
         ---------------------------------------------------------------- */}
 
         {!loadingAvailableUsers &&
-          !availableTenantUsersError &&
+          !availableUsersErrorMessage &&
           availableTenantUsers.length >
           0 && (
             <div
@@ -818,24 +861,38 @@ const CreateTenant = () => {
                 py-3
               "
             >
-              <p className="text-sm font-medium text-green-800">
-                {availableTenantUsers.length}{" "}
-                existing tenant{" "}
-                {availableTenantUsers.length ===
-                  1
-                  ? "user"
-                  : "users"}{" "}
-                available for selection.
-              </p>
+              <div className="flex items-start gap-3">
+                <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-green-500" />
+
+                <div>
+                  <p className="text-sm font-semibold text-green-800">
+                    {
+                      availableTenantUsers.length
+                    }{" "}
+                    existing tenant{" "}
+                    {availableTenantUsers.length ===
+                      1
+                      ? "user"
+                      : "users"}{" "}
+                    available
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-green-700">
+                    Select an existing user
+                    account below to create the
+                    tenant profile.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
         {/* ---------------------------------------------------------------
-            NO USERS
+            NO AVAILABLE USERS
         ---------------------------------------------------------------- */}
 
         {!loadingAvailableUsers &&
-          !availableTenantUsersError &&
+          !availableUsersErrorMessage &&
           availableTenantUsers.length ===
           0 && (
             <div
@@ -847,6 +904,7 @@ const CreateTenant = () => {
                 bg-white
                 px-4
                 py-4
+                shadow-sm
               "
             >
               <div className="flex items-start gap-3">
@@ -857,11 +915,50 @@ const CreateTenant = () => {
                     No available tenant users
                   </p>
 
-                  <p className="mt-1 text-sm text-gray-500">
-                    No existing users with the
-                    tenant role are currently
-                    available for assignment.
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
+                    There are currently no existing
+                    User accounts with the tenant
+                    role available for assignment.
+                    Create or assign the tenant role
+                    to a User account first.
                   </p>
+
+                  <button
+                    type="button"
+                    onClick={
+                      loadAvailableTenantUsers
+                    }
+                    disabled={
+                      loadingAvailableUsers ||
+                      creating
+                    }
+                    className="
+                      mt-3
+                      inline-flex
+                      items-center
+                      gap-2
+                      rounded-lg
+                      border
+                      border-gray-300
+                      bg-white
+                      px-3
+                      py-2
+                      text-xs
+                      font-semibold
+                      text-gray-700
+                      shadow-sm
+                      transition
+                      hover:bg-gray-50
+                      disabled:cursor-not-allowed
+                      disabled:opacity-50
+                    "
+                  >
+                    {loadingAvailableUsers && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    )}
+
+                    Refresh Users
+                  </button>
                 </div>
               </div>
             </div>
@@ -876,7 +973,9 @@ const CreateTenant = () => {
           loading={false}
           submitting={creating}
           error={error}
-          users={availableTenantUsers}
+          users={
+            availableTenantUsers
+          }
           availableUsersLoading={
             loadingAvailableUsers
           }
