@@ -530,6 +530,56 @@ const EditTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | SANITIZE TENANT UPDATE PAYLOAD
+  |--------------------------------------------------------------------------
+  |
+  | Tenant updates must only contain tenant-profile fields.
+  | The linked User account and tenant number are immutable here.
+  |
+  */
+
+  const sanitizeTenantUpdatePayload = useCallback((payload) => {
+    const protectedFields = new Set([
+      "user_id",
+      "tenant_number",
+      "first_name",
+      "last_name",
+      "email",
+      "phone",
+      "is_active",
+    ]);
+
+    /*
+     * TenantForm may submit either a normal object or FormData
+     * when documents are included.
+     */
+    if (payload instanceof FormData) {
+      const sanitized = new FormData();
+
+      for (const [key, value] of payload.entries()) {
+        if (!protectedFields.has(key)) {
+          sanitized.append(key, value);
+        }
+      }
+
+      return sanitized;
+    }
+
+    if (!payload || typeof payload !== "object") {
+      return payload;
+    }
+
+    const sanitized = { ...payload };
+
+    protectedFields.forEach((field) => {
+      delete sanitized[field];
+    });
+
+    return sanitized;
+  }, []);
+
+  /*
+  |--------------------------------------------------------------------------
   | UPDATE TENANT
   |--------------------------------------------------------------------------
   */
@@ -568,15 +618,38 @@ const EditTenant = () => {
 
       /*
       |--------------------------------------------------------------------------
+      | SANITIZE PAYLOAD
+      |--------------------------------------------------------------------------
+      |
+      | Do not allow the edit form to change the linked user account,
+      | tenant number, or the legacy is_active field.
+      |
+      */
+
+      const sanitizedPayload =
+        sanitizeTenantUpdatePayload(payload);
+
+      /*
+      |--------------------------------------------------------------------------
       | DEBUG
       |--------------------------------------------------------------------------
       */
 
-      console.log(
-        "Updating tenant:",
-        tenantId,
-        payload
-      );
+      if (sanitizedPayload instanceof FormData) {
+        console.log(
+          "Updating tenant:",
+          tenantId,
+          Object.fromEntries(
+            sanitizedPayload.entries()
+          )
+        );
+      } else {
+        console.log(
+          "Updating tenant:",
+          tenantId,
+          sanitizedPayload
+        );
+      }
 
       /*
       |--------------------------------------------------------------------------
@@ -587,7 +660,7 @@ const EditTenant = () => {
       const result =
         await editTenant(
           tenantId,
-          payload
+          sanitizedPayload
         );
 
       /*
@@ -1255,8 +1328,8 @@ const EditTenant = () => {
                 </h1>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Update tenant information and
-                  account details.
+                  Update tenant profile information.
+                  The linked user account cannot be changed here.
                 </p>
               </div>
             </div>
