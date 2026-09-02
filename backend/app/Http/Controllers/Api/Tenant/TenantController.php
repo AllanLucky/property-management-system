@@ -8,6 +8,7 @@ use App\Http\Requests\Tenant\CreateTenantRequest;
 use App\Http\Requests\Tenant\UpdateTenantRequest;
 use App\Http\Resources\TenantResource;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Services\TenantService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,280 @@ class TenantController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    | GET /api/tenants/users
+    |--------------------------------------------------------------------------
+    |
+    | PURPOSE:
+    |
+    | Return existing User accounts that:
+    |
+    | 1. Have the "tenant" Spatie role.
+    | 2. Do NOT already have a Tenant profile.
+    |
+    | This endpoint is intended for the Create Tenant form.
+    |
+    | IMPORTANT:
+    |
+    | We are NOT creating a new User here.
+    |
+    | We are selecting an existing User and creating a Tenant profile
+    | connected to that User through tenants.user_id.
+    |
+    */
+
+    public function tenantUsers(): JsonResponse
+    {
+        try {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Find users already assigned to tenant profiles
+            |--------------------------------------------------------------------------
+            */
+
+            $assignedUserIds = Tenant::query()
+                ->whereNotNull('user_id')
+                ->pluck('user_id');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch available tenant users
+            |--------------------------------------------------------------------------
+            |
+            | Spatie role:
+            |
+            | tenant
+            |
+            | Exclude users who already have a tenant profile.
+            |
+            */
+
+            $users = User::query()
+                ->whereHas(
+                    'roles',
+                    function ($query) {
+                        $query->where('name', 'tenant');
+                    }
+                )
+                ->when(
+                    $assignedUserIds->isNotEmpty(),
+                    function ($query) use ($assignedUserIds) {
+                        $query->whereNotIn(
+                            'id',
+                            $assignedUserIds
+                        );
+                    }
+                )
+                ->orderBy('first_name')
+                ->orderBy('last_name')
+                ->get([
+                    'id',
+                    'first_name',
+                    'last_name',
+                    'email',
+                    'phone',
+                ]);
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Format response
+            |--------------------------------------------------------------------------
+            */
+
+            $data = $users
+                ->map(
+                    static function (User $user): array {
+
+                        return [
+                            'id' => $user->id,
+
+                            'first_name' => $user->first_name,
+
+                            'last_name' => $user->last_name,
+
+                            'name' => trim(
+                                implode(
+                                    ' ',
+                                    array_filter([
+                                        $user->first_name,
+                                        $user->last_name,
+                                    ])
+                                )
+                            ),
+
+                            'email' => $user->email,
+
+                            'phone' => $user->phone,
+                        ];
+                    }
+                )
+                ->values();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Return response
+            |--------------------------------------------------------------------------
+            */
+
+            return ApiResponse::collection(
+                $data,
+                'Available tenant users fetched successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to fetch available tenant users.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | ALL TENANT ROLE USERS
+    |--------------------------------------------------------------------------
+    | GET /api/tenants/all-users
+    |--------------------------------------------------------------------------
+    |
+    | PURPOSE:
+    |
+    | Return ALL users who have the "tenant" role.
+    |
+    | Unlike tenantUsers(), this endpoint does NOT exclude users who
+    | already have a tenant profile.
+    |
+    | This is useful for:
+    |
+    | - Tenant reports
+    | - User management
+    | - Tenant-role listings
+    | - Administration
+    |
+    */
+
+    public function allTenantUsers(): JsonResponse
+    {
+        try {
+
+            $users = User::query()
+                ->whereHas(
+                    'roles',
+                    function ($query) {
+                        $query->where('name', 'tenant');
+                    }
+                )
+                ->with('tenant:id,user_id,tenant_number,status')
+                ->orderBy('first_name')
+                ->orderBy('last_name')
+                ->get([
+                    'id',
+                    'first_name',
+                    'last_name',
+                    'email',
+                    'phone',
+                ]);
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Format response
+            |--------------------------------------------------------------------------
+            */
+
+            $data = $users
+                ->map(
+                    static function (User $user): array {
+
+                        return [
+                            'id' => $user->id,
+
+                            'first_name' => $user->first_name,
+
+                            'last_name' => $user->last_name,
+
+                            'name' => trim(
+                                implode(
+                                    ' ',
+                                    array_filter([
+                                        $user->first_name,
+                                        $user->last_name,
+                                    ])
+                                )
+                            ),
+
+                            'email' => $user->email,
+
+                            'phone' => $user->phone,
+
+                            /*
+                            |------------------------------------------------------
+                            | Tenant profile information
+                            |------------------------------------------------------
+                            */
+
+                            'has_tenant_profile' => $user->tenant !== null,
+
+                            'tenant' => $user->tenant
+                                ? [
+                                    'id' => $user->tenant->id,
+
+                                    'tenant_number' =>
+                                        $user->tenant->tenant_number,
+
+                                    'status' =>
+                                        $user->tenant->status,
+                                ]
+                                : null,
+                        ];
+                    }
+                )
+                ->values();
+
+
+            return ApiResponse::collection(
+                $data,
+                'All tenant-role users fetched successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to fetch tenant-role users.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | AVAILABLE TENANT USERS
+    |--------------------------------------------------------------------------
+    | GET /api/tenants/available-users
+    |--------------------------------------------------------------------------
+    |
+    | Alias of tenantUsers().
+    |
+    | This keeps backward compatibility if your frontend or another part
+    | of the application already uses /available-users.
+    |
+    */
+
+    public function availableUsers(): JsonResponse
+    {
+        return $this->tenantUsers();
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
     | INDEX
     |--------------------------------------------------------------------------
     | GET /api/tenants
@@ -41,25 +316,94 @@ class TenantController extends Controller
 
             $filters = [
 
+                /*
+                |----------------------------------------------------------------------
+                | Search
+                |----------------------------------------------------------------------
+                */
+
                 'search' => $request->input('search'),
+
+                /*
+                |----------------------------------------------------------------------
+                | User
+                |----------------------------------------------------------------------
+                */
+
+                'user_id' => $request->input('user_id'),
+
+                /*
+                |----------------------------------------------------------------------
+                | Status
+                |----------------------------------------------------------------------
+                */
 
                 'status' => $request->input('status'),
 
+                /*
+                |----------------------------------------------------------------------
+                | Active filter
+                |----------------------------------------------------------------------
+                |
+                | IMPORTANT:
+                |
+                | is_active is NOT a database column.
+                |
+                | TenantService must translate:
+                |
+                | is_active=true
+                |
+                | into:
+                |
+                | status=active
+                |
+                */
+
                 'is_active' => $request->has('is_active')
-                    ? $request->boolean('is_active')
+                    ? $request->input('is_active')
                     : null,
 
+                /*
+                |----------------------------------------------------------------------
+                | Verification
+                |----------------------------------------------------------------------
+                */
+
                 'is_verified' => $request->has('is_verified')
-                    ? $request->boolean('is_verified')
+                    ? $request->input('is_verified')
                     : null,
+
+                /*
+                |----------------------------------------------------------------------
+                | Demographics
+                |----------------------------------------------------------------------
+                */
 
                 'gender' => $request->input('gender'),
 
+                /*
+                |----------------------------------------------------------------------
+                | Location
+                |----------------------------------------------------------------------
+                */
+
                 'country' => $request->input('country'),
+
+                'region' => $request->input('region'),
 
                 'county' => $request->input('county'),
 
                 'city' => $request->input('city'),
+
+                'area' => $request->input('area'),
+
+                'postal_code' => $request->input('postal_code'),
+
+                /*
+                |----------------------------------------------------------------------
+                | Sorting
+                |----------------------------------------------------------------------
+                */
 
                 'sort_by' => $request->input(
                     'sort_by',
@@ -71,6 +415,12 @@ class TenantController extends Controller
                     'desc'
                 ),
 
+                /*
+                |----------------------------------------------------------------------
+                | Pagination
+                |----------------------------------------------------------------------
+                */
+
                 'per_page' => $request->input(
                     'per_page',
                     15
@@ -78,9 +428,40 @@ class TenantController extends Controller
             ];
 
 
+            /*
+            |--------------------------------------------------------------------------
+            | Remove empty filters
+            |--------------------------------------------------------------------------
+            */
+
+            $filters = array_filter(
+                $filters,
+                static fn ($value) =>
+                    $value !== null &&
+                    $value !== ''
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch tenants
+            |--------------------------------------------------------------------------
+            */
+
             $tenants = $this->tenantService->paginate(
                 $filters
             );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Load user relationship
+            |--------------------------------------------------------------------------
+            */
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::paginated(
@@ -104,6 +485,11 @@ class TenantController extends Controller
     |--------------------------------------------------------------------------
     | POST /api/tenants
     |--------------------------------------------------------------------------
+    |
+    | Creates a Tenant PROFILE from an existing User account.
+    |
+    | It does NOT create another User.
+    |
     */
 
     public function store(
@@ -112,20 +498,129 @@ class TenantController extends Controller
 
         try {
 
+            $data = $request->validated();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Require existing tenant user
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                !isset($data['user_id']) ||
+                !filled($data['user_id'])
+            ) {
+
+                return ApiResponse::validation([
+                    'user_id' => [
+                        'An existing user with the tenant role must be selected.'
+                    ],
+                ]);
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Get selected user
+            |--------------------------------------------------------------------------
+            */
+
+            $user = User::query()
+                ->whereKey($data['user_id'])
+                ->whereHas(
+                    'roles',
+                    function ($query) {
+                        $query->where('name', 'tenant');
+                    }
+                )
+                ->first();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Ensure selected user is a tenant-role user
+            |--------------------------------------------------------------------------
+            */
+
+            if (!$user) {
+
+                return ApiResponse::validation([
+                    'user_id' => [
+                        'The selected user must have the tenant role.'
+                    ],
+                ]);
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Prevent duplicate tenant profile
+            |--------------------------------------------------------------------------
+            */
+
+            $existingTenant = Tenant::query()
+                ->where('user_id', $user->id)
+                ->first();
+
+
+            if ($existingTenant) {
+
+                return ApiResponse::validation([
+                    'user_id' => [
+                        'This user already has a tenant profile.'
+                    ],
+                ]);
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Uploaded documents
+            |--------------------------------------------------------------------------
+            */
+
+            $photo = $request->file('photo');
+
+            $idFront = $request->file('id_front');
+
+            $idBack = $request->file('id_back');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create tenant profile
+            |--------------------------------------------------------------------------
+            */
+
             $tenant = $this->tenantService->create(
-                $request->validated()
+                $data,
+                $photo,
+                $idFront,
+                $idBack
             );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Load relationships
+            |--------------------------------------------------------------------------
+            */
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::created(
                 new TenantResource($tenant),
-                'Tenant created successfully.'
+                'Tenant profile created successfully from the existing tenant user account.'
             );
 
         } catch (Throwable $e) {
 
             return ApiResponse::serverError(
-                'Failed to create tenant.',
+                'Failed to create tenant profile.',
                 $this->exceptionErrors($e)
             );
         }
@@ -151,12 +646,9 @@ class TenantController extends Controller
             );
 
 
-            if (!$tenant) {
-
-                return ApiResponse::notFound(
-                    'Tenant not found.'
-                );
-            }
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::success(
@@ -189,21 +681,38 @@ class TenantController extends Controller
 
         try {
 
+            $data = $request->validated();
+
+            $photo = $request->file('photo');
+
+            $idFront = $request->file('id_front');
+
+            $idBack = $request->file('id_back');
+
+
             $updatedTenant = $this->tenantService->update(
                 $tenant,
-                $request->validated()
+                $data,
+                $photo,
+                $idFront,
+                $idBack
             );
+
+
+            $updatedTenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
                 new TenantResource($updatedTenant),
-                'Tenant updated successfully.'
+                'Tenant profile updated successfully.'
             );
 
         } catch (Throwable $e) {
 
             return ApiResponse::serverError(
-                'Failed to update tenant.',
+                'Failed to update tenant profile.',
                 $this->exceptionErrors($e)
             );
         }
@@ -232,20 +741,20 @@ class TenantController extends Controller
             if (!$deleted) {
 
                 return ApiResponse::serverError(
-                    'Failed to delete tenant.'
+                    'Failed to delete tenant profile.'
                 );
             }
 
 
             return ApiResponse::deleted(
                 null,
-                'Tenant deleted successfully.'
+                'Tenant profile deleted successfully. The user account remains unchanged.'
             );
 
         } catch (Throwable $e) {
 
             return ApiResponse::serverError(
-                'Failed to delete tenant.',
+                'Failed to delete tenant profile.',
                 $this->exceptionErrors($e)
             );
         }
@@ -290,10 +799,21 @@ class TenantController extends Controller
             );
 
 
+            $limit = max(
+                1,
+                min($limit, 100)
+            );
+
+
             $tenants = $this->tenantService->search(
                 $search,
                 $limit
             );
+
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -313,7 +833,7 @@ class TenantController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | ACTIVE TENANTS
+    | ACTIVE
     |--------------------------------------------------------------------------
     | GET /api/tenants/active
     |--------------------------------------------------------------------------
@@ -324,6 +844,10 @@ class TenantController extends Controller
         try {
 
             $tenants = $this->tenantService->getActive();
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -343,7 +867,7 @@ class TenantController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | PENDING TENANTS
+    | PENDING
     |--------------------------------------------------------------------------
     | GET /api/tenants/pending
     |--------------------------------------------------------------------------
@@ -354,6 +878,10 @@ class TenantController extends Controller
         try {
 
             $tenants = $this->tenantService->getPending();
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -373,7 +901,7 @@ class TenantController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | INACTIVE TENANTS
+    | INACTIVE
     |--------------------------------------------------------------------------
     | GET /api/tenants/inactive
     |--------------------------------------------------------------------------
@@ -384,6 +912,10 @@ class TenantController extends Controller
         try {
 
             $tenants = $this->tenantService->getInactive();
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -403,7 +935,7 @@ class TenantController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | BLACKLISTED TENANTS
+    | BLACKLISTED
     |--------------------------------------------------------------------------
     | GET /api/tenants/blacklisted
     |--------------------------------------------------------------------------
@@ -414,6 +946,10 @@ class TenantController extends Controller
         try {
 
             $tenants = $this->tenantService->getBlacklisted();
+
+            $tenants->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::collection(
@@ -449,6 +985,10 @@ class TenantController extends Controller
                 $tenant
             );
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
 
             return ApiResponse::updated(
                 new TenantResource($tenant),
@@ -482,6 +1022,10 @@ class TenantController extends Controller
             $tenant = $this->tenantService->deactivate(
                 $tenant
             );
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
@@ -517,6 +1061,10 @@ class TenantController extends Controller
                 $tenant
             );
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
 
             return ApiResponse::updated(
                 new TenantResource($tenant),
@@ -550,6 +1098,10 @@ class TenantController extends Controller
             $tenant = $this->tenantService->setPending(
                 $tenant
             );
+
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
@@ -585,6 +1137,10 @@ class TenantController extends Controller
                 $tenant
             );
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
 
             return ApiResponse::updated(
                 new TenantResource($tenant),
@@ -619,6 +1175,10 @@ class TenantController extends Controller
                 $tenant
             );
 
+            $tenant->loadMissing([
+                'user',
+            ]);
+
 
             return ApiResponse::updated(
                 new TenantResource($tenant),
@@ -647,8 +1207,7 @@ class TenantController extends Controller
     {
         try {
 
-            $statistics =
-                $this->tenantService->statistics();
+            $statistics = $this->tenantService->statistics();
 
 
             return ApiResponse::success(
@@ -684,24 +1243,20 @@ class TenantController extends Controller
                 $id
             );
 
-
-            if (!$tenant) {
-
-                return ApiResponse::notFound(
-                    'Tenant not found.'
-                );
-            }
+            $tenant->loadMissing([
+                'user',
+            ]);
 
 
             return ApiResponse::updated(
                 new TenantResource($tenant),
-                'Tenant restored successfully.'
+                'Tenant profile restored successfully.'
             );
 
         } catch (Throwable $e) {
 
             return ApiResponse::serverError(
-                'Failed to restore tenant.',
+                'Failed to restore tenant profile.',
                 $this->exceptionErrors($e)
             );
         }
@@ -730,20 +1285,174 @@ class TenantController extends Controller
             if (!$deleted) {
 
                 return ApiResponse::notFound(
-                    'Tenant not found.'
+                    'Tenant profile not found.'
                 );
             }
 
 
             return ApiResponse::deleted(
                 null,
-                'Tenant permanently deleted successfully.'
+                'Tenant profile permanently deleted successfully. The user account remains untouched.'
             );
 
         } catch (Throwable $e) {
 
             return ApiResponse::serverError(
-                'Failed to permanently delete tenant.',
+                'Failed to permanently delete tenant profile.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPLOAD PHOTO
+    |--------------------------------------------------------------------------
+    | POST /api/tenants/{tenant}/photo
+    |--------------------------------------------------------------------------
+    */
+
+    public function uploadPhoto(
+        Request $request,
+        Tenant $tenant
+    ): JsonResponse {
+
+        try {
+
+            $request->validate([
+                'photo' => [
+                    'required',
+                    'file',
+                    'image',
+                    'mimes:jpg,jpeg,png,webp',
+                    'max:5120',
+                ],
+            ]);
+
+
+            $tenant = $this->tenantService->uploadPhoto(
+                $tenant,
+                $request->file('photo')
+            );
+
+
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
+            return ApiResponse::updated(
+                new TenantResource($tenant),
+                'Tenant photo uploaded successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to upload tenant photo.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPLOAD FRONT ID
+    |--------------------------------------------------------------------------
+    | POST /api/tenants/{tenant}/id-front
+    |--------------------------------------------------------------------------
+    */
+
+    public function uploadIdFront(
+        Request $request,
+        Tenant $tenant
+    ): JsonResponse {
+
+        try {
+
+            $request->validate([
+                'id_front' => [
+                    'required',
+                    'file',
+                    'mimes:jpg,jpeg,png,webp,pdf',
+                    'max:5120',
+                ],
+            ]);
+
+
+            $tenant = $this->tenantService->uploadIdFront(
+                $tenant,
+                $request->file('id_front')
+            );
+
+
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
+            return ApiResponse::updated(
+                new TenantResource($tenant),
+                'Tenant ID front uploaded successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to upload tenant ID front.',
+                $this->exceptionErrors($e)
+            );
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPLOAD BACK ID
+    |--------------------------------------------------------------------------
+    | POST /api/tenants/{tenant}/id-back
+    |--------------------------------------------------------------------------
+    */
+
+    public function uploadIdBack(
+        Request $request,
+        Tenant $tenant
+    ): JsonResponse {
+
+        try {
+
+            $request->validate([
+                'id_back' => [
+                    'required',
+                    'file',
+                    'mimes:jpg,jpeg,png,webp,pdf',
+                    'max:5120',
+                ],
+            ]);
+
+
+            $tenant = $this->tenantService->uploadIdBack(
+                $tenant,
+                $request->file('id_back')
+            );
+
+
+            $tenant->loadMissing([
+                'user',
+            ]);
+
+
+            return ApiResponse::updated(
+                new TenantResource($tenant),
+                'Tenant ID back uploaded successfully.'
+            );
+
+        } catch (Throwable $e) {
+
+            return ApiResponse::serverError(
+                'Failed to upload tenant ID back.',
                 $this->exceptionErrors($e)
             );
         }
@@ -762,7 +1471,7 @@ class TenantController extends Controller
 
         /*
         |--------------------------------------------------------------------------
-        | Do not expose internal exception details in production.
+        | Do not expose internal errors in production
         |--------------------------------------------------------------------------
         */
 
@@ -787,3 +1496,4 @@ class TenantController extends Controller
         ];
     }
 }
+

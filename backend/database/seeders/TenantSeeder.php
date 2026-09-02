@@ -20,13 +20,20 @@ class TenantSeeder extends Seeder
         | Tenant Seed Data
         |--------------------------------------------------------------------------
         |
-        | These are tenant profile records.
+        | IMPORTANT:
         |
-        | Each tenant is linked to an existing User account where possible.
-        | If the user does not exist, a user account is created and assigned
-        | the "tenant" role.
+        | The User table is the source of authentication/account information.
+        |
+        | Tenant-specific information is stored in the tenants table.
+        |
+        | Tenant activity is controlled exclusively through:
+        |
+        |     tenants.status
+        |
+        | There is NO tenants.is_active database column.
         |
         */
+
         $tenants = [
             [
                 'tenant_number' => 'TNT-000001',
@@ -40,8 +47,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '28745001',
                 'passport_number' => 'A12345678',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Westlands',
                 'postal_code' => '00100',
                 'address' => 'Westlands, Nairobi',
                 'occupation' => 'Software Engineer',
@@ -68,8 +77,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '29167002',
                 'passport_number' => 'A23456789',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Kiambu',
                 'city' => 'Ruiru',
+                'area' => 'Ruiru Town',
                 'postal_code' => '00232',
                 'address' => 'Ruiru, Kiambu',
                 'occupation' => 'Accountant',
@@ -96,8 +107,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '24583003',
                 'passport_number' => 'A34567890',
                 'country' => 'Kenya',
+                'region' => 'Nyanza Region',
                 'county' => 'Kisumu',
                 'city' => 'Kisumu',
+                'area' => 'Milimani',
                 'postal_code' => '40100',
                 'address' => 'Milimani, Kisumu',
                 'occupation' => 'Business Manager',
@@ -124,8 +137,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '31894004',
                 'passport_number' => 'A45678901',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Kilimani',
                 'postal_code' => '00505',
                 'address' => 'Kilimani, Nairobi',
                 'occupation' => 'Marketing Executive',
@@ -152,8 +167,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '22356005',
                 'passport_number' => 'A56789012',
                 'country' => 'Kenya',
+                'region' => 'Rift Valley Region',
                 'county' => 'Uasin Gishu',
                 'city' => 'Eldoret',
+                'area' => 'Elgon View',
                 'postal_code' => '30100',
                 'address' => 'Elgon View, Eldoret',
                 'occupation' => 'Civil Engineer',
@@ -180,8 +197,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '32978006',
                 'passport_number' => 'A67890123',
                 'country' => 'Kenya',
+                'region' => 'Rift Valley Region',
                 'county' => 'Nakuru',
                 'city' => 'Nakuru',
+                'area' => 'Milimani',
                 'postal_code' => '20100',
                 'address' => 'Milimani, Nakuru',
                 'occupation' => 'Human Resources Officer',
@@ -208,8 +227,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '30245007',
                 'passport_number' => 'A78901234',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'South B',
                 'postal_code' => '00100',
                 'address' => 'South B, Nairobi',
                 'occupation' => 'Graphic Designer',
@@ -236,8 +257,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '27689008',
                 'passport_number' => 'A89012345',
                 'country' => 'Kenya',
+                'region' => 'Rift Valley Region',
                 'county' => 'Kericho',
                 'city' => 'Kericho',
+                'area' => 'Kericho Town',
                 'postal_code' => '20200',
                 'address' => 'Kericho Town',
                 'occupation' => 'Pharmacist',
@@ -264,8 +287,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '21876009',
                 'passport_number' => 'A90123456',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Lavington',
                 'postal_code' => '00606',
                 'address' => 'Lavington, Nairobi',
                 'occupation' => 'Procurement Manager',
@@ -292,8 +317,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '29431010',
                 'passport_number' => 'B12345678',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Murang’a',
                 'city' => 'Thika',
+                'area' => 'Section 9',
                 'postal_code' => '01000',
                 'address' => 'Section 9, Thika',
                 'occupation' => 'Teacher',
@@ -320,8 +347,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '25892011',
                 'passport_number' => 'B23456789',
                 'country' => 'Kenya',
+                'region' => 'Eastern Region',
                 'county' => 'Machakos',
                 'city' => 'Machakos',
+                'area' => 'Machakos Town',
                 'postal_code' => '90100',
                 'address' => 'Machakos Town',
                 'occupation' => 'Sales Manager',
@@ -348,8 +377,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '32167012',
                 'passport_number' => 'B34567890',
                 'country' => 'Kenya',
+                'region' => 'Nyanza Region',
                 'county' => 'Kisumu',
                 'city' => 'Kisumu',
+                'area' => 'Kondele',
                 'postal_code' => '40100',
                 'address' => 'Kondele, Kisumu',
                 'occupation' => 'Medical Officer',
@@ -376,8 +407,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '23654013',
                 'passport_number' => 'B45678901',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Kiambu',
                 'city' => 'Limuru',
+                'area' => 'Limuru Town',
                 'postal_code' => '00217',
                 'address' => 'Limuru Town',
                 'occupation' => 'Business Consultant',
@@ -404,8 +437,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '33542014',
                 'passport_number' => 'B56789012',
                 'country' => 'Kenya',
+                'region' => 'Nairobi Region',
                 'county' => 'Nairobi',
                 'city' => 'Nairobi',
+                'area' => 'Kasarani',
                 'postal_code' => '00100',
                 'address' => 'Kasarani, Nairobi',
                 'occupation' => 'Customer Service Officer',
@@ -432,8 +467,10 @@ class TenantSeeder extends Seeder
                 'id_number' => '20578015',
                 'passport_number' => 'B67890123',
                 'country' => 'Kenya',
+                'region' => 'Central Region',
                 'county' => 'Nyeri',
                 'city' => 'Nyeri',
+                'area' => 'Nyeri Town',
                 'postal_code' => '10100',
                 'address' => 'Nyeri Town',
                 'occupation' => 'Architect',
@@ -451,25 +488,27 @@ class TenantSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | Verify Tenant Role
+        | Resolve Tenant Role
         |--------------------------------------------------------------------------
+        |
+        | The tenant role must exist before assigning it to User accounts.
+        |
+        | firstOrCreate() makes the seeder safe to run on a fresh database
+        | even when the role has not yet been created by another seeder.
+        |
         */
-        $tenantRole = Role::query()
-            ->where('name', 'tenant')
-            ->where('guard_name', 'web')
-            ->first();
 
-        if (!$tenantRole) {
-            $this->command?->warn(
-                'The "tenant" role was not found. Tenant users cannot be assigned the tenant role.'
-            );
-        }
+        $tenantRole = Role::firstOrCreate([
+            'name' => 'tenant',
+            'guard_name' => 'web',
+        ]);
 
         /*
         |--------------------------------------------------------------------------
         | Statistics
         |--------------------------------------------------------------------------
         */
+
         $createdUsers = 0;
         $updatedUsers = 0;
         $createdTenants = 0;
@@ -480,46 +519,85 @@ class TenantSeeder extends Seeder
         | Seed Tenants
         |--------------------------------------------------------------------------
         */
-        foreach ($tenants as $tenantData) {
+
+        foreach ($tenants as $data) {
             /*
             |--------------------------------------------------------------------------
-            | Determine Tenant Active State
+            | User Account Data
             |--------------------------------------------------------------------------
             |
-            | Only an ACTIVE tenant profile is considered active.
-            |
-            | Pending tenants remain inactive until approved.
+            | These are account-level fields and belong to the User model.
             |
             */
-            $tenantData['is_active'] =
-                $tenantData['status'] === Tenant::STATUS_ACTIVE;
+
+            $userData = [
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
+                'email' => $data['email'],
+                'phone' => $data['phone'],
+                'date_of_birth' => $data['date_of_birth'],
+                'gender' => $data['gender'],
+                'address' => $data['address'],
+            ];
 
             /*
             |--------------------------------------------------------------------------
             | Find Existing User
             |--------------------------------------------------------------------------
             |
-            | IMPORTANT:
-            | We use the user's email as the account identity.
+            | Email is the stable account identifier.
             |
-            | If the user already exists, we reuse the account instead of
-            | creating another user.
+            | withTrashed() allows a previously soft-deleted user account
+            | to be restored instead of creating a duplicate account.
             |
             */
+
             $user = User::withTrashed()
-                ->where('email', $tenantData['email'])
+                ->where('email', $data['email'])
                 ->first();
 
-            if ($user) {
+            /*
+            |--------------------------------------------------------------------------
+            | Create Or Update User
+            |--------------------------------------------------------------------------
+            */
+
+            if (!$user) {
+                $user = User::create([
+                    ...$userData,
+
+                    'password' => Hash::make('Password@123'),
+
+                    /*
+                    | Pending tenant applications require approval.
+                    | All other seeded tenant accounts are approved.
+                    */
+
+                    'approval_status' => $data['status'] === Tenant::STATUS_PENDING
+                        ? User::APPROVAL_PENDING
+                        : User::APPROVAL_APPROVED,
+
+                    /*
+                    | Only ACTIVE tenant profiles receive an active
+                    | User account status.
+                    */
+
+                    'account_status' => $data['status'] === Tenant::STATUS_ACTIVE
+                        ? User::STATUS_ACTIVE
+                        : User::STATUS_INACTIVE,
+
+                    'is_verified' => (bool) $data['is_verified'],
+                ]);
+
+                $createdUsers++;
+            } else {
                 /*
                 |--------------------------------------------------------------------------
                 | Restore Soft Deleted User
                 |--------------------------------------------------------------------------
                 */
-                if (
-                    method_exists($user, 'trashed') &&
-                    $user->trashed()
-                ) {
+
+                if ($user->trashed()) {
                     $user->restore();
                 }
 
@@ -528,32 +606,25 @@ class TenantSeeder extends Seeder
                 | Update Existing User
                 |--------------------------------------------------------------------------
                 |
-                | Only account-level identity fields are updated here.
-                | Tenant-specific information remains in the tenants table.
+                | Only account-level information is updated here.
                 |
                 */
+
                 $user->update([
-                    'first_name' => $tenantData['first_name'],
-                    'last_name' => $tenantData['last_name'],
-                    'phone' => $tenantData['phone'],
+                    ...$userData,
+
+                    'approval_status' => $data['status'] === Tenant::STATUS_PENDING
+                        ? User::APPROVAL_PENDING
+                        : User::APPROVAL_APPROVED,
+
+                    'account_status' => $data['status'] === Tenant::STATUS_ACTIVE
+                        ? User::STATUS_ACTIVE
+                        : User::STATUS_INACTIVE,
+
+                    'is_verified' => (bool) $data['is_verified'],
                 ]);
 
                 $updatedUsers++;
-            } else {
-                /*
-                |--------------------------------------------------------------------------
-                | Create User Account
-                |--------------------------------------------------------------------------
-                */
-                $user = User::create([
-                    'first_name' => $tenantData['first_name'],
-                    'last_name' => $tenantData['last_name'],
-                    'email' => $tenantData['email'],
-                    'phone' => $tenantData['phone'],
-                    'password' => Hash::make('Password@123'),
-                ]);
-
-                $createdUsers++;
             }
 
             /*
@@ -561,40 +632,156 @@ class TenantSeeder extends Seeder
             | Ensure Tenant Role
             |--------------------------------------------------------------------------
             */
-            if (
-                $tenantRole &&
-                method_exists($user, 'assignRole') &&
-                !$user->hasRole('tenant')
-            ) {
+
+            if (!$user->hasRole('tenant')) {
                 $user->assignRole($tenantRole);
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Prepare Tenant Profile
+            | Prepare Tenant Profile Data
             |--------------------------------------------------------------------------
+            |
+            | User remains the source of account-level identity information.
+            |
+            | Tenant contains tenant-specific information such as:
+            |
+            | - Tenant number
+            | - Identification documents
+            | - Employment
+            | - Emergency contacts
+            | - Tenant status
+            | - Verification details
+            |
             */
-            $tenantPayload = array_merge(
-                $tenantData,
-                [
-                    'user_id' => $user->id,
-                ]
-            );
+
+            $tenantData = [
+                /*
+                | Tenant Identification
+                */
+
+                'tenant_number' => $data['tenant_number'],
+
+                /*
+                | User Relationship
+                */
+
+                'user_id' => $user->id,
+
+                /*
+                | Personal Information
+                |
+                | These values are synchronized from User.
+                */
+
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'other_names' => $data['other_names'] ?? null,
+
+                'email' => $user->email,
+                'phone' => $user->phone,
+
+                'date_of_birth' => $user->date_of_birth,
+                'gender' => $user->gender,
+
+                /*
+                | Identification
+                */
+
+                'id_number' => $data['id_number'] ?? null,
+                'passport_number' => $data['passport_number'] ?? null,
+
+                /*
+                | Location
+                */
+
+                'country' => $data['country'] ?? 'Kenya',
+                'region' => $data['region'] ?? null,
+                'county' => $data['county'] ?? null,
+                'city' => $data['city'] ?? null,
+                'area' => $data['area'] ?? null,
+                'postal_code' => $data['postal_code'] ?? null,
+
+                'address' => $user->address,
+
+                /*
+                | Employment
+                */
+
+                'occupation' => $data['occupation'] ?? null,
+                'employer' => $data['employer'] ?? null,
+                'monthly_income' => $data['monthly_income'] ?? null,
+
+                /*
+                | Emergency Contact
+                */
+
+                'emergency_contact_name' =>
+                    $data['emergency_contact_name'] ?? null,
+
+                'emergency_contact_phone' =>
+                    $data['emergency_contact_phone'] ?? null,
+
+                'emergency_contact_relationship' =>
+                    $data['emergency_contact_relationship'] ?? null,
+
+                /*
+                | Documents
+                |
+                | Seeders do not upload actual files.
+                */
+
+                'photo' => null,
+                'photo_public_id' => null,
+
+                'id_front' => null,
+                'id_front_public_id' => null,
+
+                'id_back' => null,
+                'id_back_public_id' => null,
+
+                /*
+                | Verification
+                */
+
+                'is_verified' => (bool) $data['is_verified'],
+                'verified_at' => $data['verified_at'] ?? null,
+
+                /*
+                | Tenant Status
+                |
+                | This is the single source of truth for tenant activity.
+                |
+                | DO NOT add or update tenants.is_active here.
+                */
+
+                'status' => $data['status'],
+
+                /*
+                | Notes
+                */
+
+                'notes' => $data['notes'] ?? null,
+            ];
 
             /*
             |--------------------------------------------------------------------------
-            | Create / Update Tenant
+            | Find Existing Tenant
             |--------------------------------------------------------------------------
             |
             | tenant_number is the stable tenant profile identifier.
             |
-            | The user_id links this tenant profile to the existing user
-            | account.
-            |
             */
+
             $tenant = Tenant::withTrashed()
-                ->where('tenant_number', $tenantData['tenant_number'])
+                ->where('tenant_number', $data['tenant_number'])
                 ->first();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create Or Update Tenant
+            |--------------------------------------------------------------------------
+            */
 
             if ($tenant) {
                 /*
@@ -602,18 +789,16 @@ class TenantSeeder extends Seeder
                 | Restore Soft Deleted Tenant
                 |--------------------------------------------------------------------------
                 */
-                if (
-                    method_exists($tenant, 'trashed') &&
-                    $tenant->trashed()
-                ) {
+
+                if ($tenant->trashed()) {
                     $tenant->restore();
                 }
 
-                $tenant->update($tenantPayload);
+                $tenant->update($tenantData);
 
                 $updatedTenants++;
             } else {
-                Tenant::create($tenantPayload);
+                Tenant::create($tenantData);
 
                 $createdTenants++;
             }
@@ -621,9 +806,10 @@ class TenantSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | Summary
+        | Seeder Summary
         |--------------------------------------------------------------------------
         */
+
         $this->command?->newLine();
 
         $this->command?->info(
@@ -651,7 +837,19 @@ class TenantSeeder extends Seeder
         );
 
         $this->command?->info(
-            'Default tenant login password for newly created users: Password@123'
+            'Default password for newly created tenant users: Password@123'
+        );
+
+        $this->command?->info(
+            'Tenant profiles are linked to User accounts through tenants.user_id.'
+        );
+
+        $this->command?->info(
+            'Tenant activity is controlled exclusively by tenants.status.'
+        );
+
+        $this->command?->info(
+            'No tenants.is_active field is used by this seeder.'
         );
     }
 }
