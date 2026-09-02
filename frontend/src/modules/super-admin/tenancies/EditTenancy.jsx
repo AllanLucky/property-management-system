@@ -278,9 +278,7 @@ const getErrorMessage = (error) => {
         return data.errors;
       }
 
-      if (
-        typeof data.errors === "object"
-      ) {
+      if (typeof data.errors === "object") {
         const messages = Object.values(
           data.errors
         )
@@ -307,19 +305,7 @@ const getErrorMessage = (error) => {
 /**
  * Normalize tenancy returned by Laravel.
  *
- * Supports both IDs and relationships:
- *
- * property_id
- * apartment_id
- * unit_id
- * tenant_id
- *
- * and:
- *
- * property: {}
- * apartment: {}
- * unit: {}
- * tenant: {}
+ * Supports both IDs and relationships.
  */
 const normalizeTenancy = (value) => {
   if (
@@ -412,9 +398,9 @@ const extractTenancy = (response) => {
     !Array.isArray(response.data)
   ) {
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | { data: { data: tenancy } }
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (
@@ -426,9 +412,9 @@ const extractTenancy = (response) => {
     }
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | { data: tenancy }
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
 
     if (
@@ -449,9 +435,9 @@ const extractTenancy = (response) => {
 */
 
 /**
- * Keep the selected tenancy relationships in the dropdown collections.
+ * Keep the selected tenancy relationship in the dropdown collections.
  *
- * This is important when the API returns a tenancy relationship but the
+ * This is important when the API returns the selected relationship but the
  * general collection endpoint does not include that record.
  */
 const ensureSelectedOption = (
@@ -487,6 +473,200 @@ const ensureSelectedOption = (
     selected,
     ...list,
   ];
+};
+
+/*
+|--------------------------------------------------------------------------
+| FULL PAGE LOADER
+|--------------------------------------------------------------------------
+*/
+
+const EditTenancyLoading = ({
+  onBack,
+  submitting = false,
+}) => {
+  return (
+    <div
+      className="
+        flex
+        min-h-[70vh]
+        w-full
+        items-center
+        justify-center
+        px-4
+        py-12
+      "
+      role="status"
+      aria-live="polite"
+      aria-label="Loading tenancy"
+    >
+      <div
+        className="
+          flex
+          w-full
+          max-w-md
+          flex-col
+          items-center
+          justify-center
+          rounded-2xl
+          border
+          border-gray-200
+          bg-white
+          px-6
+          py-12
+          shadow-sm
+          dark:border-gray-700
+          dark:bg-gray-800
+        "
+      >
+        {/* Spinner */}
+        <div
+          className="
+            relative
+            flex
+            h-20
+            w-20
+            items-center
+            justify-center
+          "
+        >
+          {/* Outer spinning ring */}
+          <div
+            className="
+              absolute
+              inset-0
+              rounded-full
+              border-4
+              border-gray-200
+              dark:border-gray-700
+            "
+          />
+
+          {/* Active spinning ring */}
+          <div
+            className="
+              absolute
+              inset-0
+              animate-spin
+              rounded-full
+              border-4
+              border-transparent
+              border-t-primary-600
+              border-r-primary-600
+              dark:border-t-primary-400
+              dark:border-r-primary-400
+            "
+          />
+
+          {/* Center spinner */}
+          <Loader2
+            className="
+              h-8
+              w-8
+              animate-spin
+              text-primary-600
+              dark:text-primary-400
+            "
+            aria-hidden="true"
+          />
+        </div>
+
+        {/* Title */}
+        <h2
+          className="
+            mt-6
+            text-base
+            font-semibold
+            text-gray-900
+            dark:text-white
+          "
+        >
+          Loading tenancy
+        </h2>
+
+        {/* Description */}
+        <p
+          className="
+            mt-2
+            max-w-sm
+            text-center
+            text-sm
+            leading-6
+            text-gray-500
+            dark:text-gray-400
+          "
+        >
+          Please wait while we retrieve the tenancy
+          details and assignment information.
+        </p>
+
+        {/* Animated loading indicator */}
+        <div
+          className="
+            mt-6
+            h-1
+            w-40
+            overflow-hidden
+            rounded-full
+            bg-gray-100
+            dark:bg-gray-700
+          "
+          aria-hidden="true"
+        >
+          <div
+            className="
+              h-full
+              w-1/2
+              animate-pulse
+              rounded-full
+              bg-primary-600
+              dark:bg-primary-400
+            "
+          />
+        </div>
+
+        {/* Back button */}
+        <button
+          type="button"
+          onClick={onBack}
+          disabled={submitting}
+          className="
+            mt-7
+            inline-flex
+            items-center
+            gap-2
+            rounded-lg
+            border
+            border-gray-300
+            bg-white
+            px-4
+            py-2
+            text-sm
+            font-medium
+            text-gray-700
+            shadow-sm
+            transition
+            hover:bg-gray-50
+            focus:outline-none
+            focus:ring-2
+            focus:ring-primary-500
+            focus:ring-offset-2
+            disabled:cursor-not-allowed
+            disabled:opacity-50
+            dark:border-gray-600
+            dark:bg-gray-800
+            dark:text-gray-200
+            dark:hover:bg-gray-700
+            dark:focus:ring-offset-gray-900
+          "
+        >
+          <ArrowLeft className="h-4 w-4" />
+
+          Back to Tenancies
+        </button>
+      </div>
+    </div>
+  );
 };
 
 /*
@@ -663,14 +843,6 @@ const EditTenancy = () => {
   |--------------------------------------------------------------------------
   | LOAD ASSIGNMENT DATA
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | TenancyForm cannot display Property/Apartment/Unit/Tenant options unless
-  | these collections are actually loaded.
-  |
-  | We therefore load them directly here and pass them to TenancyForm.
-  |
   */
 
   const loadAssignmentData =
@@ -731,9 +903,13 @@ const EditTenancy = () => {
           return {
             properties:
               propertyData,
+
             apartments:
               apartmentData,
-            units: unitData,
+
+            units:
+              unitData,
+
             tenants:
               tenantData,
           };
@@ -744,13 +920,6 @@ const EditTenancy = () => {
           setAssignmentError(
             message
           );
-
-          /*
-          |--------------------------------------------------------------------------
-          | Do not prevent the tenancy from displaying if assignment endpoints
-          | fail. The selected relationships can still be used as fallback.
-          |--------------------------------------------------------------------------
-          */
 
           return {
             properties: [],
@@ -819,12 +988,6 @@ const EditTenancy = () => {
         return;
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | Collections have already been placed into state by
-      | loadAssignmentData().
-      |--------------------------------------------------------------------------
-      */
       void result;
     };
 
@@ -1051,7 +1214,10 @@ const EditTenancy = () => {
   */
 
   const handleRetry = async () => {
-    if (loading || assignmentLoading) {
+    if (
+      loading ||
+      assignmentLoading
+    ) {
       return;
     }
 
@@ -1100,6 +1266,10 @@ const EditTenancy = () => {
             shadow-sm
             transition
             hover:bg-gray-50
+            focus:outline-none
+            focus:ring-2
+            focus:ring-primary-500
+            focus:ring-offset-2
             disabled:cursor-not-allowed
             disabled:opacity-50
           "
@@ -1116,13 +1286,29 @@ const EditTenancy = () => {
             border-red-200
             bg-red-50
             p-6
+            dark:border-red-900/50
+            dark:bg-red-950/20
           "
         >
-          <h2 className="text-base font-semibold text-red-900">
+          <h2
+            className="
+              text-base
+              font-semibold
+              text-red-900
+              dark:text-red-200
+            "
+          >
             Invalid Tenancy
           </h2>
 
-          <p className="mt-2 text-sm text-red-700">
+          <p
+            className="
+              mt-2
+              text-sm
+              text-red-700
+              dark:text-red-300
+            "
+          >
             No tenancy ID was provided.
           </p>
         </div>
@@ -1134,6 +1320,9 @@ const EditTenancy = () => {
   |--------------------------------------------------------------------------
   | INITIAL LOADING
   |--------------------------------------------------------------------------
+  |
+  | Full-page spinning loader.
+  |--------------------------------------------------------------------------
   */
 
   if (
@@ -1141,72 +1330,10 @@ const EditTenancy = () => {
     !tenancy
   ) {
     return (
-      <div className="space-y-6">
-        <button
-          type="button"
-          onClick={handleBack}
-          disabled={submitting}
-          className="
-            inline-flex
-            items-center
-            gap-2
-            rounded-lg
-            border
-            border-gray-300
-            bg-white
-            px-4
-            py-2
-            text-sm
-            font-medium
-            text-gray-700
-            shadow-sm
-            transition
-            hover:bg-gray-50
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-          "
-        >
-          <ArrowLeft className="h-4 w-4" />
-
-          Back to Tenancies
-        </button>
-
-        <div
-          className="
-            flex
-            min-h-[450px]
-            items-center
-            justify-center
-            rounded-xl
-            border
-            border-gray-200
-            bg-white
-            shadow-sm
-          "
-          role="status"
-          aria-live="polite"
-          aria-label="Loading tenancy"
-        >
-          <div className="flex flex-col items-center gap-3">
-            <Loader2
-              className="
-                h-9
-                w-9
-                animate-spin
-                text-primary-600
-              "
-            />
-
-            <p className="text-sm font-semibold text-gray-700">
-              Loading tenancy...
-            </p>
-
-            <p className="text-xs text-gray-500">
-              Please wait while we load the tenancy information.
-            </p>
-          </div>
-        </div>
-      </div>
+      <EditTenancyLoading
+        onBack={handleBack}
+        submitting={submitting}
+      />
     );
   }
 
@@ -1239,6 +1366,10 @@ const EditTenancy = () => {
             shadow-sm
             transition
             hover:bg-gray-50
+            focus:outline-none
+            focus:ring-2
+            focus:ring-primary-500
+            focus:ring-offset-2
             disabled:cursor-not-allowed
             disabled:opacity-50
           "
@@ -1255,6 +1386,8 @@ const EditTenancy = () => {
             border-red-200
             bg-red-50
             p-6
+            dark:border-red-900/50
+            dark:bg-red-950/20
           "
         >
           <div className="flex flex-col items-center text-center">
@@ -1267,16 +1400,40 @@ const EditTenancy = () => {
                 justify-center
                 rounded-full
                 bg-red-100
+                dark:bg-red-950/60
               "
             >
-              <AlertCircle className="h-6 w-6 text-red-600" />
+              <AlertCircle
+                className="
+                  h-6
+                  w-6
+                  text-red-600
+                  dark:text-red-400
+                "
+              />
             </div>
 
-            <h2 className="mt-4 text-base font-semibold text-red-900">
+            <h2
+              className="
+                mt-4
+                text-base
+                font-semibold
+                text-red-900
+                dark:text-red-200
+              "
+            >
               Unable to Load Tenancy
             </h2>
 
-            <p className="mt-2 max-w-lg text-sm text-red-700">
+            <p
+              className="
+                mt-2
+                max-w-lg
+                text-sm
+                text-red-700
+                dark:text-red-300
+              "
+            >
               {getErrorMessage(
                 tenancyError
               )}
@@ -1306,15 +1463,30 @@ const EditTenancy = () => {
                   text-white
                   transition
                   hover:bg-primary-700
+                  focus:outline-none
+                  focus:ring-2
+                  focus:ring-primary-500
+                  focus:ring-offset-2
                   disabled:cursor-not-allowed
                   disabled:opacity-60
                 "
               >
                 {loading ||
                   assignmentLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2
+                    className="
+                      h-4
+                      w-4
+                      animate-spin
+                    "
+                  />
                 ) : (
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw
+                    className="
+                      h-4
+                      w-4
+                    "
+                  />
                 )}
 
                 {loading ||
@@ -1342,8 +1514,16 @@ const EditTenancy = () => {
                   text-gray-700
                   transition
                   hover:bg-gray-50
+                  focus:outline-none
+                  focus:ring-2
+                  focus:ring-primary-500
+                  focus:ring-offset-2
                   disabled:cursor-not-allowed
                   disabled:opacity-50
+                  dark:border-gray-600
+                  dark:bg-gray-800
+                  dark:text-gray-200
+                  dark:hover:bg-gray-700
                 "
               >
                 Back to Tenancies
@@ -1363,6 +1543,7 @@ const EditTenancy = () => {
 
   return (
     <div className="space-y-6">
+
       {/* ================================================================
           HEADER
       ================================================================ */}
@@ -1392,8 +1573,11 @@ const EditTenancy = () => {
               text-gray-600
               transition
               hover:text-gray-900
+              focus:outline-none
               disabled:cursor-not-allowed
               disabled:opacity-50
+              dark:text-gray-400
+              dark:hover:text-white
             "
           >
             <ArrowLeft className="h-4 w-4" />
@@ -1452,14 +1636,30 @@ const EditTenancy = () => {
             shadow-sm
             transition
             hover:bg-gray-50
+            focus:outline-none
+            focus:ring-2
+            focus:ring-primary-500
+            focus:ring-offset-2
             disabled:cursor-not-allowed
             disabled:opacity-50
+            dark:border-gray-600
+            dark:bg-gray-800
+            dark:text-gray-200
+            dark:hover:bg-gray-700
           "
         >
           {assignmentLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2
+              className="
+                h-4
+                w-4
+                animate-spin
+              "
+            />
           ) : (
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw
+              className="h-4 w-4"
+            />
           )}
 
           Refresh Options
@@ -1479,18 +1679,43 @@ const EditTenancy = () => {
             bg-amber-50
             px-4
             py-3
+            dark:border-amber-900/50
+            dark:bg-amber-950/20
           "
           role="alert"
         >
           <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <AlertCircle
+              className="
+                mt-0.5
+                h-5
+                w-5
+                shrink-0
+                text-amber-600
+                dark:text-amber-400
+              "
+            />
 
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-amber-900">
+              <p
+                className="
+                  text-sm
+                  font-semibold
+                  text-amber-900
+                  dark:text-amber-200
+                "
+              >
                 Assignment options could not be fully loaded
               </p>
 
-              <p className="mt-1 text-sm text-amber-700">
+              <p
+                className="
+                  mt-1
+                  text-sm
+                  text-amber-700
+                  dark:text-amber-300
+                "
+              >
                 {assignmentError}
               </p>
 
@@ -1514,12 +1739,32 @@ const EditTenancy = () => {
                   text-xs
                   font-semibold
                   text-amber-800
+                  transition
                   hover:bg-amber-100
                   disabled:cursor-not-allowed
                   disabled:opacity-50
+                  dark:border-amber-800
+                  dark:bg-amber-950/30
+                  dark:text-amber-300
+                  dark:hover:bg-amber-950/50
                 "
               >
-                <RefreshCw className="h-3.5 w-3.5" />
+                {assignmentLoading ? (
+                  <Loader2
+                    className="
+                      h-3.5
+                      w-3.5
+                      animate-spin
+                    "
+                  />
+                ) : (
+                  <RefreshCw
+                    className="
+                      h-3.5
+                      w-3.5
+                    "
+                  />
+                )}
 
                 Retry
               </button>
@@ -1544,18 +1789,55 @@ const EditTenancy = () => {
             bg-blue-50
             px-4
             py-3
+            dark:border-blue-900/50
+            dark:bg-blue-950/20
           "
           role="status"
           aria-live="polite"
         >
-          <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+          <div
+            className="
+              flex
+              h-9
+              w-9
+              shrink-0
+              items-center
+              justify-center
+              rounded-full
+              bg-blue-100
+              dark:bg-blue-950/60
+            "
+          >
+            <Loader2
+              className="
+                h-5
+                w-5
+                animate-spin
+                text-blue-600
+                dark:text-blue-400
+              "
+            />
+          </div>
 
           <div>
-            <p className="text-sm font-medium text-blue-900">
+            <p
+              className="
+                text-sm
+                font-medium
+                text-blue-900
+                dark:text-blue-200
+              "
+            >
               Loading assignment options...
             </p>
 
-            <p className="text-xs text-blue-700">
+            <p
+              className="
+                text-xs
+                text-blue-700
+                dark:text-blue-300
+              "
+            >
               Loading properties, apartments, units and tenants.
             </p>
           </div>
@@ -1575,6 +1857,8 @@ const EditTenancy = () => {
             bg-red-50
             px-4
             py-3
+            dark:border-red-900/50
+            dark:bg-red-950/20
           "
           role="alert"
         >
@@ -1590,19 +1874,41 @@ const EditTenancy = () => {
                 justify-center
                 rounded-full
                 bg-red-100
+                dark:bg-red-950/60
               "
             >
-              <span className="text-xs font-bold text-red-600">
+              <span
+                className="
+                  text-xs
+                  font-bold
+                  text-red-600
+                  dark:text-red-400
+                "
+              >
                 !
               </span>
             </div>
 
             <div>
-              <p className="text-sm font-semibold text-red-800">
+              <p
+                className="
+                  text-sm
+                  font-semibold
+                  text-red-800
+                  dark:text-red-200
+                "
+              >
                 Tenancy Error
               </p>
 
-              <p className="mt-1 text-sm text-red-700">
+              <p
+                className="
+                  mt-1
+                  text-sm
+                  text-red-700
+                  dark:text-red-300
+                "
+              >
                 {getErrorMessage(
                   tenancyError
                 )}
@@ -1629,48 +1935,108 @@ const EditTenancy = () => {
         "
       >
         <div className="mb-2 flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-indigo-600" />
+          <Building2
+            className="
+              h-4
+              w-4
+              text-indigo-600
+              dark:text-indigo-400
+            "
+          />
 
-          <span className="text-xs font-semibold uppercase tracking-wide text-indigo-900 dark:text-indigo-200">
+          <span
+            className="
+              text-xs
+              font-semibold
+              uppercase
+              tracking-wide
+              text-indigo-900
+              dark:text-indigo-200
+            "
+          >
             Current Assignment
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
-          <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+        <div
+          className="
+            flex
+            flex-wrap
+            items-center
+            gap-x-5
+            gap-y-2
+            text-xs
+          "
+        >
+          <span
+            className="
+              font-semibold
+              text-indigo-900
+              dark:text-indigo-200
+            "
+          >
             Tenancy:
+
             <span className="ml-1 font-normal">
               {tenancy.tenancy_number ||
                 "—"}
             </span>
           </span>
 
-          <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+          <span
+            className="
+              font-semibold
+              text-indigo-900
+              dark:text-indigo-200
+            "
+          >
             Property:
+
             <span className="ml-1 font-normal">
               {tenancy.property_id ||
                 "—"}
             </span>
           </span>
 
-          <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+          <span
+            className="
+              font-semibold
+              text-indigo-900
+              dark:text-indigo-200
+            "
+          >
             Apartment:
+
             <span className="ml-1 font-normal">
               {tenancy.apartment_id ||
                 "—"}
             </span>
           </span>
 
-          <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+          <span
+            className="
+              font-semibold
+              text-indigo-900
+              dark:text-indigo-200
+            "
+          >
             Unit:
+
             <span className="ml-1 font-normal">
               {tenancy.unit_id ||
                 "—"}
             </span>
           </span>
 
-          <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+          <span
+            className="
+              font-semibold
+              text-indigo-900
+              dark:text-indigo-200
+            "
+          >
             Tenant:
+
             <span className="ml-1 font-normal">
               {tenancy.tenant_id ||
                 "—"}

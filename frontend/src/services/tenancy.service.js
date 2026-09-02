@@ -76,6 +76,74 @@ const normalizeResponse = (response) => {
   return response?.data ?? null;
 };
 
+/**
+ * Normalize pagination data.
+ *
+ * Keeps the Laravel response untouched while making it easier
+ * for frontend consumers to safely access the collection.
+ */
+const normalizeCollectionResponse = (response) => {
+  const body = normalizeResponse(response);
+
+  if (!body) {
+    return null;
+  }
+
+  return body;
+};
+
+/**
+ * Normalize tenant assignment availability.
+ *
+ * This is frontend UX only.
+ *
+ * The backend must still enforce the business rule that a tenant
+ * cannot have more than one active/pending tenancy.
+ */
+const isTenantBlocked = (tenant) => {
+  if (!tenant || typeof tenant !== "object") {
+    return false;
+  }
+
+  if (typeof tenant.blocks_tenant_assignment === "boolean") {
+    return tenant.blocks_tenant_assignment;
+  }
+
+  if (
+    typeof tenant.tenant_assignment_status === "string"
+  ) {
+    return (
+      tenant.tenant_assignment_status.toLowerCase() ===
+      "blocked"
+    );
+  }
+
+  const activeCount = Number(
+    tenant.active_tenancy_count ?? 0
+  );
+
+  const pendingCount = Number(
+    tenant.pending_tenancy_count ?? 0
+  );
+
+  return activeCount > 0 || pendingCount > 0;
+};
+
+/**
+ * Filter tenants that are currently eligible for a new tenancy.
+ *
+ * This does NOT replace backend validation.
+ */
+const filterAvailableTenants = (tenants = []) => {
+  if (!Array.isArray(tenants)) {
+    return [];
+  }
+
+  return tenants.filter(
+    (tenant) => !isTenantBlocked(tenant)
+  );
+};
+
 /*
 |--------------------------------------------------------------------------
 | Tenancy Service
@@ -95,11 +163,16 @@ const tenancyService = {
    * GET /api/tenancies
    */
   async getTenancies(params = {}) {
+    validateData(
+      params,
+      "Tenancy parameters must be an object."
+    );
+
     const response = await api.get(BASE_URL, {
       params,
     });
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /*
@@ -237,12 +310,12 @@ const tenancyService = {
       {
         params: {
           ...params,
-          search,
+          search: String(search ?? "").trim(),
         },
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /*
@@ -264,7 +337,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -280,7 +353,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -296,7 +369,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -312,7 +385,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -328,7 +401,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /*
@@ -499,12 +572,6 @@ const tenancyService = {
   /**
    * Assign a unit to an existing tenancy.
    *
-   * IMPORTANT:
-   *
-   * This is an API action, NOT the frontend page route.
-   *
-   * Laravel:
-   *
    * POST /api/tenancies/assign-unit
    *
    * Expected payload:
@@ -513,9 +580,6 @@ const tenancyService = {
    *   tenancy_id: 26,
    *   unit_id: 344
    * }
-   *
-   * The tenancy ID is sent in the request body because the
-   * Laravel route does not contain /{id}.
    */
   async assignUnit(data) {
     validateData(
@@ -534,16 +598,7 @@ const tenancyService = {
   /**
    * Assign a unit using explicit IDs.
    *
-   * Convenience method for Redux/components.
-   *
    * POST /api/tenancies/assign-unit
-   *
-   * Sends:
-   *
-   * {
-   *   tenancy_id,
-   *   unit_id
-   * }
    */
   async assignUnitToTenancy(
     tenancyId,
@@ -646,7 +701,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -673,7 +728,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -700,7 +755,7 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
 
   /**
@@ -727,8 +782,32 @@ const tenancyService = {
       }
     );
 
-    return normalizeResponse(response);
+    return normalizeCollectionResponse(response);
   },
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT ASSIGNMENT HELPERS
+  |--------------------------------------------------------------------------
+  */
+
+  /**
+   * Check whether a tenant is blocked from a new tenancy.
+   *
+   * This uses information already returned by the tenant API.
+   *
+   * IMPORTANT:
+   * Backend validation remains authoritative.
+   */
+  isTenantBlocked,
+
+  /**
+   * Filter a tenant collection to only tenants eligible
+   * for a new tenancy.
+   *
+   * This is intended for Create Tenancy dropdowns.
+   */
+  filterAvailableTenants,
 };
 
 /*

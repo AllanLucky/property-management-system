@@ -16,13 +16,6 @@ import {
 
     /*
     |--------------------------------------------------------------------------
-    | Search
-    |--------------------------------------------------------------------------
-    */
-    searchTenancies,
-
-    /*
-    |--------------------------------------------------------------------------
     | Restore / Force Delete
     |--------------------------------------------------------------------------
     */
@@ -37,8 +30,6 @@ import {
     activateTenancy,
     deactivateTenancy,
     renewTenancy,
-    terminateTenancy,
-    cancelTenancy,
 
     /*
     |--------------------------------------------------------------------------
@@ -61,9 +52,8 @@ import {
     */
     clearTenancyError,
     setTenancyFilters,
-} from "../store/tenancySlice";
+    clearTenancyFilters,
 
-import {
     /*
     |--------------------------------------------------------------------------
     | Selectors
@@ -76,6 +66,19 @@ import {
     selectTenancyLoading,
     selectTenancyError,
     selectTenancyStatistics,
+    selectTenancyLoadingStatistics,
+    selectTenancyCreating,
+    selectTenancyUpdating,
+    selectTenancyDeleting,
+    selectTenancyRestoring,
+    selectTenancyForceDeleting,
+    selectTenancyActionLoading,
+    selectTenancyStatisticsError,
+    selectTenancyStatisticsErrorDetails,
+    selectTenancyErrorDetails,
+    selectTenancySuccess,
+    selectHasTenancies,
+    selectTenancyCount,
 } from "../store/tenancySlice";
 
 /*
@@ -85,11 +88,10 @@ import {
 |
 | Centralized React hook for tenancy management.
 |
-| Provides:
+| Responsibilities:
 |
 | - Tenancy listing
 | - Tenancy details
-| - Search
 | - Create
 | - Update
 | - Patch
@@ -99,13 +101,16 @@ import {
 | - Activate
 | - Deactivate
 | - Renew
-| - Terminate
-| - Cancel
 | - Unit assignment
 | - Statistics
 | - Filters
+| - Loading states
 | - Error handling
 |
+| Tenant eligibility / duplicate tenant assignment is intentionally NOT
+| managed here. Tenant data belongs to tenantSlice/useTenant.
+|
+|--------------------------------------------------------------------------
 */
 
 const useTenancy = () => {
@@ -141,8 +146,64 @@ const useTenancy = () => {
         selectTenancyError
     );
 
+    const errorDetails = useSelector(
+        selectTenancyErrorDetails
+    );
+
+    const success = useSelector(
+        selectTenancySuccess
+    );
+
     const statistics = useSelector(
         selectTenancyStatistics
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Individual Loading States
+    |--------------------------------------------------------------------------
+    */
+
+    const loadingStatistics = useSelector(
+        selectTenancyLoadingStatistics
+    );
+
+    const creating = useSelector(
+        selectTenancyCreating
+    );
+
+    const updating = useSelector(
+        selectTenancyUpdating
+    );
+
+    const deleting = useSelector(
+        selectTenancyDeleting
+    );
+
+    const restoring = useSelector(
+        selectTenancyRestoring
+    );
+
+    const forceDeleting = useSelector(
+        selectTenancyForceDeleting
+    );
+
+    const actionLoading = useSelector(
+        selectTenancyActionLoading
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Statistics Errors
+    |--------------------------------------------------------------------------
+    */
+
+    const statisticsError = useSelector(
+        selectTenancyStatisticsError
+    );
+
+    const statisticsErrorDetails = useSelector(
+        selectTenancyStatisticsErrorDetails
     );
 
     /*
@@ -151,44 +212,27 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Whether any tenancy request is currently loading.
-     */
     const isLoading = useMemo(
         () => Boolean(loading),
         [loading]
     );
 
-    /**
-     * Whether the tenancy state contains an error.
-     */
     const hasError = useMemo(
         () => Boolean(error),
         [error]
     );
 
-    /**
-     * Whether tenancies exist.
-     */
-    const hasTenancies = useMemo(
-        () =>
-            Array.isArray(tenancies) &&
-            tenancies.length > 0,
-        [tenancies]
+    const hasTenancies = useSelector(
+        selectHasTenancies
     );
 
-    /**
-     * Number of currently loaded tenancies.
-     *
-     * This is the number currently stored in Redux,
-     * not necessarily the database total.
-     */
-    const tenancyCount = useMemo(
-        () =>
-            Array.isArray(tenancies)
-                ? tenancies.length
-                : 0,
-        [tenancies]
+    const tenancyCount = useSelector(
+        selectTenancyCount
+    );
+
+    const hasStatisticsError = useMemo(
+        () => Boolean(statisticsError),
+        [statisticsError]
     );
 
     /*
@@ -197,19 +241,22 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
-    const validateId = useCallback((id) => {
-        if (
-            id === undefined ||
-            id === null ||
-            id === ""
-        ) {
-            return new Error(
-                "Tenancy ID is required."
-            );
-        }
+    const validateId = useCallback(
+        (id) => {
+            if (
+                id === undefined ||
+                id === null ||
+                id === ""
+            ) {
+                return new Error(
+                    "Tenancy ID is required."
+                );
+            }
 
-        return null;
-    }, []);
+            return null;
+        },
+        []
+    );
 
     const validateObject = useCallback(
         (data, message) => {
@@ -228,14 +275,14 @@ const useTenancy = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Fetch Tenancies
+    | FETCH TENANCIES
     |--------------------------------------------------------------------------
     */
 
     /**
      * Fetch paginated tenancies.
      *
-     * Current Redux filters are merged with
+     * Current Redux filters are automatically merged with
      * optional parameters.
      *
      * Example:
@@ -248,6 +295,14 @@ const useTenancy = () => {
      */
     const getTenancies = useCallback(
         (params = {}) => {
+            if (
+                !params ||
+                typeof params !== "object" ||
+                Array.isArray(params)
+            ) {
+                params = {};
+            }
+
             return dispatch(
                 fetchTenancies({
                     ...filters,
@@ -260,7 +315,7 @@ const useTenancy = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Fetch Single Tenancy
+    | FETCH SINGLE TENANCY
     |--------------------------------------------------------------------------
     */
 
@@ -283,30 +338,6 @@ const useTenancy = () => {
             );
         },
         [dispatch, validateId]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Search
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Search tenancies.
-     *
-     * This uses the Redux searchTenancies thunk
-     * when available.
-     */
-    const search = useCallback(
-        (searchTerm = "", params = {}) => {
-            return dispatch(
-                searchTenancies({
-                    search: searchTerm,
-                    ...params,
-                })
-            );
-        },
-        [dispatch]
     );
 
     /*
@@ -577,8 +608,8 @@ const useTenancy = () => {
      *
      * Example:
      *
-     * renew(id, {
-     *     end_date: "2027-03-18"
+     * renew(26, {
+     *     end_date: "2027-08-22"
      * });
      */
     const renew = useCallback(
@@ -606,105 +637,6 @@ const useTenancy = () => {
 
             return dispatch(
                 renewTenancy({
-                    id,
-                    data,
-                })
-            );
-        },
-        [
-            dispatch,
-            validateId,
-            validateObject,
-        ]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | TERMINATE
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Terminate tenancy.
-     *
-     * Example:
-     *
-     * terminate(id, {
-     *     termination_date: "2026-08-22",
-     *     reason: "Tenant moved out"
-     * });
-     */
-    const terminate = useCallback(
-        (id, data = {}) => {
-            const idError =
-                validateId(id);
-
-            if (idError) {
-                return Promise.reject(
-                    idError
-                );
-            }
-
-            const dataError =
-                validateObject(
-                    data,
-                    "Termination data is required."
-                );
-
-            if (dataError) {
-                return Promise.reject(
-                    dataError
-                );
-            }
-
-            return dispatch(
-                terminateTenancy({
-                    id,
-                    data,
-                })
-            );
-        },
-        [
-            dispatch,
-            validateId,
-            validateObject,
-        ]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | CANCEL
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Cancel tenancy.
-     */
-    const cancel = useCallback(
-        (id, data = {}) => {
-            const idError =
-                validateId(id);
-
-            if (idError) {
-                return Promise.reject(
-                    idError
-                );
-            }
-
-            const dataError =
-                validateObject(
-                    data,
-                    "Cancellation data is required."
-                );
-
-            if (dataError) {
-                return Promise.reject(
-                    dataError
-                );
-            }
-
-            return dispatch(
-                cancelTenancy({
                     id,
                     data,
                 })
@@ -766,6 +698,9 @@ const useTenancy = () => {
 
     /**
      * Fetch tenancy statistics.
+     *
+     * Statistics have an independent loading state and
+     * do not interfere with tenancy table loading.
      */
     const getStatistics = useCallback(
         () => {
@@ -785,12 +720,8 @@ const useTenancy = () => {
     /**
      * Update tenancy filters.
      *
-     * Example:
-     *
-     * updateFilters({
-     *     search: "John",
-     *     status: "active"
-     * });
+     * Automatically resets the page to 1 when
+     * the caller does not explicitly provide a page.
      */
     const updateFilters = useCallback(
         (newFilters) => {
@@ -813,25 +744,14 @@ const useTenancy = () => {
 
     /**
      * Clear all tenancy filters.
+     *
+     * Uses the slice's canonical DEFAULT_FILTERS
+     * through clearTenancyFilters().
      */
     const clearFilters = useCallback(
         () => {
             dispatch(
-                setTenancyFilters({
-                    search: "",
-                    status: "",
-                    property_id: "",
-                    apartment_id: "",
-                    unit_id: "",
-                    tenant_id: "",
-                    payment_frequency: "",
-                    start_date: "",
-                    end_date: "",
-                    page: 1,
-                    per_page: 10,
-                    sort_by: "",
-                    sort_order: "",
-                })
+                clearTenancyFilters()
             );
         },
         [dispatch]
@@ -843,9 +763,6 @@ const useTenancy = () => {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Clear tenancy error.
-     */
     const clearError = useCallback(
         () => {
             dispatch(
@@ -863,9 +780,9 @@ const useTenancy = () => {
 
     return {
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Data
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         tenancies,
@@ -875,30 +792,69 @@ const useTenancy = () => {
         statistics,
 
         /*
-        |----------------------------------------------------------------------
-        | Loading / Error
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
+        | General Loading
+        |--------------------------------------------------------------------------
         */
 
         loading: isLoading,
         isLoading,
 
+        /*
+        |--------------------------------------------------------------------------
+        | Individual Loading States
+        |--------------------------------------------------------------------------
+        */
+
+        creating,
+        updating,
+        deleting,
+        restoring,
+        forceDeleting,
+        actionLoading,
+        loadingStatistics,
+
+        /*
+        |--------------------------------------------------------------------------
+        | Error
+        |--------------------------------------------------------------------------
+        */
+
         error,
+        errorDetails,
         hasError,
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
+        | Statistics Error
+        |--------------------------------------------------------------------------
+        */
+
+        statisticsError,
+        statisticsErrorDetails,
+        hasStatisticsError,
+
+        /*
+        |--------------------------------------------------------------------------
+        | Success
+        |--------------------------------------------------------------------------
+        */
+
+        success,
+
+        /*
+        |--------------------------------------------------------------------------
         | Derived State
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         hasTenancies,
         tenancyCount,
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | CRUD
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         getTenancies,
@@ -909,63 +865,53 @@ const useTenancy = () => {
         removeTenancy,
 
         /*
-        |----------------------------------------------------------------------
-        | Search
-        |----------------------------------------------------------------------
-        */
-
-        search,
-
-        /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Delete / Restore
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         restore,
         forceDelete,
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Status Management
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         activate,
         deactivate,
         renew,
-        terminate,
-        cancel,
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Unit Assignment
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         assign,
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Statistics
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         getStatistics,
 
         /*
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Filters
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         */
 
         updateFilters,
         clearFilters,
 
         /*
-        |----------------------------------------------------------------------
-        | Error
-        |----------------------------------------------------------------------
+        |--------------------------------------------------------------------------
+        | Error Management
+        |--------------------------------------------------------------------------
         */
 
         clearError,
