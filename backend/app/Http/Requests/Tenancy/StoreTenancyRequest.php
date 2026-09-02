@@ -57,6 +57,30 @@ class StoreTenancyRequest extends FormRequest
                 'required',
                 'integer',
                 'exists:tenants,id',
+
+                /*
+                 * A tenant can only have one active/pending tenancy
+                 * at a time.
+                 *
+                 * Historical tenancies with expired, terminated,
+                 * or cancelled status are still allowed.
+                 */
+                function ($attribute, $value, $fail) {
+                    $hasBlockingTenancy = Tenancy::query()
+                        ->where('tenant_id', $value)
+                        ->whereIn('status', [
+                            Tenancy::STATUS_ACTIVE,
+                            Tenancy::STATUS_PENDING,
+                        ])
+                        ->where('is_active', true)
+                        ->exists();
+
+                    if ($hasBlockingTenancy) {
+                        $fail(
+                            'The selected tenant is already assigned to an active or pending tenancy.'
+                        );
+                    }
+                },
             ],
 
             /*
