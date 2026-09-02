@@ -1,454 +1,258 @@
 <?php
 
-namespace App\Models;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Str;
-use App\Models\User;
-use App\Models\Tenancy;
-use App\Models\Unit;
-
-class Tenant extends Model
+return new class extends Migration
 {
-    use HasFactory, SoftDeletes;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Status Constants
-    |--------------------------------------------------------------------------
-    */
-
-    public const STATUS_ACTIVE = 'active';
-    public const STATUS_INACTIVE = 'inactive';
-    public const STATUS_PENDING = 'pending';
-    public const STATUS_BLACKLISTED = 'blacklisted';
-
-    public const STATUSES = [
-        self::STATUS_ACTIVE,
-        self::STATUS_INACTIVE,
-        self::STATUS_PENDING,
-        self::STATUS_BLACKLISTED,
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Table
-    |--------------------------------------------------------------------------
-    */
-
-    protected $table = 'tenants';
-
-    /*
-    |--------------------------------------------------------------------------
-    | Fillable
-    |--------------------------------------------------------------------------
-    */
-
-    protected $fillable = [
-        'user_id',
-        'tenant_number',
-
-        // Personal Information
-        'first_name',
-        'last_name',
-        'other_names',
-        'email',
-        'phone',
-        'date_of_birth',
-        'gender',
-
-        // Identification
-        'id_number',
-        'passport_number',
-
-        // Location
-        'country',
-        'county',
-        'city',
-        'postal_code',
-        'address',
-
-        // Employment
-        'occupation',
-        'employer',
-        'monthly_income',
-
-        // Emergency Contact
-        'emergency_contact_name',
-        'emergency_contact_phone',
-        'emergency_contact_relationship',
-
-        // Documents
-        'photo',
-        'photo_public_id',
-        'id_front',
-        'id_front_public_id',
-        'id_back',
-        'id_back_public_id',
-
-        // Verification
-        'is_verified',
-        'verified_at',
-
-        // Status
-        'status',
-        'is_active',
-
-        // Notes
-        'notes',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Hidden
-    |--------------------------------------------------------------------------
-    */
-
-    protected $hidden = [
-        'photo_public_id',
-        'id_front_public_id',
-        'id_back_public_id',
-        'deleted_at',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Casts
-    |--------------------------------------------------------------------------
-    */
-
-    protected $casts = [
-        'user_id' => 'integer',
-
-        'date_of_birth' => 'date',
-
-        'monthly_income' => 'decimal:2',
-
-        'is_verified' => 'boolean',
-
-        'is_active' => 'boolean',
-
-        'verified_at' => 'datetime',
-
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-        'deleted_at' => 'datetime',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Appended Attributes
-    |--------------------------------------------------------------------------
-    */
-
-    protected $appends = [
-        'full_name',
-        'status_label',
-        'verification_status',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Relationships
-    |--------------------------------------------------------------------------
-    */
-
     /**
-     * Tenant's linked user account.
-     *
-     * Every tenant must have a user.
+     * Run the migrations.
      */
-    public function user()
+    public function up(): void
     {
-        return $this->belongsTo(User::class, 'user_id');
-    }
-
-    /**
-     * All tenancies belonging to this tenant.
-     */
-    public function tenancies()
-    {
-        return $this->hasMany(Tenancy::class, 'tenant_id');
-    }
-
-    /**
-     * Active tenancies.
-     */
-    public function activeTenancies()
-    {
-        return $this->hasMany(Tenancy::class, 'tenant_id')
-            ->where('status', Tenancy::STATUS_ACTIVE);
-    }
-
-    /**
-     * Pending tenancies.
-     */
-    public function pendingTenancies()
-    {
-        return $this->hasMany(Tenancy::class, 'tenant_id')
-            ->where('status', Tenancy::STATUS_PENDING);
-    }
-
-    /**
-     * Tenant's units through tenancies.
-     */
-    public function units()
-    {
-        return $this->belongsToMany(
-            Unit::class,
-            'tenancies',
-            'tenant_id',
-            'unit_id'
-        )
-            ->withPivot([
-                'id',
-                'start_date',
-                'end_date',
-                'rent_amount',
-                'deposit_amount',
-                'status',
-            ])
-            ->withTimestamps();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Scopes
-    |--------------------------------------------------------------------------
-    */
-
-    public function scopeActive($query)
-    {
-        return $query
-            ->where('status', self::STATUS_ACTIVE)
-            ->where('is_active', true);
-    }
-
-    public function scopeInactive($query)
-    {
-        return $query->where(function ($query) {
-            $query
-                ->where('status', self::STATUS_INACTIVE)
-                ->orWhere('is_active', false);
-        });
-    }
-
-    public function scopePending($query)
-    {
-        return $query->where('status', self::STATUS_PENDING);
-    }
-
-    public function scopeBlacklisted($query)
-    {
-        return $query->where('status', self::STATUS_BLACKLISTED);
-    }
-
-    public function scopeVerified($query)
-    {
-        return $query->where('is_verified', true);
-    }
-
-    public function scopeUnverified($query)
-    {
-        return $query->where('is_verified', false);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Accessors
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Get tenant's full name.
-     */
-    public function getFullNameAttribute()
-    {
-        return trim(
-            collect([
-                $this->first_name,
-                $this->last_name,
-                $this->other_names,
-            ])
-                ->filter()
-                ->implode(' ')
-        );
-    }
-
-    /**
-     * Get human-readable status.
-     */
-    public function getStatusLabelAttribute()
-    {
-        return match ($this->status) {
-            self::STATUS_ACTIVE => 'Active',
-            self::STATUS_INACTIVE => 'Inactive',
-            self::STATUS_PENDING => 'Pending',
-            self::STATUS_BLACKLISTED => 'Blacklisted',
-
-            default => Str::of((string) $this->status)
-                ->replace('_', ' ')
-                ->title(),
-        };
-    }
-
-    /**
-     * Get verification status.
-     */
-    public function getVerificationStatusAttribute()
-    {
-        return $this->is_verified
-            ? 'Verified'
-            : 'Unverified';
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Helper Methods
-    |--------------------------------------------------------------------------
-    */
-
-    public function isActive()
-    {
-        return (bool) $this->is_active;
-    }
-
-    public function isInactive()
-    {
-        return !(bool) $this->is_active;
-    }
-
-    public function isVerified()
-    {
-        return (bool) $this->is_verified;
-    }
-
-    /**
-     * Check whether tenant has a linked user account.
-     */
-    public function hasUser()
-    {
-        return !is_null($this->user_id);
-    }
-
-    /**
-     * Check whether tenant has an existing user relationship.
-     */
-    public function hasUserAccount()
-    {
-        return $this->user()->exists();
-    }
-
-    public function hasActiveTenancy()
-    {
-        return $this->activeTenancies()->exists();
-    }
-
-    public function hasTenancy()
-    {
-        return $this->tenancies()->exists();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Model Boot
-    |--------------------------------------------------------------------------
-    */
-
-    protected static function boot()
-    {
-        parent::boot();
-
-        /*
-        |--------------------------------------------------------------------------
-        | Creating
-        |--------------------------------------------------------------------------
-        |
-        | A tenant MUST have a user_id.
-        |
-        | We intentionally do not automatically create a User here because
-        | the User model may require password, role, approval and other
-        | authentication fields.
-        |
-        | The TenantController/service should create the User first and
-        | then pass the resulting user_id to the Tenant.
-        |
-        */
-
-        static::creating(function ($tenant) {
-
-            if (empty($tenant->tenant_number)) {
-                $tenant->tenant_number = self::generateTenantNumber();
-            }
-
-            if (empty($tenant->status)) {
-                $tenant->status = self::STATUS_PENDING;
-            }
-
-            if (is_null($tenant->is_verified)) {
-                $tenant->is_verified = false;
-            }
-
-            if (is_null($tenant->is_active)) {
-                $tenant->is_active = true;
-            }
+        Schema::create('tenants', function (Blueprint $table) {
 
             /*
             |--------------------------------------------------------------------------
-            | Prevent tenant without user
+            | Primary Key
             |--------------------------------------------------------------------------
             */
 
-            if (empty($tenant->user_id)) {
-                throw new \InvalidArgumentException(
-                    'A valid user_id is required when creating a tenant.'
-                );
-            }
-        });
+            $table->id();
 
-        /*
-        |--------------------------------------------------------------------------
-        | Updating
-        |--------------------------------------------------------------------------
-        |
-        | Prevent an existing tenant from having its user relationship
-        | removed.
-        |
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | Linked User Account
+            |--------------------------------------------------------------------------
+            |
+            | A tenant is a profile belonging to an existing User account.
+            |
+            | user_id is:
+            | - nullable at database level for safe migration flexibility
+            | - unique because one User can only have one Tenant profile
+            | - nullOnDelete so deleting a user does not break the tenant record
+            |
+            */
 
-        static::updating(function ($tenant) {
+            $table->foreignId('user_id')
+                ->nullable()
+                ->unique()
+                ->constrained('users')
+                ->nullOnDelete();
 
-            if (empty($tenant->user_id)) {
-                throw new \InvalidArgumentException(
-                    'A valid user_id is required for every tenant.'
-                );
-            }
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant Identification
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('tenant_number')
+                ->unique();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Personal Information
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('first_name');
+
+            $table->string('last_name');
+
+            $table->string('other_names')
+                ->nullable();
+
+            $table->string('email')
+                ->nullable();
+
+            $table->string('phone')
+                ->nullable();
+
+            $table->date('date_of_birth')
+                ->nullable();
+
+            $table->string('gender')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Identification Documents
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('id_number')
+                ->nullable();
+
+            $table->string('passport_number')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Location
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('country')
+                ->nullable();
+
+            $table->string('county')
+                ->nullable();
+
+            $table->string('city')
+                ->nullable();
+
+            $table->string('postal_code')
+                ->nullable();
+
+            $table->text('address')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Employment / Financial Information
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('occupation')
+                ->nullable();
+
+            $table->string('employer')
+                ->nullable();
+
+            $table->decimal('monthly_income', 15, 2)
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Emergency Contact
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('emergency_contact_name')
+                ->nullable();
+
+            $table->string('emergency_contact_phone')
+                ->nullable();
+
+            $table->string('emergency_contact_relationship')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant Documents
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('photo')
+                ->nullable();
+
+            $table->string('photo_public_id')
+                ->nullable();
+
+            $table->string('id_front')
+                ->nullable();
+
+            $table->string('id_front_public_id')
+                ->nullable();
+
+            $table->string('id_back')
+                ->nullable();
+
+            $table->string('id_back_public_id')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Verification
+            |--------------------------------------------------------------------------
+            */
+
+            $table->boolean('is_verified')
+                ->default(false)
+                ->index();
+
+            $table->timestamp('verified_at')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant Status
+            |--------------------------------------------------------------------------
+            |
+            | Supported statuses:
+            | - active
+            | - inactive
+            | - pending
+            | - blacklisted
+            |
+            */
+
+            $table->string('status')
+                ->default('pending')
+                ->index();
+
+            $table->boolean('is_active')
+                ->default(true)
+                ->index();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Notes
+            |--------------------------------------------------------------------------
+            */
+
+            $table->text('notes')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Timestamps / Soft Deletes
+            |--------------------------------------------------------------------------
+            */
+
+            $table->timestamps();
+
+            $table->softDeletes();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Additional Indexes
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index('first_name');
+            $table->index('last_name');
+            $table->index('email');
+            $table->index('phone');
+            $table->index('id_number');
+            $table->index('passport_number');
+            $table->index('county');
+            $table->index('city');
+
+            /*
+            |--------------------------------------------------------------------------
+            | Composite Indexes
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'status',
+                'is_active',
+            ]);
+
+            $table->index([
+                'is_verified',
+                'is_active',
+            ]);
         });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Tenant Number Generator
-    |--------------------------------------------------------------------------
-    */
-
-    public static function generateTenantNumber()
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
     {
-        do {
-            $number = 'TNT-' . str_pad(
-                (string) ((int) self::withTrashed()->max('id') + 1),
-                6,
-                '0',
-                STR_PAD_LEFT
-            );
-        } while (
-            self::withTrashed()
-                ->where('tenant_number', $number)
-                ->exists()
-        );
-
-        return $number;
+        Schema::dropIfExists('tenants');
     }
-}
+};

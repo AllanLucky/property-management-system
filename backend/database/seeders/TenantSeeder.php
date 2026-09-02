@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
 
 class TenantSeeder extends Seeder
 {
@@ -14,7 +15,19 @@ class TenantSeeder extends Seeder
      */
     public function run(): void
     {
-          $tenants = [
+        /*
+        |--------------------------------------------------------------------------
+        | Tenant Seed Data
+        |--------------------------------------------------------------------------
+        |
+        | These are tenant profile records.
+        |
+        | Each tenant is linked to an existing User account where possible.
+        | If the user does not exist, a user account is created and assigned
+        | the "tenant" role.
+        |
+        */
+        $tenants = [
             [
                 'tenant_number' => 'TNT-000001',
                 'first_name' => 'Brian',
@@ -436,67 +449,209 @@ class TenantSeeder extends Seeder
             ],
         ];
 
-        foreach ($tenants as $data) {
+        /*
+        |--------------------------------------------------------------------------
+        | Verify Tenant Role
+        |--------------------------------------------------------------------------
+        */
+        $tenantRole = Role::query()
+            ->where('name', 'tenant')
+            ->where('guard_name', 'web')
+            ->first();
+
+        if (!$tenantRole) {
+            $this->command?->warn(
+                'The "tenant" role was not found. Tenant users cannot be assigned the tenant role.'
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Statistics
+        |--------------------------------------------------------------------------
+        */
+        $createdUsers = 0;
+        $updatedUsers = 0;
+        $createdTenants = 0;
+        $updatedTenants = 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Seed Tenants
+        |--------------------------------------------------------------------------
+        */
+        foreach ($tenants as $tenantData) {
             /*
             |--------------------------------------------------------------------------
-            | Auto-compute is_active based on status
+            | Determine Tenant Active State
             |--------------------------------------------------------------------------
+            |
+            | Only an ACTIVE tenant profile is considered active.
+            |
+            | Pending tenants remain inactive until approved.
+            |
             */
-            $data['is_active'] = $data['status'] === Tenant::STATUS_ACTIVE;
+            $tenantData['is_active'] =
+                $tenantData['status'] === Tenant::STATUS_ACTIVE;
 
             /*
             |--------------------------------------------------------------------------
             | Find Existing User
             |--------------------------------------------------------------------------
+            |
+            | IMPORTANT:
+            | We use the user's email as the account identity.
+            |
+            | If the user already exists, we reuse the account instead of
+            | creating another user.
+            |
             */
             $user = User::withTrashed()
-                ->where('email', $data['email'])
+                ->where('email', $tenantData['email'])
                 ->first();
 
             if ($user) {
-                if (method_exists($user, 'trashed') && $user->trashed()) {
+                /*
+                |--------------------------------------------------------------------------
+                | Restore Soft Deleted User
+                |--------------------------------------------------------------------------
+                */
+                if (
+                    method_exists($user, 'trashed') &&
+                    $user->trashed()
+                ) {
                     $user->restore();
                 }
 
+                /*
+                |--------------------------------------------------------------------------
+                | Update Existing User
+                |--------------------------------------------------------------------------
+                |
+                | Only account-level identity fields are updated here.
+                | Tenant-specific information remains in the tenants table.
+                |
+                */
                 $user->update([
-                    'first_name' => $data['first_name'],
-                    'last_name' => $data['last_name'],
-                    'phone' => $data['phone'],
+                    'first_name' => $tenantData['first_name'],
+                    'last_name' => $tenantData['last_name'],
+                    'phone' => $tenantData['phone'],
                 ]);
+
+                $updatedUsers++;
             } else {
+                /*
+                |--------------------------------------------------------------------------
+                | Create User Account
+                |--------------------------------------------------------------------------
+                */
                 $user = User::create([
-                    'first_name' => $data['first_name'],
-                    'last_name' => $data['last_name'],
-                    'email' => $data['email'],
-                    'phone' => $data['phone'],
+                    'first_name' => $tenantData['first_name'],
+                    'last_name' => $tenantData['last_name'],
+                    'email' => $tenantData['email'],
+                    'phone' => $tenantData['phone'],
                     'password' => Hash::make('Password@123'),
                 ]);
+
+                $createdUsers++;
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Assign Tenant Role
+            | Ensure Tenant Role
             |--------------------------------------------------------------------------
             */
             if (
+                $tenantRole &&
                 method_exists($user, 'assignRole') &&
-                \Spatie\Permission\Models\Role::where('name', 'tenant')->exists()
+                !$user->hasRole('tenant')
             ) {
-                $user->assignRole('tenant');
+                $user->assignRole($tenantRole);
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Prepare Tenant Profile
+            |--------------------------------------------------------------------------
+            */
+            $tenantPayload = array_merge(
+                $tenantData,
+                [
+                    'user_id' => $user->id,
+                ]
+            );
 
             /*
             |--------------------------------------------------------------------------
             | Create / Update Tenant
             |--------------------------------------------------------------------------
+            |
+            | tenant_number is the stable tenant profile identifier.
+            |
+            | The user_id links this tenant profile to the existing user
+            | account.
+            |
             */
-            Tenant::withTrashed()->updateOrCreate(
-                ['tenant_number' => $data['tenant_number']],
-                array_merge($data, ['user_id' => $user->id])
-            );
+            $tenant = Tenant::withTrashed()
+                ->where('tenant_number', $tenantData['tenant_number'])
+                ->first();
+
+            if ($tenant) {
+                /*
+                |--------------------------------------------------------------------------
+                | Restore Soft Deleted Tenant
+                |--------------------------------------------------------------------------
+                */
+                if (
+                    method_exists($tenant, 'trashed') &&
+                    $tenant->trashed()
+                ) {
+                    $tenant->restore();
+                }
+
+                $tenant->update($tenantPayload);
+
+                $updatedTenants++;
+            } else {
+                Tenant::create($tenantPayload);
+
+                $createdTenants++;
+            }
         }
 
-        $this->command?->info(count($tenants) . ' tenants and their user accounts seeded successfully.');
-        $this->command?->info('Tenant login password: Password@123');
+        /*
+        |--------------------------------------------------------------------------
+        | Summary
+        |--------------------------------------------------------------------------
+        */
+        $this->command?->newLine();
+
+        $this->command?->info(
+            'Tenant seeding completed successfully.'
+        );
+
+        $this->command?->info(
+            'Tenant profiles processed: ' . count($tenants)
+        );
+
+        $this->command?->info(
+            'User accounts created: ' . $createdUsers
+        );
+
+        $this->command?->info(
+            'User accounts updated: ' . $updatedUsers
+        );
+
+        $this->command?->info(
+            'Tenant profiles created: ' . $createdTenants
+        );
+
+        $this->command?->info(
+            'Tenant profiles updated: ' . $updatedTenants
+        );
+
+        $this->command?->info(
+            'Default tenant login password for newly created users: Password@123'
+        );
     }
 }
