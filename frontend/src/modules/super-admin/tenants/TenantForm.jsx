@@ -40,9 +40,14 @@ const EMPTY_OBJECT = {};
 |
 | IMPORTANT:
 |
-| user_id refers to an EXISTING users.id.
+| CREATE:
+| - user_id selects an EXISTING users.id.
+| - The existing user must already have the tenant role.
 |
-| This form does NOT create a new user account.
+| EDIT:
+| - user_id is READ-ONLY.
+| - first_name, last_name, email and phone are READ-ONLY.
+| - is_active is not supported by tenant updates.
 |
 */
 
@@ -120,7 +125,7 @@ const DEFAULT_FORM = {
 
   /*
   |--------------------------------------------------------------------------
-  | ACCOUNT
+  | TENANT ACCOUNT
   |--------------------------------------------------------------------------
   */
 
@@ -136,6 +141,26 @@ const DEFAULT_FORM = {
 
   notes: "",
 };
+
+/*
+|--------------------------------------------------------------------------
+| PROTECTED TENANT UPDATE FIELDS
+|--------------------------------------------------------------------------
+|
+| These fields belong to the linked User account or are not supported
+| by the tenant update endpoint.
+|
+*/
+
+const TENANT_UPDATE_PROTECTED_FIELDS = new Set([
+  "user_id",
+  "tenant_number",
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "is_active",
+]);
 
 /*
 |--------------------------------------------------------------------------
@@ -729,18 +754,6 @@ const normalizeTenant = (
 |--------------------------------------------------------------------------
 | NORMALIZE USER OPTION
 |--------------------------------------------------------------------------
-|
-| Backend:
-|
-| {
-|   id: 4,
-|   first_name: "Allan",
-|   last_name: "Nonda",
-|   name: "Allan Nonda",
-|   email: "allantsory.dev@gmail.com",
-|   phone: "0792491361"
-| }
-|
 */
 
 const normalizeUserOption = (
@@ -1049,6 +1062,41 @@ const buildInitialForm = (
 
 /*
 |--------------------------------------------------------------------------
+| SANITIZE TENANT UPDATE PAYLOAD
+|--------------------------------------------------------------------------
+|
+| This is an additional safety layer.
+|
+| Even if a future form change accidentally adds a protected field,
+| edit mode will remove it before onSubmit().
+|
+*/
+
+const sanitizeTenantUpdatePayload = (
+  payload
+) => {
+  if (
+    !payload ||
+    typeof payload !== "object"
+  ) {
+    return payload;
+  }
+
+  const sanitized = {
+    ...payload,
+  };
+
+  TENANT_UPDATE_PROTECTED_FIELDS.forEach(
+    (field) => {
+      delete sanitized[field];
+    }
+  );
+
+  return sanitized;
+};
+
+/*
+|--------------------------------------------------------------------------
 | COMPONENT
 |--------------------------------------------------------------------------
 */
@@ -1153,7 +1201,7 @@ const TenantForm = ({
 
       /*
       |--------------------------------------------------------------------------
-      | First try the available-user list.
+      | First try available users.
       |--------------------------------------------------------------------------
       */
 
@@ -1170,8 +1218,7 @@ const TenantForm = ({
 
       /*
       |--------------------------------------------------------------------------
-      | If the current tenant user is not in the available-user
-      | endpoint, construct it from the tenant relationship.
+      | Fallback to tenant.user.
       |--------------------------------------------------------------------------
       */
 
@@ -1226,6 +1273,13 @@ const TenantForm = ({
         ...normalizedUsers,
       ];
 
+      /*
+      |--------------------------------------------------------------------------
+      | In edit mode, keep the linked user visible even if the
+      | available-users endpoint excludes already-linked users.
+      |--------------------------------------------------------------------------
+      */
+
       if (
         currentTenantUser &&
         !options.some(
@@ -1250,11 +1304,6 @@ const TenantForm = ({
   /*
   |--------------------------------------------------------------------------
   | RESET FORM WHEN EDIT TARGET CHANGES
-  |--------------------------------------------------------------------------
-  |
-  | We intentionally do not use the entire `initialValues` object
-  | as an effect dependency because parents may create a new object
-  | reference on every render.
   |--------------------------------------------------------------------------
   */
 
@@ -1411,6 +1460,21 @@ const TenantForm = ({
       checked,
     } = event.target;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Protected user-account fields must never be changed in edit mode.
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      isEdit &&
+      TENANT_UPDATE_PROTECTED_FIELDS.has(
+        name
+      )
+    ) {
+      return;
+    }
+
     const nextValue =
       type === "checkbox"
         ? checked
@@ -1455,18 +1519,23 @@ const TenantForm = ({
   | HANDLE USER CHANGE
   |--------------------------------------------------------------------------
   |
-  | Selecting an existing tenant-role user automatically fills:
-  |
-  | first_name
-  | last_name
-  | email
-  | phone
+  | User selection is ONLY allowed during creation.
   |
   */
 
   const handleUserChange = (
     event
   ) => {
+    /*
+    |--------------------------------------------------------------------------
+    | A linked user cannot be changed during an update.
+    |--------------------------------------------------------------------------
+    */
+
+    if (isEdit) {
+      return;
+    }
+
     const userId =
       String(
         event.target.value || ""
@@ -1533,6 +1602,21 @@ const TenantForm = ({
     name,
     value
   ) => {
+    /*
+    |--------------------------------------------------------------------------
+    | Never mutate protected fields during edit.
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      isEdit &&
+      TENANT_UPDATE_PROTECTED_FIELDS.has(
+        name
+      )
+    ) {
+      return;
+    }
+
     setForm(
       (current) => ({
         ...current,
@@ -1568,30 +1652,105 @@ const TenantForm = ({
   const validate = () => {
     const nextErrors = {};
 
-    const userId =
-      normalizeString(
-        form.user_id
-      );
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE ONLY
+    |--------------------------------------------------------------------------
+    |
+    | These fields belong to the existing User account.
+    |
+    | They are required when creating a tenant profile because
+    | the user account is being linked for the first time.
+    |
+    */
 
-    const firstName =
-      normalizeString(
-        form.first_name
-      );
+    if (!isEdit) {
+      const userId =
+        normalizeString(
+          form.user_id
+        );
 
-    const lastName =
-      normalizeString(
-        form.last_name
-      );
+      const firstName =
+        normalizeString(
+          form.first_name
+        );
 
-    const email =
-      normalizeString(
-        form.email
-      );
+      const lastName =
+        normalizeString(
+          form.last_name
+        );
 
-    const phone =
-      normalizeString(
-        form.phone
-      );
+      const email =
+        normalizeString(
+          form.email
+        );
+
+      const phone =
+        normalizeString(
+          form.phone
+        );
+
+      if (!userId) {
+        nextErrors.user_id =
+          "Please select a tenant user account.";
+      }
+
+      if (!firstName) {
+        nextErrors.first_name =
+          "First name is required.";
+      } else if (
+        firstName.length < 2
+      ) {
+        nextErrors.first_name =
+          "First name must be at least 2 characters.";
+      }
+
+      if (!lastName) {
+        nextErrors.last_name =
+          "Last name is required.";
+      } else if (
+        lastName.length < 2
+      ) {
+        nextErrors.last_name =
+          "Last name must be at least 2 characters.";
+      }
+
+      if (!email) {
+        nextErrors.email =
+          "Email address is required.";
+      } else if (
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+          email
+        )
+      ) {
+        nextErrors.email =
+          "Enter a valid email address.";
+      }
+
+      if (!phone) {
+        nextErrors.phone =
+          "Phone number is required.";
+      } else {
+        const phoneDigits =
+          phone.replace(
+            /\D/g,
+            ""
+          );
+
+        if (
+          phoneDigits.length < 7
+        ) {
+          nextErrors.phone =
+            "Enter a valid phone number.";
+        }
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | IDENTIFICATION
+    |--------------------------------------------------------------------------
+    */
 
     const idNumber =
       normalizeString(
@@ -1602,112 +1761,6 @@ const TenantForm = ({
       normalizeString(
         form.passport_number
       );
-
-    const emergencyName =
-      normalizeString(
-        form.emergency_contact_name
-      );
-
-    const emergencyPhone =
-      normalizeString(
-        form.emergency_contact_phone
-      );
-
-    const emergencyRelationship =
-      normalizeString(
-        form.emergency_contact_relationship
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | USER
-    |--------------------------------------------------------------------------
-    */
-
-    if (!userId) {
-      nextErrors.user_id =
-        "Please select a tenant user account.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FIRST NAME
-    |--------------------------------------------------------------------------
-    */
-
-    if (!firstName) {
-      nextErrors.first_name =
-        "First name is required.";
-    } else if (
-      firstName.length < 2
-    ) {
-      nextErrors.first_name =
-        "First name must be at least 2 characters.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | LAST NAME
-    |--------------------------------------------------------------------------
-    */
-
-    if (!lastName) {
-      nextErrors.last_name =
-        "Last name is required.";
-    } else if (
-      lastName.length < 2
-    ) {
-      nextErrors.last_name =
-        "Last name must be at least 2 characters.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | EMAIL
-    |--------------------------------------------------------------------------
-    */
-
-    if (!email) {
-      nextErrors.email =
-        "Email address is required.";
-    } else if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-        email
-      )
-    ) {
-      nextErrors.email =
-        "Enter a valid email address.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | PHONE
-    |--------------------------------------------------------------------------
-    */
-
-    if (!phone) {
-      nextErrors.phone =
-        "Phone number is required.";
-    } else {
-      const phoneDigits =
-        phone.replace(
-          /\D/g,
-          ""
-        );
-
-      if (
-        phoneDigits.length < 7
-      ) {
-        nextErrors.phone =
-          "Enter a valid phone number.";
-      }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | IDENTIFICATION
-    |--------------------------------------------------------------------------
-    */
 
     if (
       !idNumber &&
@@ -1804,6 +1857,21 @@ const TenantForm = ({
     |--------------------------------------------------------------------------
     */
 
+    const emergencyName =
+      normalizeString(
+        form.emergency_contact_name
+      );
+
+    const emergencyPhone =
+      normalizeString(
+        form.emergency_contact_phone
+      );
+
+    const emergencyRelationship =
+      normalizeString(
+        form.emergency_contact_relationship
+      );
+
     const hasEmergencyContact =
       Boolean(
         emergencyName ||
@@ -1872,58 +1940,23 @@ const TenantForm = ({
         emergencyRelationship
       );
 
-    const userId =
-      normalizeString(
-        form.user_id
-      );
+    /*
+    |--------------------------------------------------------------------------
+    | COMMON TENANT FIELDS
+    |--------------------------------------------------------------------------
+    */
 
-    return {
+    const tenantPayload = {
       /*
       |--------------------------------------------------------------------------
-      | EXISTING USER RELATION
-      |--------------------------------------------------------------------------
-      |
-      | This MUST be the existing users.id.
-      |
-      | No tenant_id is sent.
-      |
-      */
-
-      user_id:
-        userId
-          ? Number(userId)
-          : null,
-
-      /*
-      |--------------------------------------------------------------------------
-      | PERSONAL
+      | PERSONAL TENANT INFORMATION
       |--------------------------------------------------------------------------
       */
-
-      first_name:
-        normalizeString(
-          form.first_name
-        ),
-
-      last_name:
-        normalizeString(
-          form.last_name
-        ),
 
       other_names:
         normalizeString(
           form.other_names
         ) || null,
-
-      email:
-        normalizeString(
-          form.email
-        ),
-
-      phone:
-        normalizeString(
-          form.phone
-        ),
 
       id_number:
         normalizeString(
@@ -2062,7 +2095,7 @@ const TenantForm = ({
 
       /*
       |--------------------------------------------------------------------------
-      | ACCOUNT
+      | TENANT ACCOUNT
       |--------------------------------------------------------------------------
       */
 
@@ -2070,12 +2103,6 @@ const TenantForm = ({
         normalizeString(
           form.status
         ) || "pending",
-
-      is_active:
-        normalizeBoolean(
-          form.is_active,
-          true
-        ),
 
       is_verified:
         normalizeBoolean(
@@ -2094,6 +2121,89 @@ const TenantForm = ({
           form.notes
         ) || null,
     };
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE PAYLOAD
+    |--------------------------------------------------------------------------
+    |
+    | Creation is allowed to establish the link to the existing user
+    | account and therefore includes the User identity information.
+    |
+    */
+
+    if (!isEdit) {
+      const userId =
+        normalizeString(
+          form.user_id
+        );
+
+      return {
+        user_id:
+          userId
+            ? Number(userId)
+            : null,
+
+        first_name:
+          normalizeString(
+            form.first_name
+          ),
+
+        last_name:
+          normalizeString(
+            form.last_name
+          ),
+
+        email:
+          normalizeString(
+            form.email
+          ),
+
+        phone:
+          normalizeString(
+            form.phone
+          ),
+
+        ...tenantPayload,
+
+        /*
+        |--------------------------------------------------------------------------
+        | Create-only active flag.
+        |--------------------------------------------------------------------------
+        */
+
+        is_active:
+          normalizeBoolean(
+            form.is_active,
+            true
+          ),
+      };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | EDIT PAYLOAD
+    |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | DO NOT include:
+    |
+    | user_id
+    | tenant_number
+    | first_name
+    | last_name
+    | email
+    | phone
+    | is_active
+    |
+    | These are either User fields or unsupported during tenant updates.
+    |
+    */
+
+    return sanitizeTenantUpdatePayload(
+      tenantPayload
+    );
   };
 
   /*
@@ -2126,6 +2236,27 @@ const TenantForm = ({
 
     const payload =
       buildPayload();
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEVELOPMENT DEBUGGING
+    |--------------------------------------------------------------------------
+    |
+    | This makes it very easy to confirm that edit requests no longer
+    | contain protected fields.
+    |
+    */
+
+    if (import.meta.env.DEV) {
+      console.log(
+        `[TenantForm] ${
+          isEdit
+            ? "UPDATE"
+            : "CREATE"
+        } payload:`,
+        payload
+      );
+    }
 
     try {
       await onSubmit(
@@ -2190,7 +2321,7 @@ const TenantForm = ({
 
       /*
       |--------------------------------------------------------------------------
-      | KEEP ORIGINAL ERROR AVAILABLE TO PARENT
+      | Keep original error available to parent.
       |--------------------------------------------------------------------------
       */
 
@@ -2263,22 +2394,46 @@ const TenantForm = ({
 
   const completion =
     useMemo(() => {
-      const requiredFields = [
-        "user_id",
-        "first_name",
-        "last_name",
-        "email",
-        "phone",
-        "gender",
-        "status",
-      ];
+      const requiredFields =
+        isEdit
+          ? [
+              "id_number_or_passport",
+              "gender",
+              "status",
+            ]
+          : [
+              "user_id",
+              "first_name",
+              "last_name",
+              "email",
+              "phone",
+              "gender",
+              "status",
+            ];
 
       const completed =
         requiredFields.filter(
-          (field) =>
-            normalizeString(
-              form[field]
-            ) !== ""
+          (field) => {
+            if (
+              field ===
+              "id_number_or_passport"
+            ) {
+              return Boolean(
+                normalizeString(
+                  form.id_number
+                ) ||
+                normalizeString(
+                  form.passport_number
+                )
+              );
+            }
+
+            return (
+              normalizeString(
+                form[field]
+              ) !== ""
+            );
+          }
         ).length;
 
       return Math.round(
@@ -2287,7 +2442,10 @@ const TenantForm = ({
           requiredFields.length
         ) * 100
       );
-    }, [form]);
+    }, [
+      form,
+      isEdit,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -2342,7 +2500,7 @@ const TenantForm = ({
 
               <p className="mt-0.5 text-sm text-gray-500">
                 {isEdit
-                  ? "Update tenant information and account details."
+                  ? "Update tenant-specific information. Linked user account details are managed from the user profile."
                   : "Add a new tenant to your estate management system."}
               </p>
             </div>
@@ -2428,148 +2586,215 @@ const TenantForm = ({
             <UserRound className="h-5 w-5" />
           }
           title="Tenant User Account"
-          description="Select an existing user account that has the tenant role."
+          description={
+            isEdit
+              ? "This tenant is linked to the following existing user account. The link cannot be changed during a tenant update."
+              : "Select an existing user account that has the tenant role."
+          }
         />
 
         <div className="p-5 sm:p-6">
-          <SelectField
-            label="Tenant User"
-            name="user_id"
-            value={
-              form.user_id
-            }
-            onChange={
-              handleUserChange
-            }
-            error={fieldError(
-              "user_id"
-            )}
-            required
-            disabled={
-              submitting ||
-              availableUsersLoading
-            }
-            options={[
-              {
-                value: "",
-                label:
-                  availableUsersLoading
-                    ? "Loading tenant users..."
-                    : userOptions.length >
-                        0
-                      ? "Select tenant user"
-                      : "No tenant users available",
-              },
+          {isEdit ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-50 text-primary-600">
+                      <UserRound className="h-5 w-5" />
+                    </div>
 
-              ...userOptions.map(
-                (user) => ({
-                  value:
-                    String(
-                      user.id
-                    ),
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900">
+                        {normalizeString(
+                          currentTenantUser?.name
+                        ) ||
+                          `${normalizeString(
+                            form.first_name
+                          )} ${normalizeString(
+                            form.last_name
+                          )}`.trim() ||
+                          "Linked User"}
+                      </p>
 
-                  label:
-                    normalizeString(
-                      user.name
-                    ) +
-                    (
-                      user.email
-                        ? ` — ${normalizeString(
-                            user.email
-                          )}`
-                        : ""
-                    ),
-                })
-              ),
-            ]}
-          />
+                      {currentTenantUser?.email && (
+                        <p className="mt-0.5 truncate text-xs text-gray-500">
+                          {normalizeString(
+                            currentTenantUser.email
+                          )}
+                        </p>
+                      )}
 
-          {/* USER LOADING */}
+                      {currentTenantUser?.phone && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {normalizeString(
+                            currentTenantUser.phone
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-          {availableUsersLoading && (
-            <div className="mt-3 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Linked
+                  </span>
+                </div>
+              </div>
 
-              <p className="text-xs text-blue-700">
-                Loading available tenant users...
-              </p>
-            </div>
-          )}
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
+                <div className="flex gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
 
-          {/* USER API ERROR */}
-
-          {availableUsersError && (
-            <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
-              <div className="flex gap-2">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-
-                <div>
-                  <p className="text-xs font-semibold text-red-800">
-                    Unable to load tenant users.
-                  </p>
-
-                  <p className="mt-1 text-xs leading-5 text-red-700">
-                    {normalizeString(
-                      availableUsersError?.response
-                        ?.data?.message ||
-                      availableUsersError
-                        ?.data?.message ||
-                      availableUsersError?.message ||
-                      availableUsersError
-                    )}
+                  <p className="text-xs leading-5 text-amber-700">
+                    The linked user account cannot be changed
+                    from the tenant profile. To change the
+                    user's name, email or phone number, update
+                    the linked user profile instead.
                   </p>
                 </div>
               </div>
+
+              {form.user_id && (
+                <p className="text-xs text-gray-400">
+                  User ID:{" "}
+                  <span className="font-medium text-gray-600">
+                    {form.user_id}
+                  </span>
+                </p>
+              )}
             </div>
+          ) : (
+            <>
+              <SelectField
+                label="Tenant User"
+                name="user_id"
+                value={
+                  form.user_id
+                }
+                onChange={
+                  handleUserChange
+                }
+                error={fieldError(
+                  "user_id"
+                )}
+                required
+                disabled={
+                  submitting ||
+                  availableUsersLoading
+                }
+                options={[
+                  {
+                    value: "",
+                    label:
+                      availableUsersLoading
+                        ? "Loading tenant users..."
+                        : userOptions.length >
+                            0
+                          ? "Select tenant user"
+                          : "No tenant users available",
+                  },
+
+                  ...userOptions.map(
+                    (user) => ({
+                      value:
+                        String(
+                          user.id
+                        ),
+
+                      label:
+                        normalizeString(
+                          user.name
+                        ) +
+                        (
+                          user.email
+                            ? ` — ${normalizeString(
+                                user.email
+                              )}`
+                            : ""
+                        ),
+                    })
+                  ),
+                ]}
+              />
+
+              {availableUsersLoading && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+
+                  <p className="text-xs text-blue-700">
+                    Loading available tenant users...
+                  </p>
+                </div>
+              )}
+
+              {availableUsersError && (
+                <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                  <div className="flex gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+
+                    <div>
+                      <p className="text-xs font-semibold text-red-800">
+                        Unable to load tenant users.
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-red-700">
+                        {normalizeString(
+                          availableUsersError?.response
+                            ?.data?.message ||
+                          availableUsersError
+                            ?.data?.message ||
+                          availableUsersError?.message ||
+                          availableUsersError
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+                <div className="flex gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+
+                  <p className="text-xs leading-5 text-blue-700">
+                    Only select a user who already has the{" "}
+                    <strong>
+                      tenant
+                    </strong>{" "}
+                    role. The selected user's ID will be
+                    stored as{" "}
+                    <strong>
+                      user_id
+                    </strong>{" "}
+                    on the tenant profile.
+                  </p>
+                </div>
+              </div>
+
+              {!availableUsersLoading &&
+                userOptions.length ===
+                  0 && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    No tenant users are currently available.
+                    Make sure users have the tenant role and
+                    are not already linked to another tenant.
+                  </p>
+                )}
+
+              {!availableUsersLoading &&
+                userOptions.length >
+                  0 && (
+                  <p className="mt-2 text-xs text-gray-400">
+                    {userOptions.length} tenant user
+                    {userOptions.length ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    available.
+                  </p>
+                )}
+            </>
           )}
-
-          {/* INFORMATION */}
-
-          <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
-            <div className="flex gap-2">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-
-              <p className="text-xs leading-5 text-blue-700">
-                Only select a user who already has the{" "}
-                <strong>
-                  tenant
-                </strong>{" "}
-                role. The selected user's ID will be
-                stored as{" "}
-                <strong>
-                  user_id
-                </strong>{" "}
-                on the tenant profile.
-              </p>
-            </div>
-          </div>
-
-          {/* NO USERS */}
-
-          {!availableUsersLoading &&
-            userOptions.length ===
-              0 && (
-              <p className="mt-2 text-xs text-amber-600">
-                No tenant users are currently available.
-                Make sure users have the tenant role and
-                are not already linked to another tenant.
-              </p>
-            )}
-
-          {/* USER COUNT */}
-
-          {!availableUsersLoading &&
-            userOptions.length >
-              0 && (
-              <p className="mt-2 text-xs text-gray-400">
-                {userOptions.length} tenant user
-                {userOptions.length ===
-                1
-                  ? ""
-                  : "s"}{" "}
-                available.
-              </p>
-            )}
         </div>
       </section>
 
@@ -2581,49 +2806,73 @@ const TenantForm = ({
             <User className="h-5 w-5" />
           }
           title="Personal Information"
-          description="Basic identification and personal details."
+          description={
+            isEdit
+              ? "Linked user identity information is read-only. Update the user profile to change name, email or phone."
+              : "Basic identification and personal details."
+          }
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
-          <InputField
-            label="First Name"
-            name="first_name"
-            value={
-              form.first_name
-            }
-            onChange={
-              handleChange
-            }
-            error={fieldError(
-              "first_name"
-            )}
-            required
-            placeholder="e.g. John"
-            autoComplete="given-name"
-            disabled={
-              submitting
-            }
-          />
+          {isEdit ? (
+            <>
+              <ReadOnlyField
+                label="First Name"
+                value={
+                  form.first_name
+                }
+              />
 
-          <InputField
-            label="Last Name"
-            name="last_name"
-            value={
-              form.last_name
-            }
-            onChange={
-              handleChange
-            }
-            error={fieldError(
-              "last_name"
-            )}
-            required
-            placeholder="e.g. Kamau"
-            autoComplete="family-name"
-            disabled={
-              submitting
-            }
-          />
+              <ReadOnlyField
+                label="Last Name"
+                value={
+                  form.last_name
+                }
+              />
+            </>
+          ) : (
+            <>
+              <InputField
+                label="First Name"
+                name="first_name"
+                value={
+                  form.first_name
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "first_name"
+                )}
+                required
+                placeholder="e.g. John"
+                autoComplete="given-name"
+                disabled={
+                  submitting
+                }
+              />
+
+              <InputField
+                label="Last Name"
+                name="last_name"
+                value={
+                  form.last_name
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "last_name"
+                )}
+                required
+                placeholder="e.g. Kamau"
+                autoComplete="family-name"
+                disabled={
+                  submitting
+                }
+              />
+            </>
+          )}
 
           <InputField
             label="Other Names"
@@ -2641,53 +2890,79 @@ const TenantForm = ({
             }
           />
 
-          <InputField
-            label="Email Address"
-            name="email"
-            type="email"
-            value={
-              form.email
-            }
-            onChange={
-              handleChange
-            }
-            error={fieldError(
-              "email"
-            )}
-            required
-            placeholder="tenant@example.com"
-            icon={
-              <Mail className="h-4 w-4" />
-            }
-            autoComplete="email"
-            disabled={
-              submitting
-            }
-          />
+          {isEdit ? (
+            <>
+              <ReadOnlyField
+                label="Email Address"
+                value={
+                  form.email
+                }
+                icon={
+                  <Mail className="h-4 w-4" />
+                }
+              />
 
-          <InputField
-            label="Phone Number"
-            name="phone"
-            type="tel"
-            value={
-              form.phone
-            }
-            onChange={
-              handleChange
-            }
-            error={fieldError(
-              "phone"
-            )}
-            required
-            placeholder="e.g. 0712345678"
-            icon={
-              <Phone className="h-4 w-4" />
-            }
-            autoComplete="tel"
-            disabled={
-              submitting
-            }
-          />
+              <ReadOnlyField
+                label="Phone Number"
+                value={
+                  form.phone
+                }
+                icon={
+                  <Phone className="h-4 w-4" />
+                }
+              />
+            </>
+          ) : (
+            <>
+              <InputField
+                label="Email Address"
+                name="email"
+                type="email"
+                value={
+                  form.email
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "email"
+                )}
+                required
+                placeholder="tenant@example.com"
+                icon={
+                  <Mail className="h-4 w-4" />
+                }
+                autoComplete="email"
+                disabled={
+                  submitting
+                }
+              />
+
+              <InputField
+                label="Phone Number"
+                name="phone"
+                type="tel"
+                value={
+                  form.phone
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "phone"
+                )}
+                required
+                placeholder="e.g. 0712345678"
+                icon={
+                  <Phone className="h-4 w-4" />
+                }
+                autoComplete="tel"
+                disabled={
+                  submitting
+                }
+              />
+            </>
+          )}
 
           <InputField
             label="National ID Number"
@@ -3141,7 +3416,11 @@ const TenantForm = ({
             <ShieldCheck className="h-5 w-5" />
           }
           title="Account Settings"
-          description="Manage tenant status, activity and verification."
+          description={
+            isEdit
+              ? "Manage tenant status and verification."
+              : "Manage tenant status, activity and verification."
+          }
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
@@ -3189,20 +3468,22 @@ const TenantForm = ({
             ]}
           />
 
-          <ToggleField
-            label="Active Account"
-            description="Allow this tenant account to remain active."
-            name="is_active"
-            checked={
-              form.is_active
-            }
-            onChange={
-              handleChange
-            }
-            disabled={
-              submitting
-            }
-          />
+          {!isEdit && (
+            <ToggleField
+              label="Active Account"
+              description="Allow this tenant account to remain active."
+              name="is_active"
+              checked={
+                form.is_active
+              }
+              onChange={
+                handleChange
+              }
+              disabled={
+                submitting
+              }
+            />
+          )}
 
           <ToggleField
             label="Verified Tenant"
@@ -3333,6 +3614,50 @@ const SectionHeader = ({
           {description}
         </p>
       </div>
+    </div>
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| READ ONLY FIELD
+|--------------------------------------------------------------------------
+*/
+
+const ReadOnlyField = ({
+  label,
+  value = "",
+  icon,
+}) => {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+
+      <div className="relative">
+        {icon && (
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            {icon}
+          </span>
+        )}
+
+        <div
+          className={`flex min-h-10 w-full items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600 ${
+            icon
+              ? "pl-10"
+              : ""
+          }`}
+        >
+          {normalizeString(
+            value
+          ) || "Not available"}
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        Managed from the linked user profile.
+      </p>
     </div>
   );
 };

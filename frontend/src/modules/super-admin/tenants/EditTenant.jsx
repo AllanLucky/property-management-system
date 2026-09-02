@@ -18,10 +18,6 @@ import {
   useMemo,
 } from "react";
 
-import {
-  useSelector,
-} from "react-redux";
-
 import TenantForm from "./TenantForm";
 
 import { useTenant } from "../../../hooks/useTenant";
@@ -36,12 +32,18 @@ import { useTenant } from "../../../hooks/useTenant";
 | 1. Read tenant ID from the route.
 | 2. Load the tenant from the API.
 | 3. Load available users with the tenant role.
-| 4. Display a loading state while fetching.
+| 4. Display loading state while fetching.
 | 5. Display an error/not-found state when loading fails.
 | 6. Pass the loaded tenant to TenantForm.
-| 7. Pass available tenant users to TenantForm.
-| 8. Submit tenant updates through useTenant().
-| 9. Redirect to the tenant details page after success.
+| 7. Submit tenant updates through useTenant().
+| 8. Redirect to tenant details after success.
+|
+| IMPORTANT:
+|
+| The linked User account is immutable from the Tenant edit form.
+|
+| TenantForm is responsible for constructing the correct edit payload.
+| EditTenant performs a final safety sanitization before sending it.
 |
 |--------------------------------------------------------------------------
 */
@@ -112,17 +114,10 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | NORMALIZE AVAILABLE USERS
   |--------------------------------------------------------------------------
-  |
-  | Protect the form from unexpected Redux/API shapes.
-  |
   */
 
   const normalizedAvailableUsers = useMemo(() => {
-    if (
-      !Array.isArray(
-        availableTenantUsers
-      )
-    ) {
+    if (!Array.isArray(availableTenantUsers)) {
       return [];
     }
 
@@ -150,12 +145,9 @@ const EditTenant = () => {
           return null;
         }
 
-        const normalizedId =
-          String(userId);
+        const normalizedId = String(userId);
 
-        if (
-          seen.has(normalizedId)
-        ) {
+        if (seen.has(normalizedId)) {
           return null;
         }
 
@@ -230,14 +222,7 @@ const EditTenant = () => {
   | CURRENT TENANT USER
   |--------------------------------------------------------------------------
   |
-  | The available-users endpoint intentionally returns users that are not
-  | already assigned to another tenant.
-  |
-  | When editing an existing tenant, its current user may therefore not
-  | appear in availableTenantUsers.
-  |
-  | We add the current user back into the form options so the existing
-  | assignment remains selectable.
+  | The linked user account is read-only during tenant editing.
   |
   */
 
@@ -246,10 +231,29 @@ const EditTenant = () => {
       return null;
     }
 
+    /*
+     * Support both:
+     *
+     * tenant.user
+     *
+     * and
+     *
+     * tenant.data.user
+     */
+    const tenantRecord =
+      tenant?.data &&
+      typeof tenant.data === "object" &&
+      !Array.isArray(tenant.data)
+        ? tenant.data
+        : tenant;
+
     const user =
-      tenant?.user || {};
+      tenantRecord?.user ||
+      tenant?.user ||
+      {};
 
     const userId =
+      tenantRecord?.user_id ??
       tenant?.user_id ??
       user?.id ??
       user?.user_id ??
@@ -264,19 +268,23 @@ const EditTenant = () => {
     }
 
     const firstName =
-      tenant?.first_name ??
       user?.first_name ??
+      tenantRecord?.first_name ??
+      tenant?.first_name ??
       "";
 
     const lastName =
-      tenant?.last_name ??
       user?.last_name ??
+      tenantRecord?.last_name ??
+      tenant?.last_name ??
       "";
 
     const name =
       user?.name ??
       user?.full_name ??
       user?.fullName ??
+      tenantRecord?.full_name ??
+      tenantRecord?.name ??
       tenant?.full_name ??
       tenant?.name ??
       [
@@ -313,16 +321,18 @@ const EditTenant = () => {
 
       email:
         String(
-          tenant?.email ??
           user?.email ??
+          tenantRecord?.email ??
+          tenant?.email ??
           ""
         ).trim(),
 
       phone:
         String(
-          tenant?.phone ??
           user?.phone ??
           user?.phone_number ??
+          tenantRecord?.phone ??
+          tenant?.phone ??
           ""
         ).trim(),
     };
@@ -332,12 +342,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | FORM USERS
   |--------------------------------------------------------------------------
-  |
-  | Start with the available tenant users.
-  |
-  | Then inject the currently assigned user when editing if that user is
-  | not already included.
-  |
   */
 
   const formUsers = useMemo(() => {
@@ -350,9 +354,7 @@ const EditTenant = () => {
     }
 
     const currentUserId =
-      String(
-        tenantUser.id
-      );
+      String(tenantUser.id);
 
     const alreadyIncluded =
       users.some(
@@ -380,19 +382,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | LOAD TENANT
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | The dependency array intentionally uses tenantId only.
-  |
-  | useTenant() may recreate getTenant(), clear(), and clearError()
-  | on every render. Including those functions here can cause:
-  |
-  |   Maximum update depth exceeded
-  |
-  | The route tenant ID is what actually determines which tenant
-  | should be loaded.
-  |
   */
 
   useEffect(() => {
@@ -404,20 +393,8 @@ const EditTenant = () => {
       }
 
       try {
-        /*
-        |--------------------------------------------------------------------------
-        | CLEAR STALE STATE
-        |--------------------------------------------------------------------------
-        */
-
         clear();
         clearError();
-
-        /*
-        |--------------------------------------------------------------------------
-        | FETCH TENANT
-        |--------------------------------------------------------------------------
-        */
 
         if (cancelled) {
           return;
@@ -448,51 +425,40 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | LOAD AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
-  |
-  | This is separate from loading the tenant itself.
-  |
-  | The endpoint returns users who already have the tenant role and are
-  | currently available to be linked to a tenant.
-  |
   */
 
-  const loadAvailableUsers =
-    useCallback(
-      async () => {
-        try {
-          console.log(
-            "[EditTenant] Fetching available tenant users..."
-          );
+  const loadAvailableUsers = useCallback(
+    async () => {
+      try {
+        console.log(
+          "[EditTenant] Fetching available tenant users..."
+        );
 
-          const result =
-            await getAvailableTenantUsers();
+        const result =
+          await getAvailableTenantUsers();
 
-          console.log(
-            "[EditTenant] Available tenant users:",
-            result
-          );
+        console.log(
+          "[EditTenant] Available tenant users:",
+          result
+        );
 
-          return result;
-        } catch (fetchError) {
-          console.error(
-            "[EditTenant] Failed to load available tenant users:",
-            fetchError
-          );
+        return result;
+      } catch (fetchError) {
+        console.error(
+          "[EditTenant] Failed to load available tenant users:",
+          fetchError
+        );
 
-          return null;
-        }
-      },
-      [getAvailableTenantUsers]
-    );
+        return null;
+      }
+    },
+    [getAvailableTenantUsers]
+  );
 
   /*
   |--------------------------------------------------------------------------
   | FETCH AVAILABLE USERS WHEN PAGE OPENS
   |--------------------------------------------------------------------------
-  |
-  | We intentionally keep this effect dependent on the callback supplied
-  | by useTenant. The callback itself should be memoized by useTenant.
-  |
   */
 
   useEffect(() => {
@@ -533,50 +499,86 @@ const EditTenant = () => {
   | SANITIZE TENANT UPDATE PAYLOAD
   |--------------------------------------------------------------------------
   |
-  | Tenant updates must only contain tenant-profile fields.
-  | The linked User account and tenant number are immutable here.
+  | These fields must never be sent by the edit form:
+  |
+  | - user_id
+  | - tenant_number
+  | - first_name
+  | - last_name
+  | - email
+  | - phone
+  | - is_active
+  |
+  | The linked User account is immutable from this page.
   |
   */
 
-  const sanitizeTenantUpdatePayload = useCallback((payload) => {
-    const protectedFields = new Set([
-      "user_id",
-      "tenant_number",
-      "first_name",
-      "last_name",
-      "email",
-      "phone",
-      "is_active",
-    ]);
+  const sanitizeTenantUpdatePayload = useCallback(
+    (payload) => {
+      const protectedFields = new Set([
+        "user_id",
+        "tenant_number",
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "is_active",
+      ]);
 
-    /*
-     * TenantForm may submit either a normal object or FormData
-     * when documents are included.
-     */
-    if (payload instanceof FormData) {
-      const sanitized = new FormData();
+      /*
+      |--------------------------------------------------------------------------
+      | FORM DATA
+      |--------------------------------------------------------------------------
+      */
 
-      for (const [key, value] of payload.entries()) {
-        if (!protectedFields.has(key)) {
-          sanitized.append(key, value);
+      if (payload instanceof FormData) {
+        const sanitized =
+          new FormData();
+
+        for (const [
+          key,
+          value,
+        ] of payload.entries()) {
+          if (
+            !protectedFields.has(key)
+          ) {
+            sanitized.append(
+              key,
+              value
+            );
+          }
         }
+
+        return sanitized;
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | NORMAL OBJECT
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        !payload ||
+        typeof payload !== "object"
+      ) {
+        return payload;
+      }
+
+      const sanitized = {
+        ...payload,
+      };
+
+      protectedFields.forEach(
+        (field) => {
+          delete sanitized[field];
+        }
+      );
+
       return sanitized;
-    }
-
-    if (!payload || typeof payload !== "object") {
-      return payload;
-    }
-
-    const sanitized = { ...payload };
-
-    protectedFields.forEach((field) => {
-      delete sanitized[field];
-    });
-
-    return sanitized;
-  }, []);
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -618,26 +620,26 @@ const EditTenant = () => {
 
       /*
       |--------------------------------------------------------------------------
-      | SANITIZE PAYLOAD
+      | FINAL PAYLOAD SANITIZATION
       |--------------------------------------------------------------------------
-      |
-      | Do not allow the edit form to change the linked user account,
-      | tenant number, or the legacy is_active field.
-      |
       */
 
       const sanitizedPayload =
-        sanitizeTenantUpdatePayload(payload);
+        sanitizeTenantUpdatePayload(
+          payload
+        );
 
       /*
       |--------------------------------------------------------------------------
-      | DEBUG
+      | DEBUG PAYLOAD
       |--------------------------------------------------------------------------
       */
 
-      if (sanitizedPayload instanceof FormData) {
+      if (
+        sanitizedPayload instanceof FormData
+      ) {
         console.log(
-          "Updating tenant:",
+          "[EditTenant] Updating tenant:",
           tenantId,
           Object.fromEntries(
             sanitizedPayload.entries()
@@ -645,7 +647,7 @@ const EditTenant = () => {
         );
       } else {
         console.log(
-          "Updating tenant:",
+          "[EditTenant] Updating tenant:",
           tenantId,
           sanitizedPayload
         );
@@ -665,7 +667,7 @@ const EditTenant = () => {
 
       /*
       |--------------------------------------------------------------------------
-      | SUCCESS
+      | SUCCESS MESSAGE
       |--------------------------------------------------------------------------
       */
 
@@ -730,10 +732,10 @@ const EditTenant = () => {
 
       const displayMessage =
         typeof possibleMessage ===
-          "string"
+        "string"
           ? possibleMessage
           : possibleMessage?.message ||
-          "Failed to update tenant. Please try again.";
+            "Failed to update tenant. Please try again.";
 
       /*
       |--------------------------------------------------------------------------
@@ -752,12 +754,6 @@ const EditTenant = () => {
         confirmButtonColor:
           "#dc2626",
       });
-
-      /*
-      |--------------------------------------------------------------------------
-      | RE-THROW
-      |--------------------------------------------------------------------------
-      */
 
       throw submitError;
     }
@@ -832,7 +828,7 @@ const EditTenant = () => {
     if (
       value?.errors &&
       typeof value.errors ===
-      "object"
+        "object"
     ) {
       const messages =
         Object.values(
@@ -870,8 +866,6 @@ const EditTenant = () => {
   if (!tenantId) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* HEADER */}
-
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -920,14 +914,11 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
-
                 Back to Tenants
               </Link>
             </div>
           </div>
         </div>
-
-        {/* CONTENT */}
 
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-red-200 bg-white p-8 text-center shadow-sm">
@@ -973,7 +964,6 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
-
               Back to Tenants
             </button>
           </div>
@@ -994,8 +984,6 @@ const EditTenant = () => {
   ) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* HEADER */}
-
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1044,14 +1032,11 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
-
                 Back to Tenants
               </Link>
             </div>
           </div>
         </div>
-
-        {/* LOADING CONTENT */}
 
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="flex min-h-[450px] items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1095,8 +1080,6 @@ const EditTenant = () => {
 
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* HEADER */}
-
         <div className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1138,18 +1121,18 @@ const EditTenant = () => {
                   shadow-sm
                   transition
                   hover:bg-gray-50
+                  focus:outline-none
+                  focus:ring-2
+                  focus:ring-primary-500/20
                   sm:w-auto
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
-
                 Back to Tenants
               </Link>
             </div>
           </div>
         </div>
-
-        {/* CONTENT */}
 
         <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
@@ -1207,7 +1190,6 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
-
               Back to Tenants
             </button>
           </div>
@@ -1222,19 +1204,26 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
+  const tenantRecord =
+    tenant?.data &&
+    typeof tenant.data === "object" &&
+    !Array.isArray(tenant.data)
+      ? tenant.data
+      : tenant;
+
   const firstName =
-    tenant?.first_name ||
-    tenant?.user?.first_name ||
+    tenantRecord?.first_name ||
+    tenantRecord?.user?.first_name ||
     "";
 
   const lastName =
-    tenant?.last_name ||
-    tenant?.user?.last_name ||
+    tenantRecord?.last_name ||
+    tenantRecord?.user?.last_name ||
     "";
 
   const tenantName =
-    tenant?.full_name ||
-    tenant?.name ||
+    tenantRecord?.full_name ||
+    tenantRecord?.name ||
     [
       firstName,
       lastName,
@@ -1255,8 +1244,8 @@ const EditTenant = () => {
     "T";
 
   const tenantEmail =
-    tenant?.email ||
-    tenant?.user?.email ||
+    tenantRecord?.email ||
+    tenantRecord?.user?.email ||
     "No email address";
 
   /*
@@ -1266,23 +1255,23 @@ const EditTenant = () => {
   */
 
   const tenantStatus =
-    typeof tenant?.status ===
-      "string"
-      ? tenant.status.toLowerCase()
+    typeof tenantRecord?.status ===
+    "string"
+      ? tenantRecord.status.toLowerCase()
       : "";
 
   const statusLabel =
     tenantStatus
       ? tenantStatus
-        .replace(
-          /_/g,
-          " "
-        )
-        .replace(
-          /\b\w/g,
-          (char) =>
-            char.toUpperCase()
-        )
+          .replace(
+            /_/g,
+            " "
+          )
+          .replace(
+            /\b\w/g,
+            (char) =>
+              char.toUpperCase()
+          )
       : "";
 
   /*
@@ -1315,8 +1304,6 @@ const EditTenant = () => {
       <div className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            {/* TITLE */}
-
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                 <UserRoundPen className="h-5 w-5" />
@@ -1329,12 +1316,11 @@ const EditTenant = () => {
 
                 <p className="mt-1 text-sm text-gray-500">
                   Update tenant profile information.
-                  The linked user account cannot be changed here.
+                  The linked user account cannot be
+                  changed here.
                 </p>
               </div>
             </div>
-
-            {/* BACK */}
 
             <Link
               to={TENANT_ROUTES.show(
@@ -1365,7 +1351,6 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
-
               Back to Tenant
             </Link>
           </div>
@@ -1383,8 +1368,6 @@ const EditTenant = () => {
 
         <div className="mb-5 rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            {/* IDENTITY */}
-
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold uppercase text-gray-600">
                 {initials}
@@ -1399,20 +1382,18 @@ const EditTenant = () => {
                   {tenantEmail}
                 </p>
 
-                {tenant?.tenant_number && (
+                {tenantRecord?.tenant_number && (
                   <p className="mt-0.5 text-xs text-gray-400">
                     Tenant Number:{" "}
                     <span className="font-medium text-gray-500">
                       {
-                        tenant.tenant_number
+                        tenantRecord.tenant_number
                       }
                     </span>
                   </p>
                 )}
               </div>
             </div>
-
-            {/* STATUS */}
 
             <div className="flex flex-wrap items-center gap-2">
               {statusLabel && (
@@ -1425,19 +1406,20 @@ const EditTenant = () => {
                     py-1
                     text-xs
                     font-medium
-                    ${tenantStatus ===
+                    ${
+                      tenantStatus ===
                       "active"
-                      ? "bg-green-50 text-green-700"
-                      : tenantStatus ===
-                        "blacklisted"
+                        ? "bg-green-50 text-green-700"
+                        : tenantStatus ===
+                          "blacklisted"
                         ? "bg-red-50 text-red-700"
                         : tenantStatus ===
                           "inactive"
-                          ? "bg-gray-100 text-gray-600"
-                          : tenantStatus ===
-                            "pending"
-                            ? "bg-yellow-50 text-yellow-700"
-                            : "bg-blue-50 text-blue-700"
+                        ? "bg-gray-100 text-gray-600"
+                        : tenantStatus ===
+                          "pending"
+                        ? "bg-yellow-50 text-yellow-700"
+                        : "bg-blue-50 text-blue-700"
                     }
                   `}
                 >
@@ -1446,23 +1428,69 @@ const EditTenant = () => {
               )}
 
               {Boolean(
-                tenant?.is_verified ??
-                tenant?.verified
+                tenantRecord?.is_verified ??
+                  tenantRecord?.verified
               ) && (
-                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    Verified
-                  </span>
-                )}
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                  Verified
+                </span>
+              )}
 
-              {tenant?.is_active ===
+              {tenantRecord?.is_active ===
                 false && (
-                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                    Inactive Account
-                  </span>
-                )}
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                  Inactive Account
+                </span>
+              )}
             </div>
           </div>
         </div>
+
+        {/* ==============================================================
+            CURRENT USER INFORMATION
+        =============================================================== */}
+
+        {tenantUser && (
+          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm">
+                <UserRoundPen className="h-4 w-4" />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-blue-900">
+                  Linked User Account
+                </p>
+
+                <p className="mt-1 text-sm text-blue-800">
+                  {tenantUser.name}
+                </p>
+
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-700">
+                  {tenantUser.email && (
+                    <span>
+                      {tenantUser.email}
+                    </span>
+                  )}
+
+                  {tenantUser.phone && (
+                    <span>
+                      {tenantUser.phone}
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-2 text-xs leading-5 text-blue-700">
+                  This user account is permanently
+                  linked to the tenant and cannot be
+                  changed from this page. Update the
+                  user's personal account information
+                  from the User Profile instead.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ==============================================================
             AVAILABLE USERS STATUS
@@ -1542,20 +1570,6 @@ const EditTenant = () => {
           </div>
         )}
 
-        {!loadingAvailableUsers &&
-          !availableTenantUsersError &&
-          formUsers.length > 0 && (
-            <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-              <p className="text-sm font-medium text-green-800">
-                {formUsers.length} tenant{" "}
-                {formUsers.length === 1
-                  ? "user"
-                  : "users"}{" "}
-                available for this tenant account.
-              </p>
-            </div>
-          )}
-
         {/* ==============================================================
             ERROR
         =============================================================== */}
@@ -1604,4 +1618,3 @@ const EditTenant = () => {
 };
 
 export default EditTenant;
-
