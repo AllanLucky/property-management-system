@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Tenant;
 
 use App\Models\Tenant;
-use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -53,23 +52,17 @@ class UpdateTenantRequest extends FormRequest
      *
      * IMPORTANT:
      *
-     * User account information such as:
+     * The linked User account owns:
      *
+     * - user_id
      * - first_name
      * - last_name
      * - email
      * - phone
      *
-     * belongs to the users table.
+     * A normal tenant update does not change the linked User account.
      *
-     * The tenant update request therefore does NOT accept those fields.
-     *
-     * The frontend should display them from:
-     *
-     * tenant.user.first_name
-     * tenant.user.last_name
-     * tenant.user.email
-     * tenant.user.phone
+     * tenant_number is also system-managed and cannot be changed.
      *
      * Tenant-specific information remains editable here.
      *
@@ -77,65 +70,12 @@ class UpdateTenantRequest extends FormRequest
      */
     public function rules(): array
     {
-        $tenant = $this->tenant();
-
-        $tenantId = $tenant?->id;
-
         return [
-
-            /*
-            |--------------------------------------------------------------------------
-            | User Account
-            |--------------------------------------------------------------------------
-            |
-            | The tenant remains connected to an existing User account.
-            |
-            | We allow changing the linked user, but the selected user:
-            |
-            | 1. Must exist.
-            | 2. Must have the tenant role.
-            | 3. Must not already belong to another tenant.
-            |
-            */
-
-            'user_id' => [
-                'sometimes',
-                'required',
-                'integer',
-                'exists:users,id',
-                Rule::unique('tenants', 'user_id')
-                    ->ignore($tenantId),
-            ],
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Number
-            |--------------------------------------------------------------------------
-            */
-
-            'tenant_number' => [
-                'sometimes',
-                'nullable',
-                'string',
-                'max:50',
-                Rule::unique('tenants', 'tenant_number')
-                    ->ignore($tenantId),
-            ],
 
             /*
             |--------------------------------------------------------------------------
             | Tenant-Specific Personal Information
             |--------------------------------------------------------------------------
-            |
-            | DO NOT include:
-            |
-            | first_name
-            | last_name
-            | email
-            | phone
-            |
-            | Those belong to the User account.
-            |
             */
 
             'other_names' => [
@@ -174,7 +114,7 @@ class UpdateTenantRequest extends FormRequest
                 'string',
                 'max:100',
                 Rule::unique('tenants', 'id_number')
-                    ->ignore($tenantId),
+                    ->ignore($this->tenant()?->id),
             ],
 
             'passport_number' => [
@@ -183,7 +123,7 @@ class UpdateTenantRequest extends FormRequest
                 'string',
                 'max:100',
                 Rule::unique('tenants', 'passport_number')
-                    ->ignore($tenantId),
+                    ->ignore($this->tenant()?->id),
             ],
 
             /*
@@ -393,33 +333,6 @@ class UpdateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | User Account
-            |--------------------------------------------------------------------------
-            */
-
-            'user_id.required' =>
-                'A user account is required for every tenant.',
-
-            'user_id.integer' =>
-                'The user ID must be a valid integer.',
-
-            'user_id.exists' =>
-                'The selected user account does not exist.',
-
-            'user_id.unique' =>
-                'This user account is already linked to another tenant.',
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Number
-            |--------------------------------------------------------------------------
-            */
-
-            'tenant_number.unique' =>
-                'This tenant number is already assigned to another tenant.',
-
-            /*
-            |--------------------------------------------------------------------------
             | Tenant Personal Information
             |--------------------------------------------------------------------------
             */
@@ -590,38 +503,12 @@ class UpdateTenantRequest extends FormRequest
 
     /**
      * Prepare request data before validation.
+     *
+     * Only fields supported by TenantService::update() are normalized.
      */
     protected function prepareForValidation(): void
     {
         $data = [];
-
-        /*
-        |--------------------------------------------------------------------------
-        | User Account
-        |--------------------------------------------------------------------------
-        */
-
-        if ($this->has('user_id')) {
-
-            $userId = $this->input('user_id');
-
-            $data['user_id'] = filled($userId)
-                ? (int) $userId
-                : null;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Tenant Number
-        |--------------------------------------------------------------------------
-        */
-
-        if ($this->has('tenant_number')) {
-
-            $data['tenant_number'] = $this->filled('tenant_number')
-                ? trim((string) $this->input('tenant_number'))
-                : null;
-        }
 
         /*
         |--------------------------------------------------------------------------
@@ -630,21 +517,18 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('other_names')) {
-
             $data['other_names'] = $this->filled('other_names')
                 ? trim((string) $this->input('other_names'))
                 : null;
         }
 
         if ($this->has('date_of_birth')) {
-
             $data['date_of_birth'] = $this->filled('date_of_birth')
                 ? $this->input('date_of_birth')
                 : null;
         }
 
         if ($this->has('gender')) {
-
             $data['gender'] = $this->filled('gender')
                 ? strtolower(trim((string) $this->input('gender')))
                 : null;
@@ -657,14 +541,12 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('id_number')) {
-
             $data['id_number'] = $this->filled('id_number')
                 ? strtoupper(trim((string) $this->input('id_number')))
                 : null;
         }
 
         if ($this->has('passport_number')) {
-
             $data['passport_number'] = $this->filled('passport_number')
                 ? strtoupper(trim((string) $this->input('passport_number')))
                 : null;
@@ -677,49 +559,42 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('country')) {
-
             $data['country'] = $this->filled('country')
                 ? trim((string) $this->input('country'))
                 : null;
         }
 
         if ($this->has('region')) {
-
             $data['region'] = $this->filled('region')
                 ? trim((string) $this->input('region'))
                 : null;
         }
 
         if ($this->has('county')) {
-
             $data['county'] = $this->filled('county')
                 ? trim((string) $this->input('county'))
                 : null;
         }
 
         if ($this->has('city')) {
-
             $data['city'] = $this->filled('city')
                 ? trim((string) $this->input('city'))
                 : null;
         }
 
         if ($this->has('area')) {
-
             $data['area'] = $this->filled('area')
                 ? trim((string) $this->input('area'))
                 : null;
         }
 
         if ($this->has('postal_code')) {
-
             $data['postal_code'] = $this->filled('postal_code')
                 ? trim((string) $this->input('postal_code'))
                 : null;
         }
 
         if ($this->has('address')) {
-
             $data['address'] = $this->filled('address')
                 ? trim((string) $this->input('address'))
                 : null;
@@ -732,21 +607,18 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('occupation')) {
-
             $data['occupation'] = $this->filled('occupation')
                 ? trim((string) $this->input('occupation'))
                 : null;
         }
 
         if ($this->has('employer')) {
-
             $data['employer'] = $this->filled('employer')
                 ? trim((string) $this->input('employer'))
                 : null;
         }
 
         if ($this->has('monthly_income')) {
-
             $data['monthly_income'] = $this->filled('monthly_income')
                 ? $this->input('monthly_income')
                 : null;
@@ -759,7 +631,6 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('emergency_contact_name')) {
-
             $data['emergency_contact_name'] =
                 $this->filled('emergency_contact_name')
                     ? trim((string) $this->input('emergency_contact_name'))
@@ -767,7 +638,6 @@ class UpdateTenantRequest extends FormRequest
         }
 
         if ($this->has('emergency_contact_phone')) {
-
             $data['emergency_contact_phone'] =
                 $this->filled('emergency_contact_phone')
                     ? trim((string) $this->input('emergency_contact_phone'))
@@ -775,7 +645,6 @@ class UpdateTenantRequest extends FormRequest
         }
 
         if ($this->has('emergency_contact_relationship')) {
-
             $data['emergency_contact_relationship'] =
                 $this->filled('emergency_contact_relationship')
                     ? trim((string) $this->input('emergency_contact_relationship'))
@@ -789,7 +658,6 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('is_verified')) {
-
             $value = $this->input('is_verified');
 
             $data['is_verified'] = filter_var(
@@ -800,7 +668,6 @@ class UpdateTenantRequest extends FormRequest
         }
 
         if ($this->has('verified_at')) {
-
             $data['verified_at'] = $this->filled('verified_at')
                 ? $this->input('verified_at')
                 : null;
@@ -813,7 +680,6 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('status')) {
-
             $data['status'] = $this->filled('status')
                 ? strtolower(trim((string) $this->input('status')))
                 : null;
@@ -826,7 +692,6 @@ class UpdateTenantRequest extends FormRequest
         */
 
         if ($this->has('notes')) {
-
             $data['notes'] = $this->filled('notes')
                 ? trim((string) $this->input('notes'))
                 : null;
@@ -854,56 +719,21 @@ class UpdateTenantRequest extends FormRequest
     {
         $validator->after(function ($validator) {
 
+            $tenant = $this->tenant();
+
             /*
             |--------------------------------------------------------------------------
-            | User Account Validation
+            | Tenant Existence
             |--------------------------------------------------------------------------
-            |
-            | If user_id is supplied, the selected user must:
-            |
-            | 1. Exist.
-            | 2. Have the tenant role.
-            | 3. Not already be attached to another tenant.
-            |
             */
 
-            if ($this->has('user_id') && filled($this->input('user_id'))) {
+            if (!$tenant) {
+                $validator->errors()->add(
+                    'tenant',
+                    'The tenant being updated could not be found.'
+                );
 
-                $user = User::find($this->input('user_id'));
-
-                if (!$user) {
-
-                    $validator->errors()->add(
-                        'user_id',
-                        'The selected user account does not exist.'
-                    );
-
-                } elseif (!$user->hasRole('tenant')) {
-
-                    $validator->errors()->add(
-                        'user_id',
-                        'The selected user must have the tenant role.'
-                    );
-                }
-
-                $existingTenant = Tenant::where(
-                    'user_id',
-                    $this->input('user_id')
-                )
-                    ->when(
-                        $this->tenant(),
-                        fn ($query, $tenant) =>
-                            $query->where('id', '!=', $tenant->id)
-                    )
-                    ->first();
-
-                if ($existingTenant) {
-
-                    $validator->errors()->add(
-                        'user_id',
-                        'This user account is already linked to another tenant.'
-                    );
-                }
+                return;
             }
 
             /*
@@ -911,9 +741,12 @@ class UpdateTenantRequest extends FormRequest
             | Identification Requirement
             |--------------------------------------------------------------------------
             |
-            | The final tenant record must have:
+            | If identification information is being updated, the final
+            | tenant record must still contain either:
             |
-            | ID number OR passport number.
+            | - ID number
+            | OR
+            | - Passport number
             |
             */
 
@@ -921,22 +754,18 @@ class UpdateTenantRequest extends FormRequest
                 $this->has('id_number') ||
                 $this->has('passport_number')
             ) {
-
-                $tenant = $this->tenant();
-
                 $idNumber = $this->has('id_number')
                     ? $this->input('id_number')
-                    : $tenant?->id_number;
+                    : $tenant->id_number;
 
                 $passportNumber = $this->has('passport_number')
                     ? $this->input('passport_number')
-                    : $tenant?->passport_number;
+                    : $tenant->passport_number;
 
                 if (
                     blank($idNumber) &&
                     blank($passportNumber)
                 ) {
-
                     $validator->errors()->add(
                         'identification',
                         'A tenant must have at least an ID number or passport number.'
@@ -967,16 +796,13 @@ class UpdateTenantRequest extends FormRequest
 
             if ($hasEmergencyUpdate) {
 
-                $tenant = $this->tenant();
-
                 foreach ($emergencyFields as $field) {
 
                     $value = $this->has($field)
                         ? $this->input($field)
-                        : $tenant?->{$field};
+                        : $tenant->{$field};
 
                     if (blank($value)) {
-
                         $validator->errors()->add(
                             $field,
                             'All emergency contact details are required when updating emergency contact information.'
@@ -989,6 +815,15 @@ class UpdateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Verification Consistency
             |--------------------------------------------------------------------------
+            |
+            | TenantService::update() automatically:
+            |
+            | - sets verified_at when is_verified = true
+            | - clears verified_at when is_verified = false
+            |
+            | Therefore we only reject an explicitly supplied conflicting
+            | verification date.
+            |
             */
 
             if ($this->has('is_verified')) {
@@ -1001,49 +836,48 @@ class UpdateTenantRequest extends FormRequest
 
                 if ($isVerified === true) {
 
-                    $verifiedAt = $this->has('verified_at')
-                        ? $this->input('verified_at')
-                        : $this->tenant()?->verified_at;
+                    /*
+                    |--------------------------------------------------------------------------
+                    | When verified, verified_at may be omitted because
+                    | TenantService will automatically set it to now().
+                    |--------------------------------------------------------------------------
+                    */
 
-                    if (blank($verifiedAt)) {
-
-                        $validator->errors()->add(
-                            'verified_at',
-                            'A verification date is required when the tenant is verified.'
-                        );
-                    }
                 }
 
                 if ($isVerified === false) {
 
-                    $verifiedAt = $this->has('verified_at')
-                        ? $this->input('verified_at')
-                        : $this->tenant()?->verified_at;
-
-                    if (filled($verifiedAt)) {
-
-                        $validator->errors()->add(
-                            'verified_at',
-                            'A tenant who is not verified cannot have a verification date.'
-                        );
-                    }
+                    /*
+                    |--------------------------------------------------------------------------
+                    | When explicitly unverified, the service will clear
+                    | verified_at automatically.
+                    |--------------------------------------------------------------------------
+                    |
+                    | Do not reject an existing verified_at here because
+                    | TenantService is responsible for clearing it.
+                    |--------------------------------------------------------------------------
+                    */
                 }
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Prevent User Fields From Being Used As Tenant Fields
+            | Protected User Fields
             |--------------------------------------------------------------------------
             |
-            | These values belong to the User model.
+            | These belong to the linked User model and are not tenant
+            | fields.
             |
             */
 
             $userFields = [
+                'user_id',
                 'first_name',
                 'last_name',
                 'email',
                 'phone',
+                'tenant_number',
+                'is_active',
             ];
 
             foreach ($userFields as $field) {
@@ -1052,10 +886,49 @@ class UpdateTenantRequest extends FormRequest
 
                     $validator->errors()->add(
                         $field,
-                        "The {$field} belongs to the user account and must be updated from the user profile."
+                        $this->protectedFieldMessage($field)
                     );
                 }
             }
         });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Protected Field Message
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Get the validation message for protected fields.
+     */
+    protected function protectedFieldMessage(string $field): string
+    {
+        return match ($field) {
+
+            'user_id' =>
+                'The linked user account cannot be changed during a tenant update.',
+
+            'tenant_number' =>
+                'The tenant number is system-managed and cannot be changed.',
+
+            'first_name' =>
+                'The first name belongs to the user account and must be updated from the user profile.',
+
+            'last_name' =>
+                'The last name belongs to the user account and must be updated from the user profile.',
+
+            'email' =>
+                'The email belongs to the user account and must be updated from the user profile.',
+
+            'phone' =>
+                'The phone number belongs to the user account and must be updated from the user profile.',
+
+            'is_active' =>
+                'The is_active field is not supported for tenant updates.',
+
+            default =>
+                "The {$field} cannot be changed during a tenant update.",
+        };
     }
 }
