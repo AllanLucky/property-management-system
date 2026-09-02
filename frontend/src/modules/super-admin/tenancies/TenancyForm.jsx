@@ -46,6 +46,26 @@ const PAYMENT_FREQUENCIES = [
 
 /*
 |--------------------------------------------------------------------------
+| TENANT ASSIGNMENT RULE
+|--------------------------------------------------------------------------
+|
+| A tenant cannot be assigned to another tenancy when they already have
+| an active or pending tenancy.
+|
+| Expired, terminated and cancelled tenancies do not block reassignment.
+|
+| The backend remains the source of truth. This helper is only for the
+| frontend dropdown UX.
+|
+*/
+
+const BLOCKING_TENANCY_STATUSES = [
+  "active",
+  "pending",
+];
+
+/*
+|--------------------------------------------------------------------------
 | DEFAULT FORM
 |--------------------------------------------------------------------------
 */
@@ -203,7 +223,9 @@ const formatDateForInput = (value) => {
   const stringValue = String(value);
 
   if (
-    /^\d{4}-\d{2}-\d{2}$/.test(stringValue)
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      stringValue
+    )
   ) {
     return stringValue;
   }
@@ -234,7 +256,9 @@ const formatDateForInput = (value) => {
 |--------------------------------------------------------------------------
 */
 
-const normalizePaymentFrequency = (value) => {
+const normalizePaymentFrequency = (
+  value
+) => {
   const normalized =
     String(value ?? "")
       .trim()
@@ -425,6 +449,214 @@ const getCollection = (value) => {
 
 /*
 |--------------------------------------------------------------------------
+| UNIQUE COLLECTION
+|--------------------------------------------------------------------------
+*/
+
+const uniqueById = (
+  collection
+) => {
+  const list =
+    getCollection(collection);
+
+  const seen = new Set();
+
+  return list.filter(
+    (item) => {
+      if (
+        !item ||
+        typeof item !== "object"
+      ) {
+        return false;
+      }
+
+      const id =
+        normalizeId(
+          item.id ??
+          item.value ??
+          item._id
+        );
+
+      if (!id) {
+        return true;
+      }
+
+      if (seen.has(id)) {
+        return false;
+      }
+
+      seen.add(id);
+
+      return true;
+    }
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| TENANT ASSIGNMENT HELPERS
+|--------------------------------------------------------------------------
+*/
+
+const getTenantBlockingStatus = (
+  tenant
+) => {
+  if (
+    !tenant ||
+    typeof tenant !== "object"
+  ) {
+    return false;
+  }
+
+  /*
+  | Backend explicit flag.
+  */
+
+  if (
+    typeof tenant.blocks_tenant_assignment ===
+    "boolean"
+  ) {
+    return tenant.blocks_tenant_assignment;
+  }
+
+  /*
+  | Backend assignment status.
+  */
+
+  if (
+    typeof tenant.tenant_assignment_status ===
+    "string"
+  ) {
+    return (
+      tenant.tenant_assignment_status
+        .trim()
+        .toLowerCase() ===
+      "blocked"
+    );
+  }
+
+  /*
+  | Backend counts.
+  */
+
+  const activeCount =
+    Number(
+      tenant.active_tenancy_count ??
+      0
+    );
+
+  const pendingCount =
+    Number(
+      tenant.pending_tenancy_count ??
+      0
+    );
+
+  if (
+    activeCount > 0 ||
+    pendingCount > 0
+  ) {
+    return true;
+  }
+
+  /*
+  | Possible current tenancy structure.
+  */
+
+  const currentTenancy =
+    tenant?.current_tenancy ??
+    tenant?.currentTenancy;
+
+  if (
+    currentTenancy &&
+    typeof currentTenancy ===
+      "object"
+  ) {
+    const currentStatus =
+      normalizeStatus(
+        currentTenancy.status
+      );
+
+    if (
+      BLOCKING_TENANCY_STATUSES.includes(
+        currentStatus
+      ) &&
+      normalizeBoolean(
+        currentTenancy.is_active,
+        true
+      )
+    ) {
+      return true;
+    }
+  }
+
+  /*
+  | Possible nested tenancies collection.
+  */
+
+  const tenantTenancies =
+    getCollection(
+      tenant?.tenancies
+    );
+
+  if (
+    tenantTenancies.some(
+      (tenancy) => {
+        if (
+          !tenancy ||
+          typeof tenancy !==
+            "object"
+        ) {
+          return false;
+        }
+
+        const status =
+          normalizeStatus(
+            tenancy.status
+          );
+
+        return (
+          BLOCKING_TENANCY_STATUSES.includes(
+            status
+          ) &&
+          normalizeBoolean(
+            tenancy.is_active,
+            true
+          )
+        );
+      }
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const isTenantBlocked = (
+  tenant
+) =>
+  getTenantBlockingStatus(
+    tenant
+  );
+
+/*
+|--------------------------------------------------------------------------
+| TENANT ID
+|--------------------------------------------------------------------------
+*/
+
+const getTenantId = (
+  tenant
+) => {
+  return normalizeId(
+    tenant?.id ??
+    tenant?.tenant_id ??
+    tenant?.tenantId
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
 | APARTMENTS FROM PROPERTIES
 |--------------------------------------------------------------------------
 */
@@ -438,11 +670,20 @@ const getApartmentsFromProperties = (
   const result = [];
 
   for (const property of propertyList) {
-    const propertyId = normalizeId(
-      property?.id ??
-      property?.property_id ??
-      property?.propertyId
-    );
+    if (
+      !property ||
+      typeof property !==
+        "object"
+    ) {
+      continue;
+    }
+
+    const propertyId =
+      normalizeId(
+        property?.id ??
+        property?.property_id ??
+        property?.propertyId
+      );
 
     const nestedApartments =
       getCollection(
@@ -452,7 +693,8 @@ const getApartmentsFromProperties = (
     for (const apartment of nestedApartments) {
       if (
         !apartment ||
-        typeof apartment !== "object"
+        typeof apartment !==
+          "object"
       ) {
         continue;
       }
@@ -486,6 +728,14 @@ const mergeUniqueApartments = (
 
   return merged.filter(
     (apartment) => {
+      if (
+        !apartment ||
+        typeof apartment !==
+          "object"
+      ) {
+        return false;
+      }
+
       const id = normalizeId(
         apartment?.id ??
         apartment?.apartment_id ??
@@ -528,14 +778,16 @@ const getEntityId = (
   }
 
   for (const key of keys) {
-    const value = entity[key];
+    const value =
+      entity[key];
 
     if (
       value !== undefined &&
       value !== null &&
       value !== ""
     ) {
-      const id = normalizeId(value);
+      const id =
+        normalizeId(value);
 
       if (id) {
         return id;
@@ -593,7 +845,7 @@ const getPropertyIdFromApartment = (
 
   const nestedPropertyId =
     getEntityId(
-      apartment.property,
+      apartment?.property,
       "id",
       "property_id",
       "propertyId"
@@ -638,7 +890,7 @@ const getApartmentIdFromUnit = (
 
   const nestedId =
     getEntityId(
-      unit.apartment,
+      unit?.apartment,
       "id",
       "apartment_id",
       "apartmentId"
@@ -712,14 +964,9 @@ const normalizeTenancy = (
       "isActive"
     );
 
-  const paymentFrequency =
-    normalizePaymentFrequency(
-      getValue(
-        tenancy,
-        "payment_frequency",
-        "paymentFrequency",
-        "frequency"
-      )
+  const normalizedStatus =
+    normalizeStatus(
+      statusValue
     );
 
   return {
@@ -828,7 +1075,14 @@ const normalizeTenancy = (
       ),
 
     payment_frequency:
-      paymentFrequency,
+      normalizePaymentFrequency(
+        getValue(
+          tenancy,
+          "payment_frequency",
+          "paymentFrequency",
+          "frequency"
+        )
+      ),
 
     due_day:
       normalizeNumber(
@@ -840,16 +1094,13 @@ const normalizeTenancy = (
       ),
 
     status:
-      normalizeStatus(
-        statusValue
-      ),
+      normalizedStatus,
 
     is_active:
       normalizeBoolean(
         isActiveValue,
-        normalizeStatus(
-          statusValue
-        ) === "active"
+        normalizedStatus ===
+          "active"
       ),
 
     agreement_file:
@@ -906,9 +1157,31 @@ const buildInitialForm = (
   };
 
   /*
-  |----------------------------------------------------------------------
-  | Make sure status is always a backend-supported value.
-  |----------------------------------------------------------------------
+  | Make sure IDs are normalized.
+  */
+
+  merged.property_id =
+    normalizeId(
+      merged.property_id
+    );
+
+  merged.apartment_id =
+    normalizeId(
+      merged.apartment_id
+    );
+
+  merged.unit_id =
+    normalizeId(
+      merged.unit_id
+    );
+
+  merged.tenant_id =
+    normalizeId(
+      merged.tenant_id
+    );
+
+  /*
+  | Status.
   */
 
   merged.status =
@@ -916,15 +1189,41 @@ const buildInitialForm = (
       merged.status
     );
 
+  /*
+  | Payment frequency.
+  */
+
   merged.payment_frequency =
     normalizePaymentFrequency(
       merged.payment_frequency
     );
 
   /*
-  |----------------------------------------------------------------------
+  | Dates.
+  */
+
+  merged.start_date =
+    formatDateForInput(
+      merged.start_date
+    );
+
+  merged.end_date =
+    formatDateForInput(
+      merged.end_date
+    );
+
+  merged.move_in_date =
+    formatDateForInput(
+      merged.move_in_date
+    );
+
+  merged.move_out_date =
+    formatDateForInput(
+      merged.move_out_date
+    );
+
+  /*
   | Keep is_active consistent with status.
-  |----------------------------------------------------------------------
   */
 
   if (
@@ -997,36 +1296,76 @@ const getUnitName = (
 const getTenantName = (
   tenant
 ) => {
-  if (tenant?.full_name) {
-    return tenant.full_name;
+  if (!tenant) {
+    return "Tenant";
   }
 
-  if (tenant?.fullName) {
-    return tenant.fullName;
+  if (
+    tenant?.full_name
+  ) {
+    return String(
+      tenant.full_name
+    ).trim();
+  }
+
+  if (
+    tenant?.fullName
+  ) {
+    return String(
+      tenant.fullName
+    ).trim();
   }
 
   const firstName =
-    tenant?.first_name ||
-    tenant?.firstName ||
-    "";
+    normalizeString(
+      tenant?.first_name ??
+      tenant?.firstName
+    );
 
   const lastName =
-    tenant?.last_name ||
-    tenant?.lastName ||
-    "";
+    normalizeString(
+      tenant?.last_name ??
+      tenant?.lastName
+    );
 
-  const name =
-    `${firstName} ${lastName}`.trim();
+  const otherNames =
+    normalizeString(
+      tenant?.other_names ??
+      tenant?.otherNames ??
+      tenant?.other_name
+    );
 
-  if (name) {
-    return name;
+  /*
+  | Prefer the backend's normal name ordering:
+  |
+  | First Name + Last Name + Other Names
+  */
+
+  const fullName = [
+    firstName,
+    lastName,
+    otherNames,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (fullName) {
+    return fullName;
   }
 
   return (
-    tenant?.name ||
-    tenant?.email ||
-    tenant?.phone ||
-    tenant?.tenant_number ||
+    normalizeString(
+      tenant?.name
+    ) ||
+    normalizeString(
+      tenant?.email
+    ) ||
+    normalizeString(
+      tenant?.phone
+    ) ||
+    normalizeString(
+      tenant?.tenant_number
+    ) ||
     `Tenant #${tenant?.id ?? ""}`
   );
 };
@@ -1091,11 +1430,8 @@ const TenancyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | IMPORTANT
+  | SYNCHRONIZE EDIT DATA
   |--------------------------------------------------------------------------
-  | When edit tenancy data arrives after the component mounted,
-  | synchronize the form.
-  |
   */
 
   useEffect(() => {
@@ -1110,9 +1446,13 @@ const TenancyForm = ({
         initialValues
       )
     );
+
+    setErrors({});
+    setServerError("");
   }, [
-    tenancy?.id,
+    tenancy,
     isEdit,
+    initialValues,
   ]);
 
   /*
@@ -1124,7 +1464,7 @@ const TenancyForm = ({
   const propertyList =
     useMemo(
       () =>
-        getCollection(
+        uniqueById(
           properties
         ),
       [properties]
@@ -1154,17 +1494,115 @@ const TenancyForm = ({
   const unitList =
     useMemo(
       () =>
-        getCollection(units),
+        uniqueById(
+          units
+        ),
       [units]
     );
 
   const tenantList =
     useMemo(
       () =>
-        getCollection(
+        uniqueById(
           tenants
         ),
       [tenants]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE TENANTS
+  |--------------------------------------------------------------------------
+  |
+  | Create:
+  |   Only tenants without active/pending tenancy.
+  |
+  | Edit:
+  |   Keep the current tenant visible even if they are blocked by the
+  |   tenancy being edited.
+  |
+  */
+
+  const availableTenants =
+    useMemo(() => {
+      const currentTenantId =
+        normalizeId(
+          form.tenant_id
+        );
+
+      return tenantList.filter(
+        (tenant) => {
+          const tenantId =
+            getTenantId(
+              tenant
+            );
+
+          /*
+          | Never hide the tenant already assigned to this tenancy while
+          | editing it.
+          */
+
+          if (
+            isEdit &&
+            currentTenantId &&
+            sameId(
+              tenantId,
+              currentTenantId
+            )
+          ) {
+            return true;
+          }
+
+          return !isTenantBlocked(
+            tenant
+          );
+        }
+      );
+    }, [
+      tenantList,
+      form.tenant_id,
+      isEdit,
+    ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | CURRENT TENANT
+  |--------------------------------------------------------------------------
+  */
+
+  const currentTenant =
+    useMemo(() => {
+      const tenantId =
+        normalizeId(
+          form.tenant_id
+        );
+
+      if (!tenantId) {
+        return null;
+      }
+
+      return (
+        tenantList.find(
+          (tenant) =>
+            sameId(
+              getTenantId(
+                tenant
+              ),
+              tenantId
+            )
+        ) ?? null
+      );
+    }, [
+      tenantList,
+      form.tenant_id,
+    ]);
+
+  const currentTenantBlocked =
+    Boolean(
+      currentTenant &&
+      isTenantBlocked(
+        currentTenant
+      )
     );
 
   /*
@@ -1327,6 +1765,82 @@ const TenancyForm = ({
 
     /*
     |--------------------------------------------------------------------------
+    | TENANT
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      name === "tenant_id"
+    ) {
+      const selectedTenantId =
+        normalizeId(value);
+
+      const selectedTenant =
+        tenantList.find(
+          (tenant) =>
+            sameId(
+              getTenantId(
+                tenant
+              ),
+              selectedTenantId
+            )
+        );
+
+      /*
+      | Frontend protection against selecting a blocked tenant.
+      |
+      | The backend MUST still enforce this.
+      */
+
+      if (
+        selectedTenant &&
+        isTenantBlocked(
+          selectedTenant
+        ) &&
+        !(
+          isEdit &&
+          sameId(
+            selectedTenantId,
+            form.tenant_id
+          )
+        )
+      ) {
+        setErrors((current) => ({
+          ...current,
+          tenant_id:
+            "This tenant is already assigned to an active or pending tenancy.",
+        }));
+
+        setServerError(
+          "The selected tenant is already assigned to an active or pending tenancy."
+        );
+
+        return;
+      }
+
+      setForm((current) => ({
+        ...current,
+        tenant_id:
+          selectedTenantId,
+      }));
+
+      setErrors((current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.tenant_id;
+
+        return next;
+      });
+
+      setServerError("");
+
+      return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | STATUS
     |--------------------------------------------------------------------------
     |
@@ -1394,6 +1908,7 @@ const TenancyForm = ({
 
         /*
         | If activating, status becomes active.
+        |
         | If deactivating an active tenancy, use pending.
         | This prevents backend consistency errors.
         */
@@ -1551,6 +2066,50 @@ const TenancyForm = ({
         "Please select a tenant.";
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant assignment protection
+    |--------------------------------------------------------------------------
+    */
+
+    if (tenantId) {
+      const selectedTenant =
+        tenantList.find(
+          (tenant) =>
+            sameId(
+              getTenantId(
+                tenant
+              ),
+              tenantId
+            )
+        );
+
+      if (
+        selectedTenant &&
+        isTenantBlocked(
+          selectedTenant
+        )
+      ) {
+        const isCurrentTenant =
+          isEdit &&
+          sameId(
+            tenantId,
+            tenancy?.tenant_id ??
+              tenancy?.tenant?.id
+          );
+
+        /*
+        | A tenant can remain assigned to the tenancy being edited.
+        | They cannot be assigned to a different tenancy.
+        */
+
+        if (!isCurrentTenant) {
+          nextErrors.tenant_id =
+            "The selected tenant is already assigned to an active or pending tenancy.";
+        }
+      }
+    }
+
     if (!startDate) {
       nextErrors.start_date =
         "Start date is required.";
@@ -1670,6 +2229,11 @@ const TenancyForm = ({
     ].forEach((field) => {
       if (
         form[field] !== "" &&
+        form[field] !== null &&
+        form[field] !== undefined &&
+        !Number.isNaN(
+          Number(form[field])
+        ) &&
         Number(form[field]) < 0
       ) {
         nextErrors[field] =
@@ -1782,9 +2346,6 @@ const TenancyForm = ({
   |--------------------------------------------------------------------------
   | BUILD BACKEND PAYLOAD
   |--------------------------------------------------------------------------
-  |
-  | This matches your Laravel UpdateTenancyRequest.
-  |
   */
 
   const buildPayload = () => {
@@ -1844,7 +2405,7 @@ const TenancyForm = ({
       rent_amount:
         form.rent_amount !==
           "" &&
-          form.rent_amount !==
+        form.rent_amount !==
           null
           ? Number(
             form.rent_amount
@@ -1854,7 +2415,7 @@ const TenancyForm = ({
       deposit_amount:
         form.deposit_amount !==
           "" &&
-          form.deposit_amount !==
+        form.deposit_amount !==
           null
           ? Number(
             form.deposit_amount
@@ -1864,7 +2425,7 @@ const TenancyForm = ({
       service_charge:
         form.service_charge !==
           "" &&
-          form.service_charge !==
+        form.service_charge !==
           null
           ? Number(
             form.service_charge
@@ -1874,7 +2435,7 @@ const TenancyForm = ({
       late_fee:
         form.late_fee !==
           "" &&
-          form.late_fee !==
+        form.late_fee !==
           null
           ? Number(
             form.late_fee
@@ -1889,7 +2450,7 @@ const TenancyForm = ({
       due_day:
         form.due_day !==
           "" &&
-          form.due_day !==
+        form.due_day !==
           null
           ? Number(
             form.due_day
@@ -1922,8 +2483,8 @@ const TenancyForm = ({
     | Tenancy number
     |--------------------------------------------------------------------------
     |
-    | Your backend accepts tenancy_number during update.
-    | We only send it when editing.
+    | Backend normally generates this during creation.
+    | During update, keep the existing number.
     |
     */
 
@@ -2094,7 +2655,9 @@ const TenancyForm = ({
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={
+        handleSubmit
+      }
       noValidate
       className="space-y-6"
     >
@@ -2115,7 +2678,7 @@ const TenancyForm = ({
               <p className="mt-0.5 text-sm text-gray-500">
                 {isEdit
                   ? "Update tenancy details, rental terms and status."
-                  : "Create a new tenancy and assign a tenant to a unit."}
+                  : "Create a new tenancy and assign an eligible tenant to a unit."}
               </p>
             </div>
           </div>
@@ -2144,51 +2707,51 @@ const TenancyForm = ({
 
         {(displayedServerError ||
           hasErrors) && (
-            <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
-              <div className="flex gap-3">
-                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-6">
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
 
-                <div>
-                  <p className="text-sm font-semibold text-red-800">
-                    Please check the form
+              <div>
+                <p className="text-sm font-semibold text-red-800">
+                  Please check the form
+                </p>
+
+                {displayedServerError && (
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
+                    {
+                      displayedServerError
+                    }
                   </p>
+                )}
 
-                  {displayedServerError && (
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
-                      {
-                        displayedServerError
-                      }
-                    </p>
-                  )}
-
-                  {hasErrors && (
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
-                      {Object.entries(
-                        errors
-                      )
-                        .slice(0, 10)
-                        .map(
-                          ([
-                            field,
-                            message,
-                          ]) => (
-                            <li
-                              key={
-                                field
-                              }
-                            >
-                              {
-                                message
-                              }
-                            </li>
-                          )
-                        )}
-                    </ul>
-                  )}
-                </div>
+                {hasErrors && (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-700">
+                    {Object.entries(
+                      errors
+                    )
+                      .slice(0, 10)
+                      .map(
+                        ([
+                          field,
+                          message,
+                        ]) => (
+                          <li
+                            key={
+                              field
+                            }
+                          >
+                            {
+                              message
+                            }
+                          </li>
+                        )
+                      )}
+                  </ul>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        )}
       </div>
 
       {/* ASSIGNMENT */}
@@ -2199,7 +2762,7 @@ const TenancyForm = ({
             <Building2 className="h-5 w-5" />
           }
           title="Tenancy Assignment"
-          description="Select the property, apartment, unit and tenant for this tenancy."
+          description="Select the property, apartment, unit and eligible tenant for this tenancy."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
@@ -2319,39 +2882,63 @@ const TenancyForm = ({
             ]}
           />
 
-          <SelectField
-            label="Tenant"
-            name="tenant_id"
-            value={
-              form.tenant_id
-            }
-            onChange={
-              handleChange
-            }
-            error={fieldError(
-              "tenant_id"
-            )}
-            required
-            options={[
-              {
-                value: "",
-                label:
-                  "Select tenant",
-              },
-              ...tenantList.map(
-                (tenant) => ({
-                  value:
-                    String(
-                      tenant.id
-                    ),
+          <div>
+            <SelectField
+              label="Tenant"
+              name="tenant_id"
+              value={
+                form.tenant_id
+              }
+              onChange={
+                handleChange
+              }
+              error={fieldError(
+                "tenant_id"
+              )}
+              required
+              options={[
+                {
+                  value: "",
                   label:
-                    getTenantName(
-                      tenant
-                    ),
-                })
-              ),
-            ]}
-          />
+                    availableTenants.length
+                      ? "Select tenant"
+                      : "No eligible tenants available",
+                },
+                ...availableTenants.map(
+                  (tenant) => ({
+                    value:
+                      String(
+                        getTenantId(
+                          tenant
+                        )
+                      ),
+                    label:
+                      getTenantName(
+                        tenant
+                      ),
+                  })
+                ),
+              ]}
+            />
+
+            {!isEdit &&
+              tenantList.length >
+                0 &&
+              availableTenants.length ===
+                0 && (
+                <p className="mt-1.5 text-xs text-gray-500">
+                  All tenants currently have an active or pending tenancy.
+                </p>
+              )}
+
+            {isEdit &&
+              currentTenantBlocked &&
+              currentTenant && (
+                <p className="mt-1.5 text-xs text-amber-600">
+                  Current tenant is retained because this tenant is already assigned to this tenancy.
+                </p>
+              )}
+          </div>
 
           {isEdit && (
             <InputField
@@ -2675,7 +3262,7 @@ const TenancyForm = ({
 
                 <p className="mt-1 text-xs leading-5 text-gray-500">
                   {form.status ===
-                    "active"
+                  "active"
                     ? "This tenancy is currently active."
                     : `This tenancy is ${form.status}.`}
                 </p>
@@ -2706,14 +3293,14 @@ const TenancyForm = ({
                 {fieldError(
                   "is_active"
                 ) && (
-                    <p className="mt-2 text-xs text-red-600">
-                      {
-                        fieldError(
-                          "is_active"
-                        )
-                      }
-                    </p>
-                  )}
+                  <p className="mt-2 text-xs text-red-600">
+                    {
+                      fieldError(
+                        "is_active"
+                      )
+                    }
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -2829,6 +3416,7 @@ const TenancyForm = ({
             "
           >
             <X className="h-4 w-4" />
+
             Cancel
           </button>
 
@@ -2903,6 +3491,10 @@ function getErrorMessage(
     return error;
   }
 
+  /*
+  | Direct message.
+  */
+
   if (error?.message) {
     return String(
       error.message
@@ -2914,6 +3506,10 @@ function getErrorMessage(
       error.error
     );
   }
+
+  /*
+  | Axios response.
+  */
 
   const data =
     error?.response?.data;
@@ -2930,6 +3526,10 @@ function getErrorMessage(
     );
   }
 
+  /*
+  | Laravel validation errors.
+  */
+
   const validationErrors =
     data?.errors ||
     error?.errors;
@@ -2937,7 +3537,7 @@ function getErrorMessage(
   if (
     validationErrors &&
     typeof validationErrors ===
-    "object"
+      "object"
   ) {
     const messages =
       Object.entries(
@@ -3098,6 +3698,13 @@ const InputField = ({
           aria-invalid={
             hasError
           }
+          aria-describedby={
+            hasError
+              ? `${name}-error`
+              : hint
+                ? `${name}-hint`
+                : undefined
+          }
           className={`
             h-10
             w-full
@@ -3114,23 +3721,33 @@ const InputField = ({
             disabled:bg-gray-50
             disabled:text-gray-500
             ${icon ? "pl-10" : ""}
-            ${hasError
-              ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
-              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            ${
+              hasError
+                ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
+                : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             }
           `}
         />
       </div>
 
       {hint && !error && (
-        <p className="text-xs text-gray-400">
+        <p
+          id={`${name}-hint`}
+          className="text-xs text-gray-400"
+        >
           {hint}
         </p>
       )}
 
-      <FieldError
-        error={error}
-      />
+      {error && (
+        <p
+          id={`${name}-error`}
+        >
+          <FieldError
+            error={error}
+          />
+        </p>
+      )}
     </div>
   );
 };
@@ -3185,6 +3802,11 @@ const SelectField = ({
           aria-invalid={
             hasError
           }
+          aria-describedby={
+            hasError
+              ? `${name}-error`
+              : undefined
+          }
           className={`
             h-10
             w-full
@@ -3201,9 +3823,10 @@ const SelectField = ({
             disabled:cursor-not-allowed
             disabled:bg-gray-50
             disabled:text-gray-500
-            ${hasError
-              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            ${
+              hasError
+                ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+                : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             }
           `}
         >
@@ -3234,9 +3857,15 @@ const SelectField = ({
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
       </div>
 
-      <FieldError
-        error={error}
-      />
+      {error && (
+        <div
+          id={`${name}-error`}
+        >
+          <FieldError
+            error={error}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -3291,6 +3920,11 @@ const TextAreaField = ({
         aria-invalid={
           hasError
         }
+        aria-describedby={
+          hasError
+            ? `${name}-error`
+            : undefined
+        }
         className={`
           w-full
           resize-y
@@ -3304,16 +3938,23 @@ const TextAreaField = ({
           outline-none
           transition
           placeholder:text-gray-400
-          ${hasError
-            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          ${
+            hasError
+              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           }
         `}
       />
 
-      <FieldError
-        error={error}
-      />
+      {error && (
+        <div
+          id={`${name}-error`}
+        >
+          <FieldError
+            error={error}
+          />
+        </div>
+      )}
     </div>
   );
 };
