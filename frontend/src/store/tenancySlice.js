@@ -99,12 +99,6 @@ const initialState = {
   |--------------------------------------------------------------------------
   | Statistics Loading
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  | Statistics have their own loading state.
-  | This prevents the statistics request from interfering
-  | with the tenancy table loading state.
-  |
   */
 
   loadingStatistics: false,
@@ -176,9 +170,14 @@ const getErrorMessage = (
  * Extract Laravel validation errors.
  */
 const getValidationErrors = (error) => {
+  const errors =
+    error?.response?.data?.errors;
+
   return (
-    error?.response?.data?.errors ||
-    EMPTY_OBJECT
+    errors &&
+      typeof errors === "object"
+      ? errors
+      : EMPTY_OBJECT
   );
 };
 
@@ -187,9 +186,9 @@ const getValidationErrors = (error) => {
  */
 const getErrorStatus = (error) => {
   return (
-    error?.response?.status ||
-    error?.status ||
-    error?.response?.data?.code ||
+    error?.response?.status ??
+    error?.status ??
+    error?.response?.data?.code ??
     null
   );
 };
@@ -227,11 +226,11 @@ const isValidObject = (value) => {
 */
 
 /**
- * Get response body.
+ * Get normalized API payload.
  *
  * Supports:
  *
- * Axios:
+ * Axios response:
  * {
  *   data: {
  *     status: true,
@@ -264,7 +263,8 @@ const getApiPayload = (response) => {
     (
       response.data.status !== undefined ||
       response.data.code !== undefined ||
-      response.data.message !== undefined
+      response.data.message !== undefined ||
+      response.data.data !== undefined
     )
   ) {
     return response.data;
@@ -280,7 +280,7 @@ const getApiPayload = (response) => {
 };
 
 /**
- * Extract a single resource.
+ * Extract a single tenancy resource.
  */
 const extractResource = (response) => {
   const payload =
@@ -292,48 +292,51 @@ const extractResource = (response) => {
 
   /*
   |--------------------------------------------------------------------------
-  | Standard data object
+  | data.data
   |--------------------------------------------------------------------------
   */
 
   if (
     payload.data &&
-    !Array.isArray(payload.data) &&
-    typeof payload.data === "object"
+    isValidObject(payload.data) &&
+    payload.data.data &&
+    isValidObject(payload.data.data)
   ) {
-    /*
-    |--------------------------------------------------------------------------
-    | Nested data.data
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-      payload.data.data &&
-      !Array.isArray(payload.data.data) &&
-      typeof payload.data.data === "object"
-    ) {
-      return payload.data.data;
-    }
-
-    return payload.data;
+    return payload.data.data;
   }
 
   /*
   |--------------------------------------------------------------------------
-  | Direct object
+  | data object
   |--------------------------------------------------------------------------
   */
 
   if (
-    typeof payload === "object" &&
-    !Array.isArray(payload)
+    payload.data &&
+    isValidObject(payload.data)
   ) {
     if (
+      payload.data.id !== undefined ||
+      payload.data.tenancy_number !== undefined
+    ) {
+      return payload.data;
+    }
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Direct resource
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    isValidObject(payload) &&
+    (
       payload.id !== undefined ||
       payload.tenancy_number !== undefined
-    ) {
-      return payload;
-    }
+    )
+  ) {
+    return payload;
   }
 
   return null;
@@ -352,7 +355,7 @@ const extractTenancies = (response) => {
 
   /*
   |--------------------------------------------------------------------------
-  | Standard
+  | data[]
   |--------------------------------------------------------------------------
   */
 
@@ -362,7 +365,7 @@ const extractTenancies = (response) => {
 
   /*
   |--------------------------------------------------------------------------
-  | Nested Laravel pagination
+  | data.data[]
   |--------------------------------------------------------------------------
   */
 
@@ -375,7 +378,7 @@ const extractTenancies = (response) => {
 
   /*
   |--------------------------------------------------------------------------
-  | Items
+  | data.items[]
   |--------------------------------------------------------------------------
   */
 
@@ -385,6 +388,12 @@ const extractTenancies = (response) => {
   ) {
     return payload.data.items;
   }
+
+  /*
+  |--------------------------------------------------------------------------
+  | items[]
+  |--------------------------------------------------------------------------
+  */
 
   if (Array.isArray(payload.items)) {
     return payload.items;
@@ -420,16 +429,15 @@ const extractPagination = (
   }
 
   const meta =
-    payload.meta ||
-    payload.data?.meta ||
+    payload?.meta ||
+    payload?.data?.meta ||
     null;
 
   const data =
-    payload.data &&
-    typeof payload.data === "object" &&
-    !Array.isArray(payload.data)
+    payload?.data &&
+      isValidObject(payload.data)
       ? payload.data
-      : {};
+      : EMPTY_OBJECT;
 
   const currentPage =
     meta?.current_page ??
@@ -512,36 +520,38 @@ const getResponseMessage = (
 |--------------------------------------------------------------------------
 | Statistics Response Helper
 |--------------------------------------------------------------------------
-|
-| This is intentionally separate from extractResource().
-|
-| Statistics are NOT a tenancy resource.
-|
-| Example:
-|
-| {
-|   status: true,
-|   code: 200,
-|   data: {
-|     total: 50,
-|     active: 40,
-|     expired: 5
-|   }
-| }
-|
-| or:
-|
-| {
-|   data: {
-|     statistics: {
-|       total: 50
-|     }
-|   }
-| }
-|
-|--------------------------------------------------------------------------
 */
 
+/**
+ * Extract tenancy statistics.
+ *
+ * Supports:
+ *
+ * {
+ *   data: {
+ *     total: 50,
+ *     active: 40
+ *   }
+ * }
+ *
+ * or:
+ *
+ * {
+ *   data: {
+ *     statistics: {
+ *       total: 50
+ *     }
+ *   }
+ * }
+ *
+ * or:
+ *
+ * {
+ *   statistics: {
+ *     total: 50
+ *   }
+ * }
+ */
 const extractStatistics = (response) => {
   const payload =
     getApiPayload(response);
@@ -557,9 +567,10 @@ const extractStatistics = (response) => {
   */
 
   if (
-    payload.data?.statistics &&
-    typeof payload.data.statistics === "object" &&
-    !Array.isArray(payload.data.statistics)
+    payload?.data?.statistics &&
+    isValidObject(
+      payload.data.statistics
+    )
   ) {
     return payload.data.statistics;
   }
@@ -571,9 +582,10 @@ const extractStatistics = (response) => {
   */
 
   if (
-    payload.statistics &&
-    typeof payload.statistics === "object" &&
-    !Array.isArray(payload.statistics)
+    payload?.statistics &&
+    isValidObject(
+      payload.statistics
+    )
   ) {
     return payload.statistics;
   }
@@ -585,9 +597,8 @@ const extractStatistics = (response) => {
   */
 
   if (
-    payload.data &&
-    typeof payload.data === "object" &&
-    !Array.isArray(payload.data)
+    payload?.data &&
+    isValidObject(payload.data)
   ) {
     return payload.data;
   }
@@ -602,7 +613,10 @@ const extractStatistics = (response) => {
 */
 
 /**
- * Update tenancy in current list.
+ * Update tenancy in the current list.
+ *
+ * If the tenancy already exists, replace it.
+ * If it does not exist, add it to the beginning.
  */
 const updateTenancyInList = (
   state,
@@ -610,7 +624,7 @@ const updateTenancyInList = (
 ) => {
   if (
     !tenancy ||
-    typeof tenancy !== "object" ||
+    !isValidObject(tenancy) ||
     !tenancy.id
   ) {
     return;
@@ -634,7 +648,7 @@ const updateTenancyInList = (
 };
 
 /**
- * Remove tenancy.
+ * Remove tenancy from current list.
  */
 const removeTenancyFromList = (
   state,
@@ -678,6 +692,7 @@ const rejectError = (
 export const fetchTenancies =
   createAsyncThunk(
     "tenancy/fetchTenancies",
+
     async (
       params = {},
       { rejectWithValue }
@@ -716,6 +731,7 @@ export const fetchTenancies =
 export const fetchTenancy =
   createAsyncThunk(
     "tenancy/fetchTenancy",
+
     async (
       id,
       { rejectWithValue }
@@ -733,8 +749,13 @@ export const fetchTenancy =
       }
 
       try {
-        return await tenancyService.getTenancy(
-          tenancyId
+        const response =
+          await tenancyService.getTenancy(
+            tenancyId
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -756,6 +777,7 @@ export const fetchTenancy =
 export const createTenancy =
   createAsyncThunk(
     "tenancy/createTenancy",
+
     async (
       data,
       { rejectWithValue }
@@ -770,8 +792,13 @@ export const createTenancy =
       }
 
       try {
-        return await tenancyService.createTenancy(
-          data
+        const response =
+          await tenancyService.createTenancy(
+            data
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -793,6 +820,7 @@ export const createTenancy =
 export const updateTenancy =
   createAsyncThunk(
     "tenancy/updateTenancy",
+
     async (
       { id, data },
       { rejectWithValue }
@@ -819,9 +847,14 @@ export const updateTenancy =
       }
 
       try {
-        return await tenancyService.updateTenancy(
-          tenancyId,
-          data
+        const response =
+          await tenancyService.updateTenancy(
+            tenancyId,
+            data
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -843,6 +876,7 @@ export const updateTenancy =
 export const patchTenancy =
   createAsyncThunk(
     "tenancy/patchTenancy",
+
     async (
       { id, data },
       { rejectWithValue }
@@ -869,9 +903,14 @@ export const patchTenancy =
       }
 
       try {
-        return await tenancyService.patchTenancy(
-          tenancyId,
-          data
+        const response =
+          await tenancyService.patchTenancy(
+            tenancyId,
+            data
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -893,6 +932,7 @@ export const patchTenancy =
 export const deleteTenancy =
   createAsyncThunk(
     "tenancy/deleteTenancy",
+
     async (
       id,
       { rejectWithValue }
@@ -918,11 +958,13 @@ export const deleteTenancy =
 
         return {
           id: tenancyId,
-          response,
+          response:
+            getApiPayload(response),
         };
       } catch (error) {
         return rejectWithValue({
           id: tenancyId,
+
           ...rejectError(
             error,
             "Failed to delete tenancy."
@@ -941,6 +983,7 @@ export const deleteTenancy =
 export const restoreTenancy =
   createAsyncThunk(
     "tenancy/restoreTenancy",
+
     async (
       id,
       { rejectWithValue }
@@ -959,12 +1002,18 @@ export const restoreTenancy =
       }
 
       try {
-        return await tenancyService.restoreTenancy(
-          tenancyId
+        const response =
+          await tenancyService.restoreTenancy(
+            tenancyId
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue({
           id: tenancyId,
+
           ...rejectError(
             error,
             "Failed to restore tenancy."
@@ -983,6 +1032,7 @@ export const restoreTenancy =
 export const forceDeleteTenancy =
   createAsyncThunk(
     "tenancy/forceDeleteTenancy",
+
     async (
       id,
       { rejectWithValue }
@@ -1008,11 +1058,13 @@ export const forceDeleteTenancy =
 
         return {
           id: tenancyId,
-          response,
+          response:
+            getApiPayload(response),
         };
       } catch (error) {
         return rejectWithValue({
           id: tenancyId,
+
           ...rejectError(
             error,
             "Failed to permanently delete tenancy."
@@ -1031,6 +1083,7 @@ export const forceDeleteTenancy =
 export const activateTenancy =
   createAsyncThunk(
     "tenancy/activateTenancy",
+
     async (
       id,
       { rejectWithValue }
@@ -1048,8 +1101,13 @@ export const activateTenancy =
       }
 
       try {
-        return await tenancyService.activateTenancy(
-          tenancyId
+        const response =
+          await tenancyService.activateTenancy(
+            tenancyId
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -1071,6 +1129,7 @@ export const activateTenancy =
 export const deactivateTenancy =
   createAsyncThunk(
     "tenancy/deactivateTenancy",
+
     async (
       id,
       { rejectWithValue }
@@ -1088,8 +1147,13 @@ export const deactivateTenancy =
       }
 
       try {
-        return await tenancyService.deactivateTenancy(
-          tenancyId
+        const response =
+          await tenancyService.deactivateTenancy(
+            tenancyId
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -1111,6 +1175,7 @@ export const deactivateTenancy =
 export const renewTenancy =
   createAsyncThunk(
     "tenancy/renewTenancy",
+
     async (
       { id, data },
       { rejectWithValue }
@@ -1137,9 +1202,14 @@ export const renewTenancy =
       }
 
       try {
-        return await tenancyService.renewTenancy(
-          tenancyId,
-          data
+        const response =
+          await tenancyService.renewTenancy(
+            tenancyId,
+            data
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -1161,6 +1231,7 @@ export const renewTenancy =
 export const assignUnit =
   createAsyncThunk(
     "tenancy/assignUnit",
+
     async (
       data,
       { rejectWithValue }
@@ -1175,8 +1246,13 @@ export const assignUnit =
       }
 
       try {
-        return await tenancyService.assignUnit(
-          data
+        const response =
+          await tenancyService.assignUnit(
+            data
+          );
+
+        return getApiPayload(
+          response
         );
       } catch (error) {
         return rejectWithValue(
@@ -1198,6 +1274,7 @@ export const assignUnit =
 export const fetchTenancyStatistics =
   createAsyncThunk(
     "tenancy/fetchTenancyStatistics",
+
     async (
       _,
       { rejectWithValue }
@@ -1254,6 +1331,13 @@ const tenancySlice = createSlice({
         ...state.filters,
         ...payload,
       };
+
+      /*
+      |----------------------------------------------------------------------
+      | Any filter change starts from page 1 unless
+      | an explicit page was supplied.
+      |----------------------------------------------------------------------
+      */
 
       if (
         payload.page === undefined
@@ -1333,18 +1417,16 @@ const tenancySlice = createSlice({
     */
 
     resetTenancyState: () => ({
-      ...initialState,
-
       tenancies: [],
 
       tenancy: null,
 
-      filters: {
-        ...DEFAULT_FILTERS,
-      },
-
       pagination: {
         ...DEFAULT_PAGINATION,
+      },
+
+      filters: {
+        ...DEFAULT_FILTERS,
       },
 
       statistics: null,
@@ -1352,28 +1434,20 @@ const tenancySlice = createSlice({
       loadingStatistics: false,
 
       statisticsError: null,
-
       statisticsErrorDetails: null,
 
-      error: null,
+      loading: false,
+      creating: false,
+      updating: false,
+      deleting: false,
+      restoring: false,
+      forceDeleting: false,
+      actionLoading: false,
 
+      error: null,
       errorDetails: null,
 
       success: null,
-
-      loading: false,
-
-      creating: false,
-
-      updating: false,
-
-      deleting: false,
-
-      restoring: false,
-
-      forceDeleting: false,
-
-      actionLoading: false,
     }),
   },
 
@@ -1463,6 +1537,7 @@ const tenancySlice = createSlice({
         fetchTenancy.pending,
         (state) => {
           state.loading = true;
+
           state.error = null;
           state.errorDetails = null;
         }
@@ -1473,10 +1548,27 @@ const tenancySlice = createSlice({
         (state, action) => {
           state.loading = false;
 
-          state.tenancy =
+          const tenancy =
             extractResource(
               action.payload
             );
+
+          state.tenancy =
+            tenancy;
+
+          /*
+          |------------------------------------------------------------------
+          | Keep the list synchronized when the resource
+          | already exists in the current page.
+          |------------------------------------------------------------------
+          */
+
+          if (tenancy) {
+            updateTenancyInList(
+              state,
+              tenancy
+            );
+          }
 
           state.error = null;
           state.errorDetails = null;
@@ -1530,14 +1622,27 @@ const tenancySlice = createSlice({
             );
 
           if (created) {
-            state.tenancy = created;
+            state.tenancy =
+              created;
 
             updateTenancyInList(
               state,
               created
             );
 
-            state.pagination.total += 1;
+            /*
+            |----------------------------------------------------------------
+            | A new tenancy was created.
+            |----------------------------------------------------------------
+            */
+
+            state.pagination.total =
+              Math.max(
+                0,
+                Number(
+                  state.pagination.total
+                ) + 1
+              );
           }
 
           state.success =
@@ -1598,7 +1703,8 @@ const tenancySlice = createSlice({
             );
 
           if (updated) {
-            state.tenancy = updated;
+            state.tenancy =
+              updated;
 
             updateTenancyInList(
               state,
@@ -1664,7 +1770,8 @@ const tenancySlice = createSlice({
             );
 
           if (updated) {
-            state.tenancy = updated;
+            state.tenancy =
+              updated;
 
             updateTenancyInList(
               state,
@@ -1737,16 +1844,18 @@ const tenancySlice = createSlice({
           if (
             state.tenancy &&
             Number(state.tenancy.id) ===
-              Number(deletedId)
+            Number(deletedId)
           ) {
             state.tenancy = null;
           }
 
-          if (
-            state.pagination.total > 0
-          ) {
-            state.pagination.total -= 1;
-          }
+          state.pagination.total =
+            Math.max(
+              0,
+              Number(
+                state.pagination.total
+              ) - 1
+            );
 
           state.success =
             getResponseMessage(
@@ -1809,7 +1918,8 @@ const tenancySlice = createSlice({
             );
 
           if (restored) {
-            state.tenancy = restored;
+            state.tenancy =
+              restored;
 
             updateTenancyInList(
               state,
@@ -1883,16 +1993,18 @@ const tenancySlice = createSlice({
           if (
             state.tenancy &&
             Number(state.tenancy.id) ===
-              Number(deletedId)
+            Number(deletedId)
           ) {
             state.tenancy = null;
           }
 
-          if (
-            state.pagination.total > 0
-          ) {
-            state.pagination.total -= 1;
-          }
+          state.pagination.total =
+            Math.max(
+              0,
+              Number(
+                state.pagination.total
+              ) - 1
+            );
 
           state.success =
             getResponseMessage(
@@ -1953,7 +2065,8 @@ const tenancySlice = createSlice({
             );
 
           if (activated) {
-            state.tenancy = activated;
+            state.tenancy =
+              activated;
 
             updateTenancyInList(
               state,
@@ -2019,7 +2132,8 @@ const tenancySlice = createSlice({
             );
 
           if (deactivated) {
-            state.tenancy = deactivated;
+            state.tenancy =
+              deactivated;
 
             updateTenancyInList(
               state,
@@ -2085,7 +2199,8 @@ const tenancySlice = createSlice({
             );
 
           if (renewed) {
-            state.tenancy = renewed;
+            state.tenancy =
+              renewed;
 
             updateTenancyInList(
               state,
@@ -2151,14 +2266,21 @@ const tenancySlice = createSlice({
             );
 
           if (assigned) {
-            state.tenancy = assigned;
+            /*
+            |----------------------------------------------------------------
+            | Assigning a unit updates an existing tenancy.
+            | It does NOT create a new tenancy.
+            | Therefore pagination.total must NOT be incremented.
+            |----------------------------------------------------------------
+            */
+
+            state.tenancy =
+              assigned;
 
             updateTenancyInList(
               state,
               assigned
             );
-
-            state.pagination.total += 1;
           }
 
           state.success =
@@ -2194,10 +2316,6 @@ const tenancySlice = createSlice({
     |--------------------------------------------------------------------------
     | TENANCY STATISTICS
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    | This uses loadingStatistics instead of loading.
-    |
     */
 
     builder
@@ -2221,8 +2339,10 @@ const tenancySlice = createSlice({
               action.payload
             );
 
-          state.statistics =
-            statistics;
+          if (statistics) {
+            state.statistics =
+              statistics;
+          }
 
           state.statisticsError = null;
           state.statisticsErrorDetails = null;
@@ -2235,13 +2355,10 @@ const tenancySlice = createSlice({
           state.loadingStatistics = false;
 
           /*
-          |--------------------------------------------------------------------------
-          | IMPORTANT
-          |--------------------------------------------------------------------------
-          |
-          | Do not destroy existing statistics during
-          | a background refresh failure.
-          |
+          |----------------------------------------------------------------
+          | Keep existing statistics during background
+          | refresh failure.
+          |----------------------------------------------------------------
           */
 
           state.statisticsError =
@@ -2331,18 +2448,9 @@ export const selectTenancyLoading = (
     state?.tenancy?.loading
   );
 
-/*
-|--------------------------------------------------------------------------
-| Statistics Loading Selector
-|--------------------------------------------------------------------------
-|
-| THIS FIXES:
-|
-| "does not provide an export named
-| selectTenancyLoadingStatistics"
-|
-*/
-
+/**
+ * Statistics loading.
+ */
 export const selectTenancyLoadingStatistics = (
   state
 ) =>
@@ -2350,12 +2458,9 @@ export const selectTenancyLoadingStatistics = (
     state?.tenancy?.loadingStatistics
   );
 
-/*
-|--------------------------------------------------------------------------
-| Creating
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Creating.
+ */
 export const selectTenancyCreating = (
   state
 ) =>
@@ -2363,12 +2468,9 @@ export const selectTenancyCreating = (
     state?.tenancy?.creating
   );
 
-/*
-|--------------------------------------------------------------------------
-| Updating
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Updating.
+ */
 export const selectTenancyUpdating = (
   state
 ) =>
@@ -2376,12 +2478,9 @@ export const selectTenancyUpdating = (
     state?.tenancy?.updating
   );
 
-/*
-|--------------------------------------------------------------------------
-| Deleting
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Deleting.
+ */
 export const selectTenancyDeleting = (
   state
 ) =>
@@ -2389,12 +2488,9 @@ export const selectTenancyDeleting = (
     state?.tenancy?.deleting
   );
 
-/*
-|--------------------------------------------------------------------------
-| Restoring
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Restoring.
+ */
 export const selectTenancyRestoring = (
   state
 ) =>
@@ -2402,12 +2498,9 @@ export const selectTenancyRestoring = (
     state?.tenancy?.restoring
   );
 
-/*
-|--------------------------------------------------------------------------
-| Force Deleting
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Force deleting.
+ */
 export const selectTenancyForceDeleting = (
   state
 ) =>
@@ -2415,12 +2508,9 @@ export const selectTenancyForceDeleting = (
     state?.tenancy?.forceDeleting
   );
 
-/*
-|--------------------------------------------------------------------------
-| Action Loading
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Any tenancy action loading.
+ */
 export const selectTenancyActionLoading = (
   state
 ) =>
@@ -2428,77 +2518,54 @@ export const selectTenancyActionLoading = (
     state?.tenancy?.actionLoading
   );
 
-/*
-|--------------------------------------------------------------------------
-| General Error
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * General error.
+ */
 export const selectTenancyError = (
   state
 ) =>
   state?.tenancy?.error ??
   null;
 
-/*
-|--------------------------------------------------------------------------
-| General Error Details
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * General error details.
+ */
 export const selectTenancyErrorDetails = (
   state
 ) =>
   state?.tenancy?.errorDetails ??
   null;
 
-/*
-|--------------------------------------------------------------------------
-| Statistics Error
-|--------------------------------------------------------------------------
-|
-| THIS MATCHES TenancyStats.jsx:
-|
-| selectTenancyStatisticsError
-|
-*/
-
+/**
+ * Statistics error.
+ */
 export const selectTenancyStatisticsError = (
   state
 ) =>
   state?.tenancy?.statisticsError ??
   null;
 
-/*
-|--------------------------------------------------------------------------
-| Statistics Error Details
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Statistics error details.
+ */
 export const selectTenancyStatisticsErrorDetails = (
   state
 ) =>
   state?.tenancy?.statisticsErrorDetails ??
   null;
 
-/*
-|--------------------------------------------------------------------------
-| Success
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Success.
+ */
 export const selectTenancySuccess = (
   state
 ) =>
   state?.tenancy?.success ??
   null;
 
-/*
-|--------------------------------------------------------------------------
-| Statistics
-|--------------------------------------------------------------------------
-*/
-
+/**
+ * Statistics.
+ */
 export const selectTenancyStatistics = (
   state
 ) =>
@@ -2528,6 +2595,10 @@ export const selectHasTenancies = (
 
 /**
  * Loaded tenancy count.
+ *
+ * NOTE:
+ * This is the number of tenancies currently
+ * loaded in the Redux list, not the database total.
  */
 export const selectTenancyCount = (
   state
@@ -2541,7 +2612,7 @@ export const selectTenancyCount = (
 };
 
 /**
- * Is creating.
+ * Is creating tenancy.
  */
 export const selectIsCreatingTenancy = (
   state
@@ -2551,7 +2622,7 @@ export const selectIsCreatingTenancy = (
   );
 
 /**
- * Is updating.
+ * Is updating tenancy.
  */
 export const selectIsUpdatingTenancy = (
   state
@@ -2561,7 +2632,7 @@ export const selectIsUpdatingTenancy = (
   );
 
 /**
- * Is deleting.
+ * Is deleting tenancy.
  */
 export const selectIsDeletingTenancy = (
   state
@@ -2571,7 +2642,7 @@ export const selectIsDeletingTenancy = (
   );
 
 /**
- * Is restoring.
+ * Is restoring tenancy.
  */
 export const selectIsRestoringTenancy = (
   state
@@ -2581,7 +2652,7 @@ export const selectIsRestoringTenancy = (
   );
 
 /**
- * Is force deleting.
+ * Is force deleting tenancy.
  */
 export const selectIsForceDeletingTenancy = (
   state
