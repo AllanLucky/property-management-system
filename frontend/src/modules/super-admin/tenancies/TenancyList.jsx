@@ -70,41 +70,71 @@ const TenancyLoading = () => {
       <div
         className="
           flex
-          min-h-[360px]
+          min-h-[420px]
           flex-col
           items-center
           justify-center
           px-6
-          py-12
+          py-16
         "
       >
+        {/* Main Spinner */}
         <div
           className="
+            relative
             flex
-            h-16
-            w-16
+            h-20
+            w-20
             items-center
             justify-center
-            rounded-2xl
+            rounded-full
             bg-indigo-50
             dark:bg-indigo-950/40
           "
         >
-          <Loader2
+          <div
             className="
-              h-8
-              w-8
-              animate-spin
-              text-indigo-600
-              dark:text-indigo-400
+              absolute
+              inset-0
+              animate-ping
+              rounded-full
+              bg-indigo-100/60
+              dark:bg-indigo-900/30
             "
             aria-hidden="true"
           />
+
+          <div
+            className="
+              relative
+              flex
+              h-14
+              w-14
+              items-center
+              justify-center
+              rounded-full
+              bg-white
+              shadow-sm
+              dark:bg-gray-800
+            "
+          >
+            <Loader2
+              className="
+                h-8
+                w-8
+                animate-spin
+                text-indigo-600
+                dark:text-indigo-400
+              "
+              aria-hidden="true"
+            />
+          </div>
         </div>
 
+        {/* Loading Title */}
         <h3
           className="
-            mt-5
+            mt-6
             text-sm
             font-semibold
             text-gray-900
@@ -114,12 +144,14 @@ const TenancyLoading = () => {
           Loading tenancies
         </h3>
 
+        {/* Loading Message */}
         <p
           className="
-            mt-1
+            mt-2
             max-w-sm
             text-center
             text-sm
+            leading-6
             text-gray-500
             dark:text-gray-400
           "
@@ -128,22 +160,45 @@ const TenancyLoading = () => {
           tenancy records.
         </p>
 
+        {/* Animated Loading Dots */}
         <div
           className="
             mt-5
-            h-1
-            w-32
-            overflow-hidden
-            rounded-full
-            bg-gray-100
-            dark:bg-gray-700
+            flex
+            items-center
+            gap-1.5
           "
+          aria-hidden="true"
         >
-          <div
+          <span
             className="
-              h-full
-              w-1/2
-              animate-[loading_1.2s_ease-in-out_infinite]
+              h-1.5
+              w-1.5
+              animate-bounce
+              rounded-full
+              bg-indigo-600
+              [animation-delay:-0.3s]
+              dark:bg-indigo-400
+            "
+          />
+
+          <span
+            className="
+              h-1.5
+              w-1.5
+              animate-bounce
+              rounded-full
+              bg-indigo-600
+              [animation-delay:-0.15s]
+              dark:bg-indigo-400
+            "
+          />
+
+          <span
+            className="
+              h-1.5
+              w-1.5
+              animate-bounce
               rounded-full
               bg-indigo-600
               dark:bg-indigo-400
@@ -255,12 +310,11 @@ const TenancyError = ({
           "
         >
           <RefreshCw
-            className={
-              `h-4 w-4 ${loading
-                ? "animate-spin"
-                : ""
-              }`
-            }
+            className={`
+              h-4
+              w-4
+              ${loading ? "animate-spin" : ""}
+            `}
             aria-hidden="true"
           />
 
@@ -378,15 +432,6 @@ const TenancyList = () => {
   |--------------------------------------------------------------------------
   | Initial Request State
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | We intentionally start with false.
-  |
-  | This allows the UI to show the initial loader
-  | immediately after a browser refresh, before
-  | Redux has updated loading=true.
-  |
   */
 
   const [
@@ -502,18 +547,6 @@ const TenancyList = () => {
   |--------------------------------------------------------------------------
   | Loading States
   |--------------------------------------------------------------------------
-  |
-  | Initial loading:
-  |
-  | - Browser refresh
-  | - First page load
-  | - First tenancy request
-  |
-  | Refreshing:
-  |
-  | - Existing tenancy data is already visible
-  | - A new request is running
-  |
   */
 
   const initialLoading =
@@ -647,10 +680,6 @@ const TenancyList = () => {
             )
           );
 
-        /*
-         * Mark the first request as complete
-         * only after the Redux thunk resolves.
-         */
         if (
           !initialRequestCompletedRef.current
         ) {
@@ -664,11 +693,6 @@ const TenancyList = () => {
 
         return result;
       } catch (requestError) {
-        /*
-         * Even if the request fails, the initial
-         * loading screen must stop so the error
-         * component can be displayed.
-         */
         if (
           !initialRequestCompletedRef.current
         ) {
@@ -693,14 +717,6 @@ const TenancyList = () => {
   |--------------------------------------------------------------------------
   | Initial Fetch
   |--------------------------------------------------------------------------
-  |
-  | This runs immediately when the page mounts.
-  |
-  | Because initialLoading is based on
-  | initialRequestCompleted instead of Redux loading,
-  | the loader is visible immediately during a
-  | browser refresh.
-  |
   */
 
   useEffect(() => {
@@ -1118,12 +1134,12 @@ const TenancyList = () => {
                   "
                 >
                   <RefreshCw
-                    className={
-                      `h-3.5 w-3.5 ${loading
-                        ? "animate-spin"
-                        : ""
-                      }`
-                    }
+                    className={`
+                      h-3.5
+                      w-3.5
+                      ${loading ? "animate-spin" : ""}
+                    `}
+                    aria-hidden="true"
                   />
 
                   Retry
