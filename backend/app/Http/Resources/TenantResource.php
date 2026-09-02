@@ -7,107 +7,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class TenantResource extends JsonResource
 {
-    /**
-     * Transform the resource into an array.
-     *
-     * ==========================================================================
-     * TENANT / USER ARCHITECTURE
-     * ==========================================================================
-     *
-     * The application uses a two-layer architecture:
-     *
-     * USERS
-     * --------------------------------------------------------------------------
-     * The users table is the source of truth for the person's account and
-     * identity information:
-     *
-     * - first_name
-     * - last_name
-     * - email
-     * - phone
-     * - gender
-     * - nationality
-     * - address
-     * - date_of_birth
-     * - profile image
-     * - account_status
-     * - approval_status
-     * - verification
-     * - roles
-     * - permissions
-     * - authentication/security
-     *
-     *
-     * TENANTS
-     * --------------------------------------------------------------------------
-     * The tenants table represents the person's tenant profile.
-     *
-     * It contains tenant-specific information:
-     *
-     * - tenant_number
-     * - user_id
-     * - identification
-     * - tenant location
-     * - employment
-     * - emergency contact
-     * - tenant documents
-     * - tenant verification
-     * - tenant status
-     * - notes
-     *
-     *
-     * IMPORTANT
-     * ==========================================================================
-     *
-     * A Tenant is NOT another User.
-     *
-     * A tenant profile is attached to an existing User account through:
-     *
-     *     tenants.user_id -> users.id
-     *
-     * Therefore TenantResource must NOT duplicate User identity data as if it
-     * belongs to the tenants table.
-     *
-     * Example:
-     *
-     * users
-     * --------------------------------------------------------------------------
-     * id           = 19
-     * first_name   = Esther
-     * last_name    = Atieno
-     * email        = esther.atieno@example.com
-     * phone        = +254711000012
-     * role         = tenant
-     *
-     * tenants
-     * --------------------------------------------------------------------------
-     * id             = 12
-     * tenant_number  = TNT-000012
-     * user_id        = 19
-     *
-     * The API therefore exposes:
-     *
-     *     tenant.user
-     *
-     * for User information.
-     *
-     *
-     * RELATIONSHIPS
-     * ==========================================================================
-     *
-     * Tenant
-     *     belongsTo User
-     *
-     * Tenant
-     *     hasMany Tenancies
-     *
-     * Tenant
-     *     hasMany ActiveTenancies
-     *
-     * ==========================================================================
-     *
-     * @return array<string, mixed>
-     */
+    
     public function toArray(Request $request): array
     {
         $tenant = $this->resource;
@@ -156,6 +56,8 @@ class TenantResource extends JsonResource
             | TENANT PROFILE
             |--------------------------------------------------------------------------
             */
+
+            'other_names' => $tenant->other_names,
 
             'date_of_birth' => $tenant->date_of_birth
                 ? $tenant->date_of_birth->format('Y-m-d')
@@ -273,15 +175,6 @@ class TenantResource extends JsonResource
             | TENANT DOCUMENTS
             |--------------------------------------------------------------------------
             |
-            | Public document paths/URLs are exposed.
-            |
-            | Cloud storage internal identifiers such as:
-            |
-            | - photo_public_id
-            | - id_front_public_id
-            | - id_back_public_id
-            |
-            | remain hidden.
             |
             */
 
@@ -295,9 +188,6 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | DIRECT DOCUMENT FIELDS
             |--------------------------------------------------------------------------
-            |
-            | Kept for existing frontend compatibility.
-            |
             */
 
             'photo' => $tenant->photo,
@@ -310,10 +200,6 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | TENANT VERIFICATION
             |--------------------------------------------------------------------------
-            |
-            | This is tenant-profile verification.
-            |
-            | It is separate from the User account verification.
             |
             */
 
@@ -330,8 +216,6 @@ class TenantResource extends JsonResource
             | DIRECT VERIFICATION FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for frontend compatibility.
-            |
             */
 
             'is_verified' => (bool) $tenant->is_verified,
@@ -345,37 +229,11 @@ class TenantResource extends JsonResource
             | TENANT STATUS
             |--------------------------------------------------------------------------
             |
-            | Tenant status belongs to the tenants table.
-            |
-            | It is independent from:
-            |
-            |     user.account_status
-            |
-            |     user.approval_status
-            |
-            | Supported tenant statuses:
-            |
-            |     pending
-            |     active
-            |     inactive
-            |     blacklisted
-            |
             */
 
             'status' => $tenant->status,
 
             'status_label' => $tenant->status_label,
-
-            /*
-            |--------------------------------------------------------------------------
-            | COMPUTED STATUS FLAGS
-            |--------------------------------------------------------------------------
-            |
-            | These are calculated values.
-            |
-            | There is intentionally NO `is_active` database column.
-            |
-            */
 
             'is_active' => $tenant->status === TenantResource::STATUS_ACTIVE,
 
@@ -389,8 +247,6 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | ACCOUNT STATE
             |--------------------------------------------------------------------------
-            |
-            | The Tenant model exposes account_state as a computed attribute.
             |
             */
 
@@ -408,20 +264,6 @@ class TenantResource extends JsonResource
             |--------------------------------------------------------------------------
             | TENANCIES
             |--------------------------------------------------------------------------
-            |
-            | Only returned when the relationship was explicitly loaded.
-            |
-            | TenancyResource is responsible for:
-            |
-            | - property
-            | - apartment
-            | - unit
-            | - rent
-            | - deposit
-            | - dates
-            | - payment frequency
-            | - tenancy status
-            |
             */
 
             'tenancies' => $this->whenLoaded(
@@ -522,10 +364,6 @@ class TenantResource extends JsonResource
     | STATUS CONSTANTS
     |--------------------------------------------------------------------------
     |
-    | These mirror Tenant model statuses.
-    |
-    | Keeping them here prevents hard-coded strings in the resource.
-    |
     */
 
     private const STATUS_PENDING = 'pending';
@@ -536,4 +374,3 @@ class TenantResource extends JsonResource
 
     private const STATUS_BLACKLISTED = 'blacklisted';
 }
-
