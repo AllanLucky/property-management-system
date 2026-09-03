@@ -8,6 +8,39 @@ class DatabaseSeeder extends Seeder
 {
     /**
      * Seed the application's database.
+     *
+     * ==========================================================================
+     * DATABASE SEEDING ORDER
+     * ==========================================================================
+     *
+     * Seeders are executed according to their dependencies.
+     *
+     * The general dependency flow is:
+     *
+     * Roles & Permissions
+     *        ↓
+     * Users
+     *        ↓
+     * Locations
+     *        ↓
+     * Property Master Data
+     *        ↓
+     * Properties
+     *        ↓
+     * Apartments
+     *        ↓
+     * Units
+     *        ↓
+     * Tenants
+     *        ↓
+     * Tenancies
+     *        ↓
+     * Leases
+     *        ↓
+     * Bookings / Maintenance
+     *
+     * This order helps prevent foreign-key and relationship issues during
+     * database seeding.
      */
     public function run(): void
     {
@@ -18,8 +51,8 @@ class DatabaseSeeder extends Seeder
             | 1. ROLES & PERMISSIONS
             |--------------------------------------------------------------------------
             |
-            | Create roles and permissions before users so that users can
-            | safely receive their assigned roles and permissions.
+            | Create roles and permissions before users so users can safely
+            | receive their assigned roles and permissions.
             |
             */
 
@@ -33,11 +66,13 @@ class DatabaseSeeder extends Seeder
             |--------------------------------------------------------------------------
             |
             | Users are required by several modules including:
+            |
             | - Property reviews
             | - Property visits
             | - Property favorites
             | - Bookings
             | - Maintenance
+            | - Tenants
             |
             */
 
@@ -49,8 +84,8 @@ class DatabaseSeeder extends Seeder
             | 3. LOCATION DATA
             |--------------------------------------------------------------------------
             |
-            | Countries, counties, cities and areas must exist before
-            | properties are created.
+            | Countries, counties, cities and areas must exist before properties
+            | and other location-dependent records are created.
             |
             */
 
@@ -78,6 +113,7 @@ class DatabaseSeeder extends Seeder
             |--------------------------------------------------------------------------
             |
             | Properties depend on:
+            |
             | - Location data
             | - Property types
             | - Property categories
@@ -105,7 +141,10 @@ class DatabaseSeeder extends Seeder
             | 7. PROPERTY REVIEWS
             |--------------------------------------------------------------------------
             |
-            | Reviews depend on users and properties.
+            | Reviews depend on:
+            |
+            | - Users
+            | - Properties
             |
             */
 
@@ -117,7 +156,10 @@ class DatabaseSeeder extends Seeder
             | 8. PROPERTY VISITS
             |--------------------------------------------------------------------------
             |
-            | Visits depend on users and properties.
+            | Visits depend on:
+            |
+            | - Users
+            | - Properties
             |
             */
 
@@ -129,7 +171,10 @@ class DatabaseSeeder extends Seeder
             | 9. PROPERTY FAVORITES
             |--------------------------------------------------------------------------
             |
-            | Favorites depend on users and properties.
+            | Favorites depend on:
+            |
+            | - Users
+            | - Properties
             |
             */
 
@@ -165,7 +210,10 @@ class DatabaseSeeder extends Seeder
             | 12. UNITS
             |--------------------------------------------------------------------------
             |
-            | Units depend on properties and apartments.
+            | Units depend on:
+            |
+            | - Properties
+            | - Apartments
             |
             */
 
@@ -177,7 +225,10 @@ class DatabaseSeeder extends Seeder
             | 13. TENANTS
             |--------------------------------------------------------------------------
             |
-            | Tenancies, bookings and maintenance records depend on tenants.
+            | Tenants depend on existing users with the tenant role.
+            |
+            | Tenant-specific profile information is stored in the tenants
+            | table while authentication/account information remains in users.
             |
             */
 
@@ -190,6 +241,7 @@ class DatabaseSeeder extends Seeder
             |--------------------------------------------------------------------------
             |
             | Tenancies depend on:
+            |
             | - Properties
             | - Apartments
             | - Units
@@ -202,10 +254,36 @@ class DatabaseSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | 15. BOOKINGS
+            | 15. LEASES
+            |--------------------------------------------------------------------------
+            |
+            | Leases depend on existing tenancies.
+            |
+            | A lease represents the legal/contractual agreement associated
+            | with a tenancy.
+            |
+            | Architecture:
+            |
+            | Tenant
+            |    └── Tenancy
+            |          └── Lease
+            |
+            | Tenant, property, apartment and unit information is resolved
+            | through the tenancy and is intentionally not duplicated in
+            | the leases table.
+            |
+            */
+
+            LeaseSeeder::class,
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | 16. BOOKINGS
             |--------------------------------------------------------------------------
             |
             | Bookings depend on:
+            |
             | - Users/customers
             | - Tenants
             | - Properties
@@ -220,10 +298,11 @@ class DatabaseSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | 16. MAINTENANCE
+            | 17. MAINTENANCE
             |--------------------------------------------------------------------------
             |
             | Maintenance records depend on:
+            |
             | - Users
             | - Properties
             | - Apartments
