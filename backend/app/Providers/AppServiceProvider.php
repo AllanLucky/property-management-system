@@ -147,6 +147,19 @@ use App\Repositories\Eloquent\TenancyRepository;
 use App\Repositories\Interfaces\TenancyRepositoryInterface;
 
 
+/*
+|--------------------------------------------------------------------------
+| LEASE REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\LeaseRepository;
+use App\Repositories\Interfaces\LeaseRepositoryInterface;
+
+
+
+
+
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -340,12 +353,23 @@ class AppServiceProvider extends ServiceProvider
 
           /*
         |--------------------------------------------------------------------------
-        | TENANcy
+        | TENANCY
         |--------------------------------------------------------------------------
         */
         $this->app->bind(
             TenancyRepositoryInterface::class,
             TenancyRepository::class
+        );
+
+
+          /*
+        |--------------------------------------------------------------------------
+        | LEASE
+        |--------------------------------------------------------------------------
+        */
+        $this->app->bind(
+            LeaseRepositoryInterface::class,
+            LeaseRepository::class
         );
 
     }
