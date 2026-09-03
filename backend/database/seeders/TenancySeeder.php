@@ -2,13 +2,14 @@
 
 namespace Database\Seeders;
 
-use App\Models\Unit;
-use App\Models\Tenant;
-use App\Models\Tenancy;
 use App\Models\Apartment;
 use App\Models\Property;
+use App\Models\Tenant;
+use App\Models\Tenancy;
+use App\Models\Unit;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class TenancySeeder extends Seeder
@@ -45,6 +46,14 @@ class TenancySeeder extends Seeder
         if ($properties->isEmpty()) {
             $this->command->warn(
                 'No properties found. Please run PropertiesSeeder first.'
+            );
+
+            return;
+        }
+
+        if ($apartments->isEmpty()) {
+            $this->command->warn(
+                'No apartments found. Please run ApartmentsSeeder first.'
             );
 
             return;
@@ -286,50 +295,216 @@ class TenancySeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
+        | TRACK BLOCKING ASSIGNMENTS
+        |--------------------------------------------------------------------------
+        |
+        | Active and pending tenancies are considered blocking.
+        |
+        | A tenant cannot have another active/pending tenancy.
+        | A unit cannot have another active/pending tenancy.
+        |
+        */
+
+        $blockingTenantIds = Tenancy::query()
+            ->whereIn('status', [
+                Tenancy::STATUS_ACTIVE,
+                Tenancy::STATUS_PENDING,
+            ])
+            ->where('is_active', true)
+            ->pluck('tenant_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $blockingUnitIds = Tenancy::query()
+            ->whereIn('status', [
+                Tenancy::STATUS_ACTIVE,
+                Tenancy::STATUS_PENDING,
+            ])
+            ->where('is_active', true)
+            ->pluck('unit_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        /*
+        |--------------------------------------------------------------------------
+        | TRACK COUNTS
+        |--------------------------------------------------------------------------
+        */
+
+        $createdCount = 0;
+        $skippedCount = 0;
+
+        $statusCounts = [
+            Tenancy::STATUS_ACTIVE => 0,
+            Tenancy::STATUS_PENDING => 0,
+            Tenancy::STATUS_EXPIRED => 0,
+            Tenancy::STATUS_TERMINATED => 0,
+            Tenancy::STATUS_CANCELLED => 0,
+        ];
+
+        /*
+        |--------------------------------------------------------------------------
         | CREATE TENANCIES
         |--------------------------------------------------------------------------
         */
 
         foreach ($templates as $index => $template) {
-            /*
-            |--------------------------------------------------------------------------
-            | Select tenant
-            |--------------------------------------------------------------------------
-            */
 
-            $tenant = $tenants[$index % $tenants->count()];
+            $status = $template['status'];
 
-            /*
-            |--------------------------------------------------------------------------
-            | Select property
-            |--------------------------------------------------------------------------
-            */
-
-            $property = $properties[$index % $properties->count()];
-
-            /*
-            |--------------------------------------------------------------------------
-            | Find units belonging to property
-            |--------------------------------------------------------------------------
-            */
-
-            $propertyUnits = $units->where(
-                'property_id',
-                $property->id
+            $isBlocking = in_array(
+                $status,
+                [
+                    Tenancy::STATUS_ACTIVE,
+                    Tenancy::STATUS_PENDING,
+                ],
+                true
             );
 
-            if ($propertyUnits->isEmpty()) {
+            /*
+            |--------------------------------------------------------------------------
+            | SELECT TENANT
+            |--------------------------------------------------------------------------
+            */
+
+            $tenant = null;
+
+            if ($isBlocking) {
+
                 /*
-                | Fall back to any available unit.
+                | Only tenants without an existing blocking tenancy.
                 */
-                $unit = $units[$index % $units->count()];
+
+                $availableTenants = $tenants
+                    ->filter(
+                        fn ($item) =>
+                            !in_array(
+                                $item->id,
+                                $blockingTenantIds,
+                                true
+                            )
+                    )
+                    ->values();
+
+                if ($availableTenants->isEmpty()) {
+                    $this->command->warn(
+                        "Skipping template {$index}: no tenant available for an {$status} tenancy."
+                    );
+
+                    $skippedCount++;
+
+                    continue;
+                }
+
+                $tenant = $availableTenants->first();
+
             } else {
-                $unit = $propertyUnits->random();
+
+                /*
+                | Historical/cancelled tenancies may reuse tenants.
+                */
+
+                $tenant = $tenants[
+                    $index % $tenants->count()
+                ];
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Apartment
+            | SELECT UNIT
+            |--------------------------------------------------------------------------
+            */
+
+            $unit = null;
+
+            if ($isBlocking) {
+
+                /*
+                | Only units without an existing blocking tenancy.
+                */
+
+                $availableUnits = $units
+                    ->filter(
+                        fn ($item) =>
+                            !in_array(
+                                $item->id,
+                                $blockingUnitIds,
+                                true
+                            )
+                    )
+                    ->values();
+
+                if ($availableUnits->isEmpty()) {
+                    $this->command->warn(
+                        "Skipping template {$index}: no unit available for an {$status} tenancy."
+                    );
+
+                    $skippedCount++;
+
+                    continue;
+                }
+
+                /*
+                | Prefer a vacant unit.
+                */
+
+                $vacantUnits = $availableUnits
+                    ->filter(
+                        fn ($item) =>
+                            $item->status === Unit::STATUS_VACANT
+                    )
+                    ->values();
+
+                $unit = $vacantUnits->isNotEmpty()
+                    ? $vacantUnits->random()
+                    : $availableUnits->random();
+
+            } else {
+
+                /*
+                | Historical tenancies can reuse any unit.
+                */
+
+                $unit = $units[
+                    $index % $units->count()
+                ];
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | PROPERTY
+            |--------------------------------------------------------------------------
+            |
+            | Always derive the property from the selected unit.
+            |
+            | This prevents:
+            |
+            | property_id != unit.property_id
+            |
+            */
+
+            $property = $properties->firstWhere(
+                'id',
+                $unit->property_id
+            );
+
+            if (!$property) {
+                $this->command->warn(
+                    "Skipping template {$index}: property not found for unit {$unit->id}."
+                );
+
+                $skippedCount++;
+
+                continue;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | APARTMENT
             |--------------------------------------------------------------------------
             */
 
@@ -344,264 +519,653 @@ class TenancySeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Dates
+            | DATES
             |--------------------------------------------------------------------------
             */
 
-            if ($template['status'] === Tenancy::STATUS_ACTIVE) {
-                /*
-                | Current active tenancy.
-                */
-                $startDate = Carbon::now()
-                    ->subMonths(rand(1, 10))
-                    ->startOfDay();
+            $dates = $this->generateDates(
+                $status,
+                $template['duration_months']
+            );
 
-                $endDate = $startDate
-                    ->copy()
-                    ->addMonths(
-                        $template['duration_months']
-                    );
-
-                $moveInDate = $startDate
-                    ->copy()
-                    ->addDays(rand(0, 5));
-
-                $moveOutDate = null;
-            } elseif ($template['status'] === Tenancy::STATUS_PENDING) {
-                /*
-                | Future tenancy.
-                */
-                $startDate = Carbon::now()
-                    ->addDays(rand(7, 30))
-                    ->startOfDay();
-
-                $endDate = $startDate
-                    ->copy()
-                    ->addMonths(
-                        $template['duration_months']
-                    );
-
-                $moveInDate = null;
-
-                $moveOutDate = null;
-            } elseif ($template['status'] === Tenancy::STATUS_EXPIRED) {
-                /*
-                | Historical expired tenancy.
-                */
-                $endDate = Carbon::now()
-                    ->subDays(rand(30, 365))
-                    ->startOfDay();
-
-                $startDate = $endDate
-                    ->copy()
-                    ->subMonths(
-                        $template['duration_months']
-                    );
-
-                $moveInDate = $startDate
-                    ->copy()
-                    ->addDays(rand(0, 5));
-
-                $moveOutDate = $endDate
-                    ->copy()
-                    ->addDays(rand(0, 3));
-            } elseif (
-                $template['status'] === Tenancy::STATUS_TERMINATED
-            ) {
-                /*
-                | Historical terminated tenancy.
-                */
-                $startDate = Carbon::now()
-                    ->subMonths(rand(6, 18))
-                    ->startOfDay();
-
-                $endDate = $startDate
-                    ->copy()
-                    ->addMonths(
-                        $template['duration_months']
-                    );
-
-                $moveInDate = $startDate
-                    ->copy()
-                    ->addDays(rand(0, 5));
-
-                $moveOutDate = Carbon::now()
-                    ->subDays(rand(30, 180))
-                    ->startOfDay();
-
-                /*
-                | Make sure move-out occurs after move-in.
-                */
-                if ($moveOutDate->lessThanOrEqualTo($moveInDate)) {
-                    $moveOutDate = $moveInDate
-                        ->copy()
-                        ->addMonths(3);
-                }
-            } else {
-                /*
-                | Cancelled tenancy.
-                */
-                $startDate = Carbon::now()
-                    ->addDays(rand(7, 30))
-                    ->startOfDay();
-
-                $endDate = $startDate
-                    ->copy()
-                    ->addMonths(
-                        $template['duration_months']
-                    );
-
-                $moveInDate = null;
-
-                $moveOutDate = null;
-            }
+            $startDate = $dates['start_date'];
+            $endDate = $dates['end_date'];
+            $moveInDate = $dates['move_in_date'];
+            $moveOutDate = $dates['move_out_date'];
 
             /*
             |--------------------------------------------------------------------------
-            | Agreement file
+            | AGREEMENT
             |--------------------------------------------------------------------------
             */
 
             $agreementFile = null;
-
             $agreementPublicId = null;
 
             /*
             |--------------------------------------------------------------------------
-            | Active flag
+            | ACTIVE FLAG
             |--------------------------------------------------------------------------
+            |
+            | Both ACTIVE and PENDING are blocking states.
+            |
             */
 
-            $isActive =
-                $template['status'] === Tenancy::STATUS_ACTIVE;
+            $isActive = $isBlocking;
 
             /*
             |--------------------------------------------------------------------------
-            | Create tenancy
+            | TENANCY NUMBER
             |--------------------------------------------------------------------------
             */
 
-            Tenancy::create([
-                /*
-                |--------------------------------------------------------------------------
-                | Relationships
-                |--------------------------------------------------------------------------
-                */
+            $tenancyNumber = $this->generateTenancyNumber();
 
-                'property_id' => $property->id,
+            /*
+            |--------------------------------------------------------------------------
+            | CREATE TENANCY + SYNCHRONIZE UNIT
+            |--------------------------------------------------------------------------
+            */
 
-                'apartment_id' => $apartment?->id,
-
-                'unit_id' => $unit->id,
-
-                'tenant_id' => $tenant->id,
-
-                /*
-                |--------------------------------------------------------------------------
-                | Identification
-                |--------------------------------------------------------------------------
-                */
-
-                'tenancy_number' =>
-                    'TEN-' .
-                    strtoupper(
-                        Str::random(8)
-                    ),
+            DB::transaction(function () use (
+                $property,
+                $apartment,
+                $unit,
+                $tenant,
+                $template,
+                $tenancyNumber,
+                $startDate,
+                $endDate,
+                $moveInDate,
+                $moveOutDate,
+                $agreementFile,
+                $agreementPublicId,
+                $isActive,
+                $status
+            ) {
 
                 /*
                 |--------------------------------------------------------------------------
-                | Dates
+                | CREATE TENANCY
                 |--------------------------------------------------------------------------
                 */
 
-                'start_date' => $startDate,
+                Tenancy::create([
+                    /*
+                    |--------------------------------------------------------------------------
+                    | RELATIONSHIPS
+                    |--------------------------------------------------------------------------
+                    */
 
-                'end_date' => $endDate,
+                    'property_id' =>
+                        $property->id,
 
-                'move_in_date' => $moveInDate,
+                    'apartment_id' =>
+                        $apartment?->id,
 
-                'move_out_date' => $moveOutDate,
+                    'unit_id' =>
+                        $unit->id,
+
+                    'tenant_id' =>
+                        $tenant->id,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | IDENTIFICATION
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'tenancy_number' =>
+                        $tenancyNumber,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | DATES
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'start_date' =>
+                        $startDate,
+
+                    'end_date' =>
+                        $endDate,
+
+                    'move_in_date' =>
+                        $moveInDate,
+
+                    'move_out_date' =>
+                        $moveOutDate,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | FINANCIAL
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'rent_amount' =>
+                        $template['rent_amount'],
+
+                    'deposit_amount' =>
+                        $template['deposit_amount'],
+
+                    'service_charge' =>
+                        $template['service_charge'],
+
+                    'late_fee' =>
+                        $template['late_fee'],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | PAYMENT TERMS
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'payment_frequency' =>
+                        $template['payment_frequency'],
+
+                    'due_day' =>
+                        $template['due_day'],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | STATUS
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'status' =>
+                        $status,
+
+                    'is_active' =>
+                        $isActive,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | AGREEMENT
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'agreement_file' =>
+                        $agreementFile,
+
+                    'agreement_public_id' =>
+                        $agreementPublicId,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | NOTES
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'notes' =>
+                        $template['notes'],
+                ]);
 
                 /*
                 |--------------------------------------------------------------------------
-                | Financial
+                | SYNCHRONIZE UNIT STATUS
                 |--------------------------------------------------------------------------
+                |
+                | ACTIVE  -> OCCUPIED
+                | PENDING -> RESERVED
+                |
+                | Historical/cancelled tenancies do not automatically overwrite
+                | the unit status because the unit may already have another
+                | active tenancy.
+                |
                 */
 
-                'rent_amount' =>
-                    $template['rent_amount'],
+                if ($status === Tenancy::STATUS_ACTIVE) {
 
-                'deposit_amount' =>
-                    $template['deposit_amount'],
+                    $unit->update([
+                        'status' =>
+                            Unit::STATUS_OCCUPIED,
 
-                'service_charge' =>
-                    $template['service_charge'],
+                        'is_active' =>
+                            true,
 
-                'late_fee' =>
-                    $template['late_fee'],
+                        'available_from' =>
+                            null,
+                    ]);
 
-                /*
-                |--------------------------------------------------------------------------
-                | Payment terms
-                |--------------------------------------------------------------------------
-                */
+                } elseif ($status === Tenancy::STATUS_PENDING) {
 
-                'payment_frequency' =>
-                    $template['payment_frequency'],
+                    $unit->update([
+                        'status' =>
+                            Unit::STATUS_RESERVED,
 
-                'due_day' =>
-                    $template['due_day'],
+                        'is_active' =>
+                            true,
+                    ]);
+                }
+            });
 
-                /*
-                |--------------------------------------------------------------------------
-                | Status
-                |--------------------------------------------------------------------------
-                */
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE BLOCKING TRACKERS
+            |--------------------------------------------------------------------------
+            */
 
-                'status' =>
-                    $template['status'],
+            if ($isBlocking) {
+                $blockingTenantIds[] = $tenant->id;
+                $blockingUnitIds[] = $unit->id;
+            }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Agreement
-                |--------------------------------------------------------------------------
-                */
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE COUNTERS
+            |--------------------------------------------------------------------------
+            */
 
-                'agreement_file' =>
-                    $agreementFile,
+            $createdCount++;
 
-                'agreement_public_id' =>
-                    $agreementPublicId,
+            $statusCounts[$status]++;
 
-                /*
-                |--------------------------------------------------------------------------
-                | Notes
-                |--------------------------------------------------------------------------
-                */
+            /*
+            |--------------------------------------------------------------------------
+            | OUTPUT
+            |--------------------------------------------------------------------------
+            */
 
-                'notes' =>
-                    $template['notes'],
+            $tenantName = trim(
+                implode(
+                    ' ',
+                    array_filter([
+                        $tenant->first_name ?? null,
+                        $tenant->last_name ?? null,
+                    ])
+                )
+            );
 
-                /*
-                |--------------------------------------------------------------------------
-                | Active flag
-                |--------------------------------------------------------------------------
-                */
-
-                'is_active' =>
-                    $isActive,
-            ]);
+            $this->command->line(
+                "Created {$tenancyNumber} | " .
+                "Tenant: " . ($tenantName ?: "Tenant #{$tenant->id}") . " | " .
+                "Unit: {$unit->unit_number} | " .
+                "Type: " . $this->getUnitTypeLabel($unit->type) . " | " .
+                "Status: " . Str::headline($status)
+            );
         }
 
         /*
         |--------------------------------------------------------------------------
-        | SUCCESS MESSAGE
+        | FINAL SUMMARY
         |--------------------------------------------------------------------------
         */
 
+        $this->command->newLine();
+
         $this->command->info(
-            count($templates) .
-            ' tenancy records seeded successfully.'
+            "{$createdCount} tenancy records seeded successfully."
         );
+
+        if ($skippedCount > 0) {
+            $this->command->warn(
+                "{$skippedCount} tenancy templates were skipped."
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | TENANCY STATUS SUMMARY
+        |--------------------------------------------------------------------------
+        */
+
+        $this->command->newLine();
+
+        $this->command->info('Tenancy status summary:');
+
+        $this->command->line(
+            'Active: ' .
+            $statusCounts[Tenancy::STATUS_ACTIVE]
+        );
+
+        $this->command->line(
+            'Pending: ' .
+            $statusCounts[Tenancy::STATUS_PENDING]
+        );
+
+        $this->command->line(
+            'Expired: ' .
+            $statusCounts[Tenancy::STATUS_EXPIRED]
+        );
+
+        $this->command->line(
+            'Terminated: ' .
+            $statusCounts[Tenancy::STATUS_TERMINATED]
+        );
+
+        $this->command->line(
+            'Cancelled: ' .
+            $statusCounts[Tenancy::STATUS_CANCELLED]
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | DATABASE SUMMARY
+        |--------------------------------------------------------------------------
+        */
+
+        $totalTenancies = Tenancy::query()
+            ->count();
+
+        $activeTenancies = Tenancy::query()
+            ->where('status', Tenancy::STATUS_ACTIVE)
+            ->where('is_active', true)
+            ->count();
+
+        $pendingTenancies = Tenancy::query()
+            ->where('status', Tenancy::STATUS_PENDING)
+            ->where('is_active', true)
+            ->count();
+
+        $expiredTenancies = Tenancy::query()
+            ->where('status', Tenancy::STATUS_EXPIRED)
+            ->count();
+
+        $terminatedTenancies = Tenancy::query()
+            ->where('status', Tenancy::STATUS_TERMINATED)
+            ->count();
+
+        $cancelledTenancies = Tenancy::query()
+            ->where('status', Tenancy::STATUS_CANCELLED)
+            ->count();
+
+        $this->command->newLine();
+
+        $this->command->info(
+            "Total tenancies in database: {$totalTenancies}"
+        );
+
+        $this->command->line(
+            "Active: {$activeTenancies}"
+        );
+
+        $this->command->line(
+            "Pending: {$pendingTenancies}"
+        );
+
+        $this->command->line(
+            "Expired: {$expiredTenancies}"
+        );
+
+        $this->command->line(
+            "Terminated: {$terminatedTenancies}"
+        );
+
+        $this->command->line(
+            "Cancelled: {$cancelledTenancies}"
+        );
+    }
+
+    /**
+     * Generate realistic tenancy dates based on status.
+     */
+    private function generateDates(
+        string $status,
+        int $durationMonths
+    ): array {
+        /*
+        |--------------------------------------------------------------------------
+        | ACTIVE
+        |--------------------------------------------------------------------------
+        */
+
+        if ($status === Tenancy::STATUS_ACTIVE) {
+
+            $startDate = Carbon::now()
+                ->subMonths(rand(1, 10))
+                ->startOfDay();
+
+            $endDate = $startDate
+                ->copy()
+                ->addMonths($durationMonths);
+
+            /*
+            | Move-in shortly after lease commencement.
+            */
+
+            $moveInDate = $startDate
+                ->copy()
+                ->addDays(rand(0, 5));
+
+            /*
+            | Never create a move-in date beyond today.
+            */
+
+            if ($moveInDate->greaterThan(Carbon::now())) {
+                $moveInDate = $startDate->copy();
+            }
+
+            $moveOutDate = null;
+
+            return [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'move_in_date' => $moveInDate,
+                'move_out_date' => $moveOutDate,
+            ];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | PENDING
+        |--------------------------------------------------------------------------
+        */
+
+        if ($status === Tenancy::STATUS_PENDING) {
+
+            $startDate = Carbon::now()
+                ->addDays(rand(7, 30))
+                ->startOfDay();
+
+            $endDate = $startDate
+                ->copy()
+                ->addMonths($durationMonths);
+
+            return [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'move_in_date' => null,
+                'move_out_date' => null,
+            ];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | EXPIRED
+        |--------------------------------------------------------------------------
+        */
+
+        if ($status === Tenancy::STATUS_EXPIRED) {
+
+            $endDate = Carbon::now()
+                ->subDays(rand(30, 365))
+                ->startOfDay();
+
+            $startDate = $endDate
+                ->copy()
+                ->subMonths($durationMonths);
+
+            $moveInDate = $startDate
+                ->copy()
+                ->addDays(rand(0, 5));
+
+            /*
+            | Move-out should be on or before the contractual end date.
+            */
+
+            $moveOutDate = $endDate
+                ->copy()
+                ->subDays(rand(0, 3));
+
+            if ($moveOutDate->lessThan($moveInDate)) {
+                $moveOutDate = $endDate->copy();
+            }
+
+            return [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'move_in_date' => $moveInDate,
+                'move_out_date' => $moveOutDate,
+            ];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | TERMINATED
+        |--------------------------------------------------------------------------
+        */
+
+        if ($status === Tenancy::STATUS_TERMINATED) {
+
+            /*
+            | Start far enough in the past to make termination historical.
+            */
+
+            $startDate = Carbon::now()
+                ->subMonths(rand(12, 24))
+                ->startOfDay();
+
+            $contractEndDate = $startDate
+                ->copy()
+                ->addMonths($durationMonths);
+
+            /*
+            | Termination should happen after move-in and before now.
+            */
+
+            $moveInDate = $startDate
+                ->copy()
+                ->addDays(rand(0, 5));
+
+            $latestMoveOut = Carbon::now()
+                ->subDays(30)
+                ->startOfDay();
+
+            /*
+            | Keep move-out before the contractual end.
+            */
+
+            $possibleMoveOut = $contractEndDate
+                ->copy()
+                ->subDays(rand(30, 120));
+
+            $moveOutDate = $possibleMoveOut->lessThan($latestMoveOut)
+                ? $possibleMoveOut
+                : $latestMoveOut;
+
+            /*
+            | Safety check.
+            */
+
+            if ($moveOutDate->lessThanOrEqualTo($moveInDate)) {
+                $moveOutDate = $moveInDate
+                    ->copy()
+                    ->addMonths(3);
+            }
+
+            /*
+            | Make sure move-out remains in the past.
+            */
+
+            if ($moveOutDate->greaterThanOrEqualTo(Carbon::now())) {
+                $moveOutDate = Carbon::now()
+                    ->subDays(30)
+                    ->startOfDay();
+            }
+
+            /*
+            | The contractual end date must remain after the start date.
+            */
+
+            if ($contractEndDate->lessThanOrEqualTo($startDate)) {
+                $contractEndDate = $startDate
+                    ->copy()
+                    ->addMonths(max(1, $durationMonths));
+            }
+
+            return [
+                'start_date' => $startDate,
+                'end_date' => $contractEndDate,
+                'move_in_date' => $moveInDate,
+                'move_out_date' => $moveOutDate,
+            ];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CANCELLED
+        |--------------------------------------------------------------------------
+        */
+
+        $startDate = Carbon::now()
+            ->addDays(rand(7, 30))
+            ->startOfDay();
+
+        $endDate = $startDate
+            ->copy()
+            ->addMonths($durationMonths);
+
+        return [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'move_in_date' => null,
+            'move_out_date' => null,
+        ];
+    }
+
+    /**
+     * Generate a unique tenancy number.
+     */
+    private function generateTenancyNumber(): string
+    {
+        do {
+            $number = 'TEN-' . strtoupper(
+                Str::random(8)
+            );
+        } while (
+            Tenancy::withTrashed()
+                ->where(
+                    'tenancy_number',
+                    $number
+                )
+                ->exists()
+        );
+
+        return $number;
+    }
+
+    /**
+     * Get a human-readable unit type label.
+     */
+    private function getUnitTypeLabel(?string $type): string
+    {
+        if (!$type) {
+            return '—';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | UNIT MODEL LABEL
+        |--------------------------------------------------------------------------
+        */
+
+        $unitTypeLabels = [
+            'bedsitter' => 'Bedsitter',
+            'studio' => 'Studio',
+            'single_room' => 'Single Room',
+            'double_room' => 'Double Room',
+            'one_bedroom' => 'One Bedroom',
+            'two_bedroom' => 'Two Bedroom',
+            'three_bedroom' => 'Three Bedroom',
+            'penthouse' => 'Penthouse',
+            'office' => 'Office',
+            'shop' => 'Shop',
+            'warehouse' => 'Warehouse',
+            'villa' => 'Villa',
+            'airbnb' => 'Airbnb',
+        ];
+
+        return $unitTypeLabels[$type]
+            ?? Str::headline($type);
     }
 }

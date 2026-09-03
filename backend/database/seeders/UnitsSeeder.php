@@ -15,7 +15,15 @@ class UnitsSeeder extends Seeder
      */
     public function run(): void
     {
-        $apartments = Apartment::with('property')->get();
+        /*
+        |--------------------------------------------------------------------------
+        | FETCH APARTMENTS
+        |--------------------------------------------------------------------------
+        */
+
+        $apartments = Apartment::query()
+            ->with('property')
+            ->get();
 
         if ($apartments->isEmpty()) {
             $this->command->warn(
@@ -29,23 +37,38 @@ class UnitsSeeder extends Seeder
         |--------------------------------------------------------------------------
         | UNIT TYPES
         |--------------------------------------------------------------------------
+        |
+        | Unit::UNIT_TYPES is treated as the source of truth.
+        |
+        | The model may define UNIT_TYPES as either:
+        |
+        | 1. Associative:
+        |
+        | [
+        |     'bedsitter' => 'Bedsitter',
+        |     'office' => 'Office',
+        | ]
+        |
+        | 2. Indexed:
+        |
+        | [
+        |     'bedsitter',
+        |     'office',
+        | ]
+        |
+        | We support both formats.
+        |
         */
 
-        $types = [
-            'bedsitter',
-            'studio',
-            'single_room',
-            'double_room',
-            'one_bedroom',
-            'two_bedroom',
-            'three_bedroom',
-            'penthouse',
-            'office',
-            'shop',
-            'warehouse',
-            'villa',
-            'airbnb',
-        ];
+        $types = $this->getUnitTypes();
+
+        if (empty($types)) {
+            $this->command->error(
+                'No valid unit types were found.'
+            );
+
+            return;
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -71,11 +94,17 @@ class UnitsSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | SEED APARTMENTS
+        | SEED EACH APARTMENT
         |--------------------------------------------------------------------------
         */
 
         foreach ($apartments as $apartment) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | PROPERTY
+            |--------------------------------------------------------------------------
+            */
 
             $property = $apartment->property;
 
@@ -89,7 +118,7 @@ class UnitsSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Number of floors
+            | NUMBER OF FLOORS
             |--------------------------------------------------------------------------
             */
 
@@ -99,191 +128,208 @@ class UnitsSeeder extends Seeder
             );
 
             $unitsCreatedForApartment = 0;
+            $unitsSkippedForApartment = 0;
 
             /*
             |--------------------------------------------------------------------------
-            | Create units floor by floor
+            | CREATE UNITS
             |--------------------------------------------------------------------------
             */
 
-            for ($floor = 1; $floor <= $floors; $floor++) {
+            DB::transaction(function () use (
+                $apartment,
+                $property,
+                $floors,
+                $types,
+                $statuses,
+                &$unitsCreatedForApartment,
+                &$unitsSkippedForApartment,
+                &$totalCreated,
+                &$totalSkipped
+            ) {
 
                 /*
-                | 2–8 units per floor.
+                |--------------------------------------------------------------------------
+                | FLOOR LOOP
+                |--------------------------------------------------------------------------
                 */
-                $unitsPerFloor = rand(2, 8);
 
-                for ($room = 1; $room <= $unitsPerFloor; $room++) {
+                for ($floor = 1; $floor <= $floors; $floor++) {
+
+                    /*
+                    | 2–8 units per floor.
+                    */
+                    $unitsPerFloor = rand(2, 8);
 
                     /*
                     |--------------------------------------------------------------------------
-                    | UNIT NUMBER
+                    | UNIT LOOP
                     |--------------------------------------------------------------------------
                     */
 
-                    $unitNumber = sprintf(
-                        '%d%02d',
-                        $floor,
-                        $room
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | DUPLICATE PROTECTION
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $existingUnit = Unit::withTrashed()
-                        ->where('apartment_id', $apartment->id)
-                        ->where('unit_number', $unitNumber)
-                        ->first();
-
-                    if ($existingUnit) {
-
-                        $totalSkipped++;
-
-                        continue;
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | TYPE
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $type = $types[array_rand($types)];
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | TYPE-SPECIFIC DETAILS
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $details = $this->getUnitDetails($type);
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STATUS
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $status = $statuses[array_rand($statuses)];
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | UNIT NAME
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $block = $apartment->block
-                        ?: 'Block-' . $apartment->id;
-
-                    $unitName = "{$block}-{$unitNumber}";
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | CREATE UNIT
-                    |--------------------------------------------------------------------------
-                    */
-
-                    Unit::create([
+                    for (
+                        $room = 1;
+                        $room <= $unitsPerFloor;
+                        $room++
+                    ) {
 
                         /*
                         |--------------------------------------------------------------------------
-                        | RELATIONSHIPS
+                        | UNIT NUMBER
                         |--------------------------------------------------------------------------
+                        |
+                        | Examples:
+                        |
+                        | 101
+                        | 102
+                        | 103
+                        |
+                        | 201
+                        | 202
+                        | 203
+                        |
                         */
 
-                        'property_id' => $property->id,
-
-                        'apartment_id' => $apartment->id,
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | BASIC INFORMATION
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'unit_number' => $unitNumber,
-
-                        'unit_name' => $unitName,
-
-                        'slug' => Str::slug(
-                            $unitName . '-' . Str::random(6)
-                        ),
-
-                        'description' => sprintf(
-                            '%s unit located on floor %d of %s in %s.',
-                            Str::headline($type),
+                        $unitNumber = sprintf(
+                            '%d%02d',
                             $floor,
-                            $apartment->name,
-                            $property->title
-                        ),
+                            $room
+                        );
 
                         /*
                         |--------------------------------------------------------------------------
-                        | CLASSIFICATION
+                        | DUPLICATE PROTECTION
                         |--------------------------------------------------------------------------
                         */
 
-                        'status' => $status,
+                        $existingUnit = Unit::withTrashed()
+                            ->where(
+                                'apartment_id',
+                                $apartment->id
+                            )
+                            ->where(
+                                'unit_number',
+                                $unitNumber
+                            )
+                            ->first();
 
-                        'type' => $type,
+                        if ($existingUnit) {
+
+                            $unitsSkippedForApartment++;
+                            $totalSkipped++;
+
+                            continue;
+                        }
 
                         /*
                         |--------------------------------------------------------------------------
-                        | UNIT DETAILS
+                        | UNIT TYPE
                         |--------------------------------------------------------------------------
+                        |
+                        | IMPORTANT:
+                        |
+                        | $types contains actual string values such as:
+                        |
+                        | bedsitter
+                        | studio
+                        | one_bedroom
+                        | office
+                        | shop
+                        |
+                        | It must NEVER contain numeric indexes such as 0, 1, 2.
+                        |
                         */
 
-                        'bedrooms' => $details['bedrooms'],
-
-                        'bathrooms' => $details['bathrooms'],
-
-                        'toilets' => $details['toilets'],
-
-                        'floor' => $floor,
-
-                        'size' => $details['size'],
-
-                        'size_unit' => 'sqm',
+                        $type = $types[
+                            array_rand($types)
+                        ];
 
                         /*
                         |--------------------------------------------------------------------------
-                        | PRICING
+                        | SAFETY CHECK
                         |--------------------------------------------------------------------------
                         */
 
-                        'price' => $details['price'],
+                        if (
+                            !is_string($type) ||
+                            trim($type) === ''
+                        ) {
+                            $this->command->warn(
+                                "Invalid unit type generated for apartment {$apartment->id}. Skipping unit {$unitNumber}."
+                            );
 
-                        'deposit' => $details['deposit'],
+                            continue;
+                        }
 
-                        'service_charge' => $details['service_charge'],
+                        $type = trim($type);
 
                         /*
                         |--------------------------------------------------------------------------
-                        | FEATURES
+                        | TYPE-SPECIFIC DETAILS
                         |--------------------------------------------------------------------------
                         */
 
-                        'has_balcony' => $details['has_balcony'],
-
-                        'has_wifi' => $details['has_wifi'],
-
-                        'has_furnished' => $details['has_furnished'],
-
-                        'has_air_conditioning' =>
-                            $details['has_air_conditioning'],
+                        $details = $this->getUnitDetails(
+                            $type
+                        );
 
                         /*
                         |--------------------------------------------------------------------------
-                        | MEDIA
+                        | STATUS
+                        |--------------------------------------------------------------------------
+                        |
+                        | UnitsSeeder creates inventory.
+                        |
+                        | TenancySeeder is responsible for actual occupancy.
+                        |
+                        | Therefore we primarily create:
+                        |
+                        | - vacant
+                        | - reserved
+                        | - maintenance
+                        |
+                        */
+
+                        $statusPool = [
+                            Unit::STATUS_VACANT,
+                            Unit::STATUS_VACANT,
+                            Unit::STATUS_VACANT,
+                            Unit::STATUS_RESERVED,
+                            Unit::STATUS_MAINTENANCE,
+                        ];
+
+                        $status = $statusPool[
+                            array_rand($statusPool)
+                        ];
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | UNIT NAME
                         |--------------------------------------------------------------------------
                         */
 
-                        'thumbnail' => 'images/default-unit.jpg',
+                        $block = trim(
+                            (string) (
+                                $apartment->block
+                                ?: 'Block-' . $apartment->id
+                            )
+                        );
 
-                        'thumbnail_public_id' => null,
+                        $unitName = sprintf(
+                            '%s-%s',
+                            $block,
+                            $unitNumber
+                        );
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | SLUG
+                        |--------------------------------------------------------------------------
+                        */
+
+                        $slug = Str::slug(
+                            $unitName . '-' . Str::random(6)
+                        );
 
                         /*
                         |--------------------------------------------------------------------------
@@ -291,55 +337,189 @@ class UnitsSeeder extends Seeder
                         |--------------------------------------------------------------------------
                         */
 
-                        'available_from' =>
-                            $status === Unit::STATUS_VACANT
-                                ? now()->addDays(rand(1, 60))
-                                : null,
+                        $availableFrom = null;
+
+                        if ($status === Unit::STATUS_VACANT) {
+                            $availableFrom = now()->addDays(
+                                rand(1, 60)
+                            );
+                        }
 
                         /*
                         |--------------------------------------------------------------------------
-                        | NOTES
+                        | ACTIVE FLAG
                         |--------------------------------------------------------------------------
+                        |
+                        | is_active means the unit record is operational.
+                        |
+                        | It is independent from occupancy status.
+                        |
                         */
 
-                        'notes' =>
-                            'Auto-generated by UnitsSeeder.',
+                        $isActive = true;
 
                         /*
                         |--------------------------------------------------------------------------
-                        | TIMESTAMPS
+                        | CREATE UNIT
                         |--------------------------------------------------------------------------
                         */
 
-                        'created_at' => now(),
+                        Unit::create([
 
-                        'updated_at' => now(),
-                    ]);
+                            /*
+                            |--------------------------------------------------------------------------
+                            | RELATIONSHIPS
+                            |--------------------------------------------------------------------------
+                            */
 
-                    $unitsCreatedForApartment++;
+                            'property_id' => $property->id,
 
-                    $totalCreated++;
+                            'apartment_id' => $apartment->id,
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | BASIC INFORMATION
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'unit_number' => $unitNumber,
+
+                            'unit_name' => $unitName,
+
+                            'slug' => $slug,
+
+                            'description' => sprintf(
+                                '%s unit located on floor %d of %s in %s.',
+                                Str::headline($type),
+                                $floor,
+                                $apartment->name,
+                                $property->title
+                            ),
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | CLASSIFICATION
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'status' => $status,
+
+                            'type' => $type,
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | UNIT DETAILS
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'bedrooms' => $details['bedrooms'],
+
+                            'bathrooms' => $details['bathrooms'],
+
+                            'toilets' => $details['toilets'],
+
+                            'floor' => $floor,
+
+                            'size' => $details['size'],
+
+                            'size_unit' => 'sqm',
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | PRICING
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'price' => $details['price'],
+
+                            'deposit' => $details['deposit'],
+
+                            'service_charge' =>
+                                $details['service_charge'],
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | FEATURES
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'has_balcony' =>
+                                $details['has_balcony'],
+
+                            'has_wifi' =>
+                                $details['has_wifi'],
+
+                            'has_furnished' =>
+                                $details['has_furnished'],
+
+                            'has_air_conditioning' =>
+                                $details['has_air_conditioning'],
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | MEDIA
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'thumbnail' =>
+                                'images/default-unit.jpg',
+
+                            'thumbnail_public_id' => null,
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | AVAILABILITY
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'available_from' =>
+                                $availableFrom,
+
+                            'is_active' =>
+                                $isActive,
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | NOTES
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'notes' =>
+                                'Auto-generated by UnitsSeeder.',
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | TIMESTAMPS
+                            |--------------------------------------------------------------------------
+                            */
+
+                            'created_at' => now(),
+
+                            'updated_at' => now(),
+                        ]);
+
+                        $unitsCreatedForApartment++;
+                        $totalCreated++;
+                    }
                 }
-            }
 
-            /*
-            |--------------------------------------------------------------------------
-            | UPDATE APARTMENT UNIT COUNT
-            |--------------------------------------------------------------------------
-            |
-            | Count actual units instead of relying only on the number
-            | created during this particular seeder execution.
-            |
-            */
+                /*
+                |--------------------------------------------------------------------------
+                | UPDATE APARTMENT UNIT COUNT
+                |--------------------------------------------------------------------------
+                */
 
-            $actualUnitCount = Unit::where(
-                'apartment_id',
-                $apartment->id
-            )->count();
+                $actualUnitCount = Unit::query()
+                    ->where(
+                        'apartment_id',
+                        $apartment->id
+                    )
+                    ->count();
 
-            $apartment->update([
-                'total_units' => $actualUnitCount,
-            ]);
+                $apartment->update([
+                    'total_units' => $actualUnitCount,
+                ]);
+            });
 
             /*
             |--------------------------------------------------------------------------
@@ -347,10 +527,18 @@ class UnitsSeeder extends Seeder
             |--------------------------------------------------------------------------
             */
 
+            $actualUnitCount = Unit::query()
+                ->where(
+                    'apartment_id',
+                    $apartment->id
+                )
+                ->count();
+
             $this->command->line(
                 "Apartment: {$apartment->name} | " .
-                "Units created: {$unitsCreatedForApartment} | " .
-                "Total units: {$actualUnitCount}"
+                "Created: {$unitsCreatedForApartment} | " .
+                "Skipped: {$unitsSkippedForApartment} | " .
+                "Total: {$actualUnitCount}"
             );
         }
 
@@ -372,9 +560,227 @@ class UnitsSeeder extends Seeder
             );
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | DATABASE UNIT SUMMARY
+        |--------------------------------------------------------------------------
+        */
+
+        $totalUnits = Unit::query()
+            ->count();
+
+        $vacantUnits = Unit::query()
+            ->where(
+                'status',
+                Unit::STATUS_VACANT
+            )
+            ->count();
+
+        $occupiedUnits = Unit::query()
+            ->where(
+                'status',
+                Unit::STATUS_OCCUPIED
+            )
+            ->count();
+
+        $reservedUnits = Unit::query()
+            ->where(
+                'status',
+                Unit::STATUS_RESERVED
+            )
+            ->count();
+
+        $maintenanceUnits = Unit::query()
+            ->where(
+                'status',
+                Unit::STATUS_MAINTENANCE
+            )
+            ->count();
+
         $this->command->info(
-            'Total units in database: ' . Unit::count()
+            "Total units in database: {$totalUnits}"
         );
+
+        $this->command->line(
+            "Vacant: {$vacantUnits}"
+        );
+
+        $this->command->line(
+            "Occupied: {$occupiedUnits}"
+        );
+
+        $this->command->line(
+            "Reserved: {$reservedUnits}"
+        );
+
+        $this->command->line(
+            "Maintenance: {$maintenanceUnits}"
+        );
+    }
+
+    /**
+     * Get valid unit type values.
+     *
+     * Supports both associative and indexed UNIT_TYPES definitions.
+     */
+    private function getUnitTypes(): array
+    {
+        $fallbackTypes = [
+            'bedsitter',
+            'studio',
+            'single_room',
+            'double_room',
+            'one_bedroom',
+            'two_bedroom',
+            'three_bedroom',
+            'penthouse',
+            'office',
+            'shop',
+            'warehouse',
+            'villa',
+            'airbnb',
+        ];
+
+        if (!defined(Unit::class . '::UNIT_TYPES')) {
+            return $fallbackTypes;
+        }
+
+        $unitTypes = Unit::UNIT_TYPES;
+
+        if (!is_array($unitTypes) || empty($unitTypes)) {
+            return $fallbackTypes;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | ASSOCIATIVE ARRAY
+        |--------------------------------------------------------------------------
+        |
+        | Example:
+        |
+        | [
+        |     'bedsitter' => 'Bedsitter',
+        |     'office' => 'Office',
+        | ]
+        |
+        */
+
+        if ($this->isAssociativeArray($unitTypes)) {
+            $types = array_keys($unitTypes);
+        } else {
+
+            /*
+            |--------------------------------------------------------------------------
+            | INDEXED ARRAY
+            |--------------------------------------------------------------------------
+            |
+            | Example:
+            |
+            | [
+            |     'bedsitter',
+            |     'office',
+            | ]
+            |
+            */
+
+            $types = array_values($unitTypes);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | NORMALIZE
+        |--------------------------------------------------------------------------
+        */
+
+        $types = array_values(
+            array_filter(
+                array_map(
+                    static fn ($type) => is_string($type)
+                        ? trim($type)
+                        : null,
+                    $types
+                ),
+                static fn ($type) => !empty($type)
+            )
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDATE AGAINST SUPPORTED DETAILS
+        |--------------------------------------------------------------------------
+        |
+        | This prevents a new unsupported UNIT_TYPES value from causing:
+        |
+        | Undefined array key
+        |
+        | inside getUnitDetails().
+        |
+        */
+
+        $supportedTypes = array_keys(
+            $this->getSupportedUnitDetails()
+        );
+
+        $types = array_values(
+            array_intersect(
+                $types,
+                $supportedTypes
+            )
+        );
+
+        return !empty($types)
+            ? $types
+            : $fallbackTypes;
+    }
+
+    /**
+     * Determine whether an array is associative.
+     */
+    private function isAssociativeArray(array $array): bool
+    {
+        if ([] === $array) {
+            return false;
+        }
+
+        return array_keys($array) !== range(
+            0,
+            count($array) - 1
+        );
+    }
+
+    /**
+     * Get all supported unit detail definitions.
+     */
+    private function getSupportedUnitDetails(): array
+    {
+        return [
+
+            'bedsitter' => [],
+
+            'studio' => [],
+
+            'single_room' => [],
+
+            'double_room' => [],
+
+            'one_bedroom' => [],
+
+            'two_bedroom' => [],
+
+            'three_bedroom' => [],
+
+            'penthouse' => [],
+
+            'office' => [],
+
+            'shop' => [],
+
+            'warehouse' => [],
+
+            'villa' => [],
+
+            'airbnb' => [],
+        ];
     }
 
     /**
@@ -383,6 +789,13 @@ class UnitsSeeder extends Seeder
     private function getUnitDetails(string $type): array
     {
         $details = [
+
+            /*
+            |--------------------------------------------------------------------------
+            | BED-SITTER
+            |--------------------------------------------------------------------------
+            */
+
             'bedsitter' => [
                 'bedrooms' => 0,
                 'bathrooms' => 1,
@@ -395,6 +808,12 @@ class UnitsSeeder extends Seeder
                 'has_furnished' => (bool) rand(0, 1),
                 'has_air_conditioning' => false,
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | STUDIO
+            |--------------------------------------------------------------------------
+            */
 
             'studio' => [
                 'bedrooms' => 0,
@@ -409,6 +828,12 @@ class UnitsSeeder extends Seeder
                 'has_air_conditioning' => (bool) rand(0, 1),
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | SINGLE ROOM
+            |--------------------------------------------------------------------------
+            */
+
             'single_room' => [
                 'bedrooms' => 1,
                 'bathrooms' => 1,
@@ -421,6 +846,12 @@ class UnitsSeeder extends Seeder
                 'has_furnished' => (bool) rand(0, 1),
                 'has_air_conditioning' => false,
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | DOUBLE ROOM
+            |--------------------------------------------------------------------------
+            */
 
             'double_room' => [
                 'bedrooms' => 2,
@@ -435,6 +866,12 @@ class UnitsSeeder extends Seeder
                 'has_air_conditioning' => (bool) rand(0, 1),
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | ONE BEDROOM
+            |--------------------------------------------------------------------------
+            */
+
             'one_bedroom' => [
                 'bedrooms' => 1,
                 'bathrooms' => 1,
@@ -447,6 +884,12 @@ class UnitsSeeder extends Seeder
                 'has_furnished' => (bool) rand(0, 1),
                 'has_air_conditioning' => (bool) rand(0, 1),
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | TWO BEDROOM
+            |--------------------------------------------------------------------------
+            */
 
             'two_bedroom' => [
                 'bedrooms' => 2,
@@ -461,6 +904,12 @@ class UnitsSeeder extends Seeder
                 'has_air_conditioning' => (bool) rand(0, 1),
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | THREE BEDROOM
+            |--------------------------------------------------------------------------
+            */
+
             'three_bedroom' => [
                 'bedrooms' => 3,
                 'bathrooms' => rand(2, 3),
@@ -473,6 +922,12 @@ class UnitsSeeder extends Seeder
                 'has_furnished' => (bool) rand(0, 1),
                 'has_air_conditioning' => (bool) rand(0, 1),
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | PENTHOUSE
+            |--------------------------------------------------------------------------
+            */
 
             'penthouse' => [
                 'bedrooms' => rand(3, 5),
@@ -487,6 +942,12 @@ class UnitsSeeder extends Seeder
                 'has_air_conditioning' => true,
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | OFFICE
+            |--------------------------------------------------------------------------
+            */
+
             'office' => [
                 'bedrooms' => 0,
                 'bathrooms' => rand(1, 3),
@@ -499,6 +960,12 @@ class UnitsSeeder extends Seeder
                 'has_furnished' => (bool) rand(0, 1),
                 'has_air_conditioning' => true,
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | SHOP
+            |--------------------------------------------------------------------------
+            */
 
             'shop' => [
                 'bedrooms' => 0,
@@ -513,6 +980,12 @@ class UnitsSeeder extends Seeder
                 'has_air_conditioning' => (bool) rand(0, 1),
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | WAREHOUSE
+            |--------------------------------------------------------------------------
+            */
+
             'warehouse' => [
                 'bedrooms' => 0,
                 'bathrooms' => rand(1, 3),
@@ -526,6 +999,12 @@ class UnitsSeeder extends Seeder
                 'has_air_conditioning' => false,
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | VILLA
+            |--------------------------------------------------------------------------
+            */
+
             'villa' => [
                 'bedrooms' => rand(3, 6),
                 'bathrooms' => rand(3, 6),
@@ -538,6 +1017,12 @@ class UnitsSeeder extends Seeder
                 'has_furnished' => (bool) rand(0, 1),
                 'has_air_conditioning' => true,
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | AIRBNB
+            |--------------------------------------------------------------------------
+            */
 
             'airbnb' => [
                 'bedrooms' => rand(1, 3),
@@ -555,11 +1040,21 @@ class UnitsSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | DEPOSIT
+        | FALLBACK
         |--------------------------------------------------------------------------
         */
 
-        $data = $details[$type] ?? $details['bedsitter'];
+        $data = $details[$type]
+            ?? $details['bedsitter'];
+
+        /*
+        |--------------------------------------------------------------------------
+        | SECURITY DEPOSIT
+        |--------------------------------------------------------------------------
+        |
+        | For seeded/demo data, use the monthly rent as the deposit.
+        |
+        */
 
         $data['deposit'] = $data['price'];
 

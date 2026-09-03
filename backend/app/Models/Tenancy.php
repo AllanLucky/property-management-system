@@ -1,6 +1,5 @@
 <?php
 
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -168,9 +167,6 @@ class Tenancy extends Model
 
     /**
      * Unit assigned to this tenancy.
-     *
-     * This is the main relationship used when assigning
-     * a tenant to a specific unit.
      */
     public function unit()
     {
@@ -196,7 +192,8 @@ class Tenancy extends Model
      */
     public function scopeActive($query)
     {
-        return $query->where('status', self::STATUS_ACTIVE)
+        return $query
+            ->where('status', self::STATUS_ACTIVE)
             ->where('is_active', true);
     }
 
@@ -205,7 +202,9 @@ class Tenancy extends Model
      */
     public function scopePending($query)
     {
-        return $query->where('status', self::STATUS_PENDING);
+        return $query
+            ->where('status', self::STATUS_PENDING)
+            ->where('is_active', true);
     }
 
     /**
@@ -233,7 +232,13 @@ class Tenancy extends Model
     }
 
     /**
-     * Currently active records.
+     * Currently active tenancies.
+     *
+     * A tenancy is considered currently active when:
+     * - status is active
+     * - is_active is true
+     * - start date has been reached
+     * - end date has not passed
      */
     public function scopeCurrentlyActive($query)
     {
@@ -248,6 +253,34 @@ class Tenancy extends Model
                 $q->whereNull('end_date')
                     ->orWhereDate('end_date', '>=', now());
             });
+    }
+
+    /**
+     * Tenancies that prevent a tenant from being assigned
+     * to another tenancy.
+     *
+     * Active and pending tenancies block a tenant from
+     * appearing in the "Create Tenancy" tenant dropdown.
+     */
+    public function scopeBlockingTenantAssignment($query)
+    {
+        return $query
+            ->whereIn('status', [
+                self::STATUS_ACTIVE,
+                self::STATUS_PENDING,
+            ])
+            ->where('is_active', true);
+    }
+
+    /**
+     * Determine whether a tenant currently has a tenancy
+     * that prevents another tenancy from being created.
+     */
+    public function scopeForTenant($query, int $tenantId)
+    {
+        return $query
+            ->where('tenant_id', $tenantId)
+            ->blockingTenantAssignment();
     }
 
     /*
@@ -320,6 +353,7 @@ class Tenancy extends Model
             self::STATUS_EXPIRED => 'Expired',
             self::STATUS_TERMINATED => 'Terminated',
             self::STATUS_CANCELLED => 'Cancelled',
+
             default => Str::of((string) $this->status)
                 ->replace('_', ' ')
                 ->title(),
@@ -381,6 +415,19 @@ class Tenancy extends Model
     }
 
     /**
+     * Determine whether tenancy blocks another tenancy
+     * from being created for the same tenant.
+     */
+    public function blocksTenantAssignment(): bool
+    {
+        return in_array($this->status, [
+            self::STATUS_ACTIVE,
+            self::STATUS_PENDING,
+        ], true)
+            && (bool) $this->is_active;
+    }
+
+    /**
      * Determine whether tenancy has a unit assigned.
      */
     public function hasUnit(): bool
@@ -415,14 +462,24 @@ class Tenancy extends Model
         parent::boot();
 
         static::creating(function (Tenancy $tenancy) {
+            /*
+             * Generate tenancy number automatically.
+             */
             if (empty($tenancy->tenancy_number)) {
                 $tenancy->tenancy_number = self::generateTenancyNumber();
             }
 
+            /*
+             * New tenancies are pending by default.
+             */
             if (empty($tenancy->status)) {
                 $tenancy->status = self::STATUS_PENDING;
             }
 
+            /*
+             * New tenancies are active at the record level
+             * unless explicitly disabled.
+             */
             if (is_null($tenancy->is_active)) {
                 $tenancy->is_active = true;
             }
@@ -441,9 +498,17 @@ class Tenancy extends Model
             }
 
             /*
-             * Active tenancy should be active.
+             * Active tenancy must be active.
              */
             if ($tenancy->status === self::STATUS_ACTIVE) {
+                $tenancy->is_active = true;
+            }
+
+            /*
+             * Pending tenancy must remain active so that it
+             * continues to block duplicate tenancy creation.
+             */
+            if ($tenancy->status === self::STATUS_PENDING) {
                 $tenancy->is_active = true;
             }
         });
@@ -455,6 +520,9 @@ class Tenancy extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Generate a unique tenancy number.
+     */
     public static function generateTenancyNumber(): string
     {
         do {
@@ -468,4 +536,3 @@ class Tenancy extends Model
         return $number;
     }
 }
-
