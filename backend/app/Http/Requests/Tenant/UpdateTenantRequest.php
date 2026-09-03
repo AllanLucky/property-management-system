@@ -85,6 +85,28 @@ class UpdateTenantRequest extends FormRequest
                 'max:150',
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship/national identity.
+            |
+            | This is separate from:
+            |
+            | country
+            |
+            | where country represents the tenant's residential/location country.
+            |
+            */
+
+            'nationality' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
             'date_of_birth' => [
                 'sometimes',
                 'nullable',
@@ -130,6 +152,11 @@ class UpdateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Address / Location
             |--------------------------------------------------------------------------
+            |
+            | country represents the tenant's residential/location country.
+            |
+            | It is intentionally separate from nationality.
+            |
             */
 
             'country' => [
@@ -343,6 +370,12 @@ class UpdateTenantRequest extends FormRequest
             'other_names.max' =>
                 'Other names may not exceed 150 characters.',
 
+            'nationality.string' =>
+                'Nationality must be a valid text value.',
+
+            'nationality.max' =>
+                'Nationality may not exceed 100 characters.',
+
             'date_of_birth.date' =>
                 'Please provide a valid date of birth.',
 
@@ -368,7 +401,7 @@ class UpdateTenantRequest extends FormRequest
                 'The passport number must be a valid text value.',
 
             'passport_number.unique' =>
-                'This passport number is already registered to another tenant.',
+                'The passport number is already registered to another tenant.',
 
             /*
             |--------------------------------------------------------------------------
@@ -519,6 +552,21 @@ class UpdateTenantRequest extends FormRequest
         if ($this->has('other_names')) {
             $data['other_names'] = $this->filled('other_names')
                 ? trim((string) $this->input('other_names'))
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Nationality
+        |--------------------------------------------------------------------------
+        |
+        | Nationality is stored independently from residential country.
+        |
+        */
+
+        if ($this->has('nationality')) {
+            $data['nationality'] = $this->filled('nationality')
+                ? trim((string) $this->input('nationality'))
                 : null;
         }
 
@@ -727,7 +775,7 @@ class UpdateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
 
-            if (!$tenant) {
+            if (! $tenant) {
                 $validator->errors()->add(
                     'tenant',
                     'The tenant being updated could not be found.'
@@ -821,43 +869,17 @@ class UpdateTenantRequest extends FormRequest
             | - sets verified_at when is_verified = true
             | - clears verified_at when is_verified = false
             |
-            | Therefore we only reject an explicitly supplied conflicting
-            | verification date.
+            | Therefore we only validate the boolean value here.
             |
             */
 
             if ($this->has('is_verified')) {
 
-                $isVerified = filter_var(
+                filter_var(
                     $this->input('is_verified'),
                     FILTER_VALIDATE_BOOLEAN,
                     FILTER_NULL_ON_FAILURE
                 );
-
-                if ($isVerified === true) {
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | When verified, verified_at may be omitted because
-                    | TenantService will automatically set it to now().
-                    |--------------------------------------------------------------------------
-                    */
-
-                }
-
-                if ($isVerified === false) {
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | When explicitly unverified, the service will clear
-                    | verified_at automatically.
-                    |--------------------------------------------------------------------------
-                    |
-                    | Do not reject an existing verified_at here because
-                    | TenantService is responsible for clearing it.
-                    |--------------------------------------------------------------------------
-                    */
-                }
             }
 
             /*
@@ -865,8 +887,8 @@ class UpdateTenantRequest extends FormRequest
             | Protected User Fields
             |--------------------------------------------------------------------------
             |
-            | These belong to the linked User model and are not tenant
-            | fields.
+            | These belong to the linked User model or are system-managed
+            | tenant fields and are not editable through a normal tenant update.
             |
             */
 
