@@ -22,15 +22,20 @@ class TenantSeeder extends Seeder
         |
         | IMPORTANT:
         |
-        | The User table is the source of authentication/account information.
+        | The User table is the source of authentication and account-level
+        | information.
         |
-        | Tenant-specific information is stored in the tenants table.
+        | The Tenant table stores tenant-specific profile information.
         |
         | Tenant activity is controlled exclusively through:
         |
         |     tenants.status
         |
-        | There is NO tenants.is_active database column.
+        | There is intentionally NO tenants.is_active database column.
+        |
+        | Nationality is tenant-profile information and is stored in:
+        |
+        |     tenants.nationality
         |
         */
 
@@ -44,6 +49,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000001',
                 'date_of_birth' => '1992-04-15',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '28745001',
                 'passport_number' => 'A12345678',
                 'country' => 'Kenya',
@@ -74,6 +80,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000002',
                 'date_of_birth' => '1990-08-21',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '29167002',
                 'passport_number' => 'A23456789',
                 'country' => 'Kenya',
@@ -104,6 +111,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000003',
                 'date_of_birth' => '1988-02-10',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '24583003',
                 'passport_number' => 'A34567890',
                 'country' => 'Kenya',
@@ -134,6 +142,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000004',
                 'date_of_birth' => '1995-11-03',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '31894004',
                 'passport_number' => 'A45678901',
                 'country' => 'Kenya',
@@ -164,6 +173,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000005',
                 'date_of_birth' => '1986-06-18',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '22356005',
                 'passport_number' => 'A56789012',
                 'country' => 'Kenya',
@@ -194,6 +204,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000006',
                 'date_of_birth' => '1997-01-26',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '32978006',
                 'passport_number' => 'A67890123',
                 'country' => 'Kenya',
@@ -224,6 +235,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000007',
                 'date_of_birth' => '1994-09-12',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '30245007',
                 'passport_number' => 'A78901234',
                 'country' => 'Kenya',
@@ -254,6 +266,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000008',
                 'date_of_birth' => '1991-03-29',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '27689008',
                 'passport_number' => 'A89012345',
                 'country' => 'Kenya',
@@ -284,6 +297,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000009',
                 'date_of_birth' => '1985-12-07',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '21876009',
                 'passport_number' => 'A90123456',
                 'country' => 'Kenya',
@@ -314,6 +328,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000010',
                 'date_of_birth' => '1993-07-14',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '29431010',
                 'passport_number' => 'B12345678',
                 'country' => 'Kenya',
@@ -344,6 +359,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000011',
                 'date_of_birth' => '1989-05-22',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '25892011',
                 'passport_number' => 'B23456789',
                 'country' => 'Kenya',
@@ -374,6 +390,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000012',
                 'date_of_birth' => '1996-10-30',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '32167012',
                 'passport_number' => 'B34567890',
                 'country' => 'Kenya',
@@ -404,6 +421,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000013',
                 'date_of_birth' => '1987-11-19',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '23654013',
                 'passport_number' => 'B45678901',
                 'country' => 'Kenya',
@@ -434,6 +452,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000014',
                 'date_of_birth' => '1998-02-17',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
                 'id_number' => '33542014',
                 'passport_number' => 'B56789012',
                 'country' => 'Kenya',
@@ -464,6 +483,7 @@ class TenantSeeder extends Seeder
                 'phone' => '+254711000015',
                 'date_of_birth' => '1984-08-05',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
                 'id_number' => '20578015',
                 'passport_number' => 'B67890123',
                 'country' => 'Kenya',
@@ -491,10 +511,10 @@ class TenantSeeder extends Seeder
         | Resolve Tenant Role
         |--------------------------------------------------------------------------
         |
-        | The tenant role must exist before assigning it to User accounts.
+        | The tenant role must exist before it can be assigned to User
+        | accounts.
         |
-        | firstOrCreate() makes the seeder safe to run on a fresh database
-        | even when the role has not yet been created by another seeder.
+        | firstOrCreate() keeps the seeder safe on a fresh database.
         |
         */
 
@@ -505,12 +525,13 @@ class TenantSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | Statistics
+        | Seeder Statistics
         |--------------------------------------------------------------------------
         */
 
         $createdUsers = 0;
         $updatedUsers = 0;
+
         $createdTenants = 0;
         $updatedTenants = 0;
 
@@ -521,12 +542,13 @@ class TenantSeeder extends Seeder
         */
 
         foreach ($tenants as $data) {
+
             /*
             |--------------------------------------------------------------------------
             | User Account Data
             |--------------------------------------------------------------------------
             |
-            | These are account-level fields and belong to the User model.
+            | These values belong to the User account.
             |
             */
 
@@ -545,10 +567,10 @@ class TenantSeeder extends Seeder
             | Find Existing User
             |--------------------------------------------------------------------------
             |
-            | Email is the stable account identifier.
+            | Email is used as the stable User account identifier.
             |
-            | withTrashed() allows a previously soft-deleted user account
-            | to be restored instead of creating a duplicate account.
+            | withTrashed() allows a previously soft-deleted User account
+            | to be restored rather than creating a duplicate account.
             |
             */
 
@@ -563,14 +585,25 @@ class TenantSeeder extends Seeder
             */
 
             if (!$user) {
+
                 $user = User::create([
                     ...$userData,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Default Password
+                    |--------------------------------------------------------------------------
+                    |
+                    | Only newly-created seeded users receive this password.
+                    |
+                    */
 
                     'password' => Hash::make('Password@123'),
 
                     /*
-                    | Pending tenant applications require approval.
-                    | All other seeded tenant accounts are approved.
+                    |--------------------------------------------------------------------------
+                    | Approval Status
+                    |--------------------------------------------------------------------------
                     */
 
                     'approval_status' => $data['status'] === Tenant::STATUS_PENDING
@@ -578,19 +611,30 @@ class TenantSeeder extends Seeder
                         : User::APPROVAL_APPROVED,
 
                     /*
-                    | Only ACTIVE tenant profiles receive an active
-                    | User account status.
+                    |--------------------------------------------------------------------------
+                    | Account Status
+                    |--------------------------------------------------------------------------
+                    |
+                    | User account status follows the seeded Tenant status.
+                    |
                     */
 
                     'account_status' => $data['status'] === Tenant::STATUS_ACTIVE
                         ? User::STATUS_ACTIVE
                         : User::STATUS_INACTIVE,
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | User Verification
+                    |--------------------------------------------------------------------------
+                    */
+
                     'is_verified' => (bool) $data['is_verified'],
                 ]);
 
                 $createdUsers++;
             } else {
+
                 /*
                 |--------------------------------------------------------------------------
                 | Restore Soft Deleted User
@@ -606,7 +650,7 @@ class TenantSeeder extends Seeder
                 | Update Existing User
                 |--------------------------------------------------------------------------
                 |
-                | Only account-level information is updated here.
+                | Existing passwords are intentionally not overwritten.
                 |
                 */
 
@@ -639,39 +683,50 @@ class TenantSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Prepare Tenant Profile Data
+            | Tenant Profile Data
             |--------------------------------------------------------------------------
             |
             | User remains the source of account-level identity information.
             |
-            | Tenant contains tenant-specific information such as:
+            | Tenant stores tenant-specific profile information including:
             |
             | - Tenant number
-            | - Identification documents
+            | - Nationality
+            | - Identification
+            | - Location
             | - Employment
             | - Emergency contacts
+            | - Documents
+            | - Verification
             | - Tenant status
-            | - Verification details
+            | - Notes
             |
             */
 
             $tenantData = [
                 /*
+                |--------------------------------------------------------------------------
                 | Tenant Identification
+                |--------------------------------------------------------------------------
                 */
 
                 'tenant_number' => $data['tenant_number'],
 
                 /*
+                |--------------------------------------------------------------------------
                 | User Relationship
+                |--------------------------------------------------------------------------
                 */
 
                 'user_id' => $user->id,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Personal Information
+                |--------------------------------------------------------------------------
                 |
-                | These values are synchronized from User.
+                | Identity fields are synchronized from the User account.
+                |
                 */
 
                 'first_name' => $user->first_name,
@@ -685,14 +740,32 @@ class TenantSeeder extends Seeder
                 'gender' => $user->gender,
 
                 /*
+                |--------------------------------------------------------------------------
+                | Nationality
+                |--------------------------------------------------------------------------
+                |
+                | Nationality belongs to the Tenant profile.
+                |
+                */
+
+                'nationality' => $data['nationality'] ?? 'Kenyan',
+
+                /*
+                |--------------------------------------------------------------------------
                 | Identification
+                |--------------------------------------------------------------------------
                 */
 
                 'id_number' => $data['id_number'] ?? null,
                 'passport_number' => $data['passport_number'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Location
+                |--------------------------------------------------------------------------
+                |
+                | country represents residential/location country.
+                |
                 */
 
                 'country' => $data['country'] ?? 'Kenya',
@@ -705,7 +778,9 @@ class TenantSeeder extends Seeder
                 'address' => $user->address,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Employment
+                |--------------------------------------------------------------------------
                 */
 
                 'occupation' => $data['occupation'] ?? null,
@@ -713,7 +788,9 @@ class TenantSeeder extends Seeder
                 'monthly_income' => $data['monthly_income'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Emergency Contact
+                |--------------------------------------------------------------------------
                 */
 
                 'emergency_contact_name' =>
@@ -726,9 +803,12 @@ class TenantSeeder extends Seeder
                     $data['emergency_contact_relationship'] ?? null,
 
                 /*
-                | Documents
+                |--------------------------------------------------------------------------
+                | Tenant Documents
+                |--------------------------------------------------------------------------
                 |
                 | Seeders do not upload actual files.
+                |
                 */
 
                 'photo' => null,
@@ -741,24 +821,31 @@ class TenantSeeder extends Seeder
                 'id_back_public_id' => null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Verification
+                |--------------------------------------------------------------------------
                 */
 
                 'is_verified' => (bool) $data['is_verified'],
                 'verified_at' => $data['verified_at'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Tenant Status
+                |--------------------------------------------------------------------------
                 |
-                | This is the single source of truth for tenant activity.
+                | This is the SINGLE source of truth for Tenant activity.
                 |
-                | DO NOT add or update tenants.is_active here.
+                | Do NOT add or update tenants.is_active.
+                |
                 */
 
                 'status' => $data['status'],
 
                 /*
+                |--------------------------------------------------------------------------
                 | Notes
+                |--------------------------------------------------------------------------
                 */
 
                 'notes' => $data['notes'] ?? null,
@@ -769,7 +856,7 @@ class TenantSeeder extends Seeder
             | Find Existing Tenant
             |--------------------------------------------------------------------------
             |
-            | tenant_number is the stable tenant profile identifier.
+            | tenant_number is the stable Tenant profile identifier.
             |
             */
 
@@ -784,6 +871,7 @@ class TenantSeeder extends Seeder
             */
 
             if ($tenant) {
+
                 /*
                 |--------------------------------------------------------------------------
                 | Restore Soft Deleted Tenant
@@ -798,6 +886,7 @@ class TenantSeeder extends Seeder
 
                 $updatedTenants++;
             } else {
+
                 Tenant::create($tenantData);
 
                 $createdTenants++;
@@ -849,7 +938,15 @@ class TenantSeeder extends Seeder
         );
 
         $this->command?->info(
-            'No tenants.is_active field is used by this seeder.'
+            'Tenant nationality is stored in tenants.nationality.'
+        );
+
+        $this->command?->info(
+            'Residential country is stored in tenants.country.'
+        );
+
+        $this->command?->info(
+            'There is no tenants.is_active database column.'
         );
     }
 }

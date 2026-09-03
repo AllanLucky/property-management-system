@@ -30,6 +30,7 @@ return new class extends Migration
             | Unique identifier assigned to every tenant profile.
             |
             | Examples:
+            |
             | TNT-000001
             | TNT-000002
             |
@@ -49,7 +50,7 @@ return new class extends Migration
             | One User can have only one Tenant profile.
             |
             | The User account is created and managed separately.
-            | The Tenant model only references the existing User.
+            | The Tenant profile only references the existing User.
             |
             | nullOnDelete() ensures that deleting a User does not delete
             | the Tenant profile.
@@ -86,6 +87,40 @@ return new class extends Migration
             $table->date('date_of_birth')
                 ->nullable();
 
+
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship or national
+            | identity.
+            |
+            | This is intentionally separate from the `country` field below,
+            | which represents the tenant's residential/location country.
+            |
+            | Examples:
+            |
+            | nationality = Kenyan
+            | country     = Kenya
+            |
+            */
+
+            $table->string('nationality', 100)
+                ->nullable()
+                ->index();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Gender
+            |--------------------------------------------------------------------------
+            |
+            | Stored as a string to allow the application to support additional
+            | gender values without requiring a database migration.
+            |
+            */
+
             $table->string('gender', 30)
                 ->nullable();
 
@@ -98,8 +133,8 @@ return new class extends Migration
             | At least one identification method can be enforced by
             | CreateTenantRequest / UpdateTenantRequest.
             |
-            | These are intentionally nullable because not every tenant
-            | profile must necessarily have both documents.
+            | These fields are nullable because a tenant does not necessarily
+            | need to have both identification documents.
             |
             */
 
@@ -114,22 +149,32 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Location Information
             |--------------------------------------------------------------------------
+            |
+            | `country` represents the tenant's residential/location country.
+            |
+            | It is intentionally separate from `nationality`.
+            |
             */
 
             $table->string('country', 100)
-                ->default('Kenya');
+                ->default('Kenya')
+                ->index();
 
             $table->string('region', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('county', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('city', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('area', 150)
-                ->nullable();
+                ->nullable()
+                ->index();
 
             $table->string('postal_code', 30)
                 ->nullable();
@@ -206,10 +251,10 @@ return new class extends Migration
             | Verification
             |--------------------------------------------------------------------------
             |
-            | is_verified and verified_at represent tenant profile
+            | `is_verified` and `verified_at` represent tenant profile
             | verification.
             |
-            | There is intentionally NO is_active column.
+            | There is intentionally NO `is_active` column.
             |
             */
 
@@ -235,7 +280,7 @@ return new class extends Migration
             | inactive
             | blacklisted
             |
-            | Do NOT add an is_active column here.
+            | Do NOT add an `is_active` column here.
             |
             */
 
@@ -268,7 +313,7 @@ return new class extends Migration
             | Soft Deletes
             |--------------------------------------------------------------------------
             |
-            | Tenant profiles are retained for historical/audit purposes.
+            | Tenant profiles are retained for historical and audit purposes.
             |
             */
 
@@ -317,42 +362,11 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Location Indexes
-            |--------------------------------------------------------------------------
-            */
-
-            $table->index(
-                'country',
-                'tenants_country_index'
-            );
-
-            $table->index(
-                'region',
-                'tenants_region_index'
-            );
-
-            $table->index(
-                'county',
-                'tenants_county_index'
-            );
-
-            $table->index(
-                'city',
-                'tenants_city_index'
-            );
-
-            $table->index(
-                'area',
-                'tenants_area_index'
-            );
-
-
-            /*
-            |--------------------------------------------------------------------------
             | Composite Indexes
             |--------------------------------------------------------------------------
             |
-            | These support common filtering combinations.
+            | These support common filtering combinations used by the
+            | TenantService.
             |
             */
 

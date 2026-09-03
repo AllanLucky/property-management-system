@@ -17,7 +17,6 @@ class CreateTenantRequest extends FormRequest
         return true;
     }
 
-
     /**
      * Get the validation rules that apply to the request.
      *
@@ -38,6 +37,8 @@ class CreateTenantRequest extends FormRequest
      *
      * Tenant owns:
      * - tenant_number
+     * - other_names
+     * - nationality
      * - date_of_birth
      * - gender
      * - identification
@@ -61,8 +62,8 @@ class CreateTenantRequest extends FormRequest
             | The selected user must:
             |
             | 1. Exist
-            | | 2. Have the "tenant" role
-            | | 3. Not already have a tenant profile
+            | 2. Have the "tenant" role
+            | 3. Not already have a tenant profile
             |
             */
 
@@ -72,7 +73,6 @@ class CreateTenantRequest extends FormRequest
                 'exists:users,id',
                 Rule::unique('tenants', 'user_id'),
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -91,7 +91,6 @@ class CreateTenantRequest extends FormRequest
                 'max:50',
                 'unique:tenants,tenant_number',
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -115,6 +114,27 @@ class CreateTenantRequest extends FormRequest
                 'max:150',
             ],
 
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship/national identity.
+            |
+            | This is intentionally separate from:
+            |
+            | country
+            |
+            | where country represents the tenant's residential/location country.
+            |
+            */
+
+            'nationality' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
             'date_of_birth' => [
                 'nullable',
                 'date',
@@ -129,7 +149,6 @@ class CreateTenantRequest extends FormRequest
                     'other',
                 ]),
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -154,11 +173,15 @@ class CreateTenantRequest extends FormRequest
                 'unique:tenants,passport_number',
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Address / Location
             |--------------------------------------------------------------------------
+            |
+            | country is the tenant's residential/location country.
+            |
+            | It is NOT the same as nationality.
+            |
             */
 
             'country' => [
@@ -203,7 +226,6 @@ class CreateTenantRequest extends FormRequest
                 'max:1000',
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Employment / Financial Information
@@ -229,7 +251,6 @@ class CreateTenantRequest extends FormRequest
                 'max:9999999999.99',
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Emergency Contact
@@ -254,7 +275,6 @@ class CreateTenantRequest extends FormRequest
                 'max:100',
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Tenant Photo
@@ -268,7 +288,6 @@ class CreateTenantRequest extends FormRequest
                 'mimes:jpg,jpeg,png,webp',
                 'max:5120',
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -292,7 +311,6 @@ class CreateTenantRequest extends FormRequest
                 'max:5120',
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Verification
@@ -313,7 +331,6 @@ class CreateTenantRequest extends FormRequest
                 'date',
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Tenant Status
@@ -330,7 +347,6 @@ class CreateTenantRequest extends FormRequest
                 Rule::in(Tenant::STATUSES),
             ],
 
-
             /*
             |--------------------------------------------------------------------------
             | Notes
@@ -344,7 +360,6 @@ class CreateTenantRequest extends FormRequest
             ],
         ];
     }
-
 
     /**
      * Get custom validation messages.
@@ -371,7 +386,6 @@ class CreateTenantRequest extends FormRequest
             'user_id.unique' =>
                 'This user already has a tenant profile.',
 
-
             /*
             |--------------------------------------------------------------------------
             | Tenant Number
@@ -383,7 +397,6 @@ class CreateTenantRequest extends FormRequest
 
             'tenant_number.max' =>
                 'Tenant number may not exceed 50 characters.',
-
 
             /*
             |--------------------------------------------------------------------------
@@ -397,6 +410,12 @@ class CreateTenantRequest extends FormRequest
             'other_names.max' =>
                 'Other names may not exceed 150 characters.',
 
+            'nationality.string' =>
+                'Nationality must be valid text.',
+
+            'nationality.max' =>
+                'Nationality may not exceed 100 characters.',
+
             'date_of_birth.date' =>
                 'Please provide a valid date of birth.',
 
@@ -405,7 +424,6 @@ class CreateTenantRequest extends FormRequest
 
             'gender.in' =>
                 'The selected gender is invalid.',
-
 
             /*
             |--------------------------------------------------------------------------
@@ -418,7 +436,6 @@ class CreateTenantRequest extends FormRequest
 
             'passport_number.unique' =>
                 'This passport number is already registered.',
-
 
             /*
             |--------------------------------------------------------------------------
@@ -447,7 +464,6 @@ class CreateTenantRequest extends FormRequest
             'address.string' =>
                 'Address must be valid text.',
 
-
             /*
             |--------------------------------------------------------------------------
             | Employment
@@ -466,7 +482,6 @@ class CreateTenantRequest extends FormRequest
             'monthly_income.min' =>
                 'Monthly income cannot be negative.',
 
-
             /*
             |--------------------------------------------------------------------------
             | Emergency Contact
@@ -481,7 +496,6 @@ class CreateTenantRequest extends FormRequest
 
             'emergency_contact_relationship.string' =>
                 'Emergency contact relationship must be valid text.',
-
 
             /*
             |--------------------------------------------------------------------------
@@ -525,7 +539,6 @@ class CreateTenantRequest extends FormRequest
             'id_back.max' =>
                 'The back ID document may not be larger than 5MB.',
 
-
             /*
             |--------------------------------------------------------------------------
             | Verification
@@ -538,7 +551,6 @@ class CreateTenantRequest extends FormRequest
             'verified_at.date' =>
                 'The verification date must be valid.',
 
-
             /*
             |--------------------------------------------------------------------------
             | Status
@@ -547,7 +559,6 @@ class CreateTenantRequest extends FormRequest
 
             'status.in' =>
                 'The selected tenant status is invalid.',
-
 
             /*
             |--------------------------------------------------------------------------
@@ -562,7 +573,6 @@ class CreateTenantRequest extends FormRequest
                 'Notes may not exceed 5000 characters.',
         ];
     }
-
 
     /**
      * Prepare request data before validation.
@@ -581,7 +591,6 @@ class CreateTenantRequest extends FormRequest
                 ? (int) $this->input('user_id')
                 : null,
 
-
             /*
             |--------------------------------------------------------------------------
             | Tenant Number
@@ -591,7 +600,6 @@ class CreateTenantRequest extends FormRequest
             'tenant_number' => $this->filled('tenant_number')
                 ? trim((string) $this->input('tenant_number'))
                 : null,
-
 
             /*
             |--------------------------------------------------------------------------
@@ -603,6 +611,20 @@ class CreateTenantRequest extends FormRequest
                 ? trim((string) $this->input('other_names'))
                 : null,
 
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Default nationality is Kenyan when no nationality is supplied.
+            |
+            | This is separate from the residential country field.
+            |
+            */
+
+            'nationality' => $this->filled('nationality')
+                ? trim((string) $this->input('nationality'))
+                : 'Kenyan',
 
             /*
             |--------------------------------------------------------------------------
@@ -617,7 +639,6 @@ class CreateTenantRequest extends FormRequest
             'passport_number' => $this->filled('passport_number')
                 ? strtoupper(trim((string) $this->input('passport_number')))
                 : null,
-
 
             /*
             |--------------------------------------------------------------------------
@@ -653,7 +674,6 @@ class CreateTenantRequest extends FormRequest
                 ? trim((string) $this->input('address'))
                 : null,
 
-
             /*
             |--------------------------------------------------------------------------
             | Employment
@@ -667,7 +687,6 @@ class CreateTenantRequest extends FormRequest
             'employer' => $this->filled('employer')
                 ? trim((string) $this->input('employer'))
                 : null,
-
 
             /*
             |--------------------------------------------------------------------------
@@ -690,7 +709,6 @@ class CreateTenantRequest extends FormRequest
                     ? trim((string) $this->input('emergency_contact_relationship'))
                     : null,
 
-
             /*
             |--------------------------------------------------------------------------
             | Notes
@@ -702,7 +720,6 @@ class CreateTenantRequest extends FormRequest
                 : null,
         ]);
     }
-
 
     /**
      * Configure the validator instance.
@@ -732,7 +749,6 @@ class CreateTenantRequest extends FormRequest
                     return;
                 }
 
-
                 /*
                 |--------------------------------------------------------------------------
                 | Tenant Role
@@ -746,7 +762,6 @@ class CreateTenantRequest extends FormRequest
                         'The selected user does not have the tenant role.'
                     );
                 }
-
 
                 /*
                 |--------------------------------------------------------------------------
@@ -770,7 +785,6 @@ class CreateTenantRequest extends FormRequest
                 }
             }
 
-
             /*
             |--------------------------------------------------------------------------
             | Identification Requirement
@@ -790,7 +804,6 @@ class CreateTenantRequest extends FormRequest
                     'Either a National ID number or Passport number is required.'
                 );
             }
-
 
             /*
             |--------------------------------------------------------------------------
