@@ -27,7 +27,12 @@ return new class extends Migration
             | Tenant Identification
             |--------------------------------------------------------------------------
             |
-            | Unique identifier assigned to every tenant.
+            | Unique identifier assigned to every tenant profile.
+            |
+            | Examples:
+            |
+            | TNT-000001
+            | TNT-000002
             |
             */
 
@@ -37,15 +42,18 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | User Account Relationship
+            | Linked User Account
             |--------------------------------------------------------------------------
             |
-            | The User account is the authentication/account source.
+            | A Tenant is a profile belonging to an existing User account.
             |
-            | One user can belong to only one tenant.
+            | One User can have only one Tenant profile.
             |
-            | The relationship uses nullOnDelete() so deleting a user does not
-            | automatically delete the tenant profile.
+            | The User account is created and managed separately.
+            | The Tenant profile only references the existing User.
+            |
+            | nullOnDelete() ensures that deleting a User does not delete
+            | the Tenant profile.
             |
             */
 
@@ -71,20 +79,50 @@ return new class extends Migration
                 ->nullable();
 
             $table->string('email', 150)
-                ->nullable()
-                ->index();
+                ->nullable();
 
             $table->string('phone', 30)
-                ->unique();
+                ->nullable();
 
             $table->date('date_of_birth')
                 ->nullable();
 
-            $table->enum('gender', [
-                'male',
-                'female',
-                'other',
-            ])->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship or national
+            | identity.
+            |
+            | This is intentionally separate from the `country` field below,
+            | which represents the tenant's residential/location country.
+            |
+            | Examples:
+            |
+            | nationality = Kenyan
+            | country     = Kenya
+            |
+            */
+
+            $table->string('nationality', 100)
+                ->nullable()
+                ->index();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Gender
+            |--------------------------------------------------------------------------
+            |
+            | Stored as a string to allow the application to support additional
+            | gender values without requiring a database migration.
+            |
+            */
+
+            $table->string('gender', 30)
+                ->nullable();
 
 
             /*
@@ -92,24 +130,30 @@ return new class extends Migration
             | Identification
             |--------------------------------------------------------------------------
             |
-            | At least one of id_number or passport_number is expected at the
-            | application validation level.
+            | At least one identification method can be enforced by
+            | CreateTenantRequest / UpdateTenantRequest.
+            |
+            | These fields are nullable because a tenant does not necessarily
+            | need to have both identification documents.
             |
             */
 
             $table->string('id_number', 100)
-                ->nullable()
-                ->unique();
+                ->nullable();
 
             $table->string('passport_number', 100)
-                ->nullable()
-                ->unique();
+                ->nullable();
 
 
             /*
             |--------------------------------------------------------------------------
             | Location Information
             |--------------------------------------------------------------------------
+            |
+            | `country` represents the tenant's residential/location country.
+            |
+            | It is intentionally separate from `nationality`.
+            |
             */
 
             $table->string('country', 100)
@@ -141,7 +185,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Employment Information
+            | Employment / Financial Information
             |--------------------------------------------------------------------------
             */
 
@@ -176,10 +220,10 @@ return new class extends Migration
             | Tenant Documents
             |--------------------------------------------------------------------------
             |
-            | File paths are stored here.
+            | File paths / URLs are stored here.
             |
-            | The *_public_id fields are retained in case cloud storage is used
-            | later.
+            | The *_public_id fields support cloud storage providers such
+            | as Cloudinary or similar services.
             |
             */
 
@@ -207,9 +251,10 @@ return new class extends Migration
             | Verification
             |--------------------------------------------------------------------------
             |
-            | is_verified + verified_at represent tenant profile verification.
+            | `is_verified` and `verified_at` represent tenant profile
+            | verification.
             |
-            | There is intentionally NO is_active column.
+            | There is intentionally NO `is_active` column.
             |
             */
 
@@ -226,25 +271,20 @@ return new class extends Migration
             | Tenant Status
             |--------------------------------------------------------------------------
             |
-            | IMPORTANT:
+            | Status is the SINGLE source of truth for tenant activity.
             |
-            | status is the SINGLE source of truth for tenant activity.
-            |
-            | Supported values:
+            | Supported statuses:
             |
             | pending
             | active
             | inactive
             | blacklisted
             |
+            | Do NOT add an `is_active` column here.
+            |
             */
 
-            $table->enum('status', [
-                'pending',
-                'active',
-                'inactive',
-                'blacklisted',
-            ])
+            $table->string('status', 30)
                 ->default('pending')
                 ->index();
 
@@ -272,6 +312,9 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Soft Deletes
             |--------------------------------------------------------------------------
+            |
+            | Tenant profiles are retained for historical and audit purposes.
+            |
             */
 
             $table->softDeletes();
@@ -279,10 +322,51 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | Search Indexes
+            |--------------------------------------------------------------------------
+            |
+            | These support common TenantService filtering and searching.
+            |
+            */
+
+            $table->index(
+                'first_name',
+                'tenants_first_name_index'
+            );
+
+            $table->index(
+                'last_name',
+                'tenants_last_name_index'
+            );
+
+            $table->index(
+                'email',
+                'tenants_email_index'
+            );
+
+            $table->index(
+                'phone',
+                'tenants_phone_index'
+            );
+
+            $table->index(
+                'id_number',
+                'tenants_id_number_index'
+            );
+
+            $table->index(
+                'passport_number',
+                'tenants_passport_number_index'
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
             | Composite Indexes
             |--------------------------------------------------------------------------
             |
-            | These support common TenantService filtering operations.
+            | These support common filtering combinations used by the
+            | TenantService.
             |
             */
 
@@ -296,7 +380,6 @@ return new class extends Migration
 
             $table->index(
                 [
-                    'region',
                     'county',
                     'city',
                     'area',
@@ -323,4 +406,3 @@ return new class extends Migration
         Schema::dropIfExists('tenants');
     }
 };
-

@@ -287,9 +287,8 @@ class TenantService
         | Name
         |--------------------------------------------------------------------------
         |
-        | Only populate name when the tenants table/model supports it.
-        | The current architecture primarily uses the user relationship,
-        | so name is not required for tenant creation.
+        | The User model remains the source of truth for identity.
+        | Do not store a duplicate tenant name field.
         |
         */
 
@@ -308,6 +307,8 @@ class TenantService
      * Get paginated tenants.
      *
      * User identity fields are searched through the users table.
+     *
+     * Tenant-specific fields are searched directly on tenants.
      */
     public function paginate(
         array $filters = []
@@ -352,6 +353,18 @@ class TenantService
                         )
                         ->orWhere(
                             'passport_number',
+                            'like',
+                            "%{$search}%"
+                        )
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Nationality
+                        |--------------------------------------------------------------------------
+                        */
+
+                        ->orWhere(
+                            'nationality',
                             'like',
                             "%{$search}%"
                         )
@@ -478,6 +491,10 @@ class TenantService
         |
         | There is NO is_active column on tenants.
         |
+        | Active state is derived from:
+        |
+        |     status = active
+        |
         */
 
         if (isset($filters['is_active'])) {
@@ -518,6 +535,22 @@ class TenantService
             $query->where(
                 'gender',
                 $filters['gender']
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Nationality
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['nationality']) &&
+            $filters['nationality'] !== ''
+        ) {
+            $query->where(
+                'nationality',
+                $filters['nationality']
             );
         }
 
@@ -649,6 +682,7 @@ class TenantService
             'id',
             'user_id',
             'tenant_number',
+            'nationality',
             'country',
             'region',
             'county',
@@ -827,6 +861,7 @@ class TenantService
      * - The selected user must have the tenant role.
      * - The selected user cannot already have a tenant profile.
      * - Identity fields are synchronized from the User.
+     * - Nationality belongs to the Tenant profile.
      */
     public function create(
         array $data,
@@ -884,17 +919,12 @@ class TenantService
                 | Synchronize Identity From User
                 |--------------------------------------------------------------------------
                 |
-                | IMPORTANT:
+                | User remains the source of truth for:
                 |
-                | The frontend may submit first_name, last_name, email,
-                | and phone, but these values must come from the selected
-                | User account.
-                |
-                | This also fixes the MySQL error:
-                |
-                | Field 'first_name' doesn't have a default value
-                |
-                | because first_name is populated before Tenant::create().
+                | - first_name
+                | - last_name
+                | - email
+                | - phone
                 |
                 */
 
@@ -930,6 +960,37 @@ class TenantService
                     $data['country']
                     ?? 'Kenya';
 
+                /*
+                |--------------------------------------------------------------------------
+                | Nationality
+                |--------------------------------------------------------------------------
+                |
+                | Nationality is a tenant profile field.
+                |
+                | This is intentionally separate from country:
+                |
+                | nationality = citizenship/national identity
+                | country    = residential/location country
+                |
+                */
+
+                if (
+                    !array_key_exists('nationality', $data) ||
+                    !filled($data['nationality'])
+                ) {
+                    $data['nationality'] = 'Kenyan';
+                } else {
+                    $data['nationality'] = trim(
+                        (string) $data['nationality']
+                    );
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Status
+                |--------------------------------------------------------------------------
+                */
+
                 $data['status'] =
                     $data['status']
                     ?? Tenant::STATUS_PENDING;
@@ -940,6 +1001,8 @@ class TenantService
                 |--------------------------------------------------------------------------
                 |
                 | There is no is_active column on tenants.
+                |
+                | Tenant activity is determined by status.
                 |
                 */
 
@@ -1035,6 +1098,8 @@ class TenantService
      *
      * Identity fields are synchronized from the linked User so the
      * required tenant columns remain populated.
+     *
+     * Nationality is editable because it belongs to the Tenant profile.
      */
     public function update(
         Tenant $tenant,
@@ -1106,8 +1171,30 @@ class TenantService
 
                 /*
                 |--------------------------------------------------------------------------
+                | Nationality
+                |--------------------------------------------------------------------------
+                |
+                | Nationality is tenant-specific and can be changed.
+                |
+                | Only normalize it when the field was included in the
+                | update request.
+                |
+                */
+
+                if (array_key_exists('nationality', $data)) {
+                    $data['nationality'] =
+                        filled($data['nationality'])
+                        ? trim((string) $data['nationality'])
+                        : null;
+                }
+
+                /*
+                |--------------------------------------------------------------------------
                 | Remove Unsupported Field
                 |--------------------------------------------------------------------------
+                |
+                | There is no physical is_active column on tenants.
+                |
                 */
 
                 unset(
@@ -1739,6 +1826,18 @@ class TenantService
 
                     /*
                     |--------------------------------------------------------------------------
+                    | Nationality
+                    |--------------------------------------------------------------------------
+                    */
+
+                    ->orWhere(
+                        'nationality',
+                        'like',
+                        "%{$search}%"
+                    )
+
+                    /*
+                    |--------------------------------------------------------------------------
                     | User identity
                     |--------------------------------------------------------------------------
                     */
@@ -2035,4 +2134,3 @@ class TenantService
             Tenant::STATUS_BLACKLISTED;
     }
 }
-

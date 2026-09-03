@@ -1,8 +1,11 @@
 import {
   ArrowLeft,
+  BadgeCheck,
   Building2,
   CalendarDays,
   CheckCircle2,
+  Clock3,
+  CreditCard,
   Edit3,
   ExternalLink,
   FileCheck2,
@@ -11,14 +14,11 @@ import {
   Loader2,
   MapPin,
   Phone,
+  Trash2,
   User,
   UserRound,
   Wallet,
   XCircle,
-  Trash2,
-  Clock3,
-  CreditCard,
-  BadgeCheck,
 } from "lucide-react";
 
 import {
@@ -76,7 +76,10 @@ const getErrorMessage = (error) => {
       return error.errors;
     }
 
-    if (typeof error.errors === "object") {
+    if (
+      typeof error.errors === "object" &&
+      !Array.isArray(error.errors)
+    ) {
       const messages = Object.values(error.errors)
         .flat()
         .filter(Boolean)
@@ -108,7 +111,10 @@ const getErrorMessage = (error) => {
         return data.errors;
       }
 
-      if (typeof data.errors === "object") {
+      if (
+        typeof data.errors === "object" &&
+        !Array.isArray(data.errors)
+      ) {
         const messages = Object.values(data.errors)
           .flat()
           .filter(Boolean)
@@ -199,8 +205,16 @@ const getFullName = (person) => {
     return "—";
   }
 
+  if (typeof person === "string") {
+    return person;
+  }
+
   if (person.full_name) {
-    return person.full_name;
+    return String(person.full_name);
+  }
+
+  if (person.fullName) {
+    return String(person.fullName);
   }
 
   const firstName =
@@ -215,7 +229,12 @@ const getFullName = (person) => {
 
   const name = `${firstName} ${lastName}`.trim();
 
-  return name || person.name || "—";
+  return (
+    name ||
+    person.name ||
+    person.label ||
+    "—"
+  );
 };
 
 const getInitials = (person) => {
@@ -235,8 +254,8 @@ const getInitials = (person) => {
       .toUpperCase();
   }
 
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`
-    .toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]
+    }`.toUpperCase();
 };
 
 const getObjectName = (value) => {
@@ -248,15 +267,99 @@ const getObjectName = (value) => {
     return value;
   }
 
+  if (typeof value !== "object") {
+    return String(value);
+  }
+
   return (
     value.name ||
     value.title ||
     value.label ||
     value.full_name ||
+    value.fullName ||
+    value.unit_name ||
     value.unit_number ||
+    value.apartment_name ||
     value.apartment_number ||
+    value.property_name ||
     ""
   );
+};
+
+const formatTypeLabel = (value) => {
+  if (!value) {
+    return "—";
+  }
+
+  if (typeof value !== "string") {
+    return getObjectName(value) || "—";
+  }
+
+  return value
+    .replace(/[_-]/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map(
+      (word) =>
+        word.charAt(0).toUpperCase() +
+        word.slice(1).toLowerCase()
+    )
+    .join(" ");
+};
+
+const getUnitTypeLabel = (unit) => {
+  if (!unit) {
+    return "—";
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | IMPORTANT
+  |--------------------------------------------------------------------------
+  | Backend TenancyResource now returns:
+  |
+  | type       => "office"
+  | unit_type  => "office"
+  | type_label => "Office"
+  |
+  | Always prioritize type_label.
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    unit.type_label !== null &&
+    unit.type_label !== undefined &&
+    String(unit.type_label).trim() !== ""
+  ) {
+    return String(unit.type_label);
+  }
+
+  if (
+    unit.unit_type !== null &&
+    unit.unit_type !== undefined &&
+    String(unit.unit_type).trim() !== ""
+  ) {
+    return formatTypeLabel(unit.unit_type);
+  }
+
+  if (
+    unit.type !== null &&
+    unit.type !== undefined &&
+    String(unit.type).trim() !== ""
+  ) {
+    return formatTypeLabel(unit.type);
+  }
+
+  if (
+    unit.type_name !== null &&
+    unit.type_name !== undefined &&
+    String(unit.type_name).trim() !== ""
+  ) {
+    return String(unit.type_name);
+  }
+
+  return "—";
 };
 
 const getTenancyStatus = (tenancy) => {
@@ -264,19 +367,25 @@ const getTenancyStatus = (tenancy) => {
     return "unknown";
   }
 
-  if (tenancy.status) {
+  if (
+    tenancy.status !== null &&
+    tenancy.status !== undefined &&
+    tenancy.status !== ""
+  ) {
     return String(tenancy.status).toLowerCase();
   }
 
-  if (tenancy.tenancy_status) {
+  if (
+    tenancy.tenancy_status !== null &&
+    tenancy.tenancy_status !== undefined &&
+    tenancy.tenancy_status !== ""
+  ) {
     return String(
       tenancy.tenancy_status
     ).toLowerCase();
   }
 
-  if (
-    tenancy.is_active !== undefined
-  ) {
+  if (tenancy.is_active !== undefined) {
     return normalizeBoolean(
       tenancy.is_active
     )
@@ -315,6 +424,14 @@ const getPaymentFrequencyLabel = (
   }
 
   return getStatusLabel(frequency);
+};
+
+const hasValue = (value) => {
+  return (
+    value !== null &&
+    value !== undefined &&
+    String(value).trim() !== ""
+  );
 };
 
 /*
@@ -458,7 +575,7 @@ const InfoItem = ({
 
         {children || (
           <p className="mt-1 break-words text-sm font-medium text-gray-900">
-            {value || "—"}
+            {hasValue(value) ? value : "—"}
           </p>
         )}
       </div>
@@ -666,6 +783,22 @@ const TenancyDetails = () => {
     [status]
   );
 
+  const isPending = useMemo(
+    () => status === "pending",
+    [status]
+  );
+
+  const isEndedStatus = useMemo(
+    () =>
+      [
+        "expired",
+        "terminated",
+        "cancelled",
+        "inactive",
+      ].includes(status),
+    [status]
+  );
+
   const tenant = useMemo(() => {
     if (!tenancy) {
       return null;
@@ -674,7 +807,20 @@ const TenancyDetails = () => {
     return (
       tenancy.tenant ||
       tenancy.tenant_details ||
+      null
+    );
+  }, [tenancy]);
+
+  const tenantUser = useMemo(() => {
+    if (!tenancy) {
+      return null;
+    }
+
+    return (
       tenancy.user ||
+      tenancy.tenant?.user ||
+      tenancy.tenant?.user_account ||
+      tenancy.user_account ||
       null
     );
   }, [tenancy]);
@@ -716,13 +862,21 @@ const TenancyDetails = () => {
   }, [tenancy]);
 
   const tenantName = useMemo(
-    () => getFullName(tenant),
-    [tenant]
+    () =>
+      getFullName(tenant) !== "—"
+        ? getFullName(tenant)
+        : getFullName(tenantUser),
+    [tenant, tenantUser]
   );
 
   const tenantInitials = useMemo(
-    () => getInitials(tenant),
-    [tenant]
+    () =>
+      getInitials(
+        getFullName(tenant) !== "—"
+          ? tenant
+          : tenantUser
+      ),
+    [tenant, tenantUser]
   );
 
   const propertyName = useMemo(
@@ -745,10 +899,55 @@ const TenancyDetails = () => {
   const unitName = useMemo(
     () =>
       getObjectName(unit) ||
-      tenancy?.unit_number ||
       tenancy?.unit_name ||
+      tenancy?.unit_number ||
       "—",
     [unit, tenancy]
+  );
+
+  const unitType = useMemo(
+    () => getUnitTypeLabel(unit),
+    [unit]
+  );
+
+  const tenancyIsActive = useMemo(
+    () =>
+      tenancy?.is_active !== undefined
+        ? normalizeBoolean(
+          tenancy.is_active
+        )
+        : isActive,
+    [tenancy, isActive]
+  );
+
+  const canToggleStatus = useMemo(() => {
+    return (
+      status === "active" ||
+      status === "pending"
+    );
+  }, [status]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | AGREEMENT
+  |--------------------------------------------------------------------------
+  */
+
+  const agreementFile = useMemo(
+    () =>
+      tenancy?.agreement_file ||
+      tenancy?.agreement_url ||
+      tenancy?.agreement?.url ||
+      null,
+    [tenancy]
+  );
+
+  const agreementPublicId = useMemo(
+    () =>
+      tenancy?.agreement_public_id ||
+      tenancy?.agreement?.public_id ||
+      null,
+    [tenancy]
   );
 
   /*
@@ -758,7 +957,11 @@ const TenancyDetails = () => {
   */
 
   const handleStatusChange = async () => {
-    if (!tenancy?.id || actionLoading) {
+    if (
+      !tenancy?.id ||
+      actionLoading ||
+      !canToggleStatus
+    ) {
       return;
     }
 
@@ -1088,23 +1291,6 @@ const TenancyDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | AGREEMENT
-  |--------------------------------------------------------------------------
-  */
-
-  const agreementFile =
-    tenancy.agreement_file ||
-    tenancy.agreement_url ||
-    tenancy.agreement?.url ||
-    null;
-
-  const agreementPublicId =
-    tenancy.agreement_public_id ||
-    tenancy.agreement?.public_id ||
-    null;
-
-  /*
-  |--------------------------------------------------------------------------
   | MAIN RENDER
   |--------------------------------------------------------------------------
   */
@@ -1143,6 +1329,10 @@ const TenancyDetails = () => {
             </h1>
 
             <StatusBadge status={status} />
+
+            {tenancyIsActive && (
+              <ActiveBadge active={tenancyIsActive} />
+            )}
           </div>
 
           <p className="mt-1 text-sm text-gray-500">
@@ -1181,43 +1371,45 @@ const TenancyDetails = () => {
             Edit
           </button>
 
-          <button
-            type="button"
-            onClick={handleStatusChange}
-            disabled={actionLoading}
-            className="
-              inline-flex
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              border
-              border-gray-300
-              bg-white
-              px-4
-              py-2.5
-              text-sm
-              font-medium
-              text-gray-700
-              shadow-sm
-              transition
-              hover:bg-gray-50
-              disabled:cursor-not-allowed
-              disabled:opacity-50
-            "
-          >
-            {actionLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isActive ? (
-              <XCircle className="h-4 w-4" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" />
-            )}
+          {canToggleStatus && (
+            <button
+              type="button"
+              onClick={handleStatusChange}
+              disabled={actionLoading}
+              className="
+                inline-flex
+                items-center
+                justify-center
+                gap-2
+                rounded-lg
+                border
+                border-gray-300
+                bg-white
+                px-4
+                py-2.5
+                text-sm
+                font-medium
+                text-gray-700
+                shadow-sm
+                transition
+                hover:bg-gray-50
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
+            >
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isActive ? (
+                <XCircle className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
 
-            {isActive
-              ? "Deactivate"
-              : "Activate"}
-          </button>
+              {isActive
+                ? "Deactivate"
+                : "Activate"}
+            </button>
+          )}
 
           <button
             type="button"
@@ -1353,10 +1545,7 @@ const TenancyDetails = () => {
 
                 <div className="mt-1">
                   <ActiveBadge
-                    active={
-                      tenancy.is_active ??
-                      isActive
-                    }
+                    active={tenancyIsActive}
                   />
                 </div>
               </div>
@@ -1403,7 +1592,18 @@ const TenancyDetails = () => {
             label="Phone"
             value={
               tenant?.phone ||
-              tenant?.phone_number
+              tenant?.phone_number ||
+              tenantUser?.phone ||
+              tenantUser?.phone_number
+            }
+          />
+
+          <InfoItem
+            icon={<User className="h-4 w-4" />}
+            label="Email"
+            value={
+              tenant?.email ||
+              tenantUser?.email
             }
           />
 
@@ -1420,6 +1620,12 @@ const TenancyDetails = () => {
               tenant?.date_of_birth ||
               tenant?.dob
             )}
+          />
+
+          <InfoItem
+            icon={<MapPin className="h-4 w-4" />}
+            label="Nationality"
+            value={tenant?.nationality}
           />
 
           <InfoItem
@@ -1485,7 +1691,7 @@ const TenancyDetails = () => {
             icon={<FileText className="h-4 w-4" />}
             label="Property ID"
             value={
-              tenancy.property_id ||
+              tenancy.property_id ??
               property?.id
             }
           />
@@ -1494,7 +1700,7 @@ const TenancyDetails = () => {
             icon={<FileText className="h-4 w-4" />}
             label="Apartment ID"
             value={
-              tenancy.apartment_id ||
+              tenancy.apartment_id ??
               apartment?.id
             }
           />
@@ -1503,7 +1709,7 @@ const TenancyDetails = () => {
             icon={<FileText className="h-4 w-4" />}
             label="Unit ID"
             value={
-              tenancy.unit_id ||
+              tenancy.unit_id ??
               unit?.id
             }
           />
@@ -1520,11 +1726,7 @@ const TenancyDetails = () => {
           <InfoItem
             icon={<Home className="h-4 w-4" />}
             label="Unit Type"
-            value={
-              getObjectName(unit?.type) ||
-              unit?.unit_type ||
-              unit?.type_name
-            }
+            value={unitType}
           />
 
           <InfoItem
@@ -1533,6 +1735,33 @@ const TenancyDetails = () => {
             value={formatCurrency(
               unit?.price
             )}
+          />
+
+          <InfoItem
+            icon={<Home className="h-4 w-4" />}
+            label="Bedrooms"
+            value={unit?.bedrooms}
+          />
+
+          <InfoItem
+            icon={<Home className="h-4 w-4" />}
+            label="Bathrooms"
+            value={unit?.bathrooms}
+          />
+
+          <InfoItem
+            icon={<Home className="h-4 w-4" />}
+            label="Floor"
+            value={unit?.floor}
+          />
+
+          <InfoItem
+            icon={<Home className="h-4 w-4" />}
+            label="Unit Status"
+            value={
+              unit?.status_label ||
+              formatTypeLabel(unit?.status)
+            }
           />
         </div>
       </DetailsSection>
@@ -1569,10 +1798,7 @@ const TenancyDetails = () => {
           >
             <div className="mt-1">
               <ActiveBadge
-                active={
-                  tenancy.is_active ??
-                  isActive
-                }
+                active={tenancyIsActive}
               />
             </div>
           </InfoItem>
@@ -1607,6 +1833,35 @@ const TenancyDetails = () => {
             value={formatDate(
               tenancy.move_out_date
             )}
+          />
+
+          <InfoItem
+            icon={<Clock3 className="h-4 w-4" />}
+            label="Expired"
+            value={
+              tenancy.is_expired !== undefined
+                ? normalizeBoolean(
+                  tenancy.is_expired
+                )
+                  ? "Yes"
+                  : "No"
+                : "—"
+            }
+          />
+
+          <InfoItem
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            label="Currently Active"
+            value={
+              tenancy.is_currently_active !==
+                undefined
+                ? normalizeBoolean(
+                  tenancy.is_currently_active
+                )
+                  ? "Yes"
+                  : "No"
+                : "—"
+            }
           />
         </div>
       </DetailsSection>
@@ -1667,7 +1922,9 @@ const TenancyDetails = () => {
             icon={<CalendarDays className="h-4 w-4" />}
             label="Payment Due Day"
             value={
-              tenancy.due_day
+              tenancy.due_day !== null &&
+                tenancy.due_day !== undefined &&
+                tenancy.due_day !== ""
                 ? `Day ${tenancy.due_day}`
                 : "—"
             }
@@ -1817,44 +2074,46 @@ const TenancyDetails = () => {
           </button>
 
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-            <button
-              type="button"
-              onClick={handleStatusChange}
-              disabled={actionLoading}
-              className="
-                inline-flex
-                w-full
-                items-center
-                justify-center
-                gap-2
-                rounded-lg
-                border
-                border-gray-300
-                bg-white
-                px-5
-                py-2.5
-                text-sm
-                font-semibold
-                text-gray-700
-                transition
-                hover:bg-gray-50
-                disabled:cursor-not-allowed
-                disabled:opacity-60
-                sm:w-auto
-              "
-            >
-              {actionLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : isActive ? (
-                <XCircle className="h-4 w-4" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4" />
-              )}
+            {canToggleStatus && (
+              <button
+                type="button"
+                onClick={handleStatusChange}
+                disabled={actionLoading}
+                className="
+                  inline-flex
+                  w-full
+                  items-center
+                  justify-center
+                  gap-2
+                  rounded-lg
+                  border
+                  border-gray-300
+                  bg-white
+                  px-5
+                  py-2.5
+                  text-sm
+                  font-semibold
+                  text-gray-700
+                  transition
+                  hover:bg-gray-50
+                  disabled:cursor-not-allowed
+                  disabled:opacity-60
+                  sm:w-auto
+                "
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : isActive ? (
+                  <XCircle className="h-4 w-4" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
 
-              {isActive
-                ? "Deactivate"
-                : "Activate"}
-            </button>
+                {isActive
+                  ? "Deactivate"
+                  : "Activate"}
+              </button>
+            )}
 
             <button
               type="button"
