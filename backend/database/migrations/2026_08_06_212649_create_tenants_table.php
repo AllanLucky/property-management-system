@@ -80,6 +80,27 @@ return new class extends Migration
             $table->date('date_of_birth')
                 ->nullable();
 
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship/national identity.
+            |
+            | This is intentionally separate from the `country` field below,
+            | which represents the tenant's physical/residential location.
+            |
+            | Example:
+            |
+            | nationality = Kenyan
+            | country     = Kenya
+            |
+            */
+
+            $table->string('nationality', 100)
+                ->nullable()
+                ->index();
+
             $table->enum('gender', [
                 'male',
                 'female',
@@ -110,6 +131,10 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Location Information
             |--------------------------------------------------------------------------
+            |
+            | `country` represents the tenant's residential/location country.
+            | It is intentionally separate from `nationality`.
+            |
             */
 
             $table->string('country', 100)
@@ -323,4 +348,3 @@ return new class extends Migration
         Schema::dropIfExists('tenants');
     }
 };
-

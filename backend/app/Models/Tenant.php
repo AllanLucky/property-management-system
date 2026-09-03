@@ -81,6 +81,7 @@ class Tenant extends Model
         'email',
         'phone',
         'date_of_birth',
+        'nationality',
         'gender',
 
         /*
@@ -92,6 +93,9 @@ class Tenant extends Model
 
         /*
         | Location
+        |
+        | `country` represents the tenant's residential/location country.
+        | It is intentionally separate from `nationality`.
         */
 
         'country',
@@ -143,6 +147,8 @@ class Tenant extends Model
         |
         | IMPORTANT:
         | There is NO is_active database column.
+        |
+        | Tenant activity is determined from `status`.
         */
 
         'status',

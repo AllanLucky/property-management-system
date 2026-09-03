@@ -33,6 +33,10 @@ class TenantSeeder extends Seeder
         |
         | There is NO is_active database column.
         |
+        | Nationality is tenant-profile information and is stored in:
+        |
+        |     tenants.nationality
+        |
         */
 
         $tenants = [
@@ -49,6 +53,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1992-04-15',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '28745001',
                 'passport_number' => 'A12345678',
@@ -89,6 +94,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1990-08-21',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '29167002',
                 'passport_number' => 'A23456789',
@@ -129,6 +135,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1988-02-10',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '24583003',
                 'passport_number' => 'A34567890',
@@ -169,6 +176,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1995-11-03',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '31894004',
                 'passport_number' => 'A45678901',
@@ -209,6 +217,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1986-06-18',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '22356005',
                 'passport_number' => 'A56789012',
@@ -249,6 +258,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1997-01-26',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '32978006',
                 'passport_number' => 'A67890123',
@@ -289,6 +299,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1994-09-12',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '30245007',
                 'passport_number' => 'A78901234',
@@ -329,6 +340,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1991-03-29',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '27689008',
                 'passport_number' => 'A89012345',
@@ -369,6 +381,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1985-12-07',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '21876009',
                 'passport_number' => 'A90123456',
@@ -409,6 +422,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1993-07-14',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '29431010',
                 'passport_number' => 'B12345678',
@@ -449,6 +463,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1989-05-22',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '25892011',
                 'passport_number' => 'B23456789',
@@ -489,6 +504,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1996-10-30',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '32167012',
                 'passport_number' => 'B34567890',
@@ -529,6 +545,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1987-11-19',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '23654013',
                 'passport_number' => 'B45678901',
@@ -569,6 +586,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1998-02-17',
                 'gender' => 'female',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '33542014',
                 'passport_number' => 'B56789012',
@@ -609,6 +627,7 @@ class TenantSeeder extends Seeder
 
                 'date_of_birth' => '1984-08-05',
                 'gender' => 'male',
+                'nationality' => 'Kenyan',
 
                 'id_number' => '20578015',
                 'passport_number' => 'B67890123',
@@ -799,26 +818,36 @@ class TenantSeeder extends Seeder
             | User-specific fields are copied from the User record so the
             | existing tenants table remains fully populated.
             |
+            | Nationality is tenant-specific information and is stored
+            | directly on the tenants table.
+            |
             */
 
             $tenantData = [
 
                 /*
+                |--------------------------------------------------------------------------
                 | Tenant Identification
+                |--------------------------------------------------------------------------
                 */
 
                 'tenant_number' => $data['tenant_number'],
 
                 /*
+                |--------------------------------------------------------------------------
                 | User Relationship
+                |--------------------------------------------------------------------------
                 */
 
                 'user_id' => $user->id,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Personal Information
+                |--------------------------------------------------------------------------
                 |
                 | These values come directly from User.
+                |
                 */
 
                 'first_name' => $user->first_name,
@@ -832,14 +861,29 @@ class TenantSeeder extends Seeder
                 'gender' => $user->gender,
 
                 /*
+                |--------------------------------------------------------------------------
+                | Nationality
+                |--------------------------------------------------------------------------
+                |
+                | Nationality belongs to the tenant profile.
+                |
+                */
+
+                'nationality' => $data['nationality'] ?? 'Kenyan',
+
+                /*
+                |--------------------------------------------------------------------------
                 | Identification
+                |--------------------------------------------------------------------------
                 */
 
                 'id_number' => $data['id_number'] ?? null,
                 'passport_number' => $data['passport_number'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Location
+                |--------------------------------------------------------------------------
                 */
 
                 'country' => $data['country'] ?? 'Kenya',
@@ -856,7 +900,9 @@ class TenantSeeder extends Seeder
                 'address' => $user->address,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Employment
+                |--------------------------------------------------------------------------
                 */
 
                 'occupation' => $data['occupation'] ?? null,
@@ -864,7 +910,9 @@ class TenantSeeder extends Seeder
                 'monthly_income' => $data['monthly_income'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Emergency Contact
+                |--------------------------------------------------------------------------
                 */
 
                 'emergency_contact_name' =>
@@ -877,9 +925,12 @@ class TenantSeeder extends Seeder
                     $data['emergency_contact_relationship'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Documents
+                |--------------------------------------------------------------------------
                 |
                 | Seeders do not upload files.
+                |
                 */
 
                 'photo' => null,
@@ -892,7 +943,9 @@ class TenantSeeder extends Seeder
                 'id_back_public_id' => null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Verification
+                |--------------------------------------------------------------------------
                 */
 
                 'is_verified' => (bool) $data['is_verified'],
@@ -900,15 +953,20 @@ class TenantSeeder extends Seeder
                 'verified_at' => $data['verified_at'] ?? null,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Tenant Status
+                |--------------------------------------------------------------------------
                 |
                 | This is the single source of truth for tenant activity.
+                |
                 */
 
                 'status' => $data['status'],
 
                 /*
+                |--------------------------------------------------------------------------
                 | Notes
+                |--------------------------------------------------------------------------
                 */
 
                 'notes' => $data['notes'] ?? null,
@@ -987,7 +1045,13 @@ class TenantSeeder extends Seeder
 
 
         $this->command?->info(
+            'Tenant nationality is stored in tenants.nationality.'
+        );
+
+
+        $this->command?->info(
             'There is no tenants.is_active database column.'
         );
     }
 }
+
