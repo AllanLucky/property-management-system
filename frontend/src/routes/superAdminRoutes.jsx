@@ -218,6 +218,18 @@ import {
 
 /*
 |--------------------------------------------------------------------------
+| LEASES
+|--------------------------------------------------------------------------
+*/
+import {
+  CreateLease,
+  EditLease,
+  LeaseDetails,
+  LeaseList,
+} from "../modules/super-admin/leases";
+
+/*
+|--------------------------------------------------------------------------
 | ROUTES
 |--------------------------------------------------------------------------
 */
@@ -953,6 +965,49 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="tenancies.view">
             <TenancyDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
+          LEASES
+      ================================================================== */}
+
+      {/* Lease List */}
+      <Route
+        path="leases"
+        element={
+          <PermissionGuard permission="leases.view">
+            <LeaseList />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Create Lease */}
+      <Route
+        path="leases/create"
+        element={
+          <PermissionGuard permission="leases.create">
+            <CreateLease />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="leases/:id"
+        element={
+          <PermissionGuard permission="leases.view">
+            <LeaseDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Edit Lease */}
+      <Route
+        path="leases/:id/edit"
+        element={
+          <PermissionGuard permission="leases.edit">
+            <EditLease />
           </PermissionGuard>
         }
       />
