@@ -20,9 +20,11 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'id' => $this->id,
+            'id' =>
+                $this->id,
 
-            'tenancy_number' => $this->tenancy_number,
+            'tenancy_number' =>
+                $this->tenancy_number,
 
             /*
             |--------------------------------------------------------------------------
@@ -30,13 +32,17 @@ class TenancyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'property_id' => $this->property_id,
+            'property_id' =>
+                $this->property_id,
 
-            'apartment_id' => $this->apartment_id,
+            'apartment_id' =>
+                $this->apartment_id,
 
-            'unit_id' => $this->unit_id,
+            'unit_id' =>
+                $this->unit_id,
 
-            'tenant_id' => $this->tenant_id,
+            'tenant_id' =>
+                $this->tenant_id,
 
             /*
             |--------------------------------------------------------------------------
@@ -52,31 +58,75 @@ class TenancyResource extends JsonResource
 
                 $tenant = $this->tenant;
 
+                $fullName = $tenant->full_name
+                    ?? trim(
+                        collect([
+                            $tenant->first_name,
+                            $tenant->last_name,
+                            $tenant->other_names,
+                        ])
+                            ->filter(
+                                fn ($value) =>
+                                    filled($value)
+                            )
+                            ->implode(' ')
+                    );
+
                 return [
 
-                    'id' => $tenant->id,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Identification
+                    |--------------------------------------------------------------------------
+                    */
 
-                    'tenant_number' => $tenant->tenant_number,
+                    'id' =>
+                        $tenant->id,
 
-                    'user_id' => $tenant->user_id,
+                    'tenant_number' =>
+                        $tenant->tenant_number,
 
-                    'first_name' => $tenant->first_name,
+                    'user_id' =>
+                        $tenant->user_id,
 
-                    'last_name' => $tenant->last_name,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Identity
+                    |--------------------------------------------------------------------------
+                    */
 
-                    'other_names' => $tenant->other_names,
+                    'first_name' =>
+                        $tenant->first_name,
 
-                    'email' => $tenant->email,
+                    'last_name' =>
+                        $tenant->last_name,
 
-                    'phone' => $tenant->phone,
+                    'other_names' =>
+                        $tenant->other_names,
 
-                    'date_of_birth' => $tenant->date_of_birth?->toISOString(),
+                    'full_name' =>
+                        $fullName,
 
-                    'gender' => $tenant->gender,
+                    'email' =>
+                        $tenant->email,
 
-                    'id_number' => $tenant->id_number,
+                    'phone' =>
+                        $tenant->phone,
 
-                    'passport_number' => $tenant->passport_number,
+                    'date_of_birth' =>
+                        $tenant->date_of_birth?->toISOString(),
+
+                    'gender' =>
+                        $tenant->gender,
+
+                    'nationality' =>
+                        $tenant->nationality ?? null,
+
+                    'id_number' =>
+                        $tenant->id_number,
+
+                    'passport_number' =>
+                        $tenant->passport_number,
 
                     /*
                     |--------------------------------------------------------------------------
@@ -94,6 +144,7 @@ class TenancyResource extends JsonResource
                         $tenant->emergency_contact_relationship,
 
                     'emergency_contact' => [
+
                         'name' =>
                             $tenant->emergency_contact_name,
 
@@ -110,15 +161,20 @@ class TenancyResource extends JsonResource
                     |--------------------------------------------------------------------------
                     */
 
-                    'country' => $tenant->country,
+                    'country' =>
+                        $tenant->country,
 
-                    'county' => $tenant->county,
+                    'county' =>
+                        $tenant->county,
 
-                    'city' => $tenant->city,
+                    'city' =>
+                        $tenant->city,
 
-                    'postal_code' => $tenant->postal_code,
+                    'postal_code' =>
+                        $tenant->postal_code,
 
-                    'address' => $tenant->address,
+                    'address' =>
+                        $tenant->address,
 
                     /*
                     |--------------------------------------------------------------------------
@@ -126,11 +182,14 @@ class TenancyResource extends JsonResource
                     |--------------------------------------------------------------------------
                     */
 
-                    'occupation' => $tenant->occupation,
+                    'occupation' =>
+                        $tenant->occupation,
 
-                    'employer' => $tenant->employer,
+                    'employer' =>
+                        $tenant->employer,
 
-                    'monthly_income' => $tenant->monthly_income,
+                    'monthly_income' =>
+                        $tenant->monthly_income,
 
                     /*
                     |--------------------------------------------------------------------------
@@ -138,16 +197,25 @@ class TenancyResource extends JsonResource
                     |--------------------------------------------------------------------------
                     */
 
-                    'photo' => $tenant->photo,
+                    'photo' =>
+                        $tenant->photo,
 
-                    'id_front' => $tenant->id_front,
+                    'id_front' =>
+                        $tenant->id_front,
 
-                    'id_back' => $tenant->id_back,
+                    'id_back' =>
+                        $tenant->id_back,
 
                     'documents' => [
-                        'photo' => $tenant->photo,
-                        'id_front' => $tenant->id_front,
-                        'id_back' => $tenant->id_back,
+
+                        'photo' =>
+                            $tenant->photo,
+
+                        'id_front' =>
+                            $tenant->id_front,
+
+                        'id_back' =>
+                            $tenant->id_back,
                     ],
 
                     /*
@@ -163,7 +231,7 @@ class TenancyResource extends JsonResource
                         $tenant->verified_at?->toISOString(),
 
                     'verification_status' =>
-                        $tenant->verification_status,
+                        $tenant->verification_status ?? null,
 
                     /*
                     |--------------------------------------------------------------------------
@@ -171,31 +239,53 @@ class TenancyResource extends JsonResource
                     |--------------------------------------------------------------------------
                     */
 
-                    'status' => $tenant->status,
+                    'status' =>
+                        $tenant->status,
 
                     'status_label' =>
-                        $tenant->status_label,
+                        $tenant->status_label ?? null,
 
                     'is_active' =>
                         (bool) $tenant->is_active,
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Full Name
+                    | Tenant Assignment
                     |--------------------------------------------------------------------------
                     */
 
-                    'full_name' =>
-                        $tenant->full_name
-                        ?? trim(
-                            collect([
-                                $tenant->first_name,
-                                $tenant->last_name,
-                                $tenant->other_names,
-                            ])
-                                ->filter()
-                                ->implode(' ')
-                        ),
+                    'has_tenancies' =>
+                        $tenant->relationLoaded('tenancies')
+                            ? $tenant->tenancies->isNotEmpty()
+                            : null,
+
+                    'active_tenancy_count' =>
+                        $tenant->relationLoaded('tenancies')
+                            ? $tenant->tenancies
+                                ->where('status', 'active')
+                                ->where('is_active', true)
+                                ->count()
+                            : null,
+
+                    'pending_tenancy_count' =>
+                        $tenant->relationLoaded('tenancies')
+                            ? $tenant->tenancies
+                                ->where('status', 'pending')
+                                ->where('is_active', true)
+                                ->count()
+                            : null,
+
+                    'has_blocking_tenancy' =>
+                        $tenant->relationLoaded('tenancies')
+                            ? $tenant->tenancies
+                                ->contains(function ($tenancy) {
+                                    return in_array(
+                                        $tenancy->status,
+                                        ['active', 'pending'],
+                                        true
+                                    ) && (bool) $tenancy->is_active;
+                                })
+                            : null,
 
                     /*
                     |--------------------------------------------------------------------------
@@ -203,7 +293,8 @@ class TenancyResource extends JsonResource
                     |--------------------------------------------------------------------------
                     */
 
-                    'notes' => $tenant->notes,
+                    'notes' =>
+                        $tenant->notes,
 
                     'created_at' =>
                         $tenant->created_at?->toISOString(),
@@ -231,28 +322,73 @@ class TenancyResource extends JsonResource
                         return null;
                     }
 
+                    $fullName = $user->full_name
+                        ?? trim(
+                            collect([
+                                $user->first_name,
+                                $user->last_name,
+                            ])
+                                ->filter(
+                                    fn ($value) =>
+                                        filled($value)
+                                )
+                                ->implode(' ')
+                        );
+
+                    $initials = $user->initials
+                        ?? strtoupper(
+                            collect([
+                                $user->first_name,
+                                $user->last_name,
+                            ])
+                                ->filter(
+                                    fn ($value) =>
+                                        filled($value)
+                                )
+                                ->map(
+                                    fn ($name) =>
+                                        mb_substr(
+                                            $name,
+                                            0,
+                                            1
+                                        )
+                                )
+                                ->implode('')
+                        );
+
                     return [
-
-                        'id' => $user->id,
-
-                        'first_name' => $user->first_name,
-
-                        'last_name' => $user->last_name,
-
-                        'slug' => $user->slug ?? null,
-
-                        'email' => $user->email,
-
-                        'phone' => $user->phone,
 
                         /*
                         |--------------------------------------------------------------------------
-                        | Authentication Fields
+                        | Identification
                         |--------------------------------------------------------------------------
-                        |
-                        | Sensitive authentication fields are intentionally
-                        | not exposed through the API resource.
-                        |
+                        */
+
+                        'id' =>
+                            $user->id,
+
+                        'first_name' =>
+                            $user->first_name,
+
+                        'last_name' =>
+                            $user->last_name,
+
+                        'full_name' =>
+                            $fullName,
+
+                        'slug' =>
+                            $user->slug ?? null,
+
+                        'email' =>
+                            $user->email,
+
+                        'phone' =>
+                            $user->phone,
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Verification
+                        |--------------------------------------------------------------------------
                         */
 
                         'email_verified_at' =>
@@ -260,9 +396,6 @@ class TenancyResource extends JsonResource
 
                         'is_verified' =>
                             (bool) ($user->is_verified ?? false),
-
-                        'otp_expires_at' =>
-                            $user->otp_expires_at?->toISOString(),
 
                         /*
                         |--------------------------------------------------------------------------
@@ -272,6 +405,9 @@ class TenancyResource extends JsonResource
 
                         'image' =>
                             $user->image ?? null,
+
+                        'image_url' =>
+                            $user->image_url ?? null,
 
                         'gender' =>
                             $user->gender ?? null,
@@ -300,6 +436,9 @@ class TenancyResource extends JsonResource
                         'approval_status' =>
                             $user->approval_status ?? null,
 
+                        'is_active' =>
+                            (bool) ($user->is_active ?? false),
+
                         'is_banner' =>
                             (bool) ($user->is_banner ?? false),
 
@@ -308,53 +447,12 @@ class TenancyResource extends JsonResource
 
                         /*
                         |--------------------------------------------------------------------------
-                        | Timestamps
-                        |--------------------------------------------------------------------------
-                        */
-
-                        'created_at' =>
-                            $user->created_at?->toISOString(),
-
-                        'updated_at' =>
-                            $user->updated_at?->toISOString(),
-
-                        /*
-                        |--------------------------------------------------------------------------
                         | Computed Information
                         |--------------------------------------------------------------------------
                         */
 
-                        'full_name' =>
-                            $user->full_name
-                            ?? trim(
-                                collect([
-                                    $user->first_name,
-                                    $user->last_name,
-                                ])
-                                    ->filter()
-                                    ->implode(' ')
-                            ),
-
-                        'image_url' =>
-                            $user->image_url ?? null,
-
                         'initials' =>
-                            $user->initials
-                            ?? strtoupper(
-                                collect([
-                                    $user->first_name,
-                                    $user->last_name,
-                                ])
-                                    ->filter()
-                                    ->map(
-                                        fn ($name) =>
-                                            mb_substr($name, 0, 1)
-                                    )
-                                    ->implode('')
-                            ),
-
-                        'is_active' =>
-                            (bool) ($user->is_active ?? false),
+                            $initials,
 
                         'is_verified_user' =>
                             (bool) ($user->is_verified_user ?? false),
@@ -372,10 +470,14 @@ class TenancyResource extends JsonResource
                             $user->relationLoaded('roles')
                                 ? $user->roles
                                     ->map(function ($role) {
-                                        return [
-                                            'id' => $role->id,
 
-                                            'name' => $role->name,
+                                        return [
+
+                                            'id' =>
+                                                $role->id,
+
+                                            'name' =>
+                                                $role->name,
 
                                             'guard_name' =>
                                                 $role->guard_name,
@@ -409,7 +511,9 @@ class TenancyResource extends JsonResource
                             $user->relationLoaded('permissions')
                                 ? $user->permissions
                                     ->map(function ($permission) {
+
                                         return [
+
                                             'id' =>
                                                 $permission->id,
 
@@ -431,6 +535,18 @@ class TenancyResource extends JsonResource
                                     ->values()
                                     ->toArray()
                                 : [],
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Timestamps
+                        |--------------------------------------------------------------------------
+                        */
+
+                        'created_at' =>
+                            $user->created_at?->toISOString(),
+
+                        'updated_at' =>
+                            $user->updated_at?->toISOString(),
                     ];
                 }
             ),
@@ -451,9 +567,17 @@ class TenancyResource extends JsonResource
 
                 return [
 
-                    'id' => $property->id,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Identification
+                    |--------------------------------------------------------------------------
+                    */
 
-                    'user_id' => $property->user_id,
+                    'id' =>
+                        $property->id,
+
+                    'user_id' =>
+                        $property->user_id,
 
                     'property_type_id' =>
                         $property->property_type_id,
@@ -492,6 +616,12 @@ class TenancyResource extends JsonResource
 
                     'property_number' =>
                         $property->property_number ?? null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Description / Listing
+                    |--------------------------------------------------------------------------
+                    */
 
                     'description' =>
                         $property->description,
@@ -705,6 +835,7 @@ class TenancyResource extends JsonResource
                         $property->relationLoaded('propertyType') &&
                         $property->propertyType
                             ? [
+
                                 'id' =>
                                     $property->propertyType->id,
 
@@ -755,6 +886,7 @@ class TenancyResource extends JsonResource
                         $property->relationLoaded('propertyCategory') &&
                         $property->propertyCategory
                             ? [
+
                                 'id' =>
                                     $property->propertyCategory->id,
 
@@ -844,7 +976,14 @@ class TenancyResource extends JsonResource
 
                 return [
 
-                    'id' => $apartment->id,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Identification
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'id' =>
+                        $apartment->id,
 
                     'property_id' =>
                         $apartment->property_id,
@@ -864,6 +1003,12 @@ class TenancyResource extends JsonResource
                     'apartment_number' =>
                         $apartment->apartment_number ?? null,
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Structure
+                    |--------------------------------------------------------------------------
+                    */
+
                     'total_floors' =>
                         $apartment->total_floors,
 
@@ -872,6 +1017,12 @@ class TenancyResource extends JsonResource
 
                     'status' =>
                         $apartment->status,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Features
+                    |--------------------------------------------------------------------------
+                    */
 
                     'has_elevator' =>
                         (bool) $apartment->has_elevator,
@@ -885,6 +1036,12 @@ class TenancyResource extends JsonResource
                     'has_parking' =>
                         (bool) $apartment->has_parking,
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Media
+                    |--------------------------------------------------------------------------
+                    */
+
                     'thumbnail' =>
                         $apartment->thumbnail,
 
@@ -894,6 +1051,12 @@ class TenancyResource extends JsonResource
                     'thumbnail_url' =>
                         $apartment->thumbnail_url ?? null,
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | SEO
+                    |--------------------------------------------------------------------------
+                    */
+
                     'meta_title' =>
                         $apartment->meta_title,
 
@@ -902,6 +1065,12 @@ class TenancyResource extends JsonResource
 
                     'meta_keywords' =>
                         $apartment->meta_keywords,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Statistics
+                    |--------------------------------------------------------------------------
+                    */
 
                     'units_count' =>
                         $apartment->units_count ?? 0,
@@ -940,6 +1109,7 @@ class TenancyResource extends JsonResource
                         $apartment->relationLoaded('property') &&
                         $apartment->property
                             ? [
+
                                 'id' =>
                                     $apartment->property->id,
 
@@ -978,6 +1148,12 @@ class TenancyResource extends JsonResource
                             ]
                             : null,
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Timestamps
+                    |--------------------------------------------------------------------------
+                    */
+
                     'deleted_at' =>
                         $apartment->deleted_at?->toISOString(),
 
@@ -1003,9 +1179,92 @@ class TenancyResource extends JsonResource
 
                 $unit = $this->unit;
 
+                /*
+                |--------------------------------------------------------------------------
+                | Unit Type
+                |--------------------------------------------------------------------------
+                |
+                | Database column:
+                |
+                | units.type
+                |
+                | Example:
+                |
+                | office
+                |
+                | API:
+                |
+                | type       => office
+                | unit_type  => office
+                | type_label => Office
+                |
+                */
+
+                $unitType = filled($unit->type)
+                    ? (string) $unit->type
+                    : null;
+
+                $unitTypeLabel = null;
+
+                if ($unitType !== null) {
+
+                    if (
+                        method_exists(
+                            $unit,
+                            'getTypeLabelAttribute'
+                        )
+                    ) {
+                        $unitTypeLabel = $unit->type_label;
+                    }
+
+                    if (blank($unitTypeLabel)) {
+                        $unitTypeLabel = ucwords(
+                            str_replace(
+                                ['_', '-'],
+                                ' ',
+                                $unitType
+                            )
+                        );
+                    }
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Unit Name
+                |--------------------------------------------------------------------------
+                */
+
+                $unitName =
+                    $unit->unit_name
+                    ?? $unit->name
+                    ?? $unit->unit_number
+                    ?? null;
+
+                /*
+                |--------------------------------------------------------------------------
+                | Current Active Tenancy
+                |--------------------------------------------------------------------------
+                */
+
+                $activeTenancy = null;
+
+                if (
+                    $unit->relationLoaded('activeTenancy') &&
+                    $unit->activeTenancy
+                ) {
+                    $activeTenancy = $unit->activeTenancy;
+                }
+
                 return [
 
-                    'id' => $unit->id,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Identification
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'id' =>
+                        $unit->id,
 
                     'property_id' =>
                         $unit->property_id,
@@ -1016,17 +1275,70 @@ class TenancyResource extends JsonResource
                     'unit_number' =>
                         $unit->unit_number,
 
+                    'unit_name' =>
+                        $unit->unit_name ?? null,
+
                     'name' =>
-                        $unit->name ?? null,
+                        $unitName,
+
+                    'full_unit_name' =>
+                        $unit->full_unit_name
+                        ?? $unitName,
 
                     'slug' =>
                         $unit->slug ?? null,
 
-                    'status' =>
-                        $unit->status,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Unit Type
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'type' =>
+                        $unitType,
+
+                    'unit_type' =>
+                        $unitType,
+
+                    'type_label' =>
+                        $unitTypeLabel,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Specifications
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'bedrooms' =>
+                        $unit->bedrooms,
+
+                    'bathrooms' =>
+                        $unit->bathrooms,
+
+                    'toilets' =>
+                        $unit->toilets,
+
+                    'floor' =>
+                        $unit->floor,
+
+                    'size' =>
+                        $unit->size,
+
+                    'size_unit' =>
+                        $unit->size_unit,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Financial
+                    |--------------------------------------------------------------------------
+                    */
 
                     'price' =>
                         $unit->price,
+
+                    'formatted_price' =>
+                        $unit->formatted_price
+                        ?? null,
 
                     'deposit' =>
                         $unit->deposit,
@@ -1034,29 +1346,160 @@ class TenancyResource extends JsonResource
                     'service_charge' =>
                         $unit->service_charge,
 
-                    'size' =>
-                        $unit->size,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Status
+                    |--------------------------------------------------------------------------
+                    */
 
-                    'size_unit' =>
-                        $unit->size_unit ?? null,
+                    'status' =>
+                        $unit->status,
 
                     'status_label' =>
-                        $unit->status_label ?? null,
+                        $unit->status_label
+                        ?? null,
+
+                    'status_badge' =>
+                        $unit->status_badge
+                        ?? null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Availability
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'is_available' =>
+                        isset($unit->is_available)
+                            ? (bool) $unit->is_available
+                            : null,
+
+                    'can_be_booked' =>
+                        isset($unit->can_be_booked)
+                            ? (bool) $unit->can_be_booked
+                            : null,
 
                     'is_vacant' =>
-                        isset($unit->is_vacant)
-                            ? (bool) $unit->is_vacant
-                            : null,
+                        $unit->status === 'vacant',
 
                     'is_occupied' =>
-                        isset($unit->is_occupied)
-                            ? (bool) $unit->is_occupied
-                            : null,
+                        $unit->status === 'occupied',
 
                     'is_reserved' =>
-                        isset($unit->is_reserved)
-                            ? (bool) $unit->is_reserved
+                        $unit->status === 'reserved',
+
+                    'is_maintenance' =>
+                        $unit->status === 'maintenance',
+
+                    'has_active_tenancy' =>
+                        isset($unit->has_active_tenancy)
+                            ? (bool) $unit->has_active_tenancy
                             : null,
+
+                    'has_active_booking' =>
+                        isset($unit->has_active_booking)
+                            ? (bool) $unit->has_active_booking
+                            : null,
+
+                    'has_active_maintenance' =>
+                        isset($unit->has_active_maintenance)
+                            ? (bool) $unit->has_active_maintenance
+                            : null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Current Tenancy
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'current_tenancy' =>
+                        $activeTenancy
+                            ? [
+
+                                'id' =>
+                                    $activeTenancy->id,
+
+                                'tenancy_number' =>
+                                    $activeTenancy->tenancy_number,
+
+                                'tenant_id' =>
+                                    $activeTenancy->tenant_id,
+
+                                'start_date' =>
+                                    $activeTenancy->start_date
+                                        ?->toISOString(),
+
+                                'end_date' =>
+                                    $activeTenancy->end_date
+                                        ?->toISOString(),
+
+                                'status' =>
+                                    $activeTenancy->status,
+
+                                'is_active' =>
+                                    (bool) $activeTenancy->is_active,
+                            ]
+                            : null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Features
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'has_balcony' =>
+                        (bool) $unit->has_balcony,
+
+                    'has_wifi' =>
+                        (bool) $unit->has_wifi,
+
+                    'has_furnished' =>
+                        (bool) $unit->has_furnished,
+
+                    'has_air_conditioning' =>
+                        (bool) $unit->has_air_conditioning,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Media
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'thumbnail' =>
+                        $unit->thumbnail,
+
+                    'thumbnail_url' =>
+                        $unit->thumbnail_url ?? null,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Availability Date
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'available_from' =>
+                        $unit->available_from?->toISOString(),
+
+                    'is_active' =>
+                        (bool) $unit->is_active,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Notes
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'notes' =>
+                        $unit->notes,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Timestamps
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'deleted_at' =>
+                        $unit->deleted_at?->toISOString(),
 
                     'created_at' =>
                         $unit->created_at?->toISOString(),
@@ -1143,6 +1586,54 @@ class TenancyResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
+            | Tenant Assignment State
+            |--------------------------------------------------------------------------
+            */
+
+            'blocks_tenant_assignment' =>
+                method_exists(
+                    $this->resource,
+                    'blocksTenantAssignment'
+                )
+                    ? (bool) $this->blocksTenantAssignment()
+                    : (
+                        in_array(
+                            $this->status,
+                            [
+                                'active',
+                                'pending',
+                            ],
+                            true
+                        )
+                        && (bool) $this->is_active
+                    ),
+
+            'tenant_assignment_status' =>
+                method_exists(
+                    $this->resource,
+                    'blocksTenantAssignment'
+                )
+                    ? (
+                        $this->blocksTenantAssignment()
+                            ? 'blocked'
+                            : 'available'
+                    )
+                    : (
+                        in_array(
+                            $this->status,
+                            [
+                                'active',
+                                'pending',
+                            ],
+                            true
+                        )
+                        && (bool) $this->is_active
+                            ? 'blocked'
+                            : 'available'
+                    ),
+
+            /*
+            |--------------------------------------------------------------------------
             | Agreement
             |--------------------------------------------------------------------------
             */
@@ -1154,6 +1645,7 @@ class TenancyResource extends JsonResource
                 $this->agreement_public_id ?? null,
 
             'agreement' => [
+
                 'file' =>
                     $this->agreement_file,
 
