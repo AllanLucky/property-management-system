@@ -502,20 +502,6 @@ Route::middleware('auth:sanctum')->group(function () {
     |--------------------------------------------------------------------------
     | TENANTS
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | GET /api/tenants
-    |     Returns tenant profiles.
-    |
-    | GET /api/tenants/users
-    |     Returns ALL existing users having the "tenant" role.
-    |
-    | GET /api/tenants/available-users
-    |     Returns tenant-role users who do not yet have a tenant profile.
-    |
-    | Static routes MUST appear before {tenant}.
-    |--------------------------------------------------------------------------
     */
 
     Route::prefix('tenants')
@@ -527,23 +513,7 @@ Route::middleware('auth:sanctum')->group(function () {
             | TENANT USERS
             |--------------------------------------------------------------------------
             |
-            | THIS IS THE ENDPOINT YOU ARE CURRENTLY TESTING:
-            |
-            | GET http://localhost:8000/api/tenants/users
-            |
-            | Expected response:
-            |
-            | [
-            |     {
-            |         "id": 4,
-            |         "first_name": "Allan",
-            |         "last_name": "Nonda",
-            |         "name": "Allan Nonda",
-            |         "email": "allantsory.dev@gmail.com",
-            |         "phone": "0792491361"
-            |     },
-            |     ...
-            | ]
+            | Returns users who have the tenant role.
             |
             */
 
@@ -555,10 +525,27 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
+            | ALL TENANT USERS
+            |--------------------------------------------------------------------------
+            |
+            | Returns all users with the tenant role, including users who
+            | already have a tenant profile.
+            |
+            */
+
+            Route::get(
+                'all-users',
+                [TenantController::class, 'allTenantUsers']
+            )->name('all-users');
+
+
+            /*
+            |--------------------------------------------------------------------------
             | AVAILABLE TENANT USERS
             |--------------------------------------------------------------------------
             |
-            | Only tenant-role users who do not already have a tenant profile.
+            | Returns tenant-role users who do not yet have a tenant profile.
+            | This is the endpoint used by Create Tenant.
             |
             */
 
@@ -590,6 +577,24 @@ Route::middleware('auth:sanctum')->group(function () {
                 'statistics',
                 [TenantController::class, 'statistics']
             )->name('statistics');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | TENANT REPORTS
+            |--------------------------------------------------------------------------
+            |
+            | Supports optional:
+            |
+            | ?start_date=2026-01-01
+            | &end_date=2026-09-05
+            |
+            */
+
+            Route::get(
+                'reports',
+                [TenantController::class, 'reports']
+            )->name('reports');
 
 
             /*
