@@ -40,6 +40,18 @@ import tenancyReducer from "./tenancySlice";
 
 /*
 |--------------------------------------------------------------------------
+| LEASES
+|--------------------------------------------------------------------------
+| Manages lease records and lease-related state.
+|
+| Redux state:
+| state.leases
+|--------------------------------------------------------------------------
+*/
+import leaseReducer from "./leaseSlice";
+
+/*
+|--------------------------------------------------------------------------
 | USER ACTIVITY
 |--------------------------------------------------------------------------
 */
@@ -121,6 +133,13 @@ export const store = configureStore({
 
     /*
     |--------------------------------------------------------------------------
+    | LEASES
+    |--------------------------------------------------------------------------
+    */
+    leases: leaseReducer,
+
+    /*
+    |--------------------------------------------------------------------------
     | USER ACTIVITY
     |--------------------------------------------------------------------------
     */
@@ -160,9 +179,14 @@ export const store = configureStore({
   | MIDDLEWARE
   |--------------------------------------------------------------------------
   | Redux Toolkit already includes:
+  |
   | - redux-thunk
   | - Serializable State Invariant Middleware
   | - Immutable State Invariant Middleware
+  |
+  | Serializable and immutable checks are disabled because the application
+  | may contain API response objects or other values that do not need to
+  | be checked on every Redux update.
   |--------------------------------------------------------------------------
   */
   middleware: (getDefaultMiddleware) =>
@@ -175,6 +199,8 @@ export const store = configureStore({
   /*
   |--------------------------------------------------------------------------
   | REDUX DEVTOOLS
+  |--------------------------------------------------------------------------
+  | Enable Redux DevTools during development and disable them in production.
   |--------------------------------------------------------------------------
   */
   devTools: import.meta.env.MODE !== "production",
