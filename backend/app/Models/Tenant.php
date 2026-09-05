@@ -54,6 +54,11 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     | Mass Assignable Fields
     |--------------------------------------------------------------------------
+    |
+    | `user_id` references an existing User account.
+    |
+    | Tenant creation does NOT create a User account.
+    |
     */
 
     protected $fillable = [
@@ -70,11 +75,6 @@ class Tenant extends Model
         |--------------------------------------------------------------------------
         | Existing User Account
         |--------------------------------------------------------------------------
-        |
-        | References users.id.
-        |
-        | The Tenant model does not create the User account.
-        |
         */
 
         'user_id',
@@ -83,8 +83,6 @@ class Tenant extends Model
         |--------------------------------------------------------------------------
         | Personal Information
         |--------------------------------------------------------------------------
-        |
-        | These fields belong to the tenant profile.
         |
         | first_name, last_name, email and phone are synchronized from
         | the linked User account by TenantService.
@@ -111,12 +109,12 @@ class Tenant extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | Location
+        | Residential / Location Information
         |--------------------------------------------------------------------------
         |
-        | `country` represents the tenant's residential/location country.
+        | `country` represents residential/location country.
         |
-        | It is intentionally separate from `nationality`.
+        | `nationality` represents citizenship/nationality.
         |
         */
 
@@ -181,7 +179,7 @@ class Tenant extends Model
         |
         | There is intentionally NO `is_active` database column.
         |
-        | Tenant activity is derived from the `status` field.
+        | Tenant activity is derived from `status`.
         |
         */
 
@@ -243,6 +241,8 @@ class Tenant extends Model
         'is_active',
         'account_state',
         'verification_status',
+        'active_tenancy_count',
+        'tenancy_count',
     ];
 
     /*
@@ -344,17 +344,13 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | User Relationship
+    | Relationships
     |--------------------------------------------------------------------------
-    |
-    | A tenant profile belongs to an existing User account.
-    |
-    | users.id
-    |     ↓
-    | tenants.user_id
-    |
     */
 
+    /**
+     * Tenant belongs to an existing User account.
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(
@@ -363,15 +359,9 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Tenancies Relationship
-    |--------------------------------------------------------------------------
-    |
-    | One tenant can have multiple historical tenancy records.
-    |
-    */
-
+    /**
+     * Tenant can have multiple historical tenancy records.
+     */
     public function tenancies(): HasMany
     {
         return $this->hasMany(
@@ -380,20 +370,12 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Active Tenancy
-    |--------------------------------------------------------------------------
-    |
-    | Returns the latest active tenancy.
-    |
-    | IMPORTANT:
-    |
-    | `is_active` here belongs to the Tenancy table.
-    | It is NOT a Tenant field.
-    |
-    */
-
+    /**
+     * Latest active tenancy.
+     *
+     * `is_active` here belongs to the Tenancy table.
+     * It is NOT a Tenant field.
+     */
     public function activeTenancy(): HasOne
     {
         return $this->hasOne(
@@ -411,12 +393,9 @@ class Tenant extends Model
             ->latestOfMany();
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Active Tenancies
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * All active tenancies.
+     */
     public function activeTenancies(): HasMany
     {
         return $this->hasMany(
@@ -433,15 +412,11 @@ class Tenant extends Model
             );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Pending Tenancies
-    |--------------------------------------------------------------------------
-    |
-    | Pending tenancies that are still active block another assignment.
-    |
-    */
-
+    /**
+     * Pending tenancies that are still active.
+     *
+     * These can block another tenancy assignment.
+     */
     public function pendingTenancies(): HasMany
     {
         return $this->hasMany(
@@ -458,16 +433,11 @@ class Tenant extends Model
             );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Tenant Units
-    |--------------------------------------------------------------------------
-    |
-    | Provides access to units historically or currently assigned through
-    | tenancy records.
-    |
-    */
-
+    /**
+     * Tenant units through tenancy records.
+     *
+     * Provides historical and current unit assignments.
+     */
     public function units(): HasManyThrough
     {
         return $this->hasManyThrough(
@@ -482,13 +452,13 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Full Name
+    | Computed Attributes
     |--------------------------------------------------------------------------
-    |
-    | Uses the tenant profile identity fields.
-    |
     */
 
+    /**
+     * Get tenant's full name.
+     */
     public function getFullNameAttribute(): string
     {
         return trim(
@@ -498,7 +468,7 @@ class Tenant extends Model
                 $this->last_name,
             ])
                 ->filter(
-                    fn ($value) =>
+                    static fn ($value): bool =>
                         $value !== null &&
                         trim((string) $value) !== ''
                 )
@@ -506,30 +476,22 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Computed Active Attribute
-    |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | `is_active` is NOT a database column.
-    |
-    | It is derived from the tenant status.
-    |
-    */
-
+    /**
+     * Determine whether tenant is active.
+     *
+     * IMPORTANT:
+     *
+     * This is a computed property.
+     * There is no `is_active` database column.
+     */
     public function getIsActiveAttribute(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Status Label
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Get human-readable tenant status.
+     */
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
@@ -557,12 +519,9 @@ class Tenant extends Model
         };
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Account State
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Get normalized account state.
+     */
     public function getAccountStateAttribute(): string
     {
         return match ($this->status) {
@@ -584,12 +543,9 @@ class Tenant extends Model
         };
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Verification Status
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Get verification status.
+     */
     public function getVerificationStatusAttribute(): string
     {
         return $this->is_verified
@@ -597,12 +553,80 @@ class Tenant extends Model
             : 'unverified';
     }
 
+    /**
+     * Get active tenancy count.
+     *
+     * Uses the loaded relationship where possible.
+     */
+    public function getActiveTenancyCountAttribute(): int
+    {
+        if ($this->relationLoaded('activeTenancies')) {
+            return $this->activeTenancies->count();
+        }
+
+        return $this->activeTenancies()->count();
+    }
+
+    /**
+     * Get total tenancy count.
+     *
+     * Uses the loaded relationship where possible.
+     */
+    public function getTenancyCountAttribute(): int
+    {
+        if ($this->relationLoaded('tenancies')) {
+            return $this->tenancies->count();
+        }
+
+        return $this->tenancies()->count();
+    }
+
+    /**
+     * Get the current active tenancy.
+     *
+     * Uses the loaded relationship where possible.
+     */
+    public function getCurrentTenancyAttribute()
+    {
+        if ($this->relationLoaded('activeTenancy')) {
+            return $this->getRelation('activeTenancy');
+        }
+
+        return $this->activeTenancy()->first();
+    }
+
+    /**
+     * Get report-friendly tenant status.
+     */
+    public function getReportStatusAttribute(): array
+    {
+        return [
+            'value' => $this->status,
+            'label' => $this->status_label,
+            'is_active' => $this->is_active,
+            'is_verified' => (bool) $this->is_verified,
+        ];
+    }
+
+    /**
+     * Get tenant occupancy/reporting state.
+     */
+    public function getTenancyStateAttribute(): string
+    {
+        return $this->hasActiveTenancy()
+            ? 'occupied'
+            : 'no_active_tenancy';
+    }
+
     /*
     |--------------------------------------------------------------------------
-    | Active Scope
+    | Status Scopes
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Scope active tenants.
+     */
     public function scopeActive(
         Builder $query
     ): Builder {
@@ -612,12 +636,9 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Inactive Scope
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Scope inactive tenants.
+     */
     public function scopeInactive(
         Builder $query
     ): Builder {
@@ -627,12 +648,9 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Pending Scope
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Scope pending tenants.
+     */
     public function scopePending(
         Builder $query
     ): Builder {
@@ -642,12 +660,9 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Blacklisted Scope
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Scope blacklisted tenants.
+     */
     public function scopeBlacklisted(
         Builder $query
     ): Builder {
@@ -657,42 +672,9 @@ class Tenant extends Model
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Verified Scope
-    |--------------------------------------------------------------------------
-    */
-
-    public function scopeVerified(
-        Builder $query
-    ): Builder {
-        return $query->where(
-            'is_verified',
-            true
-        );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Unverified Scope
-    |--------------------------------------------------------------------------
-    */
-
-    public function scopeUnverified(
-        Builder $query
-    ): Builder {
-        return $query->where(
-            'is_verified',
-            false
-        );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Status Scope
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Scope tenants by status.
+     */
     public function scopeStatus(
         Builder $query,
         string $status
@@ -705,22 +687,52 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | With User Scope
+    | Verification Scopes
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Scope verified tenants.
+     */
+    public function scopeVerified(
+        Builder $query
+    ): Builder {
+        return $query->where(
+            'is_verified',
+            true
+        );
+    }
+
+    /**
+     * Scope unverified tenants.
+     */
+    public function scopeUnverified(
+        Builder $query
+    ): Builder {
+        return $query->where(
+            'is_verified',
+            false
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | User Scopes
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Scope tenants linked to an existing User account.
+     */
     public function scopeWithUser(
         Builder $query
     ): Builder {
         return $query->whereNotNull('user_id');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Without User Scope
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Scope tenants without a linked User account.
+     */
     public function scopeWithoutUser(
         Builder $query
     ): Builder {
@@ -729,27 +741,77 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Available For New Tenancy
+    | Tenancy Reporting Scopes
     |--------------------------------------------------------------------------
-    |
-    | A tenant is available only when they do not have an active or pending
-    | tenancy that is still active.
-    |
     */
 
+    /**
+     * Scope tenants with an active tenancy.
+     *
+     * IMPORTANT:
+     *
+     * `is_active` belongs to the tenancies table.
+     */
+    public function scopeWithActiveTenancy(
+        Builder $query
+    ): Builder {
+        return $query->whereHas(
+            'tenancies',
+            function (Builder $tenancyQuery): void {
+                $tenancyQuery
+                    ->where(
+                        'status',
+                        Tenancy::STATUS_ACTIVE
+                    )
+                    ->where(
+                        'is_active',
+                        true
+                    );
+            }
+        );
+    }
+
+    /**
+     * Scope tenants without an active tenancy.
+     */
+    public function scopeWithoutActiveTenancy(
+        Builder $query
+    ): Builder {
+        return $query->whereDoesntHave(
+            'tenancies',
+            function (Builder $tenancyQuery): void {
+                $tenancyQuery
+                    ->where(
+                        'status',
+                        Tenancy::STATUS_ACTIVE
+                    )
+                    ->where(
+                        'is_active',
+                        true
+                    );
+            }
+        );
+    }
+
+    /**
+     * Scope tenants available for a new tenancy.
+     *
+     * Active and pending tenancies block assignment.
+     */
     public function scopeAvailableForTenancy(
         Builder $query
     ): Builder {
         return $query->whereDoesntHave(
             'tenancies',
-            function (Builder $q): void {
-                $q->whereIn(
-                    'status',
-                    [
-                        Tenancy::STATUS_ACTIVE,
-                        Tenancy::STATUS_PENDING,
-                    ]
-                )
+            function (Builder $tenancyQuery): void {
+                $tenancyQuery
+                    ->whereIn(
+                        'status',
+                        [
+                            Tenancy::STATUS_ACTIVE,
+                            Tenancy::STATUS_PENDING,
+                        ]
+                    )
                     ->where(
                         'is_active',
                         true
@@ -760,76 +822,141 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Active Check
+    | Registration Reporting Scopes
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Scope tenants created within a date range.
+     */
+    public function scopeCreatedBetween(
+        Builder $query,
+        $startDate,
+        $endDate
+    ): Builder {
+        return $query->whereBetween(
+            'created_at',
+            [
+                $startDate,
+                $endDate,
+            ]
+        );
+    }
+
+    /**
+     * Scope tenants created today.
+     */
+    public function scopeCreatedToday(
+        Builder $query
+    ): Builder {
+        return $query->whereDate(
+            'created_at',
+            today()
+        );
+    }
+
+    /**
+     * Scope tenants created this week.
+     */
+    public function scopeCreatedThisWeek(
+        Builder $query
+    ): Builder {
+        return $query->whereBetween(
+            'created_at',
+            [
+                now()->startOfWeek(),
+                now()->endOfWeek(),
+            ]
+        );
+    }
+
+    /**
+     * Scope tenants created this month.
+     */
+    public function scopeCreatedThisMonth(
+        Builder $query
+    ): Builder {
+        return $query->whereBetween(
+            'created_at',
+            [
+                now()->startOfMonth(),
+                now()->endOfMonth(),
+            ]
+        );
+    }
+
+    /**
+     * Scope tenants created this year.
+     */
+    public function scopeCreatedThisYear(
+        Builder $query
+    ): Builder {
+        return $query->whereBetween(
+            'created_at',
+            [
+                now()->startOfYear(),
+                now()->endOfYear(),
+            ]
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant State Checks
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Determine whether tenant is active.
+     */
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Inactive Check
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether tenant is inactive.
+     */
     public function isInactive(): bool
     {
         return $this->status === self::STATUS_INACTIVE;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Pending Check
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether tenant is pending.
+     */
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Blacklisted Check
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether tenant is blacklisted.
+     */
     public function isBlacklisted(): bool
     {
         return $this->status === self::STATUS_BLACKLISTED;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Verified Check
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether tenant is verified.
+     */
     public function isVerified(): bool
     {
         return (bool) $this->is_verified;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Has User
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether tenant has a linked User account.
+     */
     public function hasUser(): bool
     {
         return $this->user_id !== null;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Does Not Have User
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether tenant does not have a linked User account.
+     */
     public function doesNotHaveUser(): bool
     {
         return $this->user_id === null;
@@ -837,13 +964,15 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Activate
+    | Tenant State Actions
     |--------------------------------------------------------------------------
-    |
-    | A blacklisted tenant cannot be activated directly.
-    |
     */
 
+    /**
+     * Activate tenant.
+     *
+     * Blacklisted tenants cannot be activated directly.
+     */
     public function activate(): bool
     {
         if ($this->isBlacklisted()) {
@@ -855,12 +984,9 @@ class Tenant extends Model
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Deactivate
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Deactivate tenant.
+     */
     public function deactivate(): bool
     {
         return $this->update([
@@ -868,12 +994,9 @@ class Tenant extends Model
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Blacklist
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Blacklist tenant.
+     */
     public function blacklist(): bool
     {
         return $this->update([
@@ -881,12 +1004,9 @@ class Tenant extends Model
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Set Pending
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Set tenant to pending.
+     */
     public function setPending(): bool
     {
         return $this->update([
@@ -896,10 +1016,13 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Verify
+    | Verification Actions
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Verify tenant.
+     */
     public function verify(): bool
     {
         return $this->update([
@@ -908,18 +1031,95 @@ class Tenant extends Model
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Unverify
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Unverify tenant.
+     */
     public function unverify(): bool
     {
         return $this->update([
             'is_verified' => false,
             'verified_at' => null,
         ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenancy Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Determine whether tenant has an active tenancy.
+     */
+    public function hasActiveTenancy(): bool
+    {
+        if ($this->relationLoaded('activeTenancies')) {
+            return $this->activeTenancies->isNotEmpty();
+        }
+
+        return $this->activeTenancies()->exists();
+    }
+
+    /**
+     * Determine whether tenant has a pending tenancy.
+     */
+    public function hasPendingTenancy(): bool
+    {
+        if ($this->relationLoaded('pendingTenancies')) {
+            return $this->pendingTenancies->isNotEmpty();
+        }
+
+        return $this->pendingTenancies()->exists();
+    }
+
+    /**
+     * Determine whether tenant has any tenancy history.
+     */
+    public function hasTenancyHistory(): bool
+    {
+        if ($this->relationLoaded('tenancies')) {
+            return $this->tenancies->isNotEmpty();
+        }
+
+        return $this->tenancies()->exists();
+    }
+
+    /**
+     * Determine whether tenant has a blocking tenancy.
+     *
+     * Active and pending tenancies block a new assignment.
+     */
+    public function hasBlockingTenancy(): bool
+    {
+        return $this->tenancies()
+            ->whereIn(
+                'status',
+                [
+                    Tenancy::STATUS_ACTIVE,
+                    Tenancy::STATUS_PENDING,
+                ]
+            )
+            ->where(
+                'is_active',
+                true
+            )
+            ->exists();
+    }
+
+    /**
+     * Determine whether tenant is available for a new tenancy.
+     */
+    public function isAvailableForTenancy(): bool
+    {
+        return !$this->hasBlockingTenancy();
+    }
+
+    /**
+     * Return current active tenancy.
+     */
+    public function currentTenancy()
+    {
+        return $this->activeTenancy()->first();
     }
 
     /*
@@ -943,126 +1143,6 @@ class Tenant extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Has Active Tenancy
-    |--------------------------------------------------------------------------
-    */
-
-    public function hasActiveTenancy(): bool
-    {
-        return $this->activeTenancies()->exists();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Has Pending Tenancy
-    |--------------------------------------------------------------------------
-    */
-
-    public function hasPendingTenancy(): bool
-    {
-        return $this->pendingTenancies()->exists();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Has Blocking Tenancy
-    |--------------------------------------------------------------------------
-    |
-    | Active and pending tenancies block a new tenancy assignment.
-    |
-    */
-
-    public function hasBlockingTenancy(): bool
-    {
-        return $this->tenancies()
-            ->whereIn(
-                'status',
-                [
-                    Tenancy::STATUS_ACTIVE,
-                    Tenancy::STATUS_PENDING,
-                ]
-            )
-            ->where(
-                'is_active',
-                true
-            )
-            ->exists();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Is Available For New Tenancy
-    |--------------------------------------------------------------------------
-    */
-
-    public function isAvailableForTenancy(): bool
-    {
-        return !$this->hasBlockingTenancy();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Has Any Tenancy
-    |--------------------------------------------------------------------------
-    */
-
-    public function hasTenancy(): bool
-    {
-        return $this->tenancies()->exists();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Current Tenancy
-    |--------------------------------------------------------------------------
-    |
-    | Returns the loaded active tenancy when available.
-    |
-    | Otherwise, queries the latest active tenancy.
-    |
-    */
-
-    public function getCurrentTenancyAttribute()
-    {
-        if ($this->relationLoaded('activeTenancy')) {
-            return $this->getRelation('activeTenancy');
-        }
-
-        return $this->activeTenancy()->first();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Active Tenancy Count
-    |--------------------------------------------------------------------------
-    */
-
-    public function getActiveTenancyCountAttribute(): int
-    {
-        if ($this->relationLoaded('activeTenancies')) {
-            return $this->activeTenancies->count();
-        }
-
-        return $this->activeTenancies()->count();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Total Tenancy Count
-    |--------------------------------------------------------------------------
-    */
-
-    public function getTenancyCountAttribute(): int
-    {
-        if ($this->relationLoaded('tenancies')) {
-            return $this->tenancies->count();
-        }
-
-        return $this->tenancies()->count();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
     | Generate Tenant Number
     |--------------------------------------------------------------------------
     |
@@ -1073,8 +1153,7 @@ class Tenant extends Model
     | TNT-000001
     | TNT-000002
     |
-    | Soft-deleted tenants are included so their tenant numbers are never
-    | accidentally reused.
+    | Soft-deleted tenants are included so tenant numbers are not reused.
     |
     */
 
@@ -1108,6 +1187,9 @@ class Tenant extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Determine whether a status is supported.
+     */
     public static function isValidStatus(
         ?string $status
     ): bool {
