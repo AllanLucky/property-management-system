@@ -72,6 +72,41 @@ class Lease extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | Payment Frequencies
+    |--------------------------------------------------------------------------
+    */
+
+    public const FREQUENCY_DAILY = 'daily';
+
+    public const FREQUENCY_WEEKLY = 'weekly';
+
+    public const FREQUENCY_MONTHLY = 'monthly';
+
+    public const FREQUENCY_QUARTERLY = 'quarterly';
+
+    public const FREQUENCY_SEMI_ANNUALLY = 'semi_annually';
+
+    public const FREQUENCY_ANNUALLY = 'annually';
+
+    public const FREQUENCY_ONE_TIME = 'one_time';
+
+    /**
+     * All supported payment frequencies.
+     *
+     * @var array<int, string>
+     */
+    public const PAYMENT_FREQUENCIES = [
+        self::FREQUENCY_DAILY,
+        self::FREQUENCY_WEEKLY,
+        self::FREQUENCY_MONTHLY,
+        self::FREQUENCY_QUARTERLY,
+        self::FREQUENCY_SEMI_ANNUALLY,
+        self::FREQUENCY_ANNUALLY,
+        self::FREQUENCY_ONE_TIME,
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
     | Database Configuration
     |--------------------------------------------------------------------------
     */
@@ -79,10 +114,7 @@ class Lease extends Model
     protected $table = 'leases';
 
     /**
-     * Attributes that may be mass assigned.
-     *
-     * Relationships such as tenancy_id should only be assigned after
-     * validating the related tenancy through the service/request layer.
+     * Mass assignable attributes.
      *
      * @var array<int, string>
      */
@@ -92,13 +124,15 @@ class Lease extends Model
         | Identification
         |--------------------------------------------------------------------------
         */
+
         'lease_number',
 
         /*
         |--------------------------------------------------------------------------
-        | Tenancy Relationship
+        | Tenancy
         |--------------------------------------------------------------------------
         */
+
         'tenancy_id',
 
         /*
@@ -106,13 +140,16 @@ class Lease extends Model
         | Lease Terms
         |--------------------------------------------------------------------------
         */
+
         'lease_type',
         'start_date',
         'end_date',
+
         'rent_amount',
         'deposit_amount',
         'service_charge',
         'late_fee',
+
         'payment_frequency',
         'due_day',
         'notice_period_days',
@@ -122,13 +159,15 @@ class Lease extends Model
         | Status
         |--------------------------------------------------------------------------
         */
+
         'status',
 
         /*
         |--------------------------------------------------------------------------
-        | Signing & Termination
+        | Signing / Termination
         |--------------------------------------------------------------------------
         */
+
         'signed_at',
         'terminated_at',
         'termination_reason',
@@ -138,6 +177,7 @@ class Lease extends Model
         | Documents
         |--------------------------------------------------------------------------
         */
+
         'document_path',
 
         /*
@@ -145,6 +185,7 @@ class Lease extends Model
         | Notes
         |--------------------------------------------------------------------------
         */
+
         'notes',
     ];
 
@@ -170,7 +211,7 @@ class Lease extends Model
     ];
 
     /**
-     * Computed attributes included in serialized responses.
+     * Computed attributes included in API serialization.
      *
      * @var array<int, string>
      */
@@ -180,6 +221,11 @@ class Lease extends Model
         'is_active',
         'is_expired',
         'is_terminated',
+        'is_cancelled',
+        'days_remaining',
+        'expiry_status',
+        'has_ended',
+        'should_expire',
     ];
 
     /*
@@ -199,16 +245,28 @@ class Lease extends Model
         */
 
         static::creating(function (Lease $lease): void {
-            if (empty($lease->lease_number)) {
+            if (blank($lease->lease_number)) {
                 $lease->lease_number = self::generateLeaseNumber();
             }
 
-            if (empty($lease->status)) {
+            if (blank($lease->status)) {
                 $lease->status = self::STATUS_DRAFT;
             }
 
-            if (empty($lease->lease_type)) {
+            if (blank($lease->lease_type)) {
                 $lease->lease_type = self::TYPE_FIXED_TERM;
+            }
+
+            if (blank($lease->payment_frequency)) {
+                $lease->payment_frequency = self::FREQUENCY_MONTHLY;
+            }
+
+            if ($lease->service_charge === null) {
+                $lease->service_charge = 0;
+            }
+
+            if ($lease->late_fee === null) {
+                $lease->late_fee = 0;
             }
         });
 
@@ -228,15 +286,14 @@ class Lease extends Model
             if (
                 $lease->isDirty('status') &&
                 $lease->status === self::STATUS_TERMINATED &&
-                empty($lease->terminated_at)
+                blank($lease->terminated_at)
             ) {
                 $lease->terminated_at = now();
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Clear termination timestamp when the lease is moved away
-            | from the terminated state.
+            | Clear termination timestamp when leaving terminated state.
             |--------------------------------------------------------------------------
             */
 
@@ -257,9 +314,6 @@ class Lease extends Model
 
     /**
      * Get the tenancy associated with the lease.
-     *
-     * Tenant, property, apartment and unit information should be resolved
-     * through the tenancy relationship rather than duplicated on leases.
      */
     public function tenancy(): BelongsTo
     {
@@ -273,7 +327,7 @@ class Lease extends Model
     */
 
     /**
-     * Get the tenant associated with this lease through the tenancy.
+     * Get the tenant associated with this lease through tenancy.
      */
     public function getTenantAttribute(): ?Tenant
     {
@@ -281,7 +335,7 @@ class Lease extends Model
     }
 
     /**
-     * Get the property associated with this lease through the tenancy.
+     * Get the property associated with this lease through tenancy.
      */
     public function getPropertyAttribute(): ?Property
     {
@@ -289,7 +343,7 @@ class Lease extends Model
     }
 
     /**
-     * Get the apartment associated with this lease through the tenancy.
+     * Get the apartment associated with this lease through tenancy.
      */
     public function getApartmentAttribute(): ?Apartment
     {
@@ -297,7 +351,7 @@ class Lease extends Model
     }
 
     /**
-     * Get the unit associated with this lease through the tenancy.
+     * Get the unit associated with this lease through tenancy.
      */
     public function getUnitAttribute(): ?Unit
     {
@@ -311,7 +365,7 @@ class Lease extends Model
     */
 
     /**
-     * Get the human-readable lease status.
+     * Human-readable lease status.
      */
     public function getStatusLabelAttribute(): string
     {
@@ -322,12 +376,14 @@ class Lease extends Model
             self::STATUS_EXPIRED => 'Expired',
             self::STATUS_TERMINATED => 'Terminated',
             self::STATUS_CANCELLED => 'Cancelled',
-            default => ucfirst((string) $this->status),
+            default => ucfirst(
+                str_replace('_', ' ', (string) $this->status)
+            ),
         };
     }
 
     /**
-     * Get the human-readable lease type.
+     * Human-readable lease type.
      */
     public function getLeaseTypeLabelAttribute(): string
     {
@@ -343,43 +399,158 @@ class Lease extends Model
     }
 
     /**
-     * Determine whether the lease is active.
+     * Human-readable payment frequency.
+     */
+    public function getPaymentFrequencyLabelAttribute(): string
+    {
+        return match ($this->payment_frequency) {
+            self::FREQUENCY_DAILY => 'Daily',
+            self::FREQUENCY_WEEKLY => 'Weekly',
+            self::FREQUENCY_MONTHLY => 'Monthly',
+            self::FREQUENCY_QUARTERLY => 'Quarterly',
+            self::FREQUENCY_SEMI_ANNUALLY => 'Semi Annually',
+            self::FREQUENCY_ANNUALLY => 'Annually',
+            self::FREQUENCY_ONE_TIME => 'One Time',
+            default => ucfirst(
+                str_replace('_', ' ', (string) $this->payment_frequency)
+            ),
+        };
+    }
+
+    /**
+     * Determine whether the lease status is active.
+     *
+     * This reflects the persisted database status.
      */
     public function getIsActiveAttribute(): bool
     {
-        return $this->status === self::STATUS_ACTIVE;
+        return $this->isActive();
     }
 
     /**
-     * Determine whether the lease has expired.
+     * Determine whether the lease has been persisted as expired.
      *
-     * A terminated or cancelled lease is not considered expired simply
-     * because its end date is in the past.
+     * Important:
+     * This deliberately checks the database status rather than the
+     * contractual end date. Date-based expiration detection is exposed
+     * separately through hasEnded() and shouldExpire().
      */
     public function getIsExpiredAttribute(): bool
     {
-        if ($this->status === self::STATUS_EXPIRED) {
-            return true;
-        }
-
-        return $this->end_date !== null &&
-            $this->end_date->isPast() &&
-            !in_array(
-                $this->status,
-                [
-                    self::STATUS_TERMINATED,
-                    self::STATUS_CANCELLED,
-                ],
-                true
-            );
+        return $this->isExpired();
     }
 
     /**
-     * Determine whether the lease has been terminated.
+     * Determine whether the lease is terminated.
      */
     public function getIsTerminatedAttribute(): bool
     {
-        return $this->status === self::STATUS_TERMINATED;
+        return $this->isTerminated();
+    }
+
+    /**
+     * Determine whether the lease is cancelled.
+     */
+    public function getIsCancelledAttribute(): bool
+    {
+        return $this->isCancelled();
+    }
+
+    /**
+     * Number of days remaining until contractual expiry.
+     *
+     * Positive value:
+     * Lease expires in the future.
+     *
+     * Zero:
+     * Lease expires today.
+     *
+     * Negative value:
+     * Contractual end date has passed.
+     *
+     * Null:
+     * Lease has no end date.
+     */
+    public function getDaysRemainingAttribute(): ?int
+    {
+        if ($this->end_date === null) {
+            return null;
+        }
+
+        return today()->diffInDays(
+            $this->end_date,
+            false
+        );
+    }
+
+    /**
+     * Human-readable expiry state.
+     */
+    public function getExpiryStatusAttribute(): string
+    {
+        if ($this->isTerminated()) {
+            return 'terminated';
+        }
+
+        if ($this->isCancelled()) {
+            return 'cancelled';
+        }
+
+        if ($this->isExpired()) {
+            return 'expired';
+        }
+
+        if ($this->end_date === null) {
+            return 'no_expiry';
+        }
+
+        if ($this->end_date->lt(today())) {
+            return 'ended_pending_expiration';
+        }
+
+        if ($this->end_date->isToday()) {
+            return 'expires_today';
+        }
+
+        $days = $this->days_remaining;
+
+        if ($days === null) {
+            return 'no_expiry';
+        }
+
+        if ($days <= 7) {
+            return 'expires_within_7_days';
+        }
+
+        if ($days <= 30) {
+            return 'expires_within_30_days';
+        }
+
+        if ($days <= 60) {
+            return 'expires_within_60_days';
+        }
+
+        if ($days <= 90) {
+            return 'expires_within_90_days';
+        }
+
+        return 'future';
+    }
+
+    /**
+     * Determine whether the contractual end date has passed.
+     */
+    public function getHasEndedAttribute(): bool
+    {
+        return $this->hasEnded();
+    }
+
+    /**
+     * Determine whether the lease should automatically become expired.
+     */
+    public function getShouldExpireAttribute(): bool
+    {
+        return $this->shouldExpire();
     }
 
     /*
@@ -393,7 +564,10 @@ class Lease extends Model
      */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_ACTIVE);
+        return $query->where(
+            'status',
+            self::STATUS_ACTIVE
+        );
     }
 
     /**
@@ -401,7 +575,10 @@ class Lease extends Model
      */
     public function scopeDraft(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_DRAFT);
+        return $query->where(
+            'status',
+            self::STATUS_DRAFT
+        );
     }
 
     /**
@@ -409,15 +586,23 @@ class Lease extends Model
      */
     public function scopePending(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_PENDING);
+        return $query->where(
+            'status',
+            self::STATUS_PENDING
+        );
     }
 
     /**
      * Scope expired leases.
+     *
+     * Uses persisted status only.
      */
     public function scopeExpired(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_EXPIRED);
+        return $query->where(
+            'status',
+            self::STATUS_EXPIRED
+        );
     }
 
     /**
@@ -425,7 +610,10 @@ class Lease extends Model
      */
     public function scopeTerminated(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_TERMINATED);
+        return $query->where(
+            'status',
+            self::STATUS_TERMINATED
+        );
     }
 
     /**
@@ -433,31 +621,54 @@ class Lease extends Model
      */
     public function scopeCancelled(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_CANCELLED);
+        return $query->where(
+            'status',
+            self::STATUS_CANCELLED
+        );
     }
 
     /**
-     * Scope leases by status.
+     * Scope leases whose contractual end date has passed.
+     *
+     * This is date-based detection and does not require status=expired.
      */
-    public function scopeStatus(
-        Builder $query,
-        string $status
-    ): Builder {
-        return $query->where('status', $status);
+    public function scopeEnded(Builder $query): Builder
+    {
+        return $query
+            ->whereNotNull('end_date')
+            ->whereDate(
+                'end_date',
+                '<',
+                today()
+            )
+            ->whereNotIn('status', [
+                self::STATUS_TERMINATED,
+                self::STATUS_CANCELLED,
+            ]);
     }
 
     /**
-     * Scope leases belonging to a specific tenancy.
+     * Scope leases that should automatically become expired.
+     *
+     * Only active leases are eligible for automatic expiration.
      */
-    public function scopeForTenancy(
-        Builder $query,
-        int $tenancyId
-    ): Builder {
-        return $query->where('tenancy_id', $tenancyId);
+    public function scopeShouldExpire(Builder $query): Builder
+    {
+        return $query
+            ->where(
+                'status',
+                self::STATUS_ACTIVE
+            )
+            ->whereNotNull('end_date')
+            ->whereDate(
+                'end_date',
+                '<',
+                today()
+            );
     }
 
     /**
-     * Scope leases expiring within a specific date range.
+     * Scope leases expiring within a date range.
      */
     public function scopeExpiringBetween(
         Builder $query,
@@ -466,7 +677,18 @@ class Lease extends Model
     ): Builder {
         return $query
             ->whereNotNull('end_date')
-            ->whereBetween('end_date', [$startDate, $endDate]);
+            ->whereBetween(
+                'end_date',
+                [
+                    $startDate,
+                    $endDate,
+                ]
+            )
+            ->whereNotIn('status', [
+                self::STATUS_EXPIRED,
+                self::STATUS_TERMINATED,
+                self::STATUS_CANCELLED,
+            ]);
     }
 
     /**
@@ -476,7 +698,11 @@ class Lease extends Model
     {
         return $query
             ->whereNotNull('start_date')
-            ->whereDate('start_date', '<=', now()->toDateString());
+            ->whereDate(
+                'start_date',
+                '<=',
+                today()
+            );
     }
 
     /**
@@ -486,7 +712,54 @@ class Lease extends Model
     {
         return $query
             ->whereNotNull('start_date')
-            ->whereDate('start_date', '>', now()->toDateString());
+            ->whereDate(
+                'start_date',
+                '>',
+                today()
+            );
+    }
+
+    /**
+     * Scope currently valid active leases.
+     */
+    public function scopeCurrentlyValid(Builder $query): Builder
+    {
+        return $query
+            ->where(
+                'status',
+                self::STATUS_ACTIVE
+            )
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('start_date')
+                    ->orWhereDate(
+                        'start_date',
+                        '<=',
+                        today()
+                    );
+            })
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('end_date')
+                    ->orWhereDate(
+                        'end_date',
+                        '>=',
+                        today()
+                    );
+            });
+    }
+
+    /**
+     * Scope leases for a tenancy.
+     */
+    public function scopeForTenancy(
+        Builder $query,
+        int $tenancyId
+    ): Builder {
+        return $query->where(
+            'tenancy_id',
+            $tenancyId
+        );
     }
 
     /*
@@ -510,9 +783,12 @@ class Lease extends Model
         return $this->status === self::STATUS_ACTIVE;
     }
 
+    /**
+     * Determine whether the lease has been persisted as expired.
+     */
     public function isExpired(): bool
     {
-        return $this->is_expired;
+        return $this->status === self::STATUS_EXPIRED;
     }
 
     public function isTerminated(): bool
@@ -526,11 +802,50 @@ class Lease extends Model
     }
 
     /**
+     * Determine whether the contractual end date has passed.
+     */
+    public function shouldExpire(): bool
+    {
+        if (!$this->isActive()) {
+            return false;
+        }
+
+        return $this->hasEnded();
+    }
+
+    /**
+     * Synchronize the lease status with its contractual dates.
+     *
+     * Returns true when the database status was changed.
+     */
+    public function synchronizeExpiration(): bool
+    {
+        if (!$this->shouldExpire()) {
+            return false;
+        }
+
+        return $this->updateQuietly([
+            'status' => self::STATUS_EXPIRED,
+            'terminated_at' => null,
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validation Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    /**
      * Determine whether a status is supported.
      */
     public static function isValidStatus(string $status): bool
     {
-        return in_array($status, self::STATUSES, true);
+        return in_array(
+            $status,
+            self::STATUSES,
+            true
+        );
     }
 
     /**
@@ -538,7 +853,24 @@ class Lease extends Model
      */
     public static function isValidLeaseType(string $type): bool
     {
-        return in_array($type, self::LEASE_TYPES, true);
+        return in_array(
+            $type,
+            self::LEASE_TYPES,
+            true
+        );
+    }
+
+    /**
+     * Determine whether a payment frequency is supported.
+     */
+    public static function isValidPaymentFrequency(
+        string $frequency
+    ): bool {
+        return in_array(
+            $frequency,
+            self::PAYMENT_FREQUENCIES,
+            true
+        );
     }
 
     /*
@@ -552,6 +884,10 @@ class Lease extends Model
      */
     public function activate(): bool
     {
+        if (!$this->canActivate()) {
+            return false;
+        }
+
         return $this->update([
             'status' => self::STATUS_ACTIVE,
             'terminated_at' => null,
@@ -563,6 +899,10 @@ class Lease extends Model
      */
     public function setPending(): bool
     {
+        if ($this->isExpired() || $this->isTerminated() || $this->isCancelled()) {
+            return false;
+        }
+
         return $this->update([
             'status' => self::STATUS_PENDING,
             'terminated_at' => null,
@@ -574,6 +914,10 @@ class Lease extends Model
      */
     public function setDraft(): bool
     {
+        if ($this->isExpired() || $this->isTerminated() || $this->isCancelled()) {
+            return false;
+        }
+
         return $this->update([
             'status' => self::STATUS_DRAFT,
             'terminated_at' => null,
@@ -582,9 +926,23 @@ class Lease extends Model
 
     /**
      * Mark the lease as expired.
+     *
+     * Expiration must only happen after the contractual end date.
      */
     public function expire(): bool
     {
+        if (!$this->hasEnded()) {
+            return false;
+        }
+
+        if ($this->isTerminated() || $this->isCancelled()) {
+            return false;
+        }
+
+        if ($this->isExpired()) {
+            return true;
+        }
+
         return $this->update([
             'status' => self::STATUS_EXPIRED,
             'terminated_at' => null,
@@ -596,6 +954,10 @@ class Lease extends Model
      */
     public function terminate(?string $reason = null): bool
     {
+        if (!$this->canTerminate()) {
+            return false;
+        }
+
         return $this->update([
             'status' => self::STATUS_TERMINATED,
             'terminated_at' => now(),
@@ -606,11 +968,16 @@ class Lease extends Model
     /**
      * Cancel the lease.
      */
-    public function cancel(): bool
+    public function cancel(?string $reason = null): bool
     {
+        if (!$this->canCancel()) {
+            return false;
+        }
+
         return $this->update([
             'status' => self::STATUS_CANCELLED,
             'terminated_at' => null,
+            'termination_reason' => $reason,
         ]);
     }
 
@@ -625,14 +992,30 @@ class Lease extends Model
      */
     public function canActivate(): bool
     {
-        return in_array(
-            $this->status,
-            [
-                self::STATUS_DRAFT,
-                self::STATUS_PENDING,
-            ],
-            true
-        );
+        if (
+            !in_array(
+                $this->status,
+                [
+                    self::STATUS_DRAFT,
+                    self::STATUS_PENDING,
+                ],
+                true
+            )
+        ) {
+            return false;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | An ended lease cannot be activated.
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->hasEnded()) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -659,12 +1042,19 @@ class Lease extends Model
     }
 
     /**
-     * Determine whether the lease has ended based on its end date.
+     * Determine whether the contractual end date has passed.
+     *
+     * End date equal to today is NOT considered ended.
      */
     public function hasEnded(): bool
     {
-        return $this->end_date !== null &&
-            $this->end_date->isPast();
+        if ($this->end_date === null) {
+            return false;
+        }
+
+        return $this->end_date->startOfDay()->lt(
+            today()
+        );
     }
 
     /**
@@ -672,20 +1062,20 @@ class Lease extends Model
      */
     public function isCurrentlyValid(): bool
     {
-        if ($this->status !== self::STATUS_ACTIVE) {
+        if (!$this->isActive()) {
             return false;
         }
 
         if (
             $this->start_date !== null &&
-            $this->start_date->isFuture()
+            $this->start_date->startOfDay()->gt(today())
         ) {
             return false;
         }
 
         if (
             $this->end_date !== null &&
-            $this->end_date->isPast()
+            $this->end_date->startOfDay()->lt(today())
         ) {
             return false;
         }
@@ -694,16 +1084,22 @@ class Lease extends Model
     }
 
     /**
-     * Determine whether the lease is currently within its contractual
-     * date range, regardless of its database status.
+     * Determine whether the lease is currently within its
+     * contractual date range.
      */
     public function isWithinDateRange(): bool
     {
-        if ($this->start_date !== null && $this->start_date->isFuture()) {
+        if (
+            $this->start_date !== null &&
+            $this->start_date->startOfDay()->gt(today())
+        ) {
             return false;
         }
 
-        if ($this->end_date !== null && $this->end_date->isPast()) {
+        if (
+            $this->end_date !== null &&
+            $this->end_date->startOfDay()->lt(today())
+        ) {
             return false;
         }
 
@@ -720,11 +1116,14 @@ class Lease extends Model
      * Generate a unique lease number.
      *
      * Format:
+     *
      * LSE-000001
      */
     public static function generateLeaseNumber(): string
     {
-        $nextId = ((int) self::withTrashed()->max('id')) + 1;
+        $nextId = (
+            (int) self::withTrashed()->max('id')
+        ) + 1;
 
         do {
             $leaseNumber = 'LSE-' . str_pad(
@@ -735,7 +1134,10 @@ class Lease extends Model
             );
 
             $exists = self::withTrashed()
-                ->where('lease_number', $leaseNumber)
+                ->where(
+                    'lease_number',
+                    $leaseNumber
+                )
                 ->exists();
 
             if ($exists) {

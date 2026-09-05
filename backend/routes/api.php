@@ -64,6 +64,14 @@ use App\Http\Controllers\Api\Tenancy\TenancyController;
 
 /*
 |--------------------------------------------------------------------------
+| LEASE
+|--------------------------------------------------------------------------
+*/
+
+use App\Http\Controllers\Api\Lease\LeaseController;
+
+/*
+|--------------------------------------------------------------------------
 | ACTIVITY LOGS
 |--------------------------------------------------------------------------
 */
@@ -512,9 +520,6 @@ Route::middleware('auth:sanctum')->group(function () {
             |--------------------------------------------------------------------------
             | TENANT USERS
             |--------------------------------------------------------------------------
-            |
-            | Returns users who have the tenant role.
-            |
             */
 
             Route::get(
@@ -527,10 +532,6 @@ Route::middleware('auth:sanctum')->group(function () {
             |--------------------------------------------------------------------------
             | ALL TENANT USERS
             |--------------------------------------------------------------------------
-            |
-            | Returns all users with the tenant role, including users who
-            | already have a tenant profile.
-            |
             */
 
             Route::get(
@@ -543,10 +544,6 @@ Route::middleware('auth:sanctum')->group(function () {
             |--------------------------------------------------------------------------
             | AVAILABLE TENANT USERS
             |--------------------------------------------------------------------------
-            |
-            | Returns tenant-role users who do not yet have a tenant profile.
-            | This is the endpoint used by Create Tenant.
-            |
             */
 
             Route::get(
@@ -583,12 +580,6 @@ Route::middleware('auth:sanctum')->group(function () {
             |--------------------------------------------------------------------------
             | TENANT REPORTS
             |--------------------------------------------------------------------------
-            |
-            | Supports optional:
-            |
-            | ?start_date=2026-01-01
-            | &end_date=2026-09-05
-            |
             */
 
             Route::get(
@@ -626,7 +617,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | TENANT CRUD - INDEX / STORE
+            | TENANT CRUD
             |--------------------------------------------------------------------------
             */
 
@@ -1024,6 +1015,276 @@ Route::middleware('auth:sanctum')->group(function () {
                 [TenancyController::class, 'destroy']
             )
                 ->whereNumber('tenancy')
+                ->name('destroy');
+        });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | LEASES
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('leases')
+        ->name('leases.')
+        ->group(function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE SEARCH
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'search',
+                [LeaseController::class, 'search']
+            )->name('search');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE STATISTICS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'statistics',
+                [LeaseController::class, 'statistics']
+            )->name('statistics');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE STATUS LISTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'active',
+                [LeaseController::class, 'active']
+            )->name('active');
+
+            Route::get(
+                'draft',
+                [LeaseController::class, 'draft']
+            )->name('draft');
+
+            Route::get(
+                'pending',
+                [LeaseController::class, 'pending']
+            )->name('pending');
+
+            Route::get(
+                'expired',
+                [LeaseController::class, 'expired']
+            )->name('expired');
+
+            Route::get(
+                'terminated',
+                [LeaseController::class, 'terminated']
+            )->name('terminated');
+
+            Route::get(
+                'cancelled',
+                [LeaseController::class, 'cancelled']
+            )->name('cancelled');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE DATE FILTERS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'expiring',
+                [LeaseController::class, 'expiring']
+            )->name('expiring');
+
+            Route::get(
+                'upcoming',
+                [LeaseController::class, 'upcoming']
+            )->name('upcoming');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASES BY TENANCY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'tenancy/{tenancyId}',
+                [LeaseController::class, 'byTenancy']
+            )
+                ->whereNumber('tenancyId')
+                ->name('by-tenancy');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE BY LEASE NUMBER
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'number/{leaseNumber}',
+                [LeaseController::class, 'showByLeaseNumber']
+            )->name('by-number');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE CRUD
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [LeaseController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [LeaseController::class, 'store']
+            )->name('store');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE STATUS ACTIONS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{id}/activate',
+                [LeaseController::class, 'activate']
+            )
+                ->whereNumber('id')
+                ->name('activate');
+
+            Route::patch(
+                '{id}/pending',
+                [LeaseController::class, 'setPending']
+            )
+                ->whereNumber('id')
+                ->name('pending');
+
+            Route::patch(
+                '{id}/draft',
+                [LeaseController::class, 'setDraft']
+            )
+                ->whereNumber('id')
+                ->name('draft');
+
+            Route::patch(
+                '{id}/expire',
+                [LeaseController::class, 'expire']
+            )
+                ->whereNumber('id')
+                ->name('expire');
+
+            Route::patch(
+                '{id}/terminate',
+                [LeaseController::class, 'terminate']
+            )
+                ->whereNumber('id')
+                ->name('terminate');
+
+            Route::patch(
+                '{id}/cancel',
+                [LeaseController::class, 'cancel']
+            )
+                ->whereNumber('id')
+                ->name('cancel');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | EXPIRE ENDED LEASES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                'expire-ended',
+                [LeaseController::class, 'expireEnded']
+            )->name('expire-ended');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE RESTORE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{id}/restore',
+                [LeaseController::class, 'restore']
+            )
+                ->whereNumber('id')
+                ->name('restore');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE FORCE DELETE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}/force',
+                [LeaseController::class, 'forceDelete']
+            )
+                ->whereNumber('id')
+                ->name('force-delete');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE SHOW
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{id}',
+                [LeaseController::class, 'show']
+            )
+                ->whereNumber('id')
+                ->name('show');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE UPDATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{id}',
+                [LeaseController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('update');
+
+            Route::patch(
+                '{id}',
+                [LeaseController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('patch');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE DELETE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}',
+                [LeaseController::class, 'destroy']
+            )
+                ->whereNumber('id')
                 ->name('destroy');
         });
 
