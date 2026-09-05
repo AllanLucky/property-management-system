@@ -8,12 +8,14 @@ import {
   UserX,
   XCircle,
 } from "lucide-react";
+
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
 } from "react";
+
 import { useDispatch, useSelector } from "react-redux";
 
 import {
@@ -38,9 +40,9 @@ import {
 | - Display blacklisted tenants
 | - Display verified tenants
 | - Display unverified tenants
-| - Handle loading state
-| - Handle API errors
-| - Safely normalize different API response structures
+| - Safely handle different Laravel API response structures
+| - Prevent duplicate initial requests
+| - Handle loading and error states
 |--------------------------------------------------------------------------
 */
 
@@ -53,7 +55,9 @@ const TenantStats = () => {
   |--------------------------------------------------------------------------
   */
 
-  const statistics = useSelector(selectTenantStatistics);
+  const statistics = useSelector(
+    selectTenantStatistics
+  );
 
   const loading = useSelector(
     selectTenantLoadingStatistics
@@ -68,8 +72,7 @@ const TenantStats = () => {
   | FETCH CONTROL
   |--------------------------------------------------------------------------
   |
-  | Prevent duplicate statistics requests during React StrictMode
-  | development mounting.
+  | Prevent duplicate requests during React StrictMode development.
   |
   */
 
@@ -100,8 +103,30 @@ const TenantStats = () => {
 
     hasFetched.current = true;
 
-    loadStatistics();
+    loadStatistics().catch((fetchError) => {
+      console.error(
+        "Failed to fetch tenant statistics:",
+        fetchError
+      );
+    });
   }, [loadStatistics]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | SAFE OBJECT CHECK
+  |--------------------------------------------------------------------------
+  */
+
+  const isPlainObject = useCallback(
+    (value) => {
+      return (
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      );
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -110,6 +135,9 @@ const TenantStats = () => {
   */
 
   const toNumber = useCallback((value) => {
+    /*
+     * Null / undefined / empty values.
+     */
     if (
       value === null ||
       value === undefined ||
@@ -118,11 +146,21 @@ const TenantStats = () => {
       return 0;
     }
 
+    /*
+     * Do not attempt Number({}).
+     */
     if (
       typeof value === "object" &&
       value !== null
     ) {
       return 0;
+    }
+
+    /*
+     * Handle boolean values safely.
+     */
+    if (typeof value === "boolean") {
+      return value ? 1 : 0;
     }
 
     const parsed = Number(value);
@@ -134,31 +172,48 @@ const TenantStats = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | STATISTICS SOURCE
+  | NORMALIZE STATISTICS RESPONSE
   |--------------------------------------------------------------------------
   |
-  | Supports responses such as:
+  | Supported API responses:
   |
+  | 1.
   | {
-  |   total: 100,
-  |   active: 50
+  |   total: 10,
+  |   active: 5
   | }
   |
-  | or:
-  |
+  | 2.
   | {
   |   data: {
-  |     total: 100,
-  |     active: 50
+  |     total: 10,
+  |     active: 5
   |   }
   | }
   |
-  | or:
-  |
+  | 3.
   | {
   |   data: {
   |     statistics: {
-  |       total: 100
+  |       total: 10,
+  |       active: 5
+  |     }
+  |   }
+  | }
+  |
+  | 4.
+  | {
+  |   statistics: {
+  |     total: 10,
+  |     active: 5
+  |   }
+  | }
+  |
+  | 5.
+  | {
+  |   data: {
+  |     data: {
+  |       total: 10
   |     }
   |   }
   | }
@@ -166,49 +221,57 @@ const TenantStats = () => {
   */
 
   const stats = useMemo(() => {
-    if (
-      !statistics ||
-      typeof statistics !== "object" ||
-      Array.isArray(statistics)
-    ) {
+    if (!isPlainObject(statistics)) {
       return {};
     }
 
-    const directData =
-      statistics?.data;
-
+    /*
+     * data.statistics
+     */
     if (
-      directData &&
-      typeof directData === "object" &&
-      !Array.isArray(directData)
+      isPlainObject(statistics.data) &&
+      isPlainObject(
+        statistics.data.statistics
+      )
     ) {
-      const nestedStatistics =
-        directData?.statistics;
-
-      if (
-        nestedStatistics &&
-        typeof nestedStatistics === "object" &&
-        !Array.isArray(nestedStatistics)
-      ) {
-        return nestedStatistics;
-      }
-
-      return directData;
+      return statistics.data.statistics;
     }
 
-    const nestedStatistics =
-      statistics?.statistics;
-
+    /*
+     * data.data
+     */
     if (
-      nestedStatistics &&
-      typeof nestedStatistics === "object" &&
-      !Array.isArray(nestedStatistics)
+      isPlainObject(statistics.data) &&
+      isPlainObject(
+        statistics.data.data
+      )
     ) {
-      return nestedStatistics;
+      return statistics.data.data;
     }
 
+    /*
+     * data
+     */
+    if (isPlainObject(statistics.data)) {
+      return statistics.data;
+    }
+
+    /*
+     * statistics.statistics
+     */
+    if (
+      isPlainObject(
+        statistics.statistics
+      )
+    ) {
+      return statistics.statistics;
+    }
+
+    /*
+     * Direct response.
+     */
     return statistics;
-  }, [statistics]);
+  }, [statistics, isPlainObject]);
 
   /*
   |--------------------------------------------------------------------------
@@ -220,12 +283,26 @@ const TenantStats = () => {
     (...keys) => {
       for (const key of keys) {
         if (
-          stats?.[key] !== undefined &&
-          stats?.[key] !== null
+          stats &&
+          Object.prototype.hasOwnProperty.call(
+            stats,
+            key
+          )
         ) {
-          return toNumber(
-            stats[key]
-          );
+          const value = stats[key];
+
+          /*
+           * Ignore objects because they cannot
+           * safely be rendered as KPI numbers.
+           */
+          if (
+            typeof value === "object" &&
+            value !== null
+          ) {
+            continue;
+          }
+
+          return toNumber(value);
         }
       }
 
@@ -308,6 +385,7 @@ const TenantStats = () => {
         iconWrapper:
           "bg-blue-50 text-blue-600",
       },
+
       {
         key: "active",
         title: "Active Tenants",
@@ -318,6 +396,7 @@ const TenantStats = () => {
         iconWrapper:
           "bg-green-50 text-green-600",
       },
+
       {
         key: "pending",
         title: "Pending",
@@ -328,6 +407,7 @@ const TenantStats = () => {
         iconWrapper:
           "bg-amber-50 text-amber-600",
       },
+
       {
         key: "inactive",
         title: "Inactive",
@@ -338,6 +418,7 @@ const TenantStats = () => {
         iconWrapper:
           "bg-gray-100 text-gray-600",
       },
+
       {
         key: "blacklisted",
         title: "Blacklisted",
@@ -348,6 +429,7 @@ const TenantStats = () => {
         iconWrapper:
           "bg-red-50 text-red-600",
       },
+
       {
         key: "verified",
         title: "Verified",
@@ -358,6 +440,7 @@ const TenantStats = () => {
         iconWrapper:
           "bg-emerald-50 text-emerald-600",
       },
+
       {
         key: "unverified",
         title: "Unverified",
@@ -387,9 +470,21 @@ const TenantStats = () => {
   */
 
   const handleRetry = useCallback(() => {
+    /*
+     * Allow another request after a failed request.
+     */
     hasFetched.current = true;
 
-    return loadStatistics();
+    return loadStatistics().catch(
+      (retryError) => {
+        console.error(
+          "Tenant statistics retry failed:",
+          retryError
+        );
+
+        throw retryError;
+      }
+    );
   }, [loadStatistics]);
 
   /*
@@ -403,10 +498,16 @@ const TenantStats = () => {
       return "Something went wrong while loading tenant statistics.";
     }
 
+    /*
+     * String error.
+     */
     if (typeof error === "string") {
       return error;
     }
 
+    /*
+     * Standard Error object.
+     */
     if (
       typeof error?.message === "string" &&
       error.message.trim()
@@ -414,6 +515,9 @@ const TenantStats = () => {
       return error.message;
     }
 
+    /*
+     * Redux/API error.
+     */
     if (
       typeof error?.error === "string" &&
       error.error.trim()
@@ -421,13 +525,20 @@ const TenantStats = () => {
       return error.error;
     }
 
+    /*
+     * Nested data message.
+     */
     if (
-      typeof error?.data?.message === "string" &&
+      typeof error?.data?.message ===
+      "string" &&
       error.data.message.trim()
     ) {
       return error.data.message;
     }
 
+    /*
+     * Axios response message.
+     */
     if (
       typeof error?.response?.data?.message ===
       "string" &&
@@ -436,8 +547,44 @@ const TenantStats = () => {
       return error.response.data.message;
     }
 
+    /*
+     * Axios response error.
+     */
+    if (
+      typeof error?.response?.data?.error ===
+      "string" &&
+      error.response.data.error.trim()
+    ) {
+      return error.response.data.error;
+    }
+
+    /*
+     * Validation / SQL/API error object.
+     */
+    if (
+      typeof error?.response?.data?.errors
+        ?.message === "string"
+    ) {
+      return error.response.data.errors.message;
+    }
+
     return "Something went wrong while loading tenant statistics.";
   }, [error]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | NUMBER FORMATTER
+  |--------------------------------------------------------------------------
+  */
+
+  const formatNumber = useCallback(
+    (value) => {
+      return Number(value || 0).toLocaleString(
+        "en-KE"
+      );
+    },
+    []
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -454,6 +601,8 @@ const TenantStats = () => {
         aria-label="Loading tenant statistics"
         className="space-y-4"
       >
+        {/* HEADER SKELETON */}
+
         <div className="flex items-center justify-between">
           <div className="space-y-2">
             <div className="h-5 w-40 animate-pulse rounded bg-gray-200" />
@@ -463,6 +612,8 @@ const TenantStats = () => {
 
           <div className="h-4 w-20 animate-pulse rounded bg-gray-100" />
         </div>
+
+        {/* CARD SKELETON */}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({
@@ -521,6 +672,9 @@ const TenantStats = () => {
         "
       >
         <div className="flex items-start gap-3">
+
+          {/* ERROR ICON */}
+
           <div
             className="
               flex
@@ -537,7 +691,10 @@ const TenantStats = () => {
             <AlertCircle className="h-5 w-5" />
           </div>
 
+          {/* ERROR CONTENT */}
+
           <div className="min-w-0 flex-1">
+
             <h3 className="font-semibold text-red-800">
               Unable to load tenant statistics
             </h3>
@@ -574,6 +731,7 @@ const TenantStats = () => {
                 ? "Retrying..."
                 : "Try Again"}
             </button>
+
           </div>
         </div>
       </section>
@@ -591,11 +749,13 @@ const TenantStats = () => {
       aria-label="Tenant statistics"
       className="space-y-4"
     >
-      {/* --------------------------------------------------------------- */}
-      {/* SECTION HEADER */}
-      {/* --------------------------------------------------------------- */}
+
+      {/* ================================================================
+          SECTION HEADER
+      ================================================================= */}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+
         <div>
           <h2 className="text-lg font-semibold text-gray-900">
             Tenant Overview
@@ -623,13 +783,15 @@ const TenantStats = () => {
             Updating...
           </div>
         )}
+
       </div>
 
-      {/* --------------------------------------------------------------- */}
-      {/* KPI CARDS */}
-      {/* --------------------------------------------------------------- */}
+      {/* ================================================================
+          KPI CARDS
+      ================================================================= */}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+
         {cards.map((card) => {
           const Icon = card.icon;
 
@@ -649,7 +811,11 @@ const TenantStats = () => {
                 hover:shadow-md
               "
             >
+
+              {/* CARD HEADER */}
+
               <div className="flex items-start justify-between gap-4">
+
                 <div
                   className={`
                     flex
@@ -668,16 +834,30 @@ const TenantStats = () => {
                   />
                 </div>
 
-                <span className="rounded-full bg-gray-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <span
+                  className="
+                    rounded-full
+                    bg-gray-50
+                    px-2
+                    py-1
+                    text-[10px]
+                    font-semibold
+                    uppercase
+                    tracking-wide
+                    text-gray-400
+                  "
+                >
                   Tenants
                 </span>
+
               </div>
 
+              {/* CARD VALUE */}
+
               <div className="mt-5">
+
                 <p className="text-3xl font-bold tracking-tight text-gray-900">
-                  {card.value.toLocaleString(
-                    "en-KE"
-                  )}
+                  {formatNumber(card.value)}
                 </p>
 
                 <p className="mt-1 text-sm font-semibold text-gray-700">
@@ -687,15 +867,18 @@ const TenantStats = () => {
                 <p className="mt-1 text-xs leading-5 text-gray-500">
                   {card.description}
                 </p>
+
               </div>
+
             </article>
           );
         })}
+
       </div>
 
-      {/* --------------------------------------------------------------- */}
-      {/* BACKGROUND REFRESH ERROR */}
-      {/* --------------------------------------------------------------- */}
+      {/* ================================================================
+          BACKGROUND REFRESH ERROR
+      ================================================================= */}
 
       {error && statistics && (
         <div
@@ -712,9 +895,19 @@ const TenantStats = () => {
             py-3
           "
         >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+
+          <AlertCircle
+            className="
+              mt-0.5
+              h-4
+              w-4
+              shrink-0
+              text-amber-600
+            "
+          />
 
           <div className="min-w-0 flex-1">
+
             <p className="text-xs font-medium text-amber-800">
               Statistics could not be refreshed.
             </p>
@@ -722,6 +915,7 @@ const TenantStats = () => {
             <p className="mt-0.5 text-xs text-amber-700">
               {errorMessage}
             </p>
+
           </div>
 
           <button
@@ -738,10 +932,14 @@ const TenantStats = () => {
               disabled:opacity-50
             "
           >
-            Retry
+            {loading
+              ? "Retrying..."
+              : "Retry"}
           </button>
+
         </div>
       )}
+
     </section>
   );
 };
