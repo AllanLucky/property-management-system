@@ -15,11 +15,9 @@ class TenantResource extends JsonResource
      * TENANT / USER ARCHITECTURE
      * ==========================================================================
      *
-     * The application uses a two-layer architecture:
-     *
-     * USERS
+     * User
      * --------------------------------------------------------------------------
-     * The User model owns authentication and account identity:
+     * Owns authentication and account identity:
      *
      * - first_name
      * - last_name
@@ -28,9 +26,9 @@ class TenantResource extends JsonResource
      * - password
      * - roles / permissions
      *
-     * TENANTS
+     * Tenant
      * --------------------------------------------------------------------------
-     * The Tenant model owns tenant-specific profile information:
+     * Owns tenant-specific profile information:
      *
      * - tenant_number
      * - other_names
@@ -38,17 +36,16 @@ class TenantResource extends JsonResource
      * - date_of_birth
      * - gender
      * - identification
-     * - location
+     * - residential information
      * - employment
      * - emergency contact
      * - documents
      * - verification
      * - tenant status
      *
-     * TenantResource never creates or modifies a User.
+     * This resource is read-only.
      *
-     * UserResource remains responsible for serializing the linked User
-     * account.
+     * It never creates, updates, synchronizes, or deletes a User.
      */
     public function toArray(Request $request): array
     {
@@ -56,7 +53,6 @@ class TenantResource extends JsonResource
         $tenant = $this->resource;
 
         return [
-
             /*
             |--------------------------------------------------------------------------
             | TENANT IDENTIFICATION
@@ -69,14 +65,12 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | LINKED USER
+            | LINKED USER ACCOUNT
             |--------------------------------------------------------------------------
             |
-            | The User account already exists.
+            | The User already exists and owns authentication/account identity.
             |
-            | TenantResource never creates a User.
-            |
-            | UserResource remains responsible for User serialization.
+            | UserResource is responsible for serializing the User.
             |
             */
 
@@ -84,36 +78,33 @@ class TenantResource extends JsonResource
 
             'user' => $this->whenLoaded(
                 'user',
-                function () use ($tenant) {
-                    if (!$tenant->user) {
-                        return null;
-                    }
-
-                    return new UserResource($tenant->user);
-                }
+                fn () => $tenant->user
+                    ? new UserResource($tenant->user)
+                    : null
             ),
 
             /*
             |--------------------------------------------------------------------------
-            | TENANT PERSONAL PROFILE
+            | TENANT PERSONAL INFORMATION
             |--------------------------------------------------------------------------
+            |
+            | first_name, last_name, email and phone are intentionally serialized
+            | from the linked User where available. The tenant-specific table
+            | contains the remaining profile information.
+            |
             */
+
+            'first_name' => $tenant->first_name,
+
+            'last_name' => $tenant->last_name,
 
             'other_names' => $tenant->other_names,
 
-            /*
-            |--------------------------------------------------------------------------
-            | NATIONALITY
-            |--------------------------------------------------------------------------
-            |
-            | Nationality represents the tenant's citizenship / national identity.
-            |
-            | This is different from `country`, which belongs to the tenant's
-            | residential/location information.
-            |
-            */
+            'full_name' => $tenant->full_name,
 
-            'nationality' => $tenant->nationality,
+            'email' => $tenant->email,
+
+            'phone' => $tenant->phone,
 
             'date_of_birth' => $tenant->date_of_birth
                 ? $tenant->date_of_birth->format('Y-m-d')
@@ -121,13 +112,12 @@ class TenantResource extends JsonResource
 
             'gender' => $tenant->gender,
 
+            'nationality' => $tenant->nationality,
+
             /*
             |--------------------------------------------------------------------------
             | IDENTIFICATION
             |--------------------------------------------------------------------------
-            |
-            | These fields belong to the tenant profile.
-            |
             */
 
             'identification' => [
@@ -140,7 +130,7 @@ class TenantResource extends JsonResource
             | DIRECT IDENTIFICATION FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for frontend compatibility.
+            | Retained for frontend form/component compatibility.
             |
             */
 
@@ -150,12 +140,8 @@ class TenantResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
-            | LOCATION
+            | RESIDENTIAL / LOCATION INFORMATION
             |--------------------------------------------------------------------------
-            |
-            | `country` here represents the tenant's residential/location country,
-            | not nationality.
-            |
             */
 
             'location' => [
@@ -173,7 +159,7 @@ class TenantResource extends JsonResource
             | DIRECT LOCATION FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for existing frontend forms and components.
+            | Retained for existing frontend forms and filters.
             |
             */
 
@@ -208,7 +194,7 @@ class TenantResource extends JsonResource
             | DIRECT EMPLOYMENT FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for frontend compatibility.
+            | Retained for frontend compatibility.
             |
             */
 
@@ -238,8 +224,13 @@ class TenantResource extends JsonResource
 
             'documents' => [
                 'photo' => $tenant->photo,
+                'photo_public_id' => $tenant->photo_public_id,
+
                 'id_front' => $tenant->id_front,
+                'id_front_public_id' => $tenant->id_front_public_id,
+
                 'id_back' => $tenant->id_back,
+                'id_back_public_id' => $tenant->id_back_public_id,
             ],
 
             /*
@@ -247,19 +238,25 @@ class TenantResource extends JsonResource
             | DIRECT DOCUMENT FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for frontend compatibility.
+            | Retained for frontend upload/edit components.
             |
             */
 
             'photo' => $tenant->photo,
 
+            'photo_public_id' => $tenant->photo_public_id,
+
             'id_front' => $tenant->id_front,
+
+            'id_front_public_id' => $tenant->id_front_public_id,
 
             'id_back' => $tenant->id_back,
 
+            'id_back_public_id' => $tenant->id_back_public_id,
+
             /*
             |--------------------------------------------------------------------------
-            | TENANT VERIFICATION
+            | VERIFICATION
             |--------------------------------------------------------------------------
             */
 
@@ -276,7 +273,7 @@ class TenantResource extends JsonResource
             | DIRECT VERIFICATION FIELDS
             |--------------------------------------------------------------------------
             |
-            | Kept for frontend compatibility.
+            | Retained for frontend compatibility.
             |
             */
 
@@ -291,10 +288,14 @@ class TenantResource extends JsonResource
             | TENANT STATUS
             |--------------------------------------------------------------------------
             |
-            | Tenant activity is determined by `status`.
+            | There is intentionally no physical `is_active` column on tenants.
             |
-            | There is intentionally no physical `is_active` column required
-            | on the tenants table.
+            | Activity is derived from the tenant status:
+            |
+            | active
+            | inactive
+            | pending
+            | blacklisted
             |
             */
 
@@ -307,7 +308,8 @@ class TenantResource extends JsonResource
             | COMPUTED STATUS FLAGS
             |--------------------------------------------------------------------------
             |
-            | These values are derived from the tenant status.
+            | These are calculated values and must never be queried as database
+            | columns.
             |
             */
 
@@ -340,17 +342,17 @@ class TenantResource extends JsonResource
             | TENANCIES
             |--------------------------------------------------------------------------
             |
-            | Tenancy records are separate from the tenant profile.
+            | Only serialize these relationships when explicitly eager loaded.
+            |
+            | This prevents accidental N+1 queries from the API resource.
             |
             */
 
             'tenancies' => $this->whenLoaded(
                 'tenancies',
-                function () use ($tenant) {
-                    return TenancyResource::collection(
-                        $tenant->tenancies
-                    );
-                }
+                fn () => TenancyResource::collection(
+                    $tenant->tenancies
+                )
             ),
 
             /*
@@ -361,9 +363,7 @@ class TenantResource extends JsonResource
 
             'tenancy_count' => $this->whenLoaded(
                 'tenancies',
-                function () use ($tenant) {
-                    return $tenant->tenancies->count();
-                }
+                fn () => $tenant->tenancies->count()
             ),
 
             /*
@@ -374,11 +374,9 @@ class TenantResource extends JsonResource
 
             'active_tenancies' => $this->whenLoaded(
                 'activeTenancies',
-                function () use ($tenant) {
-                    return TenancyResource::collection(
-                        $tenant->activeTenancies
-                    );
-                }
+                fn () => TenancyResource::collection(
+                    $tenant->activeTenancies
+                )
             ),
 
             /*
@@ -389,33 +387,29 @@ class TenantResource extends JsonResource
 
             'active_tenancy_count' => $this->whenLoaded(
                 'activeTenancies',
-                function () use ($tenant) {
-                    return $tenant->activeTenancies->count();
-                }
+                fn () => $tenant->activeTenancies->count()
             ),
 
             /*
             |--------------------------------------------------------------------------
-            | CURRENT TENANCY
+            | CURRENT / PRIMARY ACTIVE TENANCY
             |--------------------------------------------------------------------------
             |
-            | Returned only when the `activeTenancy` relationship has explicitly
-            | been loaded.
+            | `activeTenancy` should be defined on the Tenant model as the
+            | latest active tenancy relationship.
             |
             */
 
             'current_tenancy' => $this->whenLoaded(
                 'activeTenancy',
-                function () use ($tenant) {
-                    return $tenant->activeTenancy
-                        ? new TenancyResource($tenant->activeTenancy)
-                        : null;
-                }
+                fn () => $tenant->activeTenancy
+                    ? new TenancyResource($tenant->activeTenancy)
+                    : null
             ),
 
             /*
             |--------------------------------------------------------------------------
-            | TENANT TIMESTAMPS
+            | TIMESTAMPS
             |--------------------------------------------------------------------------
             */
 
