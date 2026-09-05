@@ -3,6 +3,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  FileImage,
   FileText,
   Globe2,
   Loader2,
@@ -13,8 +14,10 @@ import {
   ShieldCheck,
   User,
   UserRound,
+  Wallet,
   X,
 } from "lucide-react";
+
 import {
   useEffect,
   useMemo,
@@ -23,92 +26,189 @@ import {
 
 /*
 |--------------------------------------------------------------------------
-| DEFAULT FORM
+| STABLE EMPTY VALUES
 |--------------------------------------------------------------------------
 */
 
+const EMPTY_ARRAY = [];
+const EMPTY_OBJECT = {};
+
+/*
+|--------------------------------------------------------------------------
+| DEFAULT FORM
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| CREATE:
+| - user_id selects an EXISTING users.id.
+| - The existing user must already have the tenant role.
+|
+| EDIT:
+| - user_id is READ-ONLY.
+| - first_name, last_name, email and phone are READ-ONLY.
+| - is_active is not supported by tenant updates.
+|
+*/
+
 const DEFAULT_FORM = {
+  /*
+  |--------------------------------------------------------------------------
+  | USER ACCOUNT
+  |--------------------------------------------------------------------------
+  */
+
+  user_id: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | PERSONAL INFORMATION
+  |--------------------------------------------------------------------------
+  */
+
   first_name: "",
   last_name: "",
+  other_names: "",
+
   email: "",
   phone: "",
 
   id_number: "",
   passport_number: "",
-
   gender: "",
   date_of_birth: "",
-
   nationality: "Kenyan",
+
+  /*
+  |--------------------------------------------------------------------------
+  | ADDRESS & LOCATION
+  |--------------------------------------------------------------------------
+  */
 
   country: "",
   region: "",
   county: "",
   city: "",
   area: "",
+  postal_code: "",
   address: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | EMERGENCY CONTACT
+  |--------------------------------------------------------------------------
+  */
 
   emergency_contact_name: "",
   emergency_contact_phone: "",
   emergency_contact_relationship: "",
 
+  /*
+  |--------------------------------------------------------------------------
+  | EMPLOYMENT
+  |--------------------------------------------------------------------------
+  */
+
   occupation: "",
   employer: "",
+  monthly_income: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | DOCUMENTS / MEDIA
+  |--------------------------------------------------------------------------
+  */
+
+  photo: "",
+  id_front: "",
+  id_back: "",
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT ACCOUNT
+  |--------------------------------------------------------------------------
+  */
 
   status: "pending",
   is_active: true,
   is_verified: false,
+
+  /*
+  |--------------------------------------------------------------------------
+  | NOTES
+  |--------------------------------------------------------------------------
+  */
 
   notes: "",
 };
 
 /*
 |--------------------------------------------------------------------------
-| HELPERS
+| PROTECTED TENANT UPDATE FIELDS
+|--------------------------------------------------------------------------
+|
+| These fields belong to the linked User account or are not supported
+| by the tenant update endpoint.
+|
+*/
+
+const TENANT_UPDATE_PROTECTED_FIELDS = new Set([
+  "user_id",
+  "tenant_number",
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "is_active",
+]);
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE BOOLEAN
 |--------------------------------------------------------------------------
 */
 
-const normalizeBoolean = (value) => {
-  return (
+const normalizeBoolean = (
+  value,
+  fallback = false
+) => {
+  if (
     value === true ||
     value === 1 ||
     value === "1" ||
-    value === "true"
-  );
+    value === "true" ||
+    value === "TRUE" ||
+    value === "yes" ||
+    value === "YES"
+  ) {
+    return true;
+  }
+
+  if (
+    value === false ||
+    value === 0 ||
+    value === "0" ||
+    value === "false" ||
+    value === "FALSE" ||
+    value === "no" ||
+    value === "NO"
+  ) {
+    return false;
+  }
+
+  return fallback;
 };
 
-const formatDateForInput = (value) => {
-  if (!value) {
-    return "";
-  }
-
-  const stringValue = String(value);
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
-    return stringValue;
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toISOString().split("T")[0];
-};
-
-const getValue = (source, ...keys) => {
-  for (const key of keys) {
-    if (
-      source?.[key] !== undefined &&
-      source?.[key] !== null
-    ) {
-      return source[key];
-    }
-  }
-
-  return "";
-};
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE STRING
+|--------------------------------------------------------------------------
+|
+| Prevents:
+|
+| Objects are not valid as a React child
+|
+*/
 
 const normalizeString = (value) => {
   if (
@@ -118,7 +218,172 @@ const normalizeString = (value) => {
     return "";
   }
 
+  if (
+    typeof value === "object"
+  ) {
+    return normalizeString(
+      value?.name ??
+      value?.label ??
+      value?.value ??
+      value?.title ??
+      value?.text ??
+      ""
+    );
+  }
+
   return String(value).trim();
+};
+
+/*
+|--------------------------------------------------------------------------
+| FORMAT DATE
+|--------------------------------------------------------------------------
+*/
+
+const formatDateForInput = (
+  value
+) => {
+  if (!value) {
+    return "";
+  }
+
+  const stringValue =
+    String(value).trim();
+
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      stringValue
+    )
+  ) {
+    return stringValue;
+  }
+
+  const date =
+    new Date(stringValue);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return date
+    .toISOString()
+    .split("T")[0];
+};
+
+/*
+|--------------------------------------------------------------------------
+| SAFE VALUE
+|--------------------------------------------------------------------------
+*/
+
+const getValue = (
+  source,
+  ...keys
+) => {
+  if (
+    !source ||
+    typeof source !== "object"
+  ) {
+    return "";
+  }
+
+  for (const key of keys) {
+    const value =
+      source[key];
+
+    if (
+      value !== undefined &&
+      value !== null
+    ) {
+      return value;
+    }
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET USER ID
+|--------------------------------------------------------------------------
+*/
+
+const getUserId = (
+  tenant
+) => {
+  if (
+    !tenant ||
+    typeof tenant !== "object"
+  ) {
+    return "";
+  }
+
+  if (
+    tenant.user_id !== undefined &&
+    tenant.user_id !== null
+  ) {
+    return String(
+      tenant.user_id
+    );
+  }
+
+  if (
+    tenant.user?.id !== undefined &&
+    tenant.user?.id !== null
+  ) {
+    return String(
+      tenant.user.id
+    );
+  }
+
+  return "";
+};
+
+/*
+|--------------------------------------------------------------------------
+| LOCATION VALUE
+|--------------------------------------------------------------------------
+*/
+
+const getLocationValue = (
+  tenant,
+  objectKey,
+  ...fallbackKeys
+) => {
+  if (
+    !tenant ||
+    typeof tenant !== "object"
+  ) {
+    return "";
+  }
+
+  const nestedValue =
+    tenant?.[objectKey];
+
+  if (
+    nestedValue &&
+    typeof nestedValue === "object"
+  ) {
+    return normalizeString(
+      nestedValue?.name ??
+      nestedValue?.label ??
+      nestedValue?.value ??
+      nestedValue?.title ??
+      ""
+    );
+  }
+
+  return normalizeString(
+    getValue(
+      tenant,
+      ...fallbackKeys,
+      objectKey
+    )
+  );
 };
 
 /*
@@ -127,129 +392,212 @@ const normalizeString = (value) => {
 |--------------------------------------------------------------------------
 */
 
-const normalizeTenant = (tenant = {}) => {
-  /*
-  |--------------------------------------------------------------------------
-  | Support both:
-  |
-  | emergency_contact_name
-  |
-  | and:
-  |
-  | emergency_contact: {
-  |   name,
-  |   phone,
-  |   relationship
-  | }
-  |--------------------------------------------------------------------------
-  */
+const normalizeTenant = (
+  tenant = {}
+) => {
+  const safeTenant =
+    tenant &&
+    typeof tenant === "object"
+      ? tenant
+      : {};
+
+  const user =
+    safeTenant?.user &&
+    typeof safeTenant.user === "object"
+      ? safeTenant.user
+      : {};
 
   const emergencyContact =
-    tenant?.emergency_contact &&
-    typeof tenant.emergency_contact === "object"
-      ? tenant.emergency_contact
+    safeTenant?.emergency_contact &&
+    typeof safeTenant.emergency_contact === "object"
+      ? safeTenant.emergency_contact
       : {};
 
   return {
-    first_name: getValue(
-      tenant,
-      "first_name",
-      "firstName"
-    ),
+    /*
+    |--------------------------------------------------------------------------
+    | USER
+    |--------------------------------------------------------------------------
+    */
 
-    last_name: getValue(
-      tenant,
-      "last_name",
-      "lastName"
-    ),
+    user_id:
+      getUserId(
+        safeTenant
+      ),
 
-    email: getValue(
-      tenant,
-      "email"
-    ),
+    /*
+    |--------------------------------------------------------------------------
+    | PERSONAL
+    |--------------------------------------------------------------------------
+    */
 
-    phone: getValue(
-      tenant,
-      "phone",
-      "phone_number"
-    ),
+    first_name:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "first_name",
+          "firstName"
+        ) ||
+        getValue(
+          user,
+          "first_name",
+          "firstName"
+        )
+      ),
 
-    id_number: getValue(
-      tenant,
-      "id_number",
-      "national_id",
-      "national_id_number"
-    ),
+    last_name:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "last_name",
+          "lastName"
+        ) ||
+        getValue(
+          user,
+          "last_name",
+          "lastName"
+        )
+      ),
 
-    passport_number: getValue(
-      tenant,
-      "passport_number"
-    ),
+    other_names:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "other_names",
+          "otherNames"
+        )
+      ),
 
-    gender: getValue(
-      tenant,
-      "gender"
-    ),
+    email:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "email"
+        ) ||
+        getValue(
+          user,
+          "email"
+        )
+      ),
 
-    date_of_birth: formatDateForInput(
-      getValue(
-        tenant,
-        "date_of_birth",
-        "dob"
-      )
-    ),
+    phone:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "phone",
+          "phone_number"
+        ) ||
+        getValue(
+          user,
+          "phone",
+          "phone_number"
+        )
+      ),
+
+    id_number:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "id_number",
+          "national_id",
+          "national_id_number"
+        )
+      ),
+
+    passport_number:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "passport_number",
+          "passport"
+        )
+      ),
+
+    gender:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "gender"
+        )
+      ).toLowerCase(),
+
+    date_of_birth:
+      formatDateForInput(
+        getValue(
+          safeTenant,
+          "date_of_birth",
+          "dob",
+          "birth_date"
+        )
+      ),
 
     nationality:
-      getValue(
-        tenant,
-        "nationality"
+      normalizeString(
+        getValue(
+          safeTenant,
+          "nationality"
+        )
       ) || "Kenyan",
 
+    /*
+    |--------------------------------------------------------------------------
+    | ADDRESS
+    |--------------------------------------------------------------------------
+    */
+
     country:
-      tenant?.country?.name ||
-      getValue(
-        tenant,
-        "country_name",
-        "country"
+      getLocationValue(
+        safeTenant,
+        "country",
+        "country_name"
       ),
 
     region:
-      tenant?.region?.name ||
-      getValue(
-        tenant,
-        "region_name",
-        "region"
+      getLocationValue(
+        safeTenant,
+        "region",
+        "region_name"
       ),
 
     county:
-      tenant?.county?.name ||
-      getValue(
-        tenant,
-        "county_name",
-        "county"
+      getLocationValue(
+        safeTenant,
+        "county",
+        "county_name"
       ),
 
     city:
-      tenant?.city?.name ||
-      getValue(
-        tenant,
-        "city_name",
-        "city"
+      getLocationValue(
+        safeTenant,
+        "city",
+        "city_name"
       ),
 
     area:
-      tenant?.area?.name ||
-      getValue(
-        tenant,
-        "area_name",
-        "area"
+      getLocationValue(
+        safeTenant,
+        "area",
+        "area_name"
       ),
 
-    address: getValue(
-      tenant,
-      "address",
-      "street_address"
-    ),
+    postal_code:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "postal_code",
+          "zip_code"
+        )
+      ),
+
+    address:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "address",
+          "street_address",
+          "residential_address"
+        )
+      ),
 
     /*
     |--------------------------------------------------------------------------
@@ -258,77 +606,322 @@ const normalizeTenant = (tenant = {}) => {
     */
 
     emergency_contact_name:
-      getValue(
-        tenant,
-        "emergency_contact_name"
-      ) ||
-      getValue(
-        emergencyContact,
-        "name",
-        "full_name",
-        "contact_name"
+      normalizeString(
+        getValue(
+          safeTenant,
+          "emergency_contact_name"
+        ) ||
+        getValue(
+          emergencyContact,
+          "name",
+          "full_name",
+          "contact_name"
+        )
       ),
 
     emergency_contact_phone:
-      getValue(
-        tenant,
-        "emergency_contact_phone"
-      ) ||
-      getValue(
-        emergencyContact,
-        "phone",
-        "phone_number",
-        "contact_phone"
+      normalizeString(
+        getValue(
+          safeTenant,
+          "emergency_contact_phone"
+        ) ||
+        getValue(
+          emergencyContact,
+          "phone",
+          "phone_number",
+          "contact_phone"
+        )
       ),
 
     emergency_contact_relationship:
-      getValue(
-        tenant,
-        "emergency_contact_relationship"
-      ) ||
-      getValue(
-        emergencyContact,
-        "relationship",
-        "relation"
+      normalizeString(
+        getValue(
+          safeTenant,
+          "emergency_contact_relationship"
+        ) ||
+        getValue(
+          emergencyContact,
+          "relationship",
+          "relation"
+        )
       ),
 
-    occupation: getValue(
-      tenant,
-      "occupation"
-    ),
+    /*
+    |--------------------------------------------------------------------------
+    | EMPLOYMENT
+    |--------------------------------------------------------------------------
+    */
 
-    employer: getValue(
-      tenant,
-      "employer",
-      "company"
-    ),
+    occupation:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "occupation"
+        )
+      ),
+
+    employer:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "employer",
+          "company"
+        )
+      ),
+
+    monthly_income:
+      getValue(
+        safeTenant,
+        "monthly_income",
+        "income"
+      ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | DOCUMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    photo:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "photo"
+        )
+      ),
+
+    id_front:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "id_front"
+        )
+      ),
+
+    id_back:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "id_back"
+        )
+      ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | ACCOUNT
+    |--------------------------------------------------------------------------
+    */
 
     status:
-      getValue(
-        tenant,
-        "status",
-        "tenant_status"
-      ) || "pending",
+      normalizeString(
+        getValue(
+          safeTenant,
+          "status",
+          "tenant_status"
+        )
+      ).toLowerCase() ||
+      "pending",
 
     is_active:
-      tenant?.is_active !== undefined
-        ? normalizeBoolean(
-            tenant.is_active
-          )
-        : true,
+      normalizeBoolean(
+        safeTenant?.is_active,
+        true
+      ),
 
     is_verified:
-      tenant?.is_verified !== undefined
-        ? normalizeBoolean(
-            tenant.is_verified
-          )
-        : false,
+      normalizeBoolean(
+        safeTenant?.is_verified,
+        false
+      ),
 
-    notes: getValue(
-      tenant,
-      "notes"
-    ),
+    /*
+    |--------------------------------------------------------------------------
+    | NOTES
+    |--------------------------------------------------------------------------
+    */
+
+    notes:
+      normalizeString(
+        getValue(
+          safeTenant,
+          "notes"
+        )
+      ),
   };
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE USER OPTION
+|--------------------------------------------------------------------------
+*/
+
+const normalizeUserOption = (
+  user = {}
+) => {
+  const safeUser =
+    user &&
+    typeof user === "object"
+      ? user
+      : {};
+
+  const nestedUser =
+    safeUser?.user &&
+    typeof safeUser.user === "object"
+      ? safeUser.user
+      : {};
+
+  const id =
+    safeUser?.id ??
+    safeUser?.user_id ??
+    nestedUser?.id ??
+    "";
+
+  const firstName =
+    safeUser?.first_name ??
+    safeUser?.firstName ??
+    nestedUser?.first_name ??
+    nestedUser?.firstName ??
+    "";
+
+  const lastName =
+    safeUser?.last_name ??
+    safeUser?.lastName ??
+    nestedUser?.last_name ??
+    nestedUser?.lastName ??
+    "";
+
+  const email =
+    safeUser?.email ??
+    nestedUser?.email ??
+    "";
+
+  const phone =
+    safeUser?.phone ??
+    safeUser?.phone_number ??
+    nestedUser?.phone ??
+    nestedUser?.phone_number ??
+    "";
+
+  const suppliedName =
+    safeUser?.name ??
+    safeUser?.full_name ??
+    safeUser?.fullName ??
+    nestedUser?.name ??
+    nestedUser?.full_name ??
+    nestedUser?.fullName ??
+    "";
+
+  const safeFirstName =
+    normalizeString(
+      firstName
+    );
+
+  const safeLastName =
+    normalizeString(
+      lastName
+    );
+
+  const safeEmail =
+    normalizeString(
+      email
+    );
+
+  const safePhone =
+    normalizeString(
+      phone
+    );
+
+  const safeSuppliedName =
+    normalizeString(
+      suppliedName
+    );
+
+  const generatedName =
+    `${safeFirstName} ${safeLastName}`
+      .trim();
+
+  const safeId =
+    id !== "" &&
+    id !== null &&
+    id !== undefined
+      ? String(id)
+      : "";
+
+  const name =
+    safeSuppliedName ||
+    generatedName ||
+    safeEmail ||
+    (
+      safeId
+        ? `User #${safeId}`
+        : "Unnamed User"
+    );
+
+  return {
+    ...safeUser,
+
+    id: safeId,
+
+    user_id:
+      safeId,
+
+    first_name:
+      safeFirstName,
+
+    last_name:
+      safeLastName,
+
+    email:
+      safeEmail,
+
+    phone:
+      safePhone,
+
+    name,
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE USER COLLECTION
+|--------------------------------------------------------------------------
+*/
+
+const normalizeUserCollection = (
+  users
+) => {
+  if (
+    !Array.isArray(users)
+  ) {
+    return [];
+  }
+
+  const normalized =
+    users
+      .map(
+        normalizeUserOption
+      )
+      .filter(
+        (user) =>
+          Boolean(user.id)
+      );
+
+  const uniqueUsers =
+    new Map();
+
+  normalized.forEach(
+    (user) => {
+      uniqueUsers.set(
+        String(user.id),
+        user
+      );
+    }
+  );
+
+  return Array.from(
+    uniqueUsers.values()
+  );
 };
 
 /*
@@ -342,13 +935,164 @@ const buildInitialForm = (
   isEdit,
   initialValues
 ) => {
-  return {
+  const normalizedTenant =
+    isEdit
+      ? normalizeTenant(
+          tenant
+        )
+      : {};
+
+  const safeInitialValues =
+    initialValues &&
+    typeof initialValues === "object"
+      ? initialValues
+      : {};
+
+  const form = {
     ...DEFAULT_FORM,
+
     ...(isEdit
-      ? normalizeTenant(tenant)
+      ? normalizedTenant
       : {}),
-    ...(initialValues || {}),
+
+    ...safeInitialValues,
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | USER ID
+  |--------------------------------------------------------------------------
+  */
+
+  form.user_id =
+    String(
+      safeInitialValues?.user_id ??
+      normalizedTenant?.user_id ??
+      ""
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | BOOLEAN VALUES
+  |--------------------------------------------------------------------------
+  */
+
+  form.is_active =
+    normalizeBoolean(
+      form.is_active,
+      true
+    );
+
+  form.is_verified =
+    normalizeBoolean(
+      form.is_verified,
+      false
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | DATE
+  |--------------------------------------------------------------------------
+  */
+
+  form.date_of_birth =
+    formatDateForInput(
+      form.date_of_birth
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | STRING FIELDS
+  |--------------------------------------------------------------------------
+  */
+
+  const stringFields = [
+    "first_name",
+    "last_name",
+    "other_names",
+    "email",
+    "phone",
+    "id_number",
+    "passport_number",
+    "gender",
+    "nationality",
+    "country",
+    "region",
+    "county",
+    "city",
+    "area",
+    "postal_code",
+    "address",
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "emergency_contact_relationship",
+    "occupation",
+    "employer",
+    "photo",
+    "id_front",
+    "id_back",
+    "status",
+    "notes",
+  ];
+
+  stringFields.forEach(
+    (field) => {
+      form[field] =
+        normalizeString(
+          form[field]
+        );
+    }
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | MONTHLY INCOME
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    form.monthly_income === null ||
+    form.monthly_income === undefined
+  ) {
+    form.monthly_income = "";
+  }
+
+  return form;
+};
+
+/*
+|--------------------------------------------------------------------------
+| SANITIZE TENANT UPDATE PAYLOAD
+|--------------------------------------------------------------------------
+|
+| This is an additional safety layer.
+|
+| Even if a future form change accidentally adds a protected field,
+| edit mode will remove it before onSubmit().
+|
+*/
+
+const sanitizeTenantUpdatePayload = (
+  payload
+) => {
+  if (
+    !payload ||
+    typeof payload !== "object"
+  ) {
+    return payload;
+  }
+
+  const sanitized = {
+    ...payload,
+  };
+
+  TENANT_UPDATE_PROTECTED_FIELDS.forEach(
+    (field) => {
+      delete sanitized[field];
+    }
+  );
+
+  return sanitized;
 };
 
 /*
@@ -359,20 +1103,39 @@ const buildInitialForm = (
 
 const TenantForm = ({
   tenant = null,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE TENANT USERS
+  |--------------------------------------------------------------------------
+  */
+
+  users = EMPTY_ARRAY,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE USER LOADING
+  |--------------------------------------------------------------------------
+  */
+
+  availableUsersLoading = false,
+
+  /*
+  |--------------------------------------------------------------------------
+  | AVAILABLE USER ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  availableUsersError = null,
+
   mode = "create",
   loading = false,
   submitting = false,
   error = null,
-  initialValues = {},
+  initialValues = EMPTY_OBJECT,
   onSubmit,
   onCancel,
 }) => {
-  /*
-  |--------------------------------------------------------------------------
-  | EDIT MODE
-  |--------------------------------------------------------------------------
-  */
-
   const isEdit =
     mode === "edit" ||
     Boolean(tenant?.id);
@@ -383,41 +1146,165 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const [form, setForm] = useState(() =>
-    buildInitialForm(
-      tenant,
+  const [form, setForm] =
+    useState(() =>
+      buildInitialForm(
+        tenant,
+        isEdit,
+        initialValues
+      )
+    );
+
+  const [errors, setErrors] =
+    useState({});
+
+  const [
+    serverError,
+    setServerError,
+  ] = useState("");
+
+  /*
+  |--------------------------------------------------------------------------
+  | NORMALIZE AVAILABLE USERS
+  |--------------------------------------------------------------------------
+  */
+
+  const normalizedUsers =
+    useMemo(
+      () =>
+        normalizeUserCollection(
+          users
+        ),
+      [users]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | CURRENT TENANT USER
+  |--------------------------------------------------------------------------
+  */
+
+  const currentTenantUser =
+    useMemo(() => {
+      if (!isEdit) {
+        return null;
+      }
+
+      const currentUserId =
+        String(
+          form.user_id || ""
+        );
+
+      if (!currentUserId) {
+        return null;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | First try available users.
+      |--------------------------------------------------------------------------
+      */
+
+      const existingUser =
+        normalizedUsers.find(
+          (user) =>
+            String(user.id) ===
+            currentUserId
+        );
+
+      if (existingUser) {
+        return existingUser;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Fallback to tenant.user.
+      |--------------------------------------------------------------------------
+      */
+
+      const tenantUser =
+        tenant?.user &&
+        typeof tenant.user === "object"
+          ? tenant.user
+          : {
+              id: currentUserId,
+
+              first_name:
+                tenant?.first_name,
+
+              last_name:
+                tenant?.last_name,
+
+              name:
+                tenant?.name,
+
+              email:
+                tenant?.email,
+
+              phone:
+                tenant?.phone,
+            };
+
+      const normalized =
+        normalizeUserOption({
+          ...tenantUser,
+          id: currentUserId,
+        });
+
+      return normalized.id
+        ? normalized
+        : null;
+    }, [
       isEdit,
-      initialValues
-    )
-  );
+      form.user_id,
+      normalizedUsers,
+      tenant,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
-  | VALIDATION ERRORS
+  | USER OPTIONS
   |--------------------------------------------------------------------------
   */
 
-  const [errors, setErrors] = useState({});
+  const userOptions =
+    useMemo(() => {
+      const options = [
+        ...normalizedUsers,
+      ];
+
+      /*
+      |--------------------------------------------------------------------------
+      | In edit mode, keep the linked user visible even if the
+      | available-users endpoint excludes already-linked users.
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        currentTenantUser &&
+        !options.some(
+          (user) =>
+            String(user.id) ===
+            String(
+              currentTenantUser.id
+            )
+        )
+      ) {
+        options.unshift(
+          currentTenantUser
+        );
+      }
+
+      return options;
+    }, [
+      normalizedUsers,
+      currentTenantUser,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
-  | SERVER ERROR
+  | RESET FORM WHEN EDIT TARGET CHANGES
   |--------------------------------------------------------------------------
-  */
-
-  const [serverError, setServerError] =
-    useState("");
-
-  /*
-  |--------------------------------------------------------------------------
-  | RESET FORM WHEN TENANT CHANGES
-  |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  | Only reset when the actual tenant ID or mode changes.
-  |
-  | Do not put unstable objects/functions here.
-  |
   */
 
   useEffect(() => {
@@ -433,7 +1320,10 @@ const TenantForm = ({
     setServerError("");
   }, [
     tenant?.id,
+    tenant?.user_id,
+    tenant?.user?.id,
     mode,
+    isEdit,
   ]);
 
   /*
@@ -447,15 +1337,69 @@ const TenantForm = ({
       return;
     }
 
-    if (typeof error === "string") {
-      setServerError(error);
+    if (
+      typeof error === "string"
+    ) {
+      setServerError(
+        error
+      );
+
       return;
     }
 
+    const responseData =
+      error?.response?.data ||
+      error?.data ||
+      error;
+
+    const validationErrors =
+      responseData?.errors;
+
+    if (
+      validationErrors &&
+      typeof validationErrors === "object"
+    ) {
+      const normalizedErrors =
+        {};
+
+      Object.entries(
+        validationErrors
+      ).forEach(
+        ([field, message]) => {
+          normalizedErrors[
+            field
+          ] =
+            Array.isArray(
+              message
+            )
+              ? message
+                  .filter(Boolean)
+                  .map(
+                    normalizeString
+                  )
+                  .join(" ")
+              : normalizeString(
+                  message
+                );
+        }
+      );
+
+      if (
+        Object.keys(
+          normalizedErrors
+        ).length
+      ) {
+        setErrors(
+          normalizedErrors
+        );
+      }
+    }
+
     const message =
+      responseData?.message ||
+      responseData?.error ||
       error?.message ||
-      error?.error ||
-      "Something went wrong. Please check the form and try again.";
+      "";
 
     setServerError(
       typeof message === "string"
@@ -466,11 +1410,49 @@ const TenantForm = ({
 
   /*
   |--------------------------------------------------------------------------
+  | AVAILABLE USER ERROR
+  |--------------------------------------------------------------------------
+  */
+
+  useEffect(() => {
+    if (
+      !availableUsersError
+    ) {
+      return;
+    }
+
+    const responseData =
+      availableUsersError?.response
+        ?.data ||
+      availableUsersError?.data ||
+      availableUsersError;
+
+    const message =
+      responseData?.message ||
+      responseData?.error ||
+      availableUsersError?.message ||
+      "";
+
+    if (message) {
+      setServerError(
+        normalizeString(
+          message
+        )
+      );
+    }
+  }, [
+    availableUsersError,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
   | HANDLE CHANGE
   |--------------------------------------------------------------------------
   */
 
-  const handleChange = (event) => {
+  const handleChange = (
+    event
+  ) => {
     const {
       name,
       value,
@@ -478,29 +1460,134 @@ const TenantForm = ({
       checked,
     } = event.target;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Protected user-account fields must never be changed in edit mode.
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      isEdit &&
+      TENANT_UPDATE_PROTECTED_FIELDS.has(
+        name
+      )
+    ) {
+      return;
+    }
+
     const nextValue =
       type === "checkbox"
         ? checked
         : value;
 
-    setForm((current) => ({
-      ...current,
-      [name]: nextValue,
-    }));
-
-    setErrors((current) => {
-      if (!current[name]) {
-        return current;
-      }
-
-      const next = {
+    setForm(
+      (current) => ({
         ...current,
-      };
+        [name]: nextValue,
+      })
+    );
 
-      delete next[name];
+    setErrors(
+      (current) => {
+        if (!current[name]) {
+          return current;
+        }
 
-      return next;
-    });
+        const next = {
+          ...current,
+        };
+
+        if (
+          name === "id_number" ||
+          name === "passport_number"
+        ) {
+          delete next.id_number;
+          delete next.passport_number;
+        } else {
+          delete next[name];
+        }
+
+        return next;
+      }
+    );
+
+    setServerError("");
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | HANDLE USER CHANGE
+  |--------------------------------------------------------------------------
+  |
+  | User selection is ONLY allowed during creation.
+  |
+  */
+
+  const handleUserChange = (
+    event
+  ) => {
+    /*
+    |--------------------------------------------------------------------------
+    | A linked user cannot be changed during an update.
+    |--------------------------------------------------------------------------
+    */
+
+    if (isEdit) {
+      return;
+    }
+
+    const userId =
+      String(
+        event.target.value || ""
+      );
+
+    const selectedUser =
+      userOptions.find(
+        (user) =>
+          String(user.id) ===
+          userId
+      );
+
+    setForm(
+      (current) => ({
+        ...current,
+
+        user_id:
+          userId,
+
+        ...(selectedUser
+          ? {
+              first_name:
+                selectedUser.first_name ||
+                current.first_name,
+
+              last_name:
+                selectedUser.last_name ||
+                current.last_name,
+
+              email:
+                selectedUser.email ||
+                current.email,
+
+              phone:
+                selectedUser.phone ||
+                current.phone,
+            }
+          : {}),
+      })
+    );
+
+    setErrors(
+      (current) => {
+        const next = {
+          ...current,
+        };
+
+        delete next.user_id;
+
+        return next;
+      }
+    );
 
     setServerError("");
   };
@@ -515,24 +1602,43 @@ const TenantForm = ({
     name,
     value
   ) => {
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+    /*
+    |--------------------------------------------------------------------------
+    | Never mutate protected fields during edit.
+    |--------------------------------------------------------------------------
+    */
 
-    setErrors((current) => {
-      if (!current[name]) {
-        return current;
-      }
+    if (
+      isEdit &&
+      TENANT_UPDATE_PROTECTED_FIELDS.has(
+        name
+      )
+    ) {
+      return;
+    }
 
-      const next = {
+    setForm(
+      (current) => ({
         ...current,
-      };
+        [name]: value,
+      })
+    );
 
-      delete next[name];
+    setErrors(
+      (current) => {
+        if (!current[name]) {
+          return current;
+        }
 
-      return next;
-    });
+        const next = {
+          ...current,
+        };
+
+        delete next[name];
+
+        return next;
+      }
+    );
 
     setServerError("");
   };
@@ -546,25 +1652,210 @@ const TenantForm = ({
   const validate = () => {
     const nextErrors = {};
 
-    const firstName =
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE ONLY
+    |--------------------------------------------------------------------------
+    |
+    | These fields belong to the existing User account.
+    |
+    | They are required when creating a tenant profile because
+    | the user account is being linked for the first time.
+    |
+    */
+
+    if (!isEdit) {
+      const userId =
+        normalizeString(
+          form.user_id
+        );
+
+      const firstName =
+        normalizeString(
+          form.first_name
+        );
+
+      const lastName =
+        normalizeString(
+          form.last_name
+        );
+
+      const email =
+        normalizeString(
+          form.email
+        );
+
+      const phone =
+        normalizeString(
+          form.phone
+        );
+
+      if (!userId) {
+        nextErrors.user_id =
+          "Please select a tenant user account.";
+      }
+
+      if (!firstName) {
+        nextErrors.first_name =
+          "First name is required.";
+      } else if (
+        firstName.length < 2
+      ) {
+        nextErrors.first_name =
+          "First name must be at least 2 characters.";
+      }
+
+      if (!lastName) {
+        nextErrors.last_name =
+          "Last name is required.";
+      } else if (
+        lastName.length < 2
+      ) {
+        nextErrors.last_name =
+          "Last name must be at least 2 characters.";
+      }
+
+      if (!email) {
+        nextErrors.email =
+          "Email address is required.";
+      } else if (
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+          email
+        )
+      ) {
+        nextErrors.email =
+          "Enter a valid email address.";
+      }
+
+      if (!phone) {
+        nextErrors.phone =
+          "Phone number is required.";
+      } else {
+        const phoneDigits =
+          phone.replace(
+            /\D/g,
+            ""
+          );
+
+        if (
+          phoneDigits.length < 7
+        ) {
+          nextErrors.phone =
+            "Enter a valid phone number.";
+        }
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | IDENTIFICATION
+    |--------------------------------------------------------------------------
+    */
+
+    const idNumber =
       normalizeString(
-        form.first_name
+        form.id_number
       );
 
-    const lastName =
+    const passportNumber =
       normalizeString(
-        form.last_name
+        form.passport_number
       );
 
-    const email =
-      normalizeString(
-        form.email
-      );
+    if (
+      !idNumber &&
+      !passportNumber
+    ) {
+      nextErrors.id_number =
+        "National ID or passport number is required.";
+    }
 
-    const phone =
+    /*
+    |--------------------------------------------------------------------------
+    | GENDER
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !normalizeString(
+        form.gender
+      )
+    ) {
+      nextErrors.gender =
+        "Please select gender.";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !normalizeString(
+        form.status
+      )
+    ) {
+      nextErrors.status =
+        "Please select tenant status.";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DATE OF BIRTH
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      form.date_of_birth
+    ) {
+      const birthDate =
+        new Date(
+          form.date_of_birth
+        );
+
+      if (
+        Number.isNaN(
+          birthDate.getTime()
+        )
+      ) {
+        nextErrors.date_of_birth =
+          "Enter a valid date of birth.";
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MONTHLY INCOME
+    |--------------------------------------------------------------------------
+    */
+
+    if (
       normalizeString(
-        form.phone
-      );
+        form.monthly_income
+      )
+    ) {
+      const income =
+        Number(
+          form.monthly_income
+        );
+
+      if (
+        Number.isNaN(
+          income
+        ) ||
+        income < 0
+      ) {
+        nextErrors.monthly_income =
+          "Enter a valid monthly income.";
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | EMERGENCY CONTACT
+    |--------------------------------------------------------------------------
+    */
 
     const emergencyName =
       normalizeString(
@@ -581,127 +1872,6 @@ const TenantForm = ({
         form.emergency_contact_relationship
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | FIRST NAME
-    |--------------------------------------------------------------------------
-    */
-
-    if (!firstName) {
-      nextErrors.first_name =
-        "First name is required.";
-    } else if (
-      firstName.length < 2
-    ) {
-      nextErrors.first_name =
-        "First name must be at least 2 characters.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | LAST NAME
-    |--------------------------------------------------------------------------
-    */
-
-    if (!lastName) {
-      nextErrors.last_name =
-        "Last name is required.";
-    } else if (
-      lastName.length < 2
-    ) {
-      nextErrors.last_name =
-        "Last name must be at least 2 characters.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | EMAIL
-    |--------------------------------------------------------------------------
-    */
-
-    if (!email) {
-      nextErrors.email =
-        "Email address is required.";
-    } else if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-        email
-      )
-    ) {
-      nextErrors.email =
-        "Enter a valid email address.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | PHONE
-    |--------------------------------------------------------------------------
-    */
-
-    if (!phone) {
-      nextErrors.phone =
-        "Phone number is required.";
-    } else if (
-      phone.length < 7
-    ) {
-      nextErrors.phone =
-        "Enter a valid phone number.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | ID / PASSPORT
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-      !normalizeString(
-        form.id_number
-      ) &&
-      !normalizeString(
-        form.passport_number
-      )
-    ) {
-      nextErrors.id_number =
-        "National ID or passport number is required.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | GENDER
-    |--------------------------------------------------------------------------
-    */
-
-    if (!form.gender) {
-      nextErrors.gender =
-        "Please select gender.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | STATUS
-    |--------------------------------------------------------------------------
-    */
-
-    if (!form.status) {
-      nextErrors.status =
-        "Please select tenant status.";
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | EMERGENCY CONTACT
-    |--------------------------------------------------------------------------
-    |
-    | The backend treats emergency contact as a complete group.
-    |
-    | Therefore:
-    |
-    | 0 fields = valid
-    | 3 fields = valid
-    | 1 or 2 fields = invalid
-    |
-    */
-
     const hasEmergencyContact =
       Boolean(
         emergencyName ||
@@ -709,7 +1879,9 @@ const TenantForm = ({
         emergencyRelationship
       );
 
-    if (hasEmergencyContact) {
+    if (
+      hasEmergencyContact
+    ) {
       if (!emergencyName) {
         nextErrors.emergency_contact_name =
           "Emergency contact name is required.";
@@ -720,17 +1892,22 @@ const TenantForm = ({
           "Emergency contact phone is required.";
       }
 
-      if (!emergencyRelationship) {
+      if (
+        !emergencyRelationship
+      ) {
         nextErrors.emergency_contact_relationship =
           "Emergency contact relationship is required.";
       }
     }
 
-    setErrors(nextErrors);
+    setErrors(
+      nextErrors
+    );
 
     return (
-      Object.keys(nextErrors).length ===
-      0
+      Object.keys(
+        nextErrors
+      ).length === 0
     );
   };
 
@@ -765,30 +1942,21 @@ const TenantForm = ({
 
     /*
     |--------------------------------------------------------------------------
-    | PAYLOAD
+    | COMMON TENANT FIELDS
     |--------------------------------------------------------------------------
     */
 
-    const payload = {
-      first_name:
-        normalizeString(
-          form.first_name
-        ),
+    const tenantPayload = {
+      /*
+      |--------------------------------------------------------------------------
+      | PERSONAL TENANT INFORMATION
+      |--------------------------------------------------------------------------
+      */
 
-      last_name:
+      other_names:
         normalizeString(
-          form.last_name
-        ),
-
-      email:
-        normalizeString(
-          form.email
-        ),
-
-      phone:
-        normalizeString(
-          form.phone
-        ),
+          form.other_names
+        ) || null,
 
       id_number:
         normalizeString(
@@ -801,15 +1969,27 @@ const TenantForm = ({
         ) || null,
 
       gender:
-        form.gender || null,
+        normalizeString(
+          form.gender
+        ) || null,
 
       date_of_birth:
-        form.date_of_birth || null,
+        form.date_of_birth
+          ? formatDateForInput(
+              form.date_of_birth
+            )
+          : null,
 
       nationality:
         normalizeString(
           form.nationality
         ) || null,
+
+      /*
+      |--------------------------------------------------------------------------
+      | ADDRESS
+      |--------------------------------------------------------------------------
+      */
 
       country:
         normalizeString(
@@ -836,6 +2016,11 @@ const TenantForm = ({
           form.area
         ) || null,
 
+      postal_code:
+        normalizeString(
+          form.postal_code
+        ) || null,
+
       address:
         normalizeString(
           form.address
@@ -845,9 +2030,6 @@ const TenantForm = ({
       |--------------------------------------------------------------------------
       | EMERGENCY CONTACT
       |--------------------------------------------------------------------------
-      |
-      | Always send all three fields together.
-      |
       */
 
       emergency_contact_name:
@@ -865,6 +2047,12 @@ const TenantForm = ({
           ? emergencyRelationship
           : null,
 
+      /*
+      |--------------------------------------------------------------------------
+      | EMPLOYMENT
+      |--------------------------------------------------------------------------
+      */
+
       occupation:
         normalizeString(
           form.occupation
@@ -875,18 +2063,58 @@ const TenantForm = ({
           form.employer
         ) || null,
 
-      status:
-        form.status || "pending",
+      monthly_income:
+        normalizeString(
+          form.monthly_income
+        )
+          ? Number(
+              form.monthly_income
+            )
+          : null,
 
-      is_active:
-        Boolean(
-          form.is_active
-        ),
+      /*
+      |--------------------------------------------------------------------------
+      | DOCUMENTS
+      |--------------------------------------------------------------------------
+      */
+
+      photo:
+        normalizeString(
+          form.photo
+        ) || null,
+
+      id_front:
+        normalizeString(
+          form.id_front
+        ) || null,
+
+      id_back:
+        normalizeString(
+          form.id_back
+        ) || null,
+
+      /*
+      |--------------------------------------------------------------------------
+      | TENANT ACCOUNT
+      |--------------------------------------------------------------------------
+      */
+
+      status:
+        normalizeString(
+          form.status
+        ) || "pending",
 
       is_verified:
-        Boolean(
-          form.is_verified
+        normalizeBoolean(
+          form.is_verified,
+          false
         ),
+
+      /*
+      |--------------------------------------------------------------------------
+      | NOTES
+      |--------------------------------------------------------------------------
+      */
 
       notes:
         normalizeString(
@@ -894,7 +2122,88 @@ const TenantForm = ({
         ) || null,
     };
 
-    return payload;
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE PAYLOAD
+    |--------------------------------------------------------------------------
+    |
+    | Creation is allowed to establish the link to the existing user
+    | account and therefore includes the User identity information.
+    |
+    */
+
+    if (!isEdit) {
+      const userId =
+        normalizeString(
+          form.user_id
+        );
+
+      return {
+        user_id:
+          userId
+            ? Number(userId)
+            : null,
+
+        first_name:
+          normalizeString(
+            form.first_name
+          ),
+
+        last_name:
+          normalizeString(
+            form.last_name
+          ),
+
+        email:
+          normalizeString(
+            form.email
+          ),
+
+        phone:
+          normalizeString(
+            form.phone
+          ),
+
+        ...tenantPayload,
+
+        /*
+        |--------------------------------------------------------------------------
+        | Create-only active flag.
+        |--------------------------------------------------------------------------
+        */
+
+        is_active:
+          normalizeBoolean(
+            form.is_active,
+            true
+          ),
+      };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | EDIT PAYLOAD
+    |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | DO NOT include:
+    |
+    | user_id
+    | tenant_number
+    | first_name
+    | last_name
+    | email
+    | phone
+    | is_active
+    |
+    | These are either User fields or unsupported during tenant updates.
+    |
+    */
+
+    return sanitizeTenantUpdatePayload(
+      tenantPayload
+    );
   };
 
   /*
@@ -910,14 +2219,9 @@ const TenantForm = ({
 
     setServerError("");
 
-    const isValid = validate();
-
-    if (!isValid) {
+    if (!validate()) {
       return;
     }
-
-    const payload =
-      buildPayload();
 
     if (
       typeof onSubmit !==
@@ -930,16 +2234,96 @@ const TenantForm = ({
       return;
     }
 
+    const payload =
+      buildPayload();
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEVELOPMENT DEBUGGING
+    |--------------------------------------------------------------------------
+    |
+    | This makes it very easy to confirm that edit requests no longer
+    | contain protected fields.
+    |
+    */
+
+    if (import.meta.env.DEV) {
+      console.log(
+        `[TenantForm] ${
+          isEdit
+            ? "UPDATE"
+            : "CREATE"
+        } payload:`,
+        payload
+      );
+    }
+
     try {
       await onSubmit(
         payload,
         tenant
       );
-    } catch (submitError) {
-      setServerError(
+    } catch (
+      submitError
+    ) {
+      const responseData =
+        submitError?.response
+          ?.data ||
+        submitError?.data ||
+        {};
+
+      if (
+        responseData?.errors &&
+        typeof responseData.errors ===
+          "object"
+      ) {
+        const validationErrors =
+          {};
+
+        Object.entries(
+          responseData.errors
+        ).forEach(
+          ([field, message]) => {
+            validationErrors[
+              field
+            ] =
+              Array.isArray(
+                message
+              )
+                ? message
+                    .filter(Boolean)
+                    .map(
+                      normalizeString
+                    )
+                    .join(" ")
+                : normalizeString(
+                    message
+                  );
+          }
+        );
+
+        setErrors(
+          validationErrors
+        );
+      }
+
+      const message =
+        responseData?.message ||
+        responseData?.error ||
         submitError?.message ||
-          "Failed to save tenant. Please try again."
+        "Failed to save tenant. Please try again.";
+
+      setServerError(
+        normalizeString(
+          message
+        )
       );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Keep original error available to parent.
+      |--------------------------------------------------------------------------
+      */
 
       throw submitError;
     }
@@ -962,36 +2346,45 @@ const TenantForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | FORM TITLE
+  | UI VALUES
   |--------------------------------------------------------------------------
   */
 
-  const formTitle = isEdit
-    ? "Update Tenant"
-    : "Create Tenant";
+  const formTitle =
+    isEdit
+      ? "Update Tenant"
+      : "Create Tenant";
 
-  const submitLabel = isEdit
-    ? "Update Tenant"
-    : "Create Tenant";
+  const submitLabel =
+    isEdit
+      ? "Update Tenant"
+      : "Create Tenant";
 
-  /*
-  |--------------------------------------------------------------------------
-  | FIELD ERROR
-  |--------------------------------------------------------------------------
-  */
+  const fieldError = (
+    field
+  ) => {
+    const error =
+      errors?.[field];
 
-  const fieldError = (field) =>
-    errors?.[field];
+    if (
+      Array.isArray(error)
+    ) {
+      return error
+        .map(
+          normalizeString
+        )
+        .join(" ");
+    }
 
-  /*
-  |--------------------------------------------------------------------------
-  | HAS ERRORS
-  |--------------------------------------------------------------------------
-  */
+    return normalizeString(
+      error
+    );
+  };
 
   const hasErrors =
-    Object.keys(errors).length >
-    0;
+    Object.keys(
+      errors
+    ).length > 0;
 
   /*
   |--------------------------------------------------------------------------
@@ -999,30 +2392,60 @@ const TenantForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const completion = useMemo(() => {
-    const requiredFields = [
-      "first_name",
-      "last_name",
-      "email",
-      "phone",
-      "gender",
-      "status",
-    ];
+  const completion =
+    useMemo(() => {
+      const requiredFields =
+        isEdit
+          ? [
+              "id_number_or_passport",
+              "gender",
+              "status",
+            ]
+          : [
+              "user_id",
+              "first_name",
+              "last_name",
+              "email",
+              "phone",
+              "gender",
+              "status",
+            ];
 
-    const completed =
-      requiredFields.filter(
-        (field) =>
-          normalizeString(
-            form[field]
-          ) !== ""
-      ).length;
+      const completed =
+        requiredFields.filter(
+          (field) => {
+            if (
+              field ===
+              "id_number_or_passport"
+            ) {
+              return Boolean(
+                normalizeString(
+                  form.id_number
+                ) ||
+                normalizeString(
+                  form.passport_number
+                )
+              );
+            }
 
-    return Math.round(
-      (completed /
-        requiredFields.length) *
-        100
-    );
-  }, [form]);
+            return (
+              normalizeString(
+                form[field]
+              ) !== ""
+            );
+          }
+        ).length;
+
+      return Math.round(
+        (
+          completed /
+          requiredFields.length
+        ) * 100
+      );
+    }, [
+      form,
+      isEdit,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1055,13 +2478,13 @@ const TenantForm = ({
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={
+        handleSubmit
+      }
       noValidate
       className="space-y-6"
     >
-      {/* ================================================================
-          HEADER
-      ================================================================= */}
+      {/* HEADER */}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -1077,7 +2500,7 @@ const TenantForm = ({
 
               <p className="mt-0.5 text-sm text-gray-500">
                 {isEdit
-                  ? "Update tenant information and account details."
+                  ? "Update tenant-specific information. Linked user account details are managed from the user profile."
                   : "Add a new tenant to your estate management system."}
               </p>
             </div>
@@ -1127,7 +2550,10 @@ const TenantForm = ({
                     {Object.entries(
                       errors
                     )
-                      .slice(0, 8)
+                      .slice(
+                        0,
+                        8
+                      )
                       .map(
                         ([
                           field,
@@ -1138,7 +2564,9 @@ const TenantForm = ({
                               field
                             }
                           >
-                            {message}
+                            {normalizeString(
+                              message
+                            )}
                           </li>
                         )
                       )}
@@ -1150,9 +2578,227 @@ const TenantForm = ({
         )}
       </div>
 
-      {/* ================================================================
-          PERSONAL INFORMATION
-      ================================================================= */}
+      {/* TENANT USER ACCOUNT */}
+
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <SectionHeader
+          icon={
+            <UserRound className="h-5 w-5" />
+          }
+          title="Tenant User Account"
+          description={
+            isEdit
+              ? "This tenant is linked to the following existing user account. The link cannot be changed during a tenant update."
+              : "Select an existing user account that has the tenant role."
+          }
+        />
+
+        <div className="p-5 sm:p-6">
+          {isEdit ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-50 text-primary-600">
+                      <UserRound className="h-5 w-5" />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900">
+                        {normalizeString(
+                          currentTenantUser?.name
+                        ) ||
+                          `${normalizeString(
+                            form.first_name
+                          )} ${normalizeString(
+                            form.last_name
+                          )}`.trim() ||
+                          "Linked User"}
+                      </p>
+
+                      {currentTenantUser?.email && (
+                        <p className="mt-0.5 truncate text-xs text-gray-500">
+                          {normalizeString(
+                            currentTenantUser.email
+                          )}
+                        </p>
+                      )}
+
+                      {currentTenantUser?.phone && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {normalizeString(
+                            currentTenantUser.phone
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Linked
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
+                <div className="flex gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+
+                  <p className="text-xs leading-5 text-amber-700">
+                    The linked user account cannot be changed
+                    from the tenant profile. To change the
+                    user's name, email or phone number, update
+                    the linked user profile instead.
+                  </p>
+                </div>
+              </div>
+
+              {form.user_id && (
+                <p className="text-xs text-gray-400">
+                  User ID:{" "}
+                  <span className="font-medium text-gray-600">
+                    {form.user_id}
+                  </span>
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <SelectField
+                label="Tenant User"
+                name="user_id"
+                value={
+                  form.user_id
+                }
+                onChange={
+                  handleUserChange
+                }
+                error={fieldError(
+                  "user_id"
+                )}
+                required
+                disabled={
+                  submitting ||
+                  availableUsersLoading
+                }
+                options={[
+                  {
+                    value: "",
+                    label:
+                      availableUsersLoading
+                        ? "Loading tenant users..."
+                        : userOptions.length >
+                            0
+                          ? "Select tenant user"
+                          : "No tenant users available",
+                  },
+
+                  ...userOptions.map(
+                    (user) => ({
+                      value:
+                        String(
+                          user.id
+                        ),
+
+                      label:
+                        normalizeString(
+                          user.name
+                        ) +
+                        (
+                          user.email
+                            ? ` — ${normalizeString(
+                                user.email
+                              )}`
+                            : ""
+                        ),
+                    })
+                  ),
+                ]}
+              />
+
+              {availableUsersLoading && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+
+                  <p className="text-xs text-blue-700">
+                    Loading available tenant users...
+                  </p>
+                </div>
+              )}
+
+              {availableUsersError && (
+                <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                  <div className="flex gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+
+                    <div>
+                      <p className="text-xs font-semibold text-red-800">
+                        Unable to load tenant users.
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-red-700">
+                        {normalizeString(
+                          availableUsersError?.response
+                            ?.data?.message ||
+                          availableUsersError
+                            ?.data?.message ||
+                          availableUsersError?.message ||
+                          availableUsersError
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+                <div className="flex gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+
+                  <p className="text-xs leading-5 text-blue-700">
+                    Only select a user who already has the{" "}
+                    <strong>
+                      tenant
+                    </strong>{" "}
+                    role. The selected user's ID will be
+                    stored as{" "}
+                    <strong>
+                      user_id
+                    </strong>{" "}
+                    on the tenant profile.
+                  </p>
+                </div>
+              </div>
+
+              {!availableUsersLoading &&
+                userOptions.length ===
+                  0 && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    No tenant users are currently available.
+                    Make sure users have the tenant role and
+                    are not already linked to another tenant.
+                  </p>
+                )}
+
+              {!availableUsersLoading &&
+                userOptions.length >
+                  0 && (
+                  <p className="mt-2 text-xs text-gray-400">
+                    {userOptions.length} tenant user
+                    {userOptions.length ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    available.
+                  </p>
+                )}
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* PERSONAL INFORMATION */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1160,80 +2806,181 @@ const TenantForm = ({
             <User className="h-5 w-5" />
           }
           title="Personal Information"
-          description="Basic identification and personal details."
+          description={
+            isEdit
+              ? "Linked user identity information is read-only. Update the user profile to change name, email or phone."
+              : "Basic identification and personal details."
+          }
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
-          <InputField
-            label="First Name"
-            name="first_name"
-            value={form.first_name}
-            onChange={handleChange}
-            error={fieldError(
-              "first_name"
-            )}
-            required
-            placeholder="e.g. John"
-            autoComplete="given-name"
-          />
+          {isEdit ? (
+            <>
+              <ReadOnlyField
+                label="First Name"
+                value={
+                  form.first_name
+                }
+              />
+
+              <ReadOnlyField
+                label="Last Name"
+                value={
+                  form.last_name
+                }
+              />
+            </>
+          ) : (
+            <>
+              <InputField
+                label="First Name"
+                name="first_name"
+                value={
+                  form.first_name
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "first_name"
+                )}
+                required
+                placeholder="e.g. John"
+                autoComplete="given-name"
+                disabled={
+                  submitting
+                }
+              />
+
+              <InputField
+                label="Last Name"
+                name="last_name"
+                value={
+                  form.last_name
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "last_name"
+                )}
+                required
+                placeholder="e.g. Kamau"
+                autoComplete="family-name"
+                disabled={
+                  submitting
+                }
+              />
+            </>
+          )}
 
           <InputField
-            label="Last Name"
-            name="last_name"
-            value={form.last_name}
-            onChange={handleChange}
-            error={fieldError(
-              "last_name"
-            )}
-            required
-            placeholder="e.g. Kamau"
-            autoComplete="family-name"
-          />
-
-          <InputField
-            label="Email Address"
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={handleChange}
-            error={fieldError(
-              "email"
-            )}
-            required
-            placeholder="tenant@example.com"
-            icon={
-              <Mail className="h-4 w-4" />
+            label="Other Names"
+            name="other_names"
+            value={
+              form.other_names
             }
-            autoComplete="email"
+            onChange={
+              handleChange
+            }
+            placeholder="e.g. Mwangi"
+            hint="Optional additional or middle names."
+            disabled={
+              submitting
+            }
           />
 
-          <InputField
-            label="Phone Number"
-            name="phone"
-            type="tel"
-            value={form.phone}
-            onChange={handleChange}
-            error={fieldError(
-              "phone"
-            )}
-            required
-            placeholder="e.g. 0712345678"
-            icon={
-              <Phone className="h-4 w-4" />
-            }
-            autoComplete="tel"
-          />
+          {isEdit ? (
+            <>
+              <ReadOnlyField
+                label="Email Address"
+                value={
+                  form.email
+                }
+                icon={
+                  <Mail className="h-4 w-4" />
+                }
+              />
+
+              <ReadOnlyField
+                label="Phone Number"
+                value={
+                  form.phone
+                }
+                icon={
+                  <Phone className="h-4 w-4" />
+                }
+              />
+            </>
+          ) : (
+            <>
+              <InputField
+                label="Email Address"
+                name="email"
+                type="email"
+                value={
+                  form.email
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "email"
+                )}
+                required
+                placeholder="tenant@example.com"
+                icon={
+                  <Mail className="h-4 w-4" />
+                }
+                autoComplete="email"
+                disabled={
+                  submitting
+                }
+              />
+
+              <InputField
+                label="Phone Number"
+                name="phone"
+                type="tel"
+                value={
+                  form.phone
+                }
+                onChange={
+                  handleChange
+                }
+                error={fieldError(
+                  "phone"
+                )}
+                required
+                placeholder="e.g. 0712345678"
+                icon={
+                  <Phone className="h-4 w-4" />
+                }
+                autoComplete="tel"
+                disabled={
+                  submitting
+                }
+              />
+            </>
+          )}
 
           <InputField
             label="National ID Number"
             name="id_number"
-            value={form.id_number}
-            onChange={handleChange}
+            value={
+              form.id_number
+            }
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "id_number"
             )}
             placeholder="e.g. 12345678"
             hint="Provide either National ID or Passport number."
+            disabled={
+              submitting
+            }
           />
 
           <InputField
@@ -1242,19 +2989,34 @@ const TenantForm = ({
             value={
               form.passport_number
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "passport_number"
+            )}
             placeholder="e.g. A12345678"
+            disabled={
+              submitting
+            }
           />
 
           <SelectField
             label="Gender"
             name="gender"
-            value={form.gender}
-            onChange={handleChange}
+            value={
+              form.gender
+            }
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "gender"
             )}
             required
+            disabled={
+              submitting
+            }
             options={[
               {
                 value: "",
@@ -1262,16 +3024,22 @@ const TenantForm = ({
                   "Select gender",
               },
               {
-                value: "male",
-                label: "Male",
+                value:
+                  "male",
+                label:
+                  "Male",
               },
               {
-                value: "female",
-                label: "Female",
+                value:
+                  "female",
+                label:
+                  "Female",
               },
               {
-                value: "other",
-                label: "Other",
+                value:
+                  "other",
+                label:
+                  "Other",
               },
             ]}
           />
@@ -1283,9 +3051,17 @@ const TenantForm = ({
             value={
               form.date_of_birth
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "date_of_birth"
+            )}
             icon={
               <CalendarDays className="h-4 w-4" />
+            }
+            disabled={
+              submitting
             }
           />
 
@@ -1295,18 +3071,21 @@ const TenantForm = ({
             value={
               form.nationality
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Kenyan"
             icon={
               <Globe2 className="h-4 w-4" />
+            }
+            disabled={
+              submitting
             }
           />
         </div>
       </section>
 
-      {/* ================================================================
-          ADDRESS & LOCATION
-      ================================================================= */}
+      {/* ADDRESS */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1321,91 +3100,184 @@ const TenantForm = ({
           <InputField
             label="Country"
             name="country"
-            value={form.country}
-            onChange={handleChange}
+            value={
+              form.country
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Kenya"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
             label="Region"
             name="region"
-            value={form.region}
-            onChange={handleChange}
+            value={
+              form.region
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Nairobi Region"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
             label="County"
             name="county"
-            value={form.county}
-            onChange={handleChange}
+            value={
+              form.county
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Nairobi"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
             label="City"
             name="city"
-            value={form.city}
-            onChange={handleChange}
+            value={
+              form.city
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Nairobi"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
             label="Area"
             name="area"
-            value={form.area}
-            onChange={handleChange}
+            value={
+              form.area
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Westlands"
+            disabled={
+              submitting
+            }
+          />
+
+          <InputField
+            label="Postal Code"
+            name="postal_code"
+            value={
+              form.postal_code
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="e.g. 00100"
+            autoComplete="postal-code"
+            disabled={
+              submitting
+            }
           />
 
           <div className="sm:col-span-2 lg:col-span-3">
             <TextAreaField
               label="Residential Address"
               name="address"
-              value={form.address}
-              onChange={handleChange}
+              value={
+                form.address
+              }
+              onChange={
+                handleChange
+              }
+              error={fieldError(
+                "address"
+              )}
               placeholder="Enter the tenant's residential address..."
               rows={3}
+              disabled={
+                submitting
+              }
             />
           </div>
         </div>
       </section>
 
-      {/* ================================================================
-          EMPLOYMENT
-      ================================================================= */}
+      {/* EMPLOYMENT */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
           icon={
-            <FileText className="h-5 w-5" />
+            <Wallet className="h-5 w-5" />
           }
-          title="Employment Information"
-          description="Optional employment and occupation details."
+          title="Employment & Financial Information"
+          description="Employment, occupation and income details."
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
           <InputField
             label="Occupation"
             name="occupation"
-            value={form.occupation}
-            onChange={handleChange}
+            value={
+              form.occupation
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. Software Engineer"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
             label="Employer / Company"
             name="employer"
-            value={form.employer}
-            onChange={handleChange}
+            value={
+              form.employer
+            }
+            onChange={
+              handleChange
+            }
             placeholder="e.g. ABC Technologies Ltd"
+            disabled={
+              submitting
+            }
+          />
+
+          <InputField
+            label="Monthly Income"
+            name="monthly_income"
+            type="number"
+            min="0"
+            step="0.01"
+            value={
+              form.monthly_income
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "monthly_income"
+            )}
+            placeholder="e.g. 85000"
+            hint="Enter the tenant's monthly income in KES."
+            disabled={
+              submitting
+            }
           />
         </div>
       </section>
 
-      {/* ================================================================
-          EMERGENCY CONTACT
-      ================================================================= */}
+      {/* EMERGENCY CONTACT */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1423,11 +3295,16 @@ const TenantForm = ({
             value={
               form.emergency_contact_name
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "emergency_contact_name"
             )}
             placeholder="e.g. Jane Kamau"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
@@ -1437,11 +3314,16 @@ const TenantForm = ({
             value={
               form.emergency_contact_phone
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "emergency_contact_phone"
             )}
             placeholder="e.g. 0712345678"
+            disabled={
+              submitting
+            }
           />
 
           <InputField
@@ -1450,18 +3332,83 @@ const TenantForm = ({
             value={
               form.emergency_contact_relationship
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "emergency_contact_relationship"
             )}
             placeholder="e.g. Spouse, Parent, Sibling"
+            disabled={
+              submitting
+            }
           />
         </div>
       </section>
 
-      {/* ================================================================
-          ACCOUNT SETTINGS
-      ================================================================= */}
+      {/* DOCUMENTS */}
+
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <SectionHeader
+          icon={
+            <FileImage className="h-5 w-5" />
+          }
+          title="Documents & Media"
+          description="Tenant profile photo and identification document references."
+        />
+
+        <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
+          <InputField
+            label="Profile Photo"
+            name="photo"
+            value={
+              form.photo
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="e.g. tenants/profile.jpg"
+            hint="Stored photo path or URL."
+            disabled={
+              submitting
+            }
+          />
+
+          <InputField
+            label="ID Front"
+            name="id_front"
+            value={
+              form.id_front
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="e.g. tenants/id-front.jpg"
+            hint="Stored ID front path or URL."
+            disabled={
+              submitting
+            }
+          />
+
+          <InputField
+            label="ID Back"
+            name="id_back"
+            value={
+              form.id_back
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="e.g. tenants/id-back.jpg"
+            hint="Stored ID back path or URL."
+            disabled={
+              submitting
+            }
+          />
+        </div>
+      </section>
+
+      {/* ACCOUNT SETTINGS */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1469,49 +3416,74 @@ const TenantForm = ({
             <ShieldCheck className="h-5 w-5" />
           }
           title="Account Settings"
-          description="Manage tenant status, activity and verification."
+          description={
+            isEdit
+              ? "Manage tenant status and verification."
+              : "Manage tenant status, activity and verification."
+          }
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:p-6">
           <SelectField
             label="Tenant Status"
             name="status"
-            value={form.status}
-            onChange={handleChange}
+            value={
+              form.status
+            }
+            onChange={
+              handleChange
+            }
             error={fieldError(
               "status"
             )}
             required
+            disabled={
+              submitting
+            }
             options={[
               {
-                value: "pending",
-                label: "Pending",
+                value:
+                  "pending",
+                label:
+                  "Pending",
               },
               {
-                value: "active",
-                label: "Active",
+                value:
+                  "active",
+                label:
+                  "Active",
               },
               {
-                value: "inactive",
-                label: "Inactive",
+                value:
+                  "inactive",
+                label:
+                  "Inactive",
               },
               {
-                value: "blacklisted",
+                value:
+                  "blacklisted",
                 label:
                   "Blacklisted",
               },
             ]}
           />
 
-          <ToggleField
-            label="Active Account"
-            description="Allow this tenant account to remain active."
-            name="is_active"
-            checked={
-              form.is_active
-            }
-            onChange={handleChange}
-          />
+          {!isEdit && (
+            <ToggleField
+              label="Active Account"
+              description="Allow this tenant account to remain active."
+              name="is_active"
+              checked={
+                form.is_active
+              }
+              onChange={
+                handleChange
+              }
+              disabled={
+                submitting
+              }
+            />
+          )}
 
           <ToggleField
             label="Verified Tenant"
@@ -1520,14 +3492,17 @@ const TenantForm = ({
             checked={
               form.is_verified
             }
-            onChange={handleChange}
+            onChange={
+              handleChange
+            }
+            disabled={
+              submitting
+            }
           />
         </div>
       </section>
 
-      {/* ================================================================
-          NOTES
-      ================================================================= */}
+      {/* NOTES */}
 
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <SectionHeader
@@ -1542,79 +3517,50 @@ const TenantForm = ({
           <TextAreaField
             label="Notes"
             name="notes"
-            value={form.notes}
-            onChange={handleChange}
+            value={
+              form.notes
+            }
+            onChange={
+              handleChange
+            }
+            error={fieldError(
+              "notes"
+            )}
             placeholder="Enter any additional notes about this tenant..."
             rows={5}
+            disabled={
+              submitting
+            }
           />
         </div>
       </section>
 
-      {/* ================================================================
-          ACTIONS
-      ================================================================= */}
+      {/* ACTIONS */}
 
       <div className="sticky bottom-0 z-10 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:p-5">
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            onClick={handleCancel}
-            disabled={submitting}
-            className="
-              inline-flex
-              w-full
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              border
-              border-gray-300
-              bg-white
-              px-5
-              py-2.5
-              text-sm
-              font-medium
-              text-gray-700
-              transition
-              hover:bg-gray-50
-              focus:outline-none
-              focus:ring-2
-              focus:ring-gray-400/20
-              disabled:cursor-not-allowed
-              disabled:opacity-50
-              sm:w-auto
-            "
+            onClick={
+              handleCancel
+            }
+            disabled={
+              submitting
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             <X className="h-4 w-4" />
+
             Cancel
           </button>
 
           <button
             type="submit"
-            disabled={submitting}
-            className="
-              inline-flex
-              w-full
-              items-center
-              justify-center
-              gap-2
-              rounded-lg
-              bg-primary-600
-              px-6
-              py-2.5
-              text-sm
-              font-semibold
-              text-white
-              shadow-sm
-              transition
-              hover:bg-primary-700
-              focus:outline-none
-              focus:ring-2
-              focus:ring-primary-500/30
-              disabled:cursor-not-allowed
-              disabled:opacity-60
-              sm:w-auto
-            "
+            disabled={
+              submitting ||
+              loading
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? (
               <>
@@ -1674,6 +3620,50 @@ const SectionHeader = ({
 
 /*
 |--------------------------------------------------------------------------
+| READ ONLY FIELD
+|--------------------------------------------------------------------------
+*/
+
+const ReadOnlyField = ({
+  label,
+  value = "",
+  icon,
+}) => {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+
+      <div className="relative">
+        {icon && (
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            {icon}
+          </span>
+        )}
+
+        <div
+          className={`flex min-h-10 w-full items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600 ${
+            icon
+              ? "pl-10"
+              : ""
+          }`}
+        >
+          {normalizeString(
+            value
+          ) || "Not available"}
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        Managed from the linked user profile.
+      </p>
+    </div>
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
 | INPUT FIELD
 |--------------------------------------------------------------------------
 */
@@ -1691,9 +3681,17 @@ const InputField = ({
   icon,
   autoComplete,
   disabled = false,
+  min,
+  step,
 }) => {
   const hasError =
     Boolean(error);
+
+  const errorId =
+    `${name}-error`;
+
+  const hintId =
+    `${name}-hint`;
 
   return (
     <div className="space-y-1.5">
@@ -1721,60 +3719,70 @@ const InputField = ({
           id={name}
           name={name}
           type={type}
-          value={value ?? ""}
-          onChange={onChange}
-          placeholder={placeholder}
-          autoComplete={autoComplete}
-          disabled={disabled}
-          aria-invalid={hasError}
+          value={
+            value === null ||
+            value === undefined
+              ? ""
+              : normalizeString(
+                  value
+                )
+          }
+          onChange={
+            onChange
+          }
+          placeholder={
+            placeholder
+          }
+          autoComplete={
+            autoComplete
+          }
+          disabled={
+            disabled
+          }
+          min={min}
+          step={step}
+          aria-invalid={
+            hasError
+          }
           aria-describedby={
             hasError
-              ? `${name}-error`
+              ? errorId
               : hint
-                ? `${name}-hint`
+                ? hintId
                 : undefined
           }
-          className={`
-            h-10
-            w-full
-            rounded-lg
-            border
-            bg-white
-            px-3
-            text-sm
-            text-gray-900
-            outline-none
-            transition
-            placeholder:text-gray-400
-            disabled:cursor-not-allowed
-            disabled:bg-gray-50
-            disabled:text-gray-500
-            ${icon ? "pl-10" : ""}
-            ${
-              hasError
-                ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
-                : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            }
-          `}
+          className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+            icon
+              ? "pl-10"
+              : ""
+          } ${
+            hasError
+              ? "border-red-300 ring-1 ring-red-100 focus:border-red-500 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          }`}
         />
       </div>
 
-      {hint && !error && (
-        <p
-          id={`${name}-hint`}
-          className="text-xs text-gray-400"
-        >
-          {hint}
-        </p>
-      )}
+      {hint &&
+        !error && (
+          <p
+            id={hintId}
+            className="text-xs text-gray-400"
+          >
+            {hint}
+          </p>
+        )}
 
       {error && (
         <p
-          id={`${name}-error`}
+          id={errorId}
           className="flex items-center gap-1 text-xs text-red-600"
         >
           <AlertCircle className="h-3.5 w-3.5" />
-          {error}
+
+          {normalizeString(
+            error
+          )}
         </p>
       )}
     </div>
@@ -1794,7 +3802,7 @@ const SelectField = ({
   onChange,
   error,
   required = false,
-  options = [],
+  options = EMPTY_ARRAY,
   disabled = false,
 }) => {
   const hasError =
@@ -1819,47 +3827,51 @@ const SelectField = ({
         <select
           id={name}
           name={name}
-          value={value ?? ""}
-          onChange={onChange}
-          disabled={disabled}
-          aria-invalid={hasError}
-          className={`
-            h-10
-            w-full
-            appearance-none
-            rounded-lg
-            border
-            bg-white
-            px-3
-            pr-10
-            text-sm
-            text-gray-900
-            outline-none
-            transition
-            disabled:cursor-not-allowed
-            disabled:bg-gray-50
-            disabled:text-gray-500
-            ${
-              hasError
-                ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-                : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            }
-          `}
+          value={
+            value === null ||
+            value === undefined
+              ? ""
+              : String(value)
+          }
+          onChange={
+            onChange
+          }
+          disabled={
+            disabled
+          }
+          aria-invalid={
+            hasError
+          }
+          className={`h-10 w-full appearance-none rounded-lg border bg-white px-3 pr-10 text-sm text-gray-900 outline-none transition disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+            hasError
+              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+          }`}
         >
-          {options.map(
-            (option) => (
-              <option
-                key={
-                  option.value
-                }
-                value={
-                  option.value
-                }
-              >
-                {option.label}
-              </option>
-            )
-          )}
+          {Array.isArray(
+            options
+          ) &&
+            options.map(
+              (
+                option,
+                index
+              ) => (
+                <option
+                  key={`${String(
+                    option?.value ??
+                      ""
+                  )}-${index}`}
+                  value={
+                    option?.value ??
+                    ""
+                  }
+                >
+                  {normalizeString(
+                    option?.label
+                  )}
+                </option>
+              )
+            )}
         </select>
 
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -1868,7 +3880,10 @@ const SelectField = ({
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
-          {error}
+
+          {normalizeString(
+            error
+          )}
         </p>
       )}
     </div>
@@ -1890,6 +3905,7 @@ const TextAreaField = ({
   required = false,
   placeholder,
   rows = 4,
+  disabled = false,
 }) => {
   const hasError =
     Boolean(error);
@@ -1912,36 +3928,41 @@ const TextAreaField = ({
       <textarea
         id={name}
         name={name}
-        value={value ?? ""}
-        onChange={onChange}
+        value={
+          value === null ||
+          value === undefined
+            ? ""
+            : normalizeString(
+                value
+              )
+        }
+        onChange={
+          onChange
+        }
         rows={rows}
-        placeholder={placeholder}
-        aria-invalid={hasError}
-        className={`
-          w-full
-          resize-y
-          rounded-lg
-          border
-          bg-white
-          px-3
-          py-2.5
-          text-sm
-          text-gray-900
-          outline-none
-          transition
-          placeholder:text-gray-400
-          ${
-            hasError
-              ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-              : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-          }
-        `}
+        placeholder={
+          placeholder
+        }
+        disabled={
+          disabled
+        }
+        aria-invalid={
+          hasError
+        }
+        className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 ${
+          hasError
+            ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+            : "border-gray-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+        }`}
       />
 
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5" />
-          {error}
+
+          {normalizeString(
+            error
+          )}
         </p>
       )}
     </div>
@@ -1960,24 +3981,16 @@ const ToggleField = ({
   name,
   checked = false,
   onChange,
+  disabled = false,
 }) => {
   return (
     <label
       htmlFor={name}
-      className="
-        flex
-        cursor-pointer
-        items-center
-        justify-between
-        gap-4
-        rounded-xl
-        border
-        border-gray-200
-        bg-gray-50
-        p-4
-        transition
-        hover:bg-gray-100
-      "
+      className={`flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 transition ${
+        disabled
+          ? "cursor-not-allowed opacity-60"
+          : "cursor-pointer hover:bg-gray-100"
+      }`}
     >
       <div>
         <p className="text-sm font-medium text-gray-800">
@@ -1997,7 +4010,12 @@ const ToggleField = ({
           checked={Boolean(
             checked
           )}
-          onChange={onChange}
+          onChange={
+            onChange
+          }
+          disabled={
+            disabled
+          }
           className="peer sr-only"
         />
 
