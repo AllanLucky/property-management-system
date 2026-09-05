@@ -2,24 +2,28 @@
 
 namespace App\Http\Resources;
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 use App\Models\User;
 use App\Services\User\UserStatusMessageService;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 
 class UserResource extends JsonResource
 {
+    /**
+     * Transform the resource into an array.
+     */
     public function toArray(Request $request): array
     {
-        $messageService = app(UserStatusMessageService::class);
-
         $user = $this->resource;
 
+        $messageService = app(UserStatusMessageService::class);
+
         /*
-        |------------------------------------------
-        | RELATIONS
-        |------------------------------------------
+        |--------------------------------------------------------------------------
+        | RELATIONSHIPS
+        |--------------------------------------------------------------------------
         */
+
         $roles = $this->relationLoaded('roles')
             ? $this->roles
             : collect();
@@ -28,187 +32,419 @@ class UserResource extends JsonResource
             ? $this->permissions
             : collect();
 
-        $roleNames = method_exists($this, 'getRoleNames')
-            ? $this->getRoleNames()->values()
+        /*
+        |--------------------------------------------------------------------------
+        | ROLE NAMES
+        |--------------------------------------------------------------------------
+        */
+
+        $roleNames = method_exists($user, 'getRoleNames')
+            ? $user->getRoleNames()->values()
             : $roles->pluck('name')->values();
 
-        $permissionNames = method_exists($this, 'getPermissionNames')
-            ? $this->getPermissionNames()->values()
+        /*
+        |--------------------------------------------------------------------------
+        | PERMISSION NAMES
+        |--------------------------------------------------------------------------
+        */
+
+        $permissionNames = method_exists($user, 'getPermissionNames')
+            ? $user->getPermissionNames()->values()
             : $permissions->pluck('name')->values();
 
         /*
-        |------------------------------------------
-        | STATUS FLAGS
-        |------------------------------------------
+        |--------------------------------------------------------------------------
+        | USER ACCOUNT STATUS
+        |--------------------------------------------------------------------------
+        |
+        | IMPORTANT:
+        |
+        | The users table does NOT use a generic "status" field.
+        |
+        | Approval is controlled by:
+        |
+        |     approval_status
+        |
+        | Account state is controlled by:
+        |
+        |     account_status
+        |
         */
-        $status = $user->approval_status;
+
+        $approvalStatus = $user->approval_status;
+
         $accountStatus = $user->account_status;
 
-        $isApproved  = $status === User::APPROVAL_APPROVED;
-        $isPending   = $status === User::APPROVAL_PENDING;
-        $isRejected  = $status === User::APPROVAL_REJECTED;
+        /*
+        |--------------------------------------------------------------------------
+        | APPROVAL FLAGS
+        |--------------------------------------------------------------------------
+        */
 
-        $isActive    = $accountStatus === User::STATUS_ACTIVE;
-        $isInactive  = $accountStatus === User::STATUS_INACTIVE;
+        $isApproved = $approvalStatus === User::APPROVAL_APPROVED;
+
+        $isPending = $approvalStatus === User::APPROVAL_PENDING;
+
+        $isRejected = $approvalStatus === User::APPROVAL_REJECTED;
+
+        /*
+        |--------------------------------------------------------------------------
+        | ACCOUNT FLAGS
+        |--------------------------------------------------------------------------
+        */
+
+        $isActive = $accountStatus === User::STATUS_ACTIVE;
+
+        $isInactive = $accountStatus === User::STATUS_INACTIVE;
+
         $isSuspended = $accountStatus === User::STATUS_SUSPENDED;
-        $isBanned    = $accountStatus === User::STATUS_BANNED;
 
-        $canLogin = $isApproved && $isActive;
+        $isBanned = $accountStatus === User::STATUS_BANNED;
+
+        /*
+        |--------------------------------------------------------------------------
+        | LOGIN STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        $canLogin = $user->canLogin();
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS LABEL
+        |--------------------------------------------------------------------------
+        */
 
         $statusLabel = match (true) {
-            $isBanned => 'Banned',
-            $isSuspended => 'Suspended',
-            $isInactive => 'Inactive',
-            $isPending => 'Pending Approval',
-            $isRejected => 'Rejected',
-            $isActive && $isApproved => 'Active',
-            default => 'Unknown',
+
+            $isBanned =>
+                'Banned',
+
+            $isSuspended =>
+                'Suspended',
+
+            $isInactive =>
+                'Inactive',
+
+            $isPending =>
+                'Pending Approval',
+
+            $isRejected =>
+                'Rejected',
+
+            $isActive && $isApproved =>
+                'Active',
+
+            default =>
+                'Unknown',
         };
 
         /*
-        |------------------------------------------
-        | IMAGE HANDLING (FIXED 🔥)
-        |------------------------------------------
+        |--------------------------------------------------------------------------
+        | IMAGE
+        |--------------------------------------------------------------------------
         */
+
         $imageUrl = null;
 
-        if (!empty($user->image)) {
+        if (filled($user->image)) {
 
-            // Cloudinary or external URL support
-            if (str_starts_with($user->image, 'http')) {
+            if (
+                str_starts_with(
+                    (string) $user->image,
+                    'http://'
+                ) ||
+                str_starts_with(
+                    (string) $user->image,
+                    'https://'
+                )
+            ) {
                 $imageUrl = $user->image;
             } else {
-                $imageUrl = asset('storage/' . $user->image);
+                $imageUrl = asset(
+                    'storage/' . ltrim($user->image, '/')
+                );
             }
         }
 
-        // fallback avatar
-        $imageUrl = $imageUrl ?: asset('images/default-avatar.png');
+        $imageUrl ??= asset(
+            'images/default-avatar.png'
+        );
 
         /*
-        |------------------------------------------
+        |--------------------------------------------------------------------------
         | RESPONSE
-        |------------------------------------------
+        |--------------------------------------------------------------------------
         */
+
         return [
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRIMARY USER INFORMATION
+            |--------------------------------------------------------------------------
+            */
+
             'id' => $user->id,
+
             'slug' => $user->slug,
+
             'first_name' => $user->first_name,
+
             'last_name' => $user->last_name,
-            'full_name' => "{$user->first_name} {$user->last_name}",
+
+            'full_name' => $user->full_name,
+
             'email' => $user->email,
+
             'phone' => $user->phone,
 
             /*
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             | VERIFICATION
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             */
-            'is_verified' => (bool) $user->is_verified,
-            'email_verified_at' => optional($user->email_verified_at)->toDateTimeString(),
+
+            'verification' => [
+
+                'is_verified' =>
+                    (bool) $user->is_verified,
+
+                'email_verified_at' =>
+                    optional(
+                        $user->email_verified_at
+                    )->toDateTimeString(),
+
+            ],
 
             /*
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             | PROFILE
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             */
+
             'profile' => [
-                'image' => $user->image,
-                'image_url' => $imageUrl,
-                'image_public_id' => $user->image_public_id,
-                'gender' => $user->gender,
-                'nationality' => $user->nationality,
-                'address' => $user->address,
-                'date_of_birth' => $user->date_of_birth,
-                'bio' => $user->bio,
+
+                'image' =>
+                    $user->image,
+
+                'image_url' =>
+                    $imageUrl,
+
+                'gender' =>
+                    $user->gender,
+
+                'nationality' =>
+                    $user->nationality,
+
+                'address' =>
+                    $user->address,
+
+                'date_of_birth' =>
+                    optional(
+                        $user->date_of_birth
+                    )->format('Y-m-d'),
+
+                'bio' =>
+                    $user->bio,
+
             ],
 
             /*
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             | ACCOUNT
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             */
+
             'account' => [
-                'approval_status' => $status,
-                'account_status' => $accountStatus,
 
-                'is_active' => $isActive,
-                'is_inactive' => $isInactive,
-                'is_suspended' => $isSuspended,
-                'is_banned' => $isBanned,
+                /*
+                | Actual account fields from users table
+                */
 
-                'is_approved' => $isApproved,
-                'is_pending' => $isPending,
-                'is_rejected' => $isRejected,
+                'approval_status' =>
+                    $approvalStatus,
 
-                'can_login' => $canLogin,
-                'status_label' => $statusLabel,
+                'account_status' =>
+                    $accountStatus,
 
-                'approval_message' => $messageService->approvalMessage($user),
-                'account_message'  => $messageService->accountMessage($user),
-                'login_message'    => $messageService->loginMessage($user),
+                /*
+                | Computed status
+                |
+                | This replaces the incorrect:
+                |
+                |     users.status
+                */
+
+                'status' =>
+                    $accountStatus,
+
+                'status_label' =>
+                    $statusLabel,
+
+                /*
+                | Account flags
+                */
+
+                'is_active' =>
+                    $isActive,
+
+                'is_inactive' =>
+                    $isInactive,
+
+                'is_suspended' =>
+                    $isSuspended,
+
+                'is_banned' =>
+                    $isBanned,
+
+                /*
+                | Approval flags
+                */
+
+                'is_approved' =>
+                    $isApproved,
+
+                'is_pending' =>
+                    $isPending,
+
+                'is_rejected' =>
+                    $isRejected,
+
+                /*
+                | Login
+                */
+
+                'can_login' =>
+                    $canLogin,
+
+                /*
+                | Human-readable messages
+                */
+
+                'approval_message' =>
+                    $messageService->approvalMessage($user),
+
+                'account_message' =>
+                    $messageService->accountMessage($user),
+
+                'login_message' =>
+                    $messageService->loginMessage($user),
+
             ],
 
             /*
-            |------------------------------------------
-            | SECURITY
-            |------------------------------------------
-            */
-            'security' => [
-                'has_password' => filled($user->password),
-                'has_refresh_token' => filled($user->refresh_token),
-                'refresh_token_expires_at' => optional($user->refresh_token_expires_at)->toDateTimeString(),
-            ],
-
-            /*
-            |------------------------------------------
-            | TRACKING
-            |------------------------------------------
-            */
-            'tracking' => [
-                'last_login_at' => optional($user->last_login_at)->toDateTimeString(),
-                'created_at' => optional($user->created_at)->toDateTimeString(),
-                'updated_at' => optional($user->updated_at)->toDateTimeString(),
-                'deleted_at' => optional($user->deleted_at)->toDateTimeString(),
-            ],
-
-            /*
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             | ROLES
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             */
-            'primary_role' => $roleNames->first(),
-            'role_names' => $roleNames,
-            'roles' => $roles->map(fn ($role) => [
-                'id' => $role->id,
-                'name' => $role->name,
-                'guard_name' => $role->guard_name,
-            ])->values(),
+
+            'primary_role' =>
+                $roleNames->first(),
+
+            'role_names' =>
+                $roleNames,
+
+            'roles' =>
+                $roles
+                    ->map(fn ($role) => [
+
+                        'id' =>
+                            $role->id,
+
+                        'name' =>
+                            $role->name,
+
+                        'guard_name' =>
+                            $role->guard_name,
+
+                    ])
+                    ->values(),
 
             /*
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             | PERMISSIONS
-            |------------------------------------------
+            |--------------------------------------------------------------------------
             */
-            'permission_names' => $permissionNames,
-            'permissions' => $permissions->map(fn ($permission) => [
-                'id' => $permission->id,
-                'name' => $permission->name,
-                'guard_name' => $permission->guard_name,
-            ])->values(),
+
+            'permission_names' =>
+                $permissionNames,
+
+            'permissions' =>
+                $permissions
+                    ->map(fn ($permission) => [
+
+                        'id' =>
+                            $permission->id,
+
+                        'name' =>
+                            $permission->name,
+
+                        'guard_name' =>
+                            $permission->guard_name,
+
+                    ])
+                    ->values(),
 
             /*
-            |------------------------------------------
-            | META
-            |------------------------------------------
+            |--------------------------------------------------------------------------
+            | TRACKING
+            |--------------------------------------------------------------------------
             */
+
+            'tracking' => [
+
+                'last_login_at' =>
+                    optional(
+                        $user->last_login_at
+                    )->toDateTimeString(),
+
+                'created_at' =>
+                    optional(
+                        $user->created_at
+                    )->toDateTimeString(),
+
+                'updated_at' =>
+                    optional(
+                        $user->updated_at
+                    )->toDateTimeString(),
+
+                'deleted_at' =>
+                    optional(
+                        $user->deleted_at
+                    )->toDateTimeString(),
+
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | META
+            |--------------------------------------------------------------------------
+            */
+
             'meta' => [
-                'has_profile_image' => filled($user->image),
-                'has_phone' => filled($user->phone),
-                'has_bio' => filled($user->bio),
-                'has_roles' => $roleNames->isNotEmpty(),
-                'has_permissions' => $permissionNames->isNotEmpty(),
-                'can_login' => $canLogin,
+
+                'has_profile_image' =>
+                    filled($user->image),
+
+                'has_phone' =>
+                    filled($user->phone),
+
+                'has_bio' =>
+                    filled($user->bio),
+
+                'has_roles' =>
+                    $roleNames->isNotEmpty(),
+
+                'has_permissions' =>
+                    $permissionNames->isNotEmpty(),
+
+                'is_verified' =>
+                    (bool) $user->is_verified,
+
+                'can_login' =>
+                    $canLogin,
+
             ],
         ];
     }

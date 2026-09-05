@@ -26,24 +26,34 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Identification
             |--------------------------------------------------------------------------
+            |
+            | Unique identifier assigned to every tenant profile.
+            |
+            | Examples:
+            |
+            | TNT-000001
+            | TNT-000002
+            |
             */
 
-            $table->string('tenant_number')
+            $table->string('tenant_number', 50)
                 ->unique();
 
 
             /*
             |--------------------------------------------------------------------------
-            | User Relationship
+            | Linked User Account
             |--------------------------------------------------------------------------
             |
-            | Each tenant can be linked to one user account.
+            | A Tenant is a profile belonging to an existing User account.
             |
-            | The user_id is nullable here to allow existing/imported tenant
-            | records to exist before their user account is created.
+            | One User can have only one Tenant profile.
             |
-            | New tenants should always be created with a valid user_id
-            | from the TenantController/service.
+            | The User account is created and managed separately.
+            | The Tenant profile only references the existing User.
+            |
+            | nullOnDelete() ensures that deleting a User does not delete
+            | the Tenant profile.
             |
             */
 
@@ -51,6 +61,7 @@ return new class extends Migration
                 ->nullable()
                 ->unique()
                 ->constrained('users')
+                ->cascadeOnUpdate()
                 ->nullOnDelete();
 
 
@@ -60,77 +71,112 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('first_name');
+            $table->string('first_name', 100);
 
-            $table->string('last_name');
+            $table->string('last_name', 100);
 
-            $table->string('other_names')
+            $table->string('other_names', 150)
                 ->nullable();
 
-            $table->string('email')
-                ->nullable()
-                ->index();
+            $table->string('email', 150)
+                ->nullable();
 
-            $table->string('phone')
-                ->unique();
+            $table->string('phone', 30)
+                ->nullable();
 
             $table->date('date_of_birth')
                 ->nullable();
 
-            $table->enum('gender', [
-                'male',
-                'female',
-                'other',
-            ])->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship or national
+            | identity.
+            |
+            | This is intentionally separate from the `country` field below,
+            | which represents the tenant's residential/location country.
+            |
+            | Examples:
+            |
+            | nationality = Kenyan
+            | country     = Kenya
+            |
+            */
+
+            $table->string('nationality', 100)
+                ->nullable()
+                ->index();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Gender
+            |--------------------------------------------------------------------------
+            |
+            | Stored as a string to allow the application to support additional
+            | gender values without requiring a database migration.
+            |
+            */
+
+            $table->string('gender', 30)
+                ->nullable();
 
 
             /*
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
+            |
+            | At least one identification method can be enforced by
+            | CreateTenantRequest / UpdateTenantRequest.
+            |
+            | These fields are nullable because a tenant does not necessarily
+            | need to have both identification documents.
+            |
             */
 
-            $table->string('id_number')
-                ->nullable()
-                ->index();
-
-            $table->string('passport_number')
-                ->nullable()
-                ->index();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Emergency Contact
-            |--------------------------------------------------------------------------
-            */
-
-            $table->string('emergency_contact_name')
+            $table->string('id_number', 100)
                 ->nullable();
 
-            $table->string('emergency_contact_phone')
-                ->nullable();
-
-            $table->string('emergency_contact_relationship')
+            $table->string('passport_number', 100)
                 ->nullable();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Address Information
+            | Location Information
             |--------------------------------------------------------------------------
+            |
+            | `country` represents the tenant's residential/location country.
+            |
+            | It is intentionally separate from `nationality`.
+            |
             */
 
-            $table->string('country')
-                ->default('Kenya');
+            $table->string('country', 100)
+                ->default('Kenya')
+                ->index();
 
-            $table->string('county')
-                ->nullable();
+            $table->string('region', 150)
+                ->nullable()
+                ->index();
 
-            $table->string('city')
-                ->nullable();
+            $table->string('county', 150)
+                ->nullable()
+                ->index();
 
-            $table->string('postal_code')
+            $table->string('city', 150)
+                ->nullable()
+                ->index();
+
+            $table->string('area', 150)
+                ->nullable()
+                ->index();
+
+            $table->string('postal_code', 30)
                 ->nullable();
 
             $table->text('address')
@@ -139,17 +185,33 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Employment Information
+            | Employment / Financial Information
             |--------------------------------------------------------------------------
             */
 
-            $table->string('occupation')
+            $table->string('occupation', 150)
                 ->nullable();
 
-            $table->string('employer')
+            $table->string('employer', 200)
                 ->nullable();
 
-            $table->decimal('monthly_income', 12, 2)
+            $table->decimal('monthly_income', 15, 2)
+                ->nullable();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Emergency Contact
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('emergency_contact_name', 150)
+                ->nullable();
+
+            $table->string('emergency_contact_phone', 30)
+                ->nullable();
+
+            $table->string('emergency_contact_relationship', 100)
                 ->nullable();
 
 
@@ -157,6 +219,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Documents
             |--------------------------------------------------------------------------
+            |
+            | File paths / URLs are stored here.
+            |
+            | The *_public_id fields support cloud storage providers such
+            | as Cloudinary or similar services.
+            |
             */
 
             $table->string('photo')
@@ -182,6 +250,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Verification
             |--------------------------------------------------------------------------
+            |
+            | `is_verified` and `verified_at` represent tenant profile
+            | verification.
+            |
+            | There is intentionally NO `is_active` column.
+            |
             */
 
             $table->boolean('is_verified')
@@ -196,39 +270,22 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Tenant Status
             |--------------------------------------------------------------------------
+            |
+            | Status is the SINGLE source of truth for tenant activity.
+            |
+            | Supported statuses:
+            |
+            | pending
+            | active
+            | inactive
+            | blacklisted
+            |
+            | Do NOT add an `is_active` column here.
+            |
             */
 
-            $table->enum('status', [
-                'active',
-                'inactive',
-                'blacklisted',
-                'pending',
-            ])
+            $table->string('status', 30)
                 ->default('pending')
-                ->index();
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Active Flag
-            |--------------------------------------------------------------------------
-            |
-            | This flag is separate from the tenant status.
-            |
-            | status:
-            |   - active
-            |   - inactive
-            |   - pending
-            |   - blacklisted
-            |
-            | is_active:
-            |   - true  = tenant record is enabled
-            |   - false = tenant record is disabled
-            |
-            */
-
-            $table->boolean('is_active')
-                ->default(true)
                 ->index();
 
 
@@ -244,37 +301,102 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Timestamps & Soft Deletes
+            | Timestamps
             |--------------------------------------------------------------------------
             */
 
             $table->timestamps();
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Soft Deletes
+            |--------------------------------------------------------------------------
+            |
+            | Tenant profiles are retained for historical and audit purposes.
+            |
+            */
 
             $table->softDeletes();
 
 
             /*
             |--------------------------------------------------------------------------
-            | Composite Indexes
+            | Search Indexes
             |--------------------------------------------------------------------------
+            |
+            | These support common TenantService filtering and searching.
+            |
             */
 
-            $table->index([
+            $table->index(
                 'first_name',
+                'tenants_first_name_index'
+            );
+
+            $table->index(
                 'last_name',
-            ]);
+                'tenants_last_name_index'
+            );
 
-            $table->index([
-                'status',
-                'is_active',
-            ]);
+            $table->index(
+                'email',
+                'tenants_email_index'
+            );
 
-            $table->index([
-                'is_verified',
-                'is_active',
-            ]);
+            $table->index(
+                'phone',
+                'tenants_phone_index'
+            );
+
+            $table->index(
+                'id_number',
+                'tenants_id_number_index'
+            );
+
+            $table->index(
+                'passport_number',
+                'tenants_passport_number_index'
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Composite Indexes
+            |--------------------------------------------------------------------------
+            |
+            | These support common filtering combinations used by the
+            | TenantService.
+            |
+            */
+
+            $table->index(
+                [
+                    'status',
+                    'is_verified',
+                ],
+                'tenants_status_verification_index'
+            );
+
+            $table->index(
+                [
+                    'county',
+                    'city',
+                    'area',
+                ],
+                'tenants_location_index'
+            );
+
+            $table->index(
+                [
+                    'user_id',
+                    'status',
+                ],
+                'tenants_user_status_index'
+            );
         });
     }
+
 
     /**
      * Reverse the migrations.

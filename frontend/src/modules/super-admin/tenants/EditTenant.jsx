@@ -32,18 +32,18 @@ import { useTenant } from "../../../hooks/useTenant";
 | 1. Read tenant ID from the route.
 | 2. Load the tenant from the API.
 | 3. Load available users with the tenant role.
-| 4. Display a loading state while fetching.
+| 4. Display loading state while fetching.
 | 5. Display an error/not-found state when loading fails.
 | 6. Pass the loaded tenant to TenantForm.
 | 7. Submit tenant updates through useTenant().
-| 8. Redirect to the tenant details page after success.
+| 8. Redirect to tenant details after success.
 |
 | IMPORTANT:
 |
 | The linked User account is immutable from the Tenant edit form.
 |
 | TenantForm is responsible for constructing the correct edit payload.
-| EditTenant therefore passes the payload through without modifying it.
+| EditTenant performs a final safety sanitization before sending it.
 |
 |--------------------------------------------------------------------------
 */
@@ -114,9 +114,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | NORMALIZE AVAILABLE USERS
   |--------------------------------------------------------------------------
-  |
-  | Protect TenantForm from unexpected API / Redux shapes.
-  |
   */
 
   const normalizedAvailableUsers = useMemo(() => {
@@ -225,18 +222,7 @@ const EditTenant = () => {
   | CURRENT TENANT USER
   |--------------------------------------------------------------------------
   |
-  | The available-users endpoint normally excludes users already assigned
-  | to another tenant.
-  |
-  | When editing, the current tenant user may therefore not be present in
-  | availableTenantUsers.
-  |
-  | We normalize the linked user separately for display purposes.
-  |
-  | IMPORTANT:
-  |
-  | The current user is NOT made selectable by TenantForm in edit mode.
-  | It is displayed as a read-only linked account.
+  | The linked user account is read-only during tenant editing.
   |
   */
 
@@ -245,10 +231,29 @@ const EditTenant = () => {
       return null;
     }
 
+    /*
+     * Support both:
+     *
+     * tenant.user
+     *
+     * and
+     *
+     * tenant.data.user
+     */
+    const tenantRecord =
+      tenant?.data &&
+      typeof tenant.data === "object" &&
+      !Array.isArray(tenant.data)
+        ? tenant.data
+        : tenant;
+
     const user =
-      tenant?.user || {};
+      tenantRecord?.user ||
+      tenant?.user ||
+      {};
 
     const userId =
+      tenantRecord?.user_id ??
       tenant?.user_id ??
       user?.id ??
       user?.user_id ??
@@ -264,11 +269,13 @@ const EditTenant = () => {
 
     const firstName =
       user?.first_name ??
+      tenantRecord?.first_name ??
       tenant?.first_name ??
       "";
 
     const lastName =
       user?.last_name ??
+      tenantRecord?.last_name ??
       tenant?.last_name ??
       "";
 
@@ -276,6 +283,8 @@ const EditTenant = () => {
       user?.name ??
       user?.full_name ??
       user?.fullName ??
+      tenantRecord?.full_name ??
+      tenantRecord?.name ??
       tenant?.full_name ??
       tenant?.name ??
       [
@@ -313,6 +322,7 @@ const EditTenant = () => {
       email:
         String(
           user?.email ??
+          tenantRecord?.email ??
           tenant?.email ??
           ""
         ).trim(),
@@ -321,6 +331,7 @@ const EditTenant = () => {
         String(
           user?.phone ??
           user?.phone_number ??
+          tenantRecord?.phone ??
           tenant?.phone ??
           ""
         ).trim(),
@@ -331,11 +342,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | FORM USERS
   |--------------------------------------------------------------------------
-  |
-  | Keep the available users normalized.
-  |
-  | TenantForm is in edit mode, so the user selection itself is read-only.
-  |
   */
 
   const formUsers = useMemo(() => {
@@ -348,9 +354,7 @@ const EditTenant = () => {
     }
 
     const currentUserId =
-      String(
-        tenantUser.id
-      );
+      String(tenantUser.id);
 
     const alreadyIncluded =
       users.some(
@@ -378,12 +382,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | LOAD TENANT
   |--------------------------------------------------------------------------
-  |
-  | The route tenant ID determines which tenant should be loaded.
-  |
-  | The dependency array intentionally contains only tenantId to avoid
-  | repeated requests when useTenant recreates callback references.
-  |
   */
 
   useEffect(() => {
@@ -395,20 +393,8 @@ const EditTenant = () => {
       }
 
       try {
-        /*
-        |--------------------------------------------------------------------------
-        | CLEAR STALE STATE
-        |--------------------------------------------------------------------------
-        */
-
         clear();
         clearError();
-
-        /*
-        |--------------------------------------------------------------------------
-        | FETCH TENANT
-        |--------------------------------------------------------------------------
-        */
 
         if (cancelled) {
           return;
@@ -439,10 +425,6 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   | LOAD AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
-  |
-  | This is retained for consistency with TenantForm and for the create/edit
-  | user data normalization flow.
-  |
   */
 
   const loadAvailableUsers = useCallback(
@@ -514,12 +496,10 @@ const EditTenant = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | UPDATE TENANT
+  | SANITIZE TENANT UPDATE PAYLOAD
   |--------------------------------------------------------------------------
   |
-  | TenantForm is responsible for building a mode-aware payload.
-  |
-  | For edit mode, the payload must NOT contain:
+  | These fields must never be sent by the edit form:
   |
   | - user_id
   | - tenant_number
@@ -529,15 +509,86 @@ const EditTenant = () => {
   | - phone
   | - is_active
   |
-  | These belong to the linked User account or are unsupported by the
-  | tenant update endpoint.
-  |
-  | We deliberately do not sanitize here anymore because doing so in two
-  | different components creates duplicated payload rules.
+  | The linked User account is immutable from this page.
   |
   */
 
-  const handleUpdate = async (payload) => {
+  const sanitizeTenantUpdatePayload = useCallback(
+    (payload) => {
+      const protectedFields = new Set([
+        "user_id",
+        "tenant_number",
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "is_active",
+      ]);
+
+      /*
+      |--------------------------------------------------------------------------
+      | FORM DATA
+      |--------------------------------------------------------------------------
+      */
+
+      if (payload instanceof FormData) {
+        const sanitized =
+          new FormData();
+
+        for (const [
+          key,
+          value,
+        ] of payload.entries()) {
+          if (
+            !protectedFields.has(key)
+          ) {
+            sanitized.append(
+              key,
+              value
+            );
+          }
+        }
+
+        return sanitized;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | NORMAL OBJECT
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        !payload ||
+        typeof payload !== "object"
+      ) {
+        return payload;
+      }
+
+      const sanitized = {
+        ...payload,
+      };
+
+      protectedFields.forEach(
+        (field) => {
+          delete sanitized[field];
+        }
+      );
+
+      return sanitized;
+    },
+    []
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | UPDATE TENANT
+  |--------------------------------------------------------------------------
+  */
+
+  const handleUpdate = async (
+    payload
+  ) => {
     if (!tenantId) {
       const errorObject =
         new Error(
@@ -569,26 +620,36 @@ const EditTenant = () => {
 
       /*
       |--------------------------------------------------------------------------
-      | DEBUG PAYLOAD
+      | FINAL PAYLOAD SANITIZATION
       |--------------------------------------------------------------------------
-      |
-      | TenantForm should already have removed all protected fields.
-      |
       */
 
-      if (payload instanceof FormData) {
+      const sanitizedPayload =
+        sanitizeTenantUpdatePayload(
+          payload
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | DEBUG PAYLOAD
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        sanitizedPayload instanceof FormData
+      ) {
         console.log(
           "[EditTenant] Updating tenant:",
           tenantId,
           Object.fromEntries(
-            payload.entries()
+            sanitizedPayload.entries()
           )
         );
       } else {
         console.log(
           "[EditTenant] Updating tenant:",
           tenantId,
-          payload
+          sanitizedPayload
         );
       }
 
@@ -601,12 +662,12 @@ const EditTenant = () => {
       const result =
         await editTenant(
           tenantId,
-          payload
+          sanitizedPayload
         );
 
       /*
       |--------------------------------------------------------------------------
-      | SUCCESS
+      | SUCCESS MESSAGE
       |--------------------------------------------------------------------------
       */
 
@@ -671,10 +732,10 @@ const EditTenant = () => {
 
       const displayMessage =
         typeof possibleMessage ===
-          "string"
+        "string"
           ? possibleMessage
           : possibleMessage?.message ||
-          "Failed to update tenant. Please try again.";
+            "Failed to update tenant. Please try again.";
 
       /*
       |--------------------------------------------------------------------------
@@ -693,12 +754,6 @@ const EditTenant = () => {
         confirmButtonColor:
           "#dc2626",
       });
-
-      /*
-      |--------------------------------------------------------------------------
-      | RE-THROW
-      |--------------------------------------------------------------------------
-      */
 
       throw submitError;
     }
@@ -744,7 +799,9 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const getErrorMessage = (value) => {
+  const getErrorMessage = (
+    value
+  ) => {
     if (!value) {
       return "";
     }
@@ -771,7 +828,7 @@ const EditTenant = () => {
     if (
       value?.errors &&
       typeof value.errors ===
-      "object"
+        "object"
     ) {
       const messages =
         Object.values(
@@ -857,7 +914,6 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
-
                 Back to Tenants
               </Link>
             </div>
@@ -908,7 +964,6 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
-
               Back to Tenants
             </button>
           </div>
@@ -977,7 +1032,6 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
-
                 Back to Tenants
               </Link>
             </div>
@@ -1074,7 +1128,6 @@ const EditTenant = () => {
                 "
               >
                 <ArrowLeft className="h-4 w-4" />
-
                 Back to Tenants
               </Link>
             </div>
@@ -1137,7 +1190,6 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
-
               Back to Tenants
             </button>
           </div>
@@ -1152,19 +1204,26 @@ const EditTenant = () => {
   |--------------------------------------------------------------------------
   */
 
+  const tenantRecord =
+    tenant?.data &&
+    typeof tenant.data === "object" &&
+    !Array.isArray(tenant.data)
+      ? tenant.data
+      : tenant;
+
   const firstName =
-    tenant?.first_name ||
-    tenant?.user?.first_name ||
+    tenantRecord?.first_name ||
+    tenantRecord?.user?.first_name ||
     "";
 
   const lastName =
-    tenant?.last_name ||
-    tenant?.user?.last_name ||
+    tenantRecord?.last_name ||
+    tenantRecord?.user?.last_name ||
     "";
 
   const tenantName =
-    tenant?.full_name ||
-    tenant?.name ||
+    tenantRecord?.full_name ||
+    tenantRecord?.name ||
     [
       firstName,
       lastName,
@@ -1185,8 +1244,8 @@ const EditTenant = () => {
     "T";
 
   const tenantEmail =
-    tenant?.email ||
-    tenant?.user?.email ||
+    tenantRecord?.email ||
+    tenantRecord?.user?.email ||
     "No email address";
 
   /*
@@ -1196,23 +1255,23 @@ const EditTenant = () => {
   */
 
   const tenantStatus =
-    typeof tenant?.status ===
-      "string"
-      ? tenant.status.toLowerCase()
+    typeof tenantRecord?.status ===
+    "string"
+      ? tenantRecord.status.toLowerCase()
       : "";
 
   const statusLabel =
     tenantStatus
       ? tenantStatus
-        .replace(
-          /_/g,
-          " "
-        )
-        .replace(
-          /\b\w/g,
-          (char) =>
-            char.toUpperCase()
-        )
+          .replace(
+            /_/g,
+            " "
+          )
+          .replace(
+            /\b\w/g,
+            (char) =>
+              char.toUpperCase()
+          )
       : "";
 
   /*
@@ -1257,7 +1316,8 @@ const EditTenant = () => {
 
                 <p className="mt-1 text-sm text-gray-500">
                   Update tenant profile information.
-                  The linked user account is managed separately.
+                  The linked user account cannot be
+                  changed here.
                 </p>
               </div>
             </div>
@@ -1291,7 +1351,6 @@ const EditTenant = () => {
               "
             >
               <ArrowLeft className="h-4 w-4" />
-
               Back to Tenant
             </Link>
           </div>
@@ -1323,12 +1382,12 @@ const EditTenant = () => {
                   {tenantEmail}
                 </p>
 
-                {tenant?.tenant_number && (
+                {tenantRecord?.tenant_number && (
                   <p className="mt-0.5 text-xs text-gray-400">
                     Tenant Number:{" "}
                     <span className="font-medium text-gray-500">
                       {
-                        tenant.tenant_number
+                        tenantRecord.tenant_number
                       }
                     </span>
                   </p>
@@ -1347,19 +1406,20 @@ const EditTenant = () => {
                     py-1
                     text-xs
                     font-medium
-                    ${tenantStatus ===
+                    ${
+                      tenantStatus ===
                       "active"
-                      ? "bg-green-50 text-green-700"
-                      : tenantStatus ===
-                        "blacklisted"
+                        ? "bg-green-50 text-green-700"
+                        : tenantStatus ===
+                          "blacklisted"
                         ? "bg-red-50 text-red-700"
                         : tenantStatus ===
                           "inactive"
-                          ? "bg-gray-100 text-gray-600"
-                          : tenantStatus ===
-                            "pending"
-                            ? "bg-yellow-50 text-yellow-700"
-                            : "bg-blue-50 text-blue-700"
+                        ? "bg-gray-100 text-gray-600"
+                        : tenantStatus ===
+                          "pending"
+                        ? "bg-yellow-50 text-yellow-700"
+                        : "bg-blue-50 text-blue-700"
                     }
                   `}
                 >
@@ -1368,20 +1428,20 @@ const EditTenant = () => {
               )}
 
               {Boolean(
-                tenant?.is_verified ??
-                tenant?.verified
+                tenantRecord?.is_verified ??
+                  tenantRecord?.verified
               ) && (
-                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    Verified
-                  </span>
-                )}
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                  Verified
+                </span>
+              )}
 
-              {tenant?.is_active ===
+              {tenantRecord?.is_active ===
                 false && (
-                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                    Inactive Account
-                  </span>
-                )}
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                  Inactive Account
+                </span>
+              )}
             </div>
           </div>
         </div>

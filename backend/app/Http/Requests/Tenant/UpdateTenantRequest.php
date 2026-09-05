@@ -17,6 +17,12 @@ class UpdateTenantRequest extends FormRequest
         return true;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Get the tenant being updated.
      */
@@ -29,74 +35,48 @@ class UpdateTenantRequest extends FormRequest
         }
 
         if (is_numeric($tenant)) {
-            return Tenant::find($tenant);
+            return Tenant::find((int) $tenant);
         }
 
         return null;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validation Rules
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Get the validation rules that apply to the request.
+     *
+     * IMPORTANT:
+     *
+     * The linked User account owns:
+     *
+     * - user_id
+     * - first_name
+     * - last_name
+     * - email
+     * - phone
+     *
+     * A normal tenant update does not change the linked User account.
+     *
+     * tenant_number is also system-managed and cannot be changed.
+     *
+     * Tenant-specific information remains editable here.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
-        $tenant = $this->tenant();
-
-        $tenantId = $tenant?->id;
-
         return [
 
             /*
             |--------------------------------------------------------------------------
-            | User Relationship
+            | Tenant-Specific Personal Information
             |--------------------------------------------------------------------------
             */
-            'user_id' => [
-                'sometimes',
-                'nullable',
-                'integer',
-                'exists:users,id',
-            ],
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Number
-            |--------------------------------------------------------------------------
-            |
-            | Normally this should not be changed after creation.
-            |
-            */
-            'tenant_number' => [
-                'sometimes',
-                'nullable',
-                'string',
-                'max:50',
-                Rule::unique('tenants', 'tenant_number')
-                    ->ignore($tenantId),
-            ],
-
-            /*
-            |--------------------------------------------------------------------------
-            | Personal Information
-            |--------------------------------------------------------------------------
-            */
-            'first_name' => [
-                'sometimes',
-                'required',
-                'string',
-                'min:2',
-                'max:100',
-            ],
-
-            'last_name' => [
-                'sometimes',
-                'required',
-                'string',
-                'min:2',
-                'max:100',
-            ],
 
             'other_names' => [
                 'sometimes',
@@ -105,20 +85,26 @@ class UpdateTenantRequest extends FormRequest
                 'max:150',
             ],
 
-            'email' => [
+            /*
+            |--------------------------------------------------------------------------
+            | Nationality
+            |--------------------------------------------------------------------------
+            |
+            | Nationality represents the tenant's citizenship/national identity.
+            |
+            | This is separate from:
+            |
+            | country
+            |
+            | where country represents the tenant's residential/location country.
+            |
+            */
+
+            'nationality' => [
                 'sometimes',
                 'nullable',
-                'email',
-                'max:255',
-            ],
-
-            'phone' => [
-                'sometimes',
-                'required',
                 'string',
-                'max:30',
-                Rule::unique('tenants', 'phone')
-                    ->ignore($tenantId),
+                'max:100',
             ],
 
             'date_of_birth' => [
@@ -143,13 +129,14 @@ class UpdateTenantRequest extends FormRequest
             | Identification
             |--------------------------------------------------------------------------
             */
+
             'id_number' => [
                 'sometimes',
                 'nullable',
                 'string',
                 'max:100',
                 Rule::unique('tenants', 'id_number')
-                    ->ignore($tenantId),
+                    ->ignore($this->tenant()?->id),
             ],
 
             'passport_number' => [
@@ -158,14 +145,20 @@ class UpdateTenantRequest extends FormRequest
                 'string',
                 'max:100',
                 Rule::unique('tenants', 'passport_number')
-                    ->ignore($tenantId),
+                    ->ignore($this->tenant()?->id),
             ],
 
             /*
             |--------------------------------------------------------------------------
-            | Address
+            | Address / Location
             |--------------------------------------------------------------------------
+            |
+            | country represents the tenant's residential/location country.
+            |
+            | It is intentionally separate from nationality.
+            |
             */
+
             'country' => [
                 'sometimes',
                 'nullable',
@@ -173,18 +166,32 @@ class UpdateTenantRequest extends FormRequest
                 'max:100',
             ],
 
+            'region' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:150',
+            ],
+
             'county' => [
                 'sometimes',
                 'nullable',
                 'string',
-                'max:100',
+                'max:150',
             ],
 
             'city' => [
                 'sometimes',
                 'nullable',
                 'string',
-                'max:100',
+                'max:150',
+            ],
+
+            'area' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:150',
             ],
 
             'postal_code' => [
@@ -203,9 +210,10 @@ class UpdateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | Employment Information
+            | Employment
             |--------------------------------------------------------------------------
             */
+
             'occupation' => [
                 'sometimes',
                 'nullable',
@@ -233,6 +241,7 @@ class UpdateTenantRequest extends FormRequest
             | Emergency Contact
             |--------------------------------------------------------------------------
             */
+
             'emergency_contact_name' => [
                 'sometimes',
                 'nullable',
@@ -259,6 +268,7 @@ class UpdateTenantRequest extends FormRequest
             | Tenant Photo
             |--------------------------------------------------------------------------
             */
+
             'photo' => [
                 'sometimes',
                 'nullable',
@@ -273,6 +283,7 @@ class UpdateTenantRequest extends FormRequest
             | Identification Documents
             |--------------------------------------------------------------------------
             */
+
             'id_front' => [
                 'sometimes',
                 'nullable',
@@ -295,11 +306,8 @@ class UpdateTenantRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Verification
             |--------------------------------------------------------------------------
-            |
-            | Verification should normally be handled through a dedicated
-            | verification endpoint rather than a normal update.
-            |
             */
+
             'is_verified' => [
                 'sometimes',
                 'boolean',
@@ -316,6 +324,7 @@ class UpdateTenantRequest extends FormRequest
             | Status
             |--------------------------------------------------------------------------
             */
+
             'status' => [
                 'sometimes',
                 Rule::in(Tenant::STATUSES),
@@ -326,6 +335,7 @@ class UpdateTenantRequest extends FormRequest
             | Notes
             |--------------------------------------------------------------------------
             */
+
             'notes' => [
                 'sometimes',
                 'nullable',
@@ -335,10 +345,14 @@ class UpdateTenantRequest extends FormRequest
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validation Messages
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Get custom validation messages.
-     *
-     * @return array<string, string>
      */
     public function messages(): array
     {
@@ -346,65 +360,115 @@ class UpdateTenantRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | Tenant Number
+            | Tenant Personal Information
             |--------------------------------------------------------------------------
             */
-            'tenant_number.unique' =>
-                'This tenant number is already assigned to another tenant.',
 
-            /*
-            |--------------------------------------------------------------------------
-            | Personal Information
-            |--------------------------------------------------------------------------
-            */
-            'first_name.required' =>
-                'First name is required.',
+            'other_names.string' =>
+                'Other names must be a valid text value.',
 
-            'first_name.min' =>
-                'First name must be at least 2 characters.',
+            'other_names.max' =>
+                'Other names may not exceed 150 characters.',
 
-            'last_name.required' =>
-                'Last name is required.',
+            'nationality.string' =>
+                'Nationality must be a valid text value.',
 
-            'last_name.min' =>
-                'Last name must be at least 2 characters.',
+            'nationality.max' =>
+                'Nationality may not exceed 100 characters.',
 
-            'email.email' =>
-                'Please provide a valid email address.',
-
-            'phone.required' =>
-                'Phone number is required.',
-
-            'phone.unique' =>
-                'This phone number is already registered to another tenant.',
+            'date_of_birth.date' =>
+                'Please provide a valid date of birth.',
 
             'date_of_birth.before' =>
                 'Date of birth must be a date before today.',
+
+            'gender.in' =>
+                'The selected gender is invalid.',
 
             /*
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
             */
+
+            'id_number.string' =>
+                'The ID number must be a valid text value.',
+
             'id_number.unique' =>
                 'This ID number is already registered to another tenant.',
 
+            'passport_number.string' =>
+                'The passport number must be a valid text value.',
+
             'passport_number.unique' =>
-                'This passport number is already registered to another tenant.',
+                'The passport number is already registered to another tenant.',
 
             /*
             |--------------------------------------------------------------------------
-            | User
+            | Location
             |--------------------------------------------------------------------------
             */
-            'user_id.exists' =>
-                'The selected user account does not exist.',
+
+            'country.string' =>
+                'Country must be a valid text value.',
+
+            'region.string' =>
+                'Region must be a valid text value.',
+
+            'county.string' =>
+                'County must be a valid text value.',
+
+            'city.string' =>
+                'City must be a valid text value.',
+
+            'area.string' =>
+                'Area must be a valid text value.',
+
+            'postal_code.string' =>
+                'Postal code must be a valid text value.',
+
+            'address.string' =>
+                'Address must be a valid text value.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | Employment
+            |--------------------------------------------------------------------------
+            */
+
+            'occupation.string' =>
+                'Occupation must be a valid text value.',
+
+            'employer.string' =>
+                'Employer must be a valid text value.',
+
+            'monthly_income.numeric' =>
+                'Monthly income must be a valid number.',
+
+            'monthly_income.min' =>
+                'Monthly income cannot be negative.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | Emergency Contact
+            |--------------------------------------------------------------------------
+            */
+
+            'emergency_contact_name.string' =>
+                'Emergency contact name must be a valid text value.',
+
+            'emergency_contact_phone.string' =>
+                'Emergency contact phone must be a valid text value.',
+
+            'emergency_contact_relationship.string' =>
+                'Emergency contact relationship must be a valid text value.',
 
             /*
             |--------------------------------------------------------------------------
             | Documents
             |--------------------------------------------------------------------------
             */
+
             'photo.image' =>
                 'The tenant photo must be a valid image.',
 
@@ -437,6 +501,7 @@ class UpdateTenantRequest extends FormRequest
             | Verification
             |--------------------------------------------------------------------------
             */
+
             'is_verified.boolean' =>
                 'The verification status must be true or false.',
 
@@ -448,13 +513,31 @@ class UpdateTenantRequest extends FormRequest
             | Status
             |--------------------------------------------------------------------------
             */
+
             'status.in' =>
                 'The selected tenant status is invalid.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | Notes
+            |--------------------------------------------------------------------------
+            */
+
+            'notes.string' =>
+                'Notes must be a valid text value.',
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Prepare Request
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Prepare request data before validation.
+     *
+     * Only fields supported by TenantService::update() are normalized.
      */
     protected function prepareForValidation(): void
     {
@@ -462,37 +545,40 @@ class UpdateTenantRequest extends FormRequest
 
         /*
         |--------------------------------------------------------------------------
-        | Personal Information
+        | Tenant-Specific Personal Information
         |--------------------------------------------------------------------------
         */
 
-        if ($this->has('first_name')) {
-            $data['first_name'] = $this->filled('first_name')
-                ? trim($this->input('first_name'))
-                : null;
-        }
-
-        if ($this->has('last_name')) {
-            $data['last_name'] = $this->filled('last_name')
-                ? trim($this->input('last_name'))
-                : null;
-        }
-
         if ($this->has('other_names')) {
             $data['other_names'] = $this->filled('other_names')
-                ? trim($this->input('other_names'))
+                ? trim((string) $this->input('other_names'))
                 : null;
         }
 
-        if ($this->has('email')) {
-            $data['email'] = $this->filled('email')
-                ? strtolower(trim($this->input('email')))
+        /*
+        |--------------------------------------------------------------------------
+        | Nationality
+        |--------------------------------------------------------------------------
+        |
+        | Nationality is stored independently from residential country.
+        |
+        */
+
+        if ($this->has('nationality')) {
+            $data['nationality'] = $this->filled('nationality')
+                ? trim((string) $this->input('nationality'))
                 : null;
         }
 
-        if ($this->has('phone')) {
-            $data['phone'] = $this->filled('phone')
-                ? trim($this->input('phone'))
+        if ($this->has('date_of_birth')) {
+            $data['date_of_birth'] = $this->filled('date_of_birth')
+                ? $this->input('date_of_birth')
+                : null;
+        }
+
+        if ($this->has('gender')) {
+            $data['gender'] = $this->filled('gender')
+                ? strtolower(trim((string) $this->input('gender')))
                 : null;
         }
 
@@ -504,49 +590,61 @@ class UpdateTenantRequest extends FormRequest
 
         if ($this->has('id_number')) {
             $data['id_number'] = $this->filled('id_number')
-                ? strtoupper(trim($this->input('id_number')))
+                ? strtoupper(trim((string) $this->input('id_number')))
                 : null;
         }
 
         if ($this->has('passport_number')) {
             $data['passport_number'] = $this->filled('passport_number')
-                ? strtoupper(trim($this->input('passport_number')))
+                ? strtoupper(trim((string) $this->input('passport_number')))
                 : null;
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Address
+        | Address / Location
         |--------------------------------------------------------------------------
         */
 
         if ($this->has('country')) {
             $data['country'] = $this->filled('country')
-                ? trim($this->input('country'))
+                ? trim((string) $this->input('country'))
+                : null;
+        }
+
+        if ($this->has('region')) {
+            $data['region'] = $this->filled('region')
+                ? trim((string) $this->input('region'))
                 : null;
         }
 
         if ($this->has('county')) {
             $data['county'] = $this->filled('county')
-                ? trim($this->input('county'))
+                ? trim((string) $this->input('county'))
                 : null;
         }
 
         if ($this->has('city')) {
             $data['city'] = $this->filled('city')
-                ? trim($this->input('city'))
+                ? trim((string) $this->input('city'))
+                : null;
+        }
+
+        if ($this->has('area')) {
+            $data['area'] = $this->filled('area')
+                ? trim((string) $this->input('area'))
                 : null;
         }
 
         if ($this->has('postal_code')) {
             $data['postal_code'] = $this->filled('postal_code')
-                ? trim($this->input('postal_code'))
+                ? trim((string) $this->input('postal_code'))
                 : null;
         }
 
         if ($this->has('address')) {
             $data['address'] = $this->filled('address')
-                ? trim($this->input('address'))
+                ? trim((string) $this->input('address'))
                 : null;
         }
 
@@ -558,13 +656,19 @@ class UpdateTenantRequest extends FormRequest
 
         if ($this->has('occupation')) {
             $data['occupation'] = $this->filled('occupation')
-                ? trim($this->input('occupation'))
+                ? trim((string) $this->input('occupation'))
                 : null;
         }
 
         if ($this->has('employer')) {
             $data['employer'] = $this->filled('employer')
-                ? trim($this->input('employer'))
+                ? trim((string) $this->input('employer'))
+                : null;
+        }
+
+        if ($this->has('monthly_income')) {
+            $data['monthly_income'] = $this->filled('monthly_income')
+                ? $this->input('monthly_income')
                 : null;
         }
 
@@ -577,22 +681,56 @@ class UpdateTenantRequest extends FormRequest
         if ($this->has('emergency_contact_name')) {
             $data['emergency_contact_name'] =
                 $this->filled('emergency_contact_name')
-                    ? trim($this->input('emergency_contact_name'))
+                    ? trim((string) $this->input('emergency_contact_name'))
                     : null;
         }
 
         if ($this->has('emergency_contact_phone')) {
             $data['emergency_contact_phone'] =
                 $this->filled('emergency_contact_phone')
-                    ? trim($this->input('emergency_contact_phone'))
+                    ? trim((string) $this->input('emergency_contact_phone'))
                     : null;
         }
 
         if ($this->has('emergency_contact_relationship')) {
             $data['emergency_contact_relationship'] =
                 $this->filled('emergency_contact_relationship')
-                    ? trim($this->input('emergency_contact_relationship'))
+                    ? trim((string) $this->input('emergency_contact_relationship'))
                     : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Verification
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('is_verified')) {
+            $value = $this->input('is_verified');
+
+            $data['is_verified'] = filter_var(
+                $value,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+        }
+
+        if ($this->has('verified_at')) {
+            $data['verified_at'] = $this->filled('verified_at')
+                ? $this->input('verified_at')
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Status
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('status')) {
+            $data['status'] = $this->filled('status')
+                ? strtolower(trim((string) $this->input('status')))
+                : null;
         }
 
         /*
@@ -603,12 +741,24 @@ class UpdateTenantRequest extends FormRequest
 
         if ($this->has('notes')) {
             $data['notes'] = $this->filled('notes')
-                ? trim($this->input('notes'))
+                ? trim((string) $this->input('notes'))
                 : null;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Merge
+        |--------------------------------------------------------------------------
+        */
+
         $this->merge($data);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Additional Validation
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Configure the validator instance.
@@ -617,25 +767,49 @@ class UpdateTenantRequest extends FormRequest
     {
         $validator->after(function ($validator) {
 
+            $tenant = $this->tenant();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant Existence
+            |--------------------------------------------------------------------------
+            */
+
+            if (! $tenant) {
+                $validator->errors()->add(
+                    'tenant',
+                    'The tenant being updated could not be found.'
+                );
+
+                return;
+            }
+
             /*
             |--------------------------------------------------------------------------
             | Identification Requirement
             |--------------------------------------------------------------------------
             |
-            | Only enforce this when the request is attempting to change
-            | identification information.
+            | If identification information is being updated, the final
+            | tenant record must still contain either:
+            |
+            | - ID number
+            | OR
+            | - Passport number
             |
             */
+
             if (
                 $this->has('id_number') ||
                 $this->has('passport_number')
             ) {
-                $idNumber = $this->input('id_number');
-                $passportNumber = $this->input('passport_number');
+                $idNumber = $this->has('id_number')
+                    ? $this->input('id_number')
+                    : $tenant->id_number;
 
-                /*
-                | If both are explicitly cleared, reject the request.
-                */
+                $passportNumber = $this->has('passport_number')
+                    ? $this->input('passport_number')
+                    : $tenant->passport_number;
+
                 if (
                     blank($idNumber) &&
                     blank($passportNumber)
@@ -652,36 +826,131 @@ class UpdateTenantRequest extends FormRequest
             | Emergency Contact Validation
             |--------------------------------------------------------------------------
             |
-            | If any emergency contact field is supplied, all three should
-            | be supplied together.
+            | If any emergency contact field is being changed,
+            | all three fields must exist in the final record.
             |
             */
+
             $emergencyFields = [
                 'emergency_contact_name',
                 'emergency_contact_phone',
                 'emergency_contact_relationship',
             ];
 
-            $hasEmergencyContact = collect($emergencyFields)
+            $hasEmergencyUpdate = collect($emergencyFields)
                 ->contains(
                     fn ($field) => $this->has($field)
                 );
 
-            if ($hasEmergencyContact) {
+            if ($hasEmergencyUpdate) {
 
                 foreach ($emergencyFields as $field) {
 
-                    if (
-                        $this->has($field) &&
-                        blank($this->input($field))
-                    ) {
+                    $value = $this->has($field)
+                        ? $this->input($field)
+                        : $tenant->{$field};
+
+                    if (blank($value)) {
                         $validator->errors()->add(
                             $field,
-                            'This field is required when updating emergency contact details.'
+                            'All emergency contact details are required when updating emergency contact information.'
                         );
                     }
                 }
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Verification Consistency
+            |--------------------------------------------------------------------------
+            |
+            | TenantService::update() automatically:
+            |
+            | - sets verified_at when is_verified = true
+            | - clears verified_at when is_verified = false
+            |
+            | Therefore we only validate the boolean value here.
+            |
+            */
+
+            if ($this->has('is_verified')) {
+
+                filter_var(
+                    $this->input('is_verified'),
+                    FILTER_VALIDATE_BOOLEAN,
+                    FILTER_NULL_ON_FAILURE
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Protected User Fields
+            |--------------------------------------------------------------------------
+            |
+            | These belong to the linked User model or are system-managed
+            | tenant fields and are not editable through a normal tenant update.
+            |
+            */
+
+            $userFields = [
+                'user_id',
+                'first_name',
+                'last_name',
+                'email',
+                'phone',
+                'tenant_number',
+                'is_active',
+            ];
+
+            foreach ($userFields as $field) {
+
+                if ($this->has($field)) {
+
+                    $validator->errors()->add(
+                        $field,
+                        $this->protectedFieldMessage($field)
+                    );
+                }
+            }
         });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Protected Field Message
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Get the validation message for protected fields.
+     */
+    protected function protectedFieldMessage(string $field): string
+    {
+        return match ($field) {
+
+            'user_id' =>
+                'The linked user account cannot be changed during a tenant update.',
+
+            'tenant_number' =>
+                'The tenant number is system-managed and cannot be changed.',
+
+            'first_name' =>
+                'The first name belongs to the user account and must be updated from the user profile.',
+
+            'last_name' =>
+                'The last name belongs to the user account and must be updated from the user profile.',
+
+            'email' =>
+                'The email belongs to the user account and must be updated from the user profile.',
+
+            'phone' =>
+                'The phone number belongs to the user account and must be updated from the user profile.',
+
+            'is_active' =>
+                'The is_active field is not supported for tenant updates.',
+
+            default =>
+                "The {$field} cannot be changed during a tenant update.",
+        };
     }
 }
