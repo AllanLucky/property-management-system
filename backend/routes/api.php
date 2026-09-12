@@ -70,6 +70,14 @@ use App\Http\Controllers\Api\Tenancy\TenancyController;
 
 use App\Http\Controllers\Api\Lease\LeaseController;
 
+
+/*
+|--------------------------------------------------------------------------
+| BOOKING
+|--------------------------------------------------------------------------
+*/
+use App\Http\Controllers\Api\Booking\BookingController;
+
 /*
 |--------------------------------------------------------------------------
 | ACTIVITY LOGS
@@ -1287,6 +1295,269 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('id')
                 ->name('destroy');
         });
+
+
+        /*
+|--------------------------------------------------------------------------
+| BOOKINGS
+|--------------------------------------------------------------------------
+*/
+
+    Route::prefix('bookings')
+       ->name('bookings.')
+        ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING SEARCH
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'search',
+            [BookingController::class, 'search']
+        )->name('search');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [BookingController::class, 'statistics']
+        )->name('statistics');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING REPORTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'reports',
+            [BookingController::class, 'reports']
+        )->name('reports');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE UNITS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'available-units',
+            [BookingController::class, 'availableUnits']
+        )->name('available-units');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE USERS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'available-users',
+            [BookingController::class, 'availableUsers']
+        )->name('available-users');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING STATUS LISTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'pending',
+            [BookingController::class, 'pending']
+        )->name('pending');
+
+        Route::get(
+            'confirmed',
+            [BookingController::class, 'confirmed']
+        )->name('confirmed');
+
+        Route::get(
+            'active',
+            [BookingController::class, 'active']
+        )->name('active');
+
+        Route::get(
+            'completed',
+            [BookingController::class, 'completed']
+        )->name('completed');
+
+        Route::get(
+            'cancelled',
+            [BookingController::class, 'cancelled']
+        )->name('cancelled');
+
+        Route::get(
+            'rejected',
+            [BookingController::class, 'rejected']
+        )->name('rejected');
+
+        Route::get(
+            'expired',
+            [BookingController::class, 'expired']
+        )->name('expired');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING CRUD
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [BookingController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [BookingController::class, 'store']
+        )->name('store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING WORKFLOW ACTIONS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{booking}/confirm',
+            [BookingController::class, 'confirm']
+        )
+            ->whereNumber('booking')
+            ->name('confirm');
+
+        Route::post(
+            '{booking}/approve',
+            [BookingController::class, 'approve']
+        )
+            ->whereNumber('booking')
+            ->name('approve');
+
+        Route::post(
+            '{booking}/check-in',
+            [BookingController::class, 'checkIn']
+        )
+            ->whereNumber('booking')
+            ->name('check-in');
+
+        Route::post(
+            '{booking}/complete',
+            [BookingController::class, 'complete']
+        )
+            ->whereNumber('booking')
+            ->name('complete');
+
+        Route::post(
+            '{booking}/cancel',
+            [BookingController::class, 'cancel']
+        )
+            ->whereNumber('booking')
+            ->name('cancel');
+
+        Route::post(
+            '{booking}/reject',
+            [BookingController::class, 'reject']
+        )
+            ->whereNumber('booking')
+            ->name('reject');
+
+        Route::post(
+            '{booking}/expire',
+            [BookingController::class, 'expire']
+        )
+            ->whereNumber('booking')
+            ->name('expire');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING RESTORE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{booking}/restore',
+            [BookingController::class, 'restore']
+        )
+            ->whereNumber('booking')
+            ->name('restore');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING FORCE DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{booking}/force',
+            [BookingController::class, 'forceDelete']
+        )
+            ->whereNumber('booking')
+            ->name('force-delete');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING SHOW
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{booking}',
+            [BookingController::class, 'show']
+        )
+            ->whereNumber('booking')
+            ->name('show');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING UPDATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{booking}',
+            [BookingController::class, 'update']
+        )
+            ->whereNumber('booking')
+            ->name('update');
+
+        Route::patch(
+            '{booking}',
+            [BookingController::class, 'update']
+        )
+            ->whereNumber('booking')
+            ->name('patch');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{booking}',
+            [BookingController::class, 'destroy']
+        )
+            ->whereNumber('booking')
+            ->name('destroy');
+       });
 
 
     /*

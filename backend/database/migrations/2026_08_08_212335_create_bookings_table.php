@@ -1,6 +1,5 @@
 <?php
 
-
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -28,70 +27,92 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('booking_number', 50)->unique();
-            $table->string('reference', 100)->unique();
-            $table->string('slug', 150)->unique();
+            $table->string('booking_number', 50)
+                ->unique();
+
+            $table->string('reference', 100)
+                ->unique();
+
+            $table->string('slug', 150)
+                ->unique();
 
             /*
             |--------------------------------------------------------------------------
             | USER / CUSTOMER / TENANT RELATIONSHIPS
             |--------------------------------------------------------------------------
             |
-            | user_id     = user who created the booking
-            | customer_id = customer making the booking
-            | tenant_id   = tenant if already registered
+            | user_id:
+            |     User who created the booking.
+            |
+            | customer_id:
+            |     User/customer making the booking.
+            |
+            | tenant_id:
+            |     Existing tenant profile when applicable.
             |
             */
 
             $table->foreignId('user_id')
                 ->nullable()
                 ->constrained('users')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             $table->foreignId('customer_id')
                 ->nullable()
                 ->constrained('users')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             $table->foreignId('tenant_id')
                 ->nullable()
                 ->constrained('tenants')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             /*
             |--------------------------------------------------------------------------
             | PROPERTY RELATIONSHIPS
             |--------------------------------------------------------------------------
+            |
+            | A booking should retain its property/unit reference while the
+            | property-management history exists.
+            |
             */
 
             $table->foreignId('property_id')
                 ->nullable()
                 ->constrained('properties')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             $table->foreignId('apartment_id')
                 ->nullable()
                 ->constrained('apartments')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             $table->foreignId('unit_id')
                 ->nullable()
                 ->constrained('units')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             /*
             |--------------------------------------------------------------------------
             | TENANCY RELATIONSHIP
             |--------------------------------------------------------------------------
             |
-            | A booking can later be converted into a tenancy.
+            | A confirmed/approved booking may later be converted into a
+            | tenancy.
             |
             */
 
             $table->foreignId('tenancy_id')
                 ->nullable()
                 ->constrained('tenancies')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
             /*
             |--------------------------------------------------------------------------
@@ -137,17 +158,43 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | BOOKING SOURCE
+            |--------------------------------------------------------------------------
+            |
+            | Examples:
+            | website, walk_in, agent, phone, referral, other
+            |
+            */
+
+            $table->enum('source', [
+                'website',
+                'walk_in',
+                'agent',
+                'phone',
+                'referral',
+                'other',
+            ])->default('other');
+
+            /*
+            |--------------------------------------------------------------------------
             | BOOKING DATES
             |--------------------------------------------------------------------------
             */
 
-            $table->dateTime('booking_date')->nullable();
+            $table->dateTime('booking_date')
+                ->nullable();
 
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
+            $table->date('start_date')
+                ->nullable();
 
-            $table->date('check_in_date')->nullable();
-            $table->date('check_out_date')->nullable();
+            $table->date('end_date')
+                ->nullable();
+
+            $table->date('check_in_date')
+                ->nullable();
+
+            $table->date('check_out_date')
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
@@ -155,32 +202,51 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->dateTime('confirmed_at')->nullable();
-            $table->dateTime('approved_at')->nullable();
-            $table->dateTime('rejected_at')->nullable();
-            $table->dateTime('cancelled_at')->nullable();
-            $table->dateTime('completed_at')->nullable();
+            $table->dateTime('confirmed_at')
+                ->nullable();
+
+            $table->dateTime('approved_at')
+                ->nullable();
+
+            $table->dateTime('rejected_at')
+                ->nullable();
+
+            $table->dateTime('cancelled_at')
+                ->nullable();
+
+            $table->dateTime('completed_at')
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
-            | CUSTOMER DETAILS
+            | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
             |
-            | These are stored as a snapshot so historical booking information
-            | remains available even if the user's profile changes.
+            | Store customer details at booking time so historical records
+            | remain accurate even if the user's profile changes later.
             |
             */
 
-            $table->string('first_name')->nullable();
-            $table->string('last_name')->nullable();
+            $table->string('first_name', 100)
+                ->nullable();
 
-            $table->string('email')->nullable();
-            $table->string('phone', 30)->nullable();
+            $table->string('last_name', 100)
+                ->nullable();
+
+            $table->string('email', 255)
+                ->nullable();
+
+            $table->string('phone', 30)
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
             | FINANCIAL DETAILS
             |--------------------------------------------------------------------------
+            |
+            | Monetary values use decimal(15,2), suitable for KES amounts
+            | while providing sufficient capacity for larger transactions.
+            |
             */
 
             $table->decimal('rent_amount', 15, 2)
@@ -225,13 +291,17 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->text('special_requests')->nullable();
+            $table->text('special_requests')
+                ->nullable();
 
-            $table->text('notes')->nullable();
+            $table->text('notes')
+                ->nullable();
 
-            $table->text('rejection_reason')->nullable();
+            $table->text('rejection_reason')
+                ->nullable();
 
-            $table->text('cancellation_reason')->nullable();
+            $table->text('cancellation_reason')
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
@@ -239,11 +309,14 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('payment_method')->nullable();
+            $table->string('payment_method', 50)
+                ->nullable();
 
-            $table->string('payment_reference')->nullable();
+            $table->string('payment_reference', 150)
+                ->nullable();
 
-            $table->dateTime('paid_at')->nullable();
+            $table->dateTime('paid_at')
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
@@ -251,9 +324,11 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->string('meta_title')->nullable();
+            $table->string('meta_title', 255)
+                ->nullable();
 
-            $table->text('meta_description')->nullable();
+            $table->text('meta_description')
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
@@ -261,7 +336,8 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             */
 
-            $table->json('metadata')->nullable();
+            $table->json('metadata')
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------
@@ -275,44 +351,142 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | INDEXES
+            | BASIC INDEXES
             |--------------------------------------------------------------------------
             */
 
             $table->index('status');
+
             $table->index('payment_status');
+
             $table->index('booking_type');
+
+            $table->index('source');
 
             $table->index('booking_date');
 
             $table->index('start_date');
+
             $table->index('end_date');
 
+            $table->index('check_in_date');
+
+            $table->index('check_out_date');
+
+            /*
+            |--------------------------------------------------------------------------
+            | RELATIONSHIP INDEXES
+            |--------------------------------------------------------------------------
+            */
+
             $table->index('property_id');
+
             $table->index('apartment_id');
+
             $table->index('unit_id');
 
             $table->index('user_id');
+
             $table->index('customer_id');
+
             $table->index('tenant_id');
+
             $table->index('tenancy_id');
 
+            /*
+            |--------------------------------------------------------------------------
+            | CUSTOMER SEARCH INDEXES
+            |--------------------------------------------------------------------------
+            */
+
             $table->index('email');
+
             $table->index('phone');
+
+            /*
+            |--------------------------------------------------------------------------
+            | UNIT AVAILABILITY INDEX
+            |--------------------------------------------------------------------------
+            |
+            | Useful when checking whether a unit already has a booking
+            | overlapping the requested dates.
+            |
+            */
 
             $table->index([
                 'unit_id',
                 'status',
+                'start_date',
+                'end_date',
             ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | PROPERTY BOOKING INDEX
+            |--------------------------------------------------------------------------
+            */
 
             $table->index([
                 'property_id',
                 'status',
+                'start_date',
             ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | APARTMENT BOOKING INDEX
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'apartment_id',
+                'status',
+                'start_date',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | CUSTOMER BOOKING INDEX
+            |--------------------------------------------------------------------------
+            */
 
             $table->index([
                 'customer_id',
                 'status',
+                'booking_date',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | TENANT BOOKING INDEX
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'tenant_id',
+                'status',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENT REPORTING INDEX
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'payment_status',
+                'paid_at',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | EXPIRY / DATE REPORTING INDEX
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'status',
+                'end_date',
             ]);
         });
     }
