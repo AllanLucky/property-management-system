@@ -200,6 +200,7 @@ import {
   EditTenant,
   TenantDetails,
   TenantList,
+  TenantReports,
 } from "../modules/super-admin/tenants";
 
 /*
@@ -215,6 +216,19 @@ import {
   TenancyList,
   TenancyStatistics,
 } from "../modules/super-admin/tenancies";
+
+/*
+|--------------------------------------------------------------------------
+| LEASES
+|--------------------------------------------------------------------------
+*/
+import {
+  CreateLease,
+  EditLease,
+  ExpiredLease,
+  LeaseDetails,
+  LeaseList,
+} from "../modules/super-admin/leases";
 
 /*
 |--------------------------------------------------------------------------
@@ -890,6 +904,15 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      <Route
+        path="tenants/reports"
+        element={
+          <PermissionGuard permission="tenants.view">
+            <TenantReports />
+          </PermissionGuard>
+        }
+      />
+
       {/* ==================================================================
           TENANCIES
       ================================================================== */}
@@ -956,6 +979,62 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
+
+      ```jsx
+      {/* ================================================================== 
+    LEASES
+================================================================== */}
+
+      {/* Lease List */}
+      <Route
+        path="leases"
+        element={
+          <PermissionGuard permission="leases.view">
+            <LeaseList />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Create Lease */}
+      <Route
+        path="leases/create"
+        element={
+          <PermissionGuard permission="leases.create">
+            <CreateLease />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Expired Leases */}
+      <Route
+        path="leases/expired"
+        element={
+          <PermissionGuard permission="leases.view">
+            <ExpiredLease />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Lease Details */}
+      <Route
+        path="leases/:id"
+        element={
+          <PermissionGuard permission="leases.view">
+            <LeaseDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Edit Lease */}
+      <Route
+        path="leases/:id/edit"
+        element={
+          <PermissionGuard permission="leases.edit">
+            <EditLease />
+          </PermissionGuard>
+        }
+      />
+
     </>
   );
 };

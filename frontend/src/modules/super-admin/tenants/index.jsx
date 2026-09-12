@@ -1,3 +1,4 @@
+
 /*
 |--------------------------------------------------------------------------
 | TENANT LIST / MAIN
@@ -9,6 +10,15 @@ export { default as TenantTable } from "./TenantTable";
 export { default as TenantStats } from "./TenantStats";
 export { default as TenantFilters } from "./TenantFilters";
 export { default as TenantPagination } from "./TenantPagination";
+
+
+/*
+|--------------------------------------------------------------------------
+| TENANT REPORTS
+|--------------------------------------------------------------------------
+*/
+
+export { default as TenantReports } from "./TenantReports";
 
 
 /*

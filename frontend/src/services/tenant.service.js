@@ -479,17 +479,6 @@ const normalizeError = (error) => {
  * The selected user's ID becomes:
  *
  * tenant.user_id
- *
- * Expected backend response:
- *
- * {
- *   id: 4,
- *   first_name: "Allan",
- *   last_name: "Nonda",
- *   name: "Allan Nonda",
- *   email: "allantsory.dev@gmail.com",
- *   phone: "0792491361"
- * }
  */
 const normalizeAvailableTenantUser = (
   user
@@ -1225,6 +1214,330 @@ const normalizeTenants = (
 
 /*
 |--------------------------------------------------------------------------
+| TENANT REPORT NORMALIZATION
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Safely convert a report number to a number.
+ */
+const reportNumber = (value) => {
+  const number =
+    Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+
+/**
+ * Normalize tenant report data.
+ *
+ * Expected backend response:
+ *
+ * {
+ *   summary: {
+ *     total: 15,
+ *     active: 11,
+ *     inactive: 2,
+ *     pending: 2,
+ *     blacklisted: 0,
+ *     verified: 13,
+ *     unverified: 2,
+ *     with_active_tenancy: 6,
+ *     without_active_tenancy: 9
+ *   },
+ *
+ *   status_breakdown: {
+ *     active: 11,
+ *     inactive: 2,
+ *     pending: 2,
+ *     blacklisted: 0
+ *   },
+ *
+ *   verification_breakdown: {
+ *     verified: 13,
+ *     unverified: 2
+ *   },
+ *
+ *   tenancy_breakdown: {
+ *     with_active_tenancy: 6,
+ *     without_active_tenancy: 9
+ *   },
+ *
+ *   registration: {
+ *     total: 15,
+ *     active: 11,
+ *     pending: 2,
+ *     today: 0,
+ *     this_month: 15,
+ *     this_year: 15
+ *   },
+ *
+ *   period: {
+ *     start_date: null,
+ *     end_date: null
+ *   },
+ *
+ *   generated_at: "2026-09-12T12:15:27.472323Z"
+ * }
+ */
+const normalizeTenantReports = (
+  reports
+) => {
+  if (
+    !reports ||
+    typeof reports !== "object" ||
+    Array.isArray(reports)
+  ) {
+    return {
+      summary: {
+        total: 0,
+        active: 0,
+        inactive: 0,
+        pending: 0,
+        blacklisted: 0,
+        verified: 0,
+        unverified: 0,
+        with_active_tenancy: 0,
+        without_active_tenancy: 0,
+      },
+
+      status_breakdown: {
+        active: 0,
+        inactive: 0,
+        pending: 0,
+        blacklisted: 0,
+      },
+
+      verification_breakdown: {
+        verified: 0,
+        unverified: 0,
+      },
+
+      tenancy_breakdown: {
+        with_active_tenancy: 0,
+        without_active_tenancy: 0,
+      },
+
+      registration: {
+        total: 0,
+        active: 0,
+        pending: 0,
+        today: 0,
+        this_month: 0,
+        this_year: 0,
+      },
+
+      period: {
+        start_date: null,
+        end_date: null,
+      },
+
+      generated_at: null,
+    };
+  }
+
+  const summary =
+    reports?.summary ?? {};
+
+  const statusBreakdown =
+    reports?.status_breakdown ?? {};
+
+  const verificationBreakdown =
+    reports?.verification_breakdown ?? {};
+
+  const tenancyBreakdown =
+    reports?.tenancy_breakdown ?? {};
+
+  const registration =
+    reports?.registration ?? {};
+
+  const period =
+    reports?.period ?? {};
+
+  return {
+    /*
+     * Preserve any future backend report fields.
+     */
+    ...reports,
+
+    /*
+     * Summary.
+     */
+    summary: {
+      ...summary,
+
+      total:
+        reportNumber(
+          summary?.total
+        ),
+
+      active:
+        reportNumber(
+          summary?.active
+        ),
+
+      inactive:
+        reportNumber(
+          summary?.inactive
+        ),
+
+      pending:
+        reportNumber(
+          summary?.pending
+        ),
+
+      blacklisted:
+        reportNumber(
+          summary?.blacklisted
+        ),
+
+      verified:
+        reportNumber(
+          summary?.verified
+        ),
+
+      unverified:
+        reportNumber(
+          summary?.unverified
+        ),
+
+      with_active_tenancy:
+        reportNumber(
+          summary?.with_active_tenancy
+        ),
+
+      without_active_tenancy:
+        reportNumber(
+          summary?.without_active_tenancy
+        ),
+    },
+
+    /*
+     * Tenant status breakdown.
+     */
+    status_breakdown: {
+      ...statusBreakdown,
+
+      active:
+        reportNumber(
+          statusBreakdown?.active
+        ),
+
+      inactive:
+        reportNumber(
+          statusBreakdown?.inactive
+        ),
+
+      pending:
+        reportNumber(
+          statusBreakdown?.pending
+        ),
+
+      blacklisted:
+        reportNumber(
+          statusBreakdown?.blacklisted
+        ),
+    },
+
+    /*
+     * Verification breakdown.
+     */
+    verification_breakdown: {
+      ...verificationBreakdown,
+
+      verified:
+        reportNumber(
+          verificationBreakdown?.verified
+        ),
+
+      unverified:
+        reportNumber(
+          verificationBreakdown?.unverified
+        ),
+    },
+
+    /*
+     * Tenancy breakdown.
+     */
+    tenancy_breakdown: {
+      ...tenancyBreakdown,
+
+      with_active_tenancy:
+        reportNumber(
+          tenancyBreakdown?.with_active_tenancy
+        ),
+
+      without_active_tenancy:
+        reportNumber(
+          tenancyBreakdown?.without_active_tenancy
+        ),
+    },
+
+    /*
+     * Registration overview.
+     */
+    registration: {
+      ...registration,
+
+      total:
+        reportNumber(
+          registration?.total
+        ),
+
+      active:
+        reportNumber(
+          registration?.active
+        ),
+
+      pending:
+        reportNumber(
+          registration?.pending
+        ),
+
+      today:
+        reportNumber(
+          registration?.today
+        ),
+
+      this_month:
+        reportNumber(
+          registration?.this_month
+        ),
+
+      this_year:
+        reportNumber(
+          registration?.this_year
+        ),
+    },
+
+    /*
+     * Report period.
+     */
+    period: {
+      start_date:
+        period?.start_date ??
+        null,
+
+      end_date:
+        period?.end_date ??
+        null,
+    },
+
+    /*
+     * Report generation timestamp.
+     */
+    generated_at:
+      reports?.generated_at ??
+      null,
+  };
+};
+
+
+/*
+|--------------------------------------------------------------------------
 | GET TENANTS
 |--------------------------------------------------------------------------
 */
@@ -1336,44 +1649,6 @@ export const getTenant = async (
 /**
  * Fetch existing users who already have the tenant role
  * and are not already attached to a tenant.
- *
- * IMPORTANT:
- *
- * This endpoint does NOT create users.
- *
- * It only returns existing User records that can be
- * selected when creating a Tenant profile.
- *
- * Expected API response:
- *
- * {
- *   "status": true,
- *   "code": 200,
- *   "message": "Available tenant users fetched successfully.",
- *   "data": [
- *     {
- *       "id": 4,
- *       "first_name": "Allan",
- *       "last_name": "Nonda",
- *       "name": "Allan Nonda",
- *       "email": "allantsory.dev@gmail.com",
- *       "phone": "0792491361"
- *     }
- *   ]
- * }
- *
- * Service returns:
- *
- * [
- *   {
- *     id: 4,
- *     first_name: "Allan",
- *     last_name: "Nonda",
- *     name: "Allan Nonda",
- *     email: "allantsory.dev@gmail.com",
- *     phone: "0792491361"
- *   }
- * ]
  */
 export const getAvailableTenantUsers =
   async () => {
@@ -2099,6 +2374,166 @@ export const getTenantStatistics =
 
 /*
 |--------------------------------------------------------------------------
+| TENANT REPORTS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get tenant management reports.
+ *
+ * GET /api/tenants/reports
+ *
+ * Optional query parameters:
+ *
+ * {
+ *   start_date: "2026-09-01",
+ *   end_date: "2026-09-12"
+ * }
+ *
+ * Backend response:
+ *
+ * {
+ *   status: true,
+ *   code: 200,
+ *   message: "Tenant reports fetched successfully.",
+ *   data: {
+ *     summary: {...},
+ *     status_breakdown: {...},
+ *     verification_breakdown: {...},
+ *     tenancy_breakdown: {...},
+ *     registration: {...},
+ *     period: {...},
+ *     generated_at: "..."
+ *   }
+ * }
+ */
+export const getTenantReports = async (
+  params = {}
+) => {
+  try {
+    /*
+     * Validate report parameters.
+     */
+    if (
+      params !== null &&
+      typeof params !== "object"
+    ) {
+      throw new Error(
+        "Tenant report parameters must be an object."
+      );
+    }
+
+    /*
+     * Remove empty date filters.
+     *
+     * This keeps requests clean:
+     *
+     * {}
+     *
+     * instead of:
+     *
+     * {
+     *   start_date: "",
+     *   end_date: ""
+     * }
+     */
+    const cleanParams = {};
+
+    if (
+      params?.start_date
+    ) {
+      cleanParams.start_date =
+        params.start_date;
+    }
+
+    if (
+      params?.end_date
+    ) {
+      cleanParams.end_date =
+        params.end_date;
+    }
+
+    const response =
+      await tenantAPI.getTenantReports(
+        cleanParams
+      );
+
+    const reportData =
+      getResponseData(
+        response
+      );
+
+    const normalizedReports =
+      normalizeTenantReports(
+        reportData
+      );
+
+    return {
+      data:
+        normalizedReports,
+
+      /*
+       * Also expose report fields at the top level.
+       *
+       * This makes consumption flexible:
+       *
+       * result.data.summary
+       *
+       * or:
+       *
+       * result.summary
+       */
+      ...normalizedReports,
+
+      message:
+        getResponseMessage(
+          response,
+          "Tenant reports fetched successfully."
+        ),
+
+      status:
+        getResponseStatus(
+          response
+        ),
+
+      code:
+        getResponseCode(
+          response
+        ),
+    };
+  } catch (error) {
+    const normalized =
+      normalizeError(
+        error
+      );
+
+    console.error(
+      "[TenantService] Failed to fetch tenant reports:",
+      {
+        message:
+          normalized.message,
+
+        status:
+          normalized.status,
+
+        code:
+          normalized.code,
+
+        errors:
+          normalized.errors,
+
+        response:
+          normalized.response?.data,
+      }
+    );
+
+    throw normalized;
+  }
+};
+
+
+/*
+|--------------------------------------------------------------------------
 | RESTORE TENANT
 |--------------------------------------------------------------------------
 */
@@ -2269,6 +2704,11 @@ const tenantService = {
   getTenantStatistics,
 
   /*
+   * Reports.
+   */
+  getTenantReports,
+
+  /*
    * Restore/delete.
    */
   restoreTenant,
@@ -2276,4 +2716,3 @@ const tenantService = {
 };
 
 export default tenantService;
-

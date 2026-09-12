@@ -157,6 +157,18 @@ use App\Repositories\Eloquent\LeaseRepository;
 use App\Repositories\Interfaces\LeaseRepositoryInterface;
 
 
+/*
+|--------------------------------------------------------------------------
+| BOOKING REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\BookingRepository;
+use App\Repositories\Interfaces\BookingRepositoryInterface;
+
+
+
+
 
 
 
@@ -370,6 +382,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             LeaseRepositoryInterface::class,
             LeaseRepository::class
+        );
+
+         $this->app->bind(
+            BookingRepositoryInterface::class,
+            BookingRepository::class
         );
 
     }

@@ -2,27 +2,62 @@ import { useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 
 import {
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT CRUD
+  |--------------------------------------------------------------------------
+  */
   fetchTenants,
   fetchTenant,
   createTenant,
   updateTenant,
   deleteTenant,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT SEARCH / LISTS
+  |--------------------------------------------------------------------------
+  */
   searchTenants,
   fetchActiveTenants,
   fetchPendingTenants,
   fetchInactiveTenants,
   fetchBlacklistedTenants,
   fetchAvailableTenantUsers,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT ACTIONS
+  |--------------------------------------------------------------------------
+  */
   activateTenant,
   deactivateTenant,
   blacklistTenant,
   setTenantPending,
   verifyTenant,
   unverifyTenant,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT STATISTICS / REPORTS
+  |--------------------------------------------------------------------------
+  */
   fetchTenantStatistics,
+  fetchTenantReports,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT RESTORE / DELETE
+  |--------------------------------------------------------------------------
+  */
   restoreTenant,
   forceDeleteTenant,
 
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT STATE ACTIONS
+  |--------------------------------------------------------------------------
+  */
   setTenant,
   clearTenant,
   setTenantFilters,
@@ -35,11 +70,17 @@ import {
   clearTenantError,
   clearTenantSuccess,
 
+  /*
+  |--------------------------------------------------------------------------
+  | DATA SELECTORS
+  |--------------------------------------------------------------------------
+  */
   selectTenants,
   selectTenant,
   selectTenantPagination,
   selectTenantFilters,
   selectTenantStatistics,
+  selectTenantReports,
   selectTenantSearchResults,
   selectActiveTenants,
   selectPendingTenants,
@@ -47,6 +88,11 @@ import {
   selectBlacklistedTenants,
   selectAvailableTenantUsers,
 
+  /*
+  |--------------------------------------------------------------------------
+  | LOADING SELECTORS
+  |--------------------------------------------------------------------------
+  */
   selectTenantLoading,
   selectTenantLoadingTenant,
   selectTenantCreating,
@@ -55,15 +101,28 @@ import {
   selectTenantSearching,
   selectTenantActionLoading,
   selectTenantLoadingStatistics,
+  selectTenantLoadingReports,
   selectTenantLoadingAvailableUsers,
 
+  /*
+  |--------------------------------------------------------------------------
+  | ERROR SELECTORS
+  |--------------------------------------------------------------------------
+  */
   selectTenantError,
   selectTenantCreateError,
   selectTenantUpdateError,
   selectTenantDeleteError,
   selectTenantActionError,
   selectTenantStatisticsError,
+  selectTenantReportsError,
   selectAvailableTenantUsersError,
+
+  /*
+  |--------------------------------------------------------------------------
+  | SUCCESS SELECTOR
+  |--------------------------------------------------------------------------
+  */
   selectTenantSuccessMessage,
 } from "../store/tenantSlice";
 
@@ -72,7 +131,7 @@ import {
 | ERROR NORMALIZER
 |--------------------------------------------------------------------------
 |
-| Converts all supported Laravel / Axios / Redux errors into:
+| Converts supported Laravel / Axios / Redux errors into:
 |
 | {
 |   message,
@@ -119,7 +178,7 @@ const normalizeError = (error) => {
 
   /*
   |--------------------------------------------------------------------------
-  | POSSIBLE RESPONSE OBJECTS
+  | RESPONSE OBJECTS
   |--------------------------------------------------------------------------
   */
 
@@ -211,26 +270,10 @@ const normalizeError = (error) => {
 |
 | getTenant(12)
 | getTenant("12")
-|
-| getTenant({
-|   id: 12
-| })
-|
-| getTenant({
-|   tenant_id: 12
-| })
-|
-| getTenant({
-|   tenant: {
-|     id: 12
-|   }
-| })
-|
-| getTenant({
-|   data: {
-|     id: 12
-|   }
-| })
+| getTenant({ id: 12 })
+| getTenant({ tenant_id: 12 })
+| getTenant({ tenant: { id: 12 } })
+| getTenant({ data: { id: 12 } })
 |
 */
 
@@ -258,9 +301,7 @@ const getTenantId = (tenantOrId) => {
     typeof tenantOrId === "string" ||
     typeof tenantOrId === "number"
   ) {
-    const value = String(
-      tenantOrId
-    ).trim();
+    const value = String(tenantOrId).trim();
 
     return value !== "" ? value : null;
   }
@@ -272,7 +313,8 @@ const getTenantId = (tenantOrId) => {
   */
 
   if (
-    typeof tenantOrId === "object"
+    typeof tenantOrId === "object" &&
+    !Array.isArray(tenantOrId)
   ) {
     const id =
       tenantOrId?.id ??
@@ -353,6 +395,12 @@ const executeTenantAction = async (
 */
 
 export const useTenant = () => {
+  /*
+  |--------------------------------------------------------------------------
+  | REDUX
+  |--------------------------------------------------------------------------
+  */
+
   const dispatch = useDispatch();
 
   /*
@@ -381,6 +429,10 @@ export const useTenant = () => {
     selectTenantStatistics
   );
 
+  const reports = useSelector(
+    selectTenantReports
+  );
+
   const searchResults = useSelector(
     selectTenantSearchResults
   );
@@ -406,11 +458,8 @@ export const useTenant = () => {
   | AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
   |
-  | These are existing users from the users table who already have
-  | the "tenant" Spatie role and are not yet linked to a tenant.
-  |
-  | They are used by CreateTenant / TenantForm to select the
-  | existing user account instead of creating another user.
+  | Existing users with the tenant role who are not yet
+  | linked to a tenant profile.
   |
   */
 
@@ -456,6 +505,10 @@ export const useTenant = () => {
     selectTenantLoadingStatistics
   );
 
+  const loadingReports = useSelector(
+    selectTenantLoadingReports
+  );
+
   const loadingAvailableUsers = useSelector(
     selectTenantLoadingAvailableUsers
   );
@@ -490,6 +543,10 @@ export const useTenant = () => {
     selectTenantStatisticsError
   );
 
+  const reportsError = useSelector(
+    selectTenantReportsError
+  );
+
   const availableTenantUsersError = useSelector(
     selectAvailableTenantUsersError
   );
@@ -519,10 +576,6 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   | FETCH AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
-  |
-  | Fetches existing users who have the tenant role and are not yet
-  | attached to a tenant profile.
-  |
   */
 
   const getAvailableTenantUsers =
@@ -545,8 +598,9 @@ export const useTenant = () => {
 
   const getTenant = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -573,7 +627,8 @@ export const useTenant = () => {
     async (tenantData) => {
       if (
         !tenantData ||
-        typeof tenantData !== "object"
+        typeof tenantData !== "object" ||
+        Array.isArray(tenantData)
       ) {
         throw createTenantError(
           "Tenant data is required."
@@ -600,8 +655,9 @@ export const useTenant = () => {
       tenantOrId,
       tenantData
     ) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -611,7 +667,8 @@ export const useTenant = () => {
 
       if (
         !tenantData ||
-        typeof tenantData !== "object"
+        typeof tenantData !== "object" ||
+        Array.isArray(tenantData)
       ) {
         throw createTenantError(
           "Tenant data is required."
@@ -646,8 +703,9 @@ export const useTenant = () => {
 
   const removeTenant = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -778,8 +836,9 @@ export const useTenant = () => {
 
   const activate = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -804,8 +863,9 @@ export const useTenant = () => {
 
   const deactivate = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -830,8 +890,9 @@ export const useTenant = () => {
 
   const blacklist = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -854,26 +915,26 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const setPending =
-    useCallback(
-      async (tenantOrId) => {
-        const id =
-          getTenantId(tenantOrId);
+  const setPending = useCallback(
+    async (tenantOrId) => {
+      const id = getTenantId(
+        tenantOrId
+      );
 
-        if (!id) {
-          throw createTenantError(
-            "Tenant ID is required."
-          );
-        }
-
-        return executeTenantAction(
-          dispatch,
-          setTenantPending(id),
-          "Failed to set tenant pending:"
+      if (!id) {
+        throw createTenantError(
+          "Tenant ID is required."
         );
-      },
-      [dispatch]
-    );
+      }
+
+      return executeTenantAction(
+        dispatch,
+        setTenantPending(id),
+        "Failed to set tenant pending:"
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -883,8 +944,9 @@ export const useTenant = () => {
 
   const verify = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -909,8 +971,9 @@ export const useTenant = () => {
 
   const unverify = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -935,8 +998,9 @@ export const useTenant = () => {
 
   const restore = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -959,26 +1023,26 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const forceDelete =
-    useCallback(
-      async (tenantOrId) => {
-        const id =
-          getTenantId(tenantOrId);
+  const forceDelete = useCallback(
+    async (tenantOrId) => {
+      const id = getTenantId(
+        tenantOrId
+      );
 
-        if (!id) {
-          throw createTenantError(
-            "Tenant ID is required."
-          );
-        }
-
-        return executeTenantAction(
-          dispatch,
-          forceDeleteTenant(id),
-          "Failed to permanently delete tenant:"
+      if (!id) {
+        throw createTenantError(
+          "Tenant ID is required."
         );
-      },
-      [dispatch]
-    );
+      }
+
+      return executeTenantAction(
+        dispatch,
+        forceDeleteTenant(id),
+        "Failed to permanently delete tenant:"
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -986,17 +1050,57 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const getStatistics =
-    useCallback(
-      async () => {
-        return executeTenantAction(
-          dispatch,
-          fetchTenantStatistics(),
-          "Failed to fetch tenant statistics:"
+  const getStatistics = useCallback(
+    async () => {
+      return executeTenantAction(
+        dispatch,
+        fetchTenantStatistics(),
+        "Failed to fetch tenant statistics:"
+      );
+    },
+    [dispatch]
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT REPORTS
+  |--------------------------------------------------------------------------
+  |
+  | Supports:
+  |
+  | getReports()
+  |
+  | getReports({
+  |   start_date: "2026-01-01",
+  |   end_date: "2026-09-12"
+  | })
+  |
+  */
+
+  const getReports = useCallback(
+    async (params = {}) => {
+      if (
+        params !== null &&
+        (
+          typeof params !== "object" ||
+          Array.isArray(params)
+        )
+      ) {
+        throw createTenantError(
+          "Tenant report parameters must be an object."
         );
-      },
-      [dispatch]
-    );
+      }
+
+      return executeTenantAction(
+        dispatch,
+        fetchTenantReports(
+          params ?? {}
+        ),
+        "Failed to fetch tenant reports:"
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1031,17 +1135,16 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const updateFilters =
-    useCallback(
-      (newFilters) => {
-        dispatch(
-          setTenantFilters(
-            newFilters ?? {}
-          )
-        );
-      },
-      [dispatch]
-    );
+  const updateFilters = useCallback(
+    (newFilters) => {
+      dispatch(
+        setTenantFilters(
+          newFilters ?? {}
+        )
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1049,17 +1152,16 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const updateSearch =
-    useCallback(
-      (value) => {
-        dispatch(
-          setTenantSearch(
-            value ?? ""
-          )
-        );
-      },
-      [dispatch]
-    );
+  const updateSearch = useCallback(
+    (value) => {
+      dispatch(
+        setTenantSearch(
+          value ?? ""
+        )
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1067,17 +1169,16 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const updateStatus =
-    useCallback(
-      (status) => {
-        dispatch(
-          setTenantStatus(
-            status ?? ""
-          )
-        );
-      },
-      [dispatch]
-    );
+  const updateStatus = useCallback(
+    (status) => {
+      dispatch(
+        setTenantStatus(
+          status ?? ""
+        )
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1085,15 +1186,14 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const changePage =
-    useCallback(
-      (page) => {
-        dispatch(
-          setTenantPage(page)
-        );
-      },
-      [dispatch]
-    );
+  const changePage = useCallback(
+    (page) => {
+      dispatch(
+        setTenantPage(page)
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1101,15 +1201,14 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const changePerPage =
-    useCallback(
-      (perPage) => {
-        dispatch(
-          setTenantPerPage(perPage)
-        );
-      },
-      [dispatch]
-    );
+  const changePerPage = useCallback(
+    (perPage) => {
+      dispatch(
+        setTenantPerPage(perPage)
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1117,12 +1216,11 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const resetFilters =
-    useCallback(() => {
-      dispatch(
-        resetTenantFilters()
-      );
-    }, [dispatch]);
+  const resetFilters = useCallback(() => {
+    dispatch(
+      resetTenantFilters()
+    );
+  }, [dispatch]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1130,12 +1228,11 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const clearSearch =
-    useCallback(() => {
-      dispatch(
-        clearTenantSearch()
-      );
-    }, [dispatch]);
+  const clearSearch = useCallback(() => {
+    dispatch(
+      clearTenantSearch()
+    );
+  }, [dispatch]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1143,12 +1240,11 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const clearError =
-    useCallback(() => {
-      dispatch(
-        clearTenantError()
-      );
-    }, [dispatch]);
+  const clearError = useCallback(() => {
+    dispatch(
+      clearTenantError()
+    );
+  }, [dispatch]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1156,12 +1252,11 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   */
 
-  const clearSuccess =
-    useCallback(() => {
-      dispatch(
-        clearTenantSuccess()
-      );
-    }, [dispatch]);
+  const clearSuccess = useCallback(() => {
+    dispatch(
+      clearTenantSuccess()
+    );
+  }, [dispatch]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1181,6 +1276,7 @@ export const useTenant = () => {
     pagination,
     filters,
     statistics,
+    reports,
     searchResults,
 
     activeTenants,
@@ -1210,7 +1306,7 @@ export const useTenant = () => {
     searching,
     actionLoading,
     loadingStatistics,
-
+    loadingReports,
     loadingAvailableUsers,
 
     /*
@@ -1225,7 +1321,7 @@ export const useTenant = () => {
     deleteError,
     actionError,
     statisticsError,
-
+    reportsError,
     availableTenantUsersError,
 
     successMessage,
@@ -1305,6 +1401,14 @@ export const useTenant = () => {
     */
 
     getStatistics,
+
+    /*
+    |--------------------------------------------------------------------------
+    | REPORTS
+    |--------------------------------------------------------------------------
+    */
+
+    getReports,
 
     /*
     |--------------------------------------------------------------------------

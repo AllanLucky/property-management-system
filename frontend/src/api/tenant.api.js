@@ -1,5 +1,5 @@
-
 import api from "./axios";
+
 
 const handleApiError = (error) => {
   const response = error?.response;
@@ -19,14 +19,6 @@ const handleApiError = (error) => {
     errors: responseData?.errors ?? null,
     response: responseData ?? null,
   });
-
-  /*
-   * IMPORTANT:
-   *
-   * Do not return the error.
-   * Throw the original Axios error so tenant.service.js
-   * can inspect response.data.
-   */
   throw error;
 };
 
@@ -38,15 +30,18 @@ const handleApiError = (error) => {
 */
 
 /**
- * Validate tenant ID.
+ * Extract a tenant ID from different supported formats.
  *
- * Supports:
+ * Supported:
  *
  * 12
  * "12"
  * { id: 12 }
  * { tenant_id: 12 }
  * { tenant: { id: 12 } }
+ * { data: { id: 12 } }
+ * { data: { tenant_id: 12 } }
+ * { data: { tenant: { id: 12 } } }
  */
 const getTenantId = (tenantOrId) => {
   if (
@@ -132,6 +127,14 @@ const validateTenantId = (
  * Example:
  *
  * /api/tenants?page=1&per_page=15
+ *
+ * Supported filters may include:
+ *
+ * search
+ * status
+ * verified
+ * page
+ * per_page
  */
 export const getTenants = async (
   params = {}
@@ -145,18 +148,6 @@ export const getTenants = async (
         }
       );
 
-    /*
-     * Return Laravel response envelope.
-     *
-     * Example:
-     *
-     * {
-     *   status: true,
-     *   code: 200,
-     *   message: "...",
-     *   data: [...]
-     * }
-     */
     return response.data;
   } catch (error) {
     return handleApiError(
@@ -181,28 +172,10 @@ export const getTenants = async (
  * This does NOT create a new user.
  *
  * It fetches existing users from the users table
- * so the Create Tenant form can allow an existing
- * tenant-role user to be selected.
+ * so the Create Tenant form can select an existing
+ * tenant-role user.
  *
  * GET /api/tenants/available-users
- *
- * Expected backend response:
- *
- * {
- *   status: true,
- *   code: 200,
- *   message: "Available tenant users fetched successfully.",
- *   data: [
- *     {
- *       id: 4,
- *       first_name: "Allan",
- *       last_name: "Nonda",
- *       name: "Allan Nonda",
- *       email: "allantsory.dev@gmail.com",
- *       phone: "0792491361"
- *     }
- *   ]
- * }
  */
 export const getAvailableTenantUsers =
   async () => {
@@ -287,6 +260,11 @@ export const getTenant = async (
 
 /**
  * POST /api/tenants
+ *
+ * IMPORTANT:
+ *
+ * Tenant creation links an existing User.
+ * It does NOT create a new User account.
  */
 export const createTenant = async (
   tenantData
@@ -404,12 +382,15 @@ export const deleteTenant = async (
       "[Tenant API] DELETE failed:",
       {
         tenantId,
+
         status:
           error?.response?.status ??
           null,
+
         response:
           error?.response?.data ??
           null,
+
         message:
           error?.message ??
           null,
@@ -784,10 +765,10 @@ export const unverifyTenant = async (
  *
  * IMPORTANT:
  *
- * The backend should calculate statistics from the
- * actual tenants.status column.
+ * Statistics are calculated from the tenants.status
+ * column.
  *
- * Do NOT calculate statistics using:
+ * Do NOT use:
  *
  * tenants.is_active
  *
@@ -810,9 +791,11 @@ export const getTenantStatistics =
           status:
             error?.response?.status ??
             null,
+
           response:
             error?.response?.data ??
             null,
+
           message:
             error?.message ??
             null,
@@ -824,6 +807,186 @@ export const getTenantStatistics =
       );
     }
   };
+
+
+/*
+|--------------------------------------------------------------------------
+| TENANT REPORTS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get tenant reports.
+ *
+ * GET /api/tenants/reports
+ *
+ * Supported optional parameters:
+ *
+ * start_date
+ * end_date
+ *
+ * Example:
+ *
+ * GET /api/tenants/reports
+ *
+ * GET /api/tenants/reports?start_date=2026-09-01&end_date=2026-09-12
+ *
+ * Expected backend response:
+ *
+ * {
+ *   status: true,
+ *   code: 200,
+ *   message: "Tenant reports fetched successfully.",
+ *   data: {
+ *     summary: {
+ *       total: 15,
+ *       active: 11,
+ *       inactive: 2,
+ *       pending: 2,
+ *       blacklisted: 0,
+ *       verified: 13,
+ *       unverified: 2,
+ *       with_active_tenancy: 6,
+ *       without_active_tenancy: 9
+ *     },
+ *
+ *     status_breakdown: {
+ *       active: 11,
+ *       inactive: 2,
+ *       pending: 2,
+ *       blacklisted: 0
+ *     },
+ *
+ *     verification_breakdown: {
+ *       verified: 13,
+ *       unverified: 2
+ *     },
+ *
+ *     tenancy_breakdown: {
+ *       with_active_tenancy: 6,
+ *       without_active_tenancy: 9
+ *     },
+ *
+ *     registration: {
+ *       total: 15,
+ *       active: 11,
+ *       pending: 2,
+ *       today: 0,
+ *       this_month: 15,
+ *       this_year: 15
+ *     },
+ *
+ *     period: {
+ *       start_date: null,
+ *       end_date: null
+ *     },
+ *
+ *     generated_at: "2026-09-12T12:15:27.472323Z"
+ *   }
+ * }
+ *
+ * This endpoint is intentionally kept separate from
+ * /tenants/statistics because reports contain additional
+ * reporting dimensions used by the Tenant Reports page.
+ */
+export const getTenantReports = async (
+  params = {}
+) => {
+  try {
+    /*
+     * Validate parameters.
+     *
+     * This prevents accidental calls such as:
+     *
+     * getTenantReports("2026-09-01")
+     */
+    if (
+      params !== null &&
+      typeof params !== "object"
+    ) {
+      throw new Error(
+        "Tenant report parameters must be an object."
+      );
+    }
+
+    /*
+     * Build clean query parameters.
+     *
+     * Empty values are removed so the request remains:
+     *
+     * /tenants/reports
+     *
+     * instead of:
+     *
+     * /tenants/reports?start_date=&end_date=
+     */
+    const reportParams = {};
+
+    if (
+      params?.start_date !== undefined &&
+      params?.start_date !== null &&
+      String(params.start_date).trim() !== ""
+    ) {
+      reportParams.start_date =
+        String(
+          params.start_date
+        ).trim();
+    }
+
+    if (
+      params?.end_date !== undefined &&
+      params?.end_date !== null &&
+      String(params.end_date).trim() !== ""
+    ) {
+      reportParams.end_date =
+        String(
+          params.end_date
+        ).trim();
+    }
+
+    console.log(
+      "[Tenant API] Fetching tenant reports:",
+      reportParams
+    );
+
+    const response =
+      await api.get(
+        "/tenants/reports",
+        {
+          params:
+            reportParams,
+        }
+      );
+
+    console.log(
+      "[Tenant API] Tenant reports response:",
+      response.data
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error(
+      "[Tenant API] Tenant reports failed:",
+      {
+        status:
+          error?.response?.status ??
+          null,
+
+        response:
+          error?.response?.data ??
+          null,
+
+        message:
+          error?.message ??
+          null,
+      }
+    );
+
+    return handleApiError(
+      error
+    );
+  }
+};
 
 
 /*
@@ -903,12 +1066,15 @@ export const forceDeleteTenant = async (
       "[Tenant API] FORCE DELETE failed:",
       {
         tenantId,
+
         status:
           error?.response?.status ??
           null,
+
         response:
           error?.response?.data ??
           null,
+
         message:
           error?.message ??
           null,
@@ -940,9 +1106,6 @@ const tenantAPI = {
 
   /*
    * Available tenant users
-   *
-   * Existing users with the tenant role
-   * who can be linked to a tenant profile.
    */
   getAvailableTenantUsers,
 
@@ -979,6 +1142,11 @@ const tenantAPI = {
   getTenantStatistics,
 
   /*
+   * Reports
+   */
+  getTenantReports,
+
+  /*
    * Restore
    */
   restoreTenant,
@@ -990,4 +1158,3 @@ const tenantAPI = {
 };
 
 export default tenantAPI;
-

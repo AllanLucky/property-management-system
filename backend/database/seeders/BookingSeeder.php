@@ -2,13 +2,13 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use App\Models\Unit;
-use App\Models\Tenant;
-use App\Models\Booking;
 use App\Models\Apartment;
+use App\Models\Booking;
 use App\Models\Property;
+use App\Models\Tenant;
 use App\Models\Tenancy;
+use App\Models\Unit;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -25,14 +25,24 @@ class BookingSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
 
-        $users = User::query()->get();
+        $users = User::query()
+            ->orderBy('id')
+            ->get();
 
-        $tenants = Tenant::query()->get();
+        $customers = $users->values();
 
-        $properties = Property::query()->get();
+        $tenants = Tenant::query()
+            ->with('user')
+            ->orderBy('id')
+            ->get();
+
+        $properties = Property::query()
+            ->orderBy('id')
+            ->get();
 
         $apartments = Apartment::query()
             ->with('property')
+            ->orderBy('id')
             ->get();
 
         $units = Unit::query()
@@ -40,9 +50,18 @@ class BookingSeeder extends Seeder
                 'property',
                 'apartment',
             ])
+            ->orderBy('id')
             ->get();
 
-        $tenancies = Tenancy::query()->get();
+        $tenancies = Tenancy::query()
+            ->with([
+                'tenant.user',
+                'property',
+                'apartment',
+                'unit',
+            ])
+            ->orderBy('id')
+            ->get();
 
         /*
         |--------------------------------------------------------------------------
@@ -50,7 +69,7 @@ class BookingSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
 
-        if ($users->isEmpty()) {
+        if ($customers->isEmpty()) {
             $this->command->warn(
                 'No users found. Please run the UserSeeder first.'
             );
@@ -60,7 +79,15 @@ class BookingSeeder extends Seeder
 
         if ($properties->isEmpty()) {
             $this->command->warn(
-                'No properties found. Please run the PropertiesSeeder first.'
+                'No properties found. Please run the PropertySeeder first.'
+            );
+
+            return;
+        }
+
+        if ($units->isEmpty()) {
+            $this->command->warn(
+                'No units found. Please create units before running BookingSeeder.'
             );
 
             return;
@@ -68,8 +95,11 @@ class BookingSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | BOOKING DATA
+        | BOOKING TEMPLATES
         |--------------------------------------------------------------------------
+        |
+        | These records intentionally cover the complete booking lifecycle.
+        |
         */
 
         $bookingTemplates = [
@@ -77,6 +107,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_VIEWING,
                 'status' => Booking::STATUS_PENDING,
                 'payment_status' => Booking::PAYMENT_PENDING,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 0,
                 'deposit_amount' => 0,
@@ -89,6 +120,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Would like to view the apartment in the afternoon.',
+
                 'notes' =>
                     'Customer interested in a two-bedroom apartment.',
             ],
@@ -97,6 +129,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_VIEWING,
                 'status' => Booking::STATUS_CONFIRMED,
                 'payment_status' => Booking::PAYMENT_PENDING,
+                'source' => Booking::SOURCE_PHONE,
 
                 'rent_amount' => 0,
                 'deposit_amount' => 0,
@@ -109,6 +142,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Please arrange parking access during the viewing.',
+
                 'notes' =>
                     'Family interested in a three-bedroom unit.',
             ],
@@ -117,6 +151,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RESERVATION,
                 'status' => Booking::STATUS_APPROVED,
                 'payment_status' => Booking::PAYMENT_PARTIAL,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 65000,
                 'deposit_amount' => 65000,
@@ -129,6 +164,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Reserved unit should be available from the beginning of next month.',
+
                 'notes' =>
                     'Reservation approved pending final payment.',
             ],
@@ -137,6 +173,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RESERVATION,
                 'status' => Booking::STATUS_CONFIRMED,
                 'payment_status' => Booking::PAYMENT_PAID,
+                'source' => Booking::SOURCE_AGENT,
 
                 'rent_amount' => 45000,
                 'deposit_amount' => 45000,
@@ -149,6 +186,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Customer requested a unit close to the parking area.',
+
                 'notes' =>
                     'Reservation payment completed successfully.',
             ],
@@ -157,6 +195,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RENTAL,
                 'status' => Booking::STATUS_COMPLETED,
                 'payment_status' => Booking::PAYMENT_PAID,
+                'source' => Booking::SOURCE_REFERRAL,
 
                 'rent_amount' => 55000,
                 'deposit_amount' => 55000,
@@ -169,6 +208,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Tenant requested additional parking space.',
+
                 'notes' =>
                     'Rental booking completed and tenancy successfully created.',
             ],
@@ -177,6 +217,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RENTAL,
                 'status' => Booking::STATUS_APPROVED,
                 'payment_status' => Booking::PAYMENT_PARTIAL,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 75000,
                 'deposit_amount' => 75000,
@@ -189,6 +230,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Prefer a quiet unit with good natural lighting.',
+
                 'notes' =>
                     'Approved rental awaiting remaining balance.',
             ],
@@ -197,6 +239,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RENTAL,
                 'status' => Booking::STATUS_REJECTED,
                 'payment_status' => Booking::PAYMENT_FAILED,
+                'source' => Booking::SOURCE_AGENT,
 
                 'rent_amount' => 60000,
                 'deposit_amount' => 60000,
@@ -208,6 +251,7 @@ class BookingSeeder extends Seeder
                 'number_of_children' => 0,
 
                 'special_requests' => null,
+
                 'notes' =>
                     'Rental application reviewed and rejected.',
             ],
@@ -216,6 +260,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RESERVATION,
                 'status' => Booking::STATUS_CANCELLED,
                 'payment_status' => Booking::PAYMENT_REFUNDED,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 50000,
                 'deposit_amount' => 50000,
@@ -227,6 +272,7 @@ class BookingSeeder extends Seeder
                 'number_of_children' => 0,
 
                 'special_requests' => null,
+
                 'notes' =>
                     'Customer cancelled the reservation before move-in.',
             ],
@@ -235,6 +281,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_VIEWING,
                 'status' => Booking::STATUS_COMPLETED,
                 'payment_status' => Booking::PAYMENT_PENDING,
+                'source' => Booking::SOURCE_PHONE,
 
                 'rent_amount' => 0,
                 'deposit_amount' => 0,
@@ -247,6 +294,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Customer requested a weekend viewing.',
+
                 'notes' =>
                     'Property viewing completed successfully.',
             ],
@@ -255,6 +303,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RESERVATION,
                 'status' => Booking::STATUS_EXPIRED,
                 'payment_status' => Booking::PAYMENT_PENDING,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 40000,
                 'deposit_amount' => 40000,
@@ -266,6 +315,7 @@ class BookingSeeder extends Seeder
                 'number_of_children' => 0,
 
                 'special_requests' => null,
+
                 'notes' =>
                     'Reservation expired because payment was not completed.',
             ],
@@ -274,6 +324,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RENTAL,
                 'status' => Booking::STATUS_CONFIRMED,
                 'payment_status' => Booking::PAYMENT_PAID,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 85000,
                 'deposit_amount' => 85000,
@@ -286,6 +337,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Family requires two parking spaces.',
+
                 'notes' =>
                     'Rental booking confirmed and fully paid.',
             ],
@@ -294,6 +346,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RENTAL,
                 'status' => Booking::STATUS_PENDING,
                 'payment_status' => Booking::PAYMENT_PENDING,
+                'source' => Booking::SOURCE_WEBSITE,
 
                 'rent_amount' => 35000,
                 'deposit_amount' => 35000,
@@ -306,6 +359,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Looking for a long-term rental.',
+
                 'notes' =>
                     'Rental application awaiting approval.',
             ],
@@ -314,6 +368,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RESERVATION,
                 'status' => Booking::STATUS_APPROVED,
                 'payment_status' => Booking::PAYMENT_PAID,
+                'source' => Booking::SOURCE_AGENT,
 
                 'rent_amount' => 95000,
                 'deposit_amount' => 95000,
@@ -326,6 +381,7 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Customer requested a high-floor unit.',
+
                 'notes' =>
                     'Reservation approved and payment received.',
             ],
@@ -334,6 +390,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_VIEWING,
                 'status' => Booking::STATUS_CANCELLED,
                 'payment_status' => Booking::PAYMENT_PENDING,
+                'source' => Booking::SOURCE_PHONE,
 
                 'rent_amount' => 0,
                 'deposit_amount' => 0,
@@ -345,6 +402,7 @@ class BookingSeeder extends Seeder
                 'number_of_children' => 0,
 
                 'special_requests' => null,
+
                 'notes' =>
                     'Viewing cancelled by customer.',
             ],
@@ -353,6 +411,7 @@ class BookingSeeder extends Seeder
                 'booking_type' => Booking::TYPE_RENTAL,
                 'status' => Booking::STATUS_COMPLETED,
                 'payment_status' => Booking::PAYMENT_PAID,
+                'source' => Booking::SOURCE_REFERRAL,
 
                 'rent_amount' => 70000,
                 'deposit_amount' => 70000,
@@ -365,10 +424,28 @@ class BookingSeeder extends Seeder
 
                 'special_requests' =>
                     'Tenant requested a unit near the swimming pool.',
+
                 'notes' =>
                     'Completed rental booking.',
             ],
         ];
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE TENANCIES
+        |--------------------------------------------------------------------------
+        |
+        | Only use a tenancy when its relationships are available and coherent.
+        |
+        */
+
+        $validTenancies = $tenancies
+            ->filter(function ($tenancy) {
+                return !empty($tenancy->tenant_id)
+                    && !empty($tenancy->property_id)
+                    && !empty($tenancy->unit_id);
+            })
+            ->values();
 
         /*
         |--------------------------------------------------------------------------
@@ -391,10 +468,9 @@ class BookingSeeder extends Seeder
             |--------------------------------------------------------------------------
             */
 
-            $propertyApartments = $apartments->where(
-                'property_id',
-                $property->id
-            );
+            $propertyApartments = $apartments
+                ->where('property_id', $property->id)
+                ->values();
 
             $apartment = $propertyApartments->isNotEmpty()
                 ? $propertyApartments->random()
@@ -402,20 +478,18 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Select unit
+            | Select unit belonging to property/apartment
             |--------------------------------------------------------------------------
             */
 
-            $propertyUnits = $units->where(
-                'property_id',
-                $property->id
-            );
+            $propertyUnits = $units
+                ->where('property_id', $property->id)
+                ->values();
 
             if ($apartment) {
-                $apartmentUnits = $propertyUnits->where(
-                    'apartment_id',
-                    $apartment->id
-                );
+                $apartmentUnits = $propertyUnits
+                    ->where('apartment_id', $apartment->id)
+                    ->values();
 
                 $unit = $apartmentUnits->isNotEmpty()
                     ? $apartmentUnits->random()
@@ -436,7 +510,47 @@ class BookingSeeder extends Seeder
             |--------------------------------------------------------------------------
             */
 
-            $customer = $users->random();
+            $customer = $customers[$index % $customers->count()];
+
+            /*
+            |--------------------------------------------------------------------------
+            | Select tenancy
+            |--------------------------------------------------------------------------
+            |
+            | Rental/completed bookings may reference an existing tenancy.
+            | We first try to find a tenancy matching the selected property/unit.
+            |
+            */
+
+            $tenancy = null;
+
+            if (
+                $template['booking_type'] === Booking::TYPE_RENTAL &&
+                $validTenancies->isNotEmpty()
+            ) {
+                $matchingTenancies = $validTenancies
+                    ->filter(function ($candidate) use ($property, $unit) {
+                        if (
+                            $candidate->property_id !== $property->id
+                        ) {
+                            return false;
+                        }
+
+                        if (
+                            $unit &&
+                            $candidate->unit_id !== $unit->id
+                        ) {
+                            return false;
+                        }
+
+                        return true;
+                    })
+                    ->values();
+
+                $tenancy = $matchingTenancies->isNotEmpty()
+                    ? $matchingTenancies->random()
+                    : $validTenancies->random();
+            }
 
             /*
             |--------------------------------------------------------------------------
@@ -444,23 +558,11 @@ class BookingSeeder extends Seeder
             |--------------------------------------------------------------------------
             */
 
-            $tenant = $tenants->isNotEmpty()
-                ? $tenants->random()
-                : null;
+            $tenant = null;
 
-            /*
-            |--------------------------------------------------------------------------
-            | Select tenancy
-            |--------------------------------------------------------------------------
-            */
-
-            $tenancy = null;
-
-            if (
-                $template['booking_type'] === Booking::TYPE_RENTAL &&
-                $tenancies->isNotEmpty()
-            ) {
-                $tenancy = $tenancies->random();
+            if ($tenancy) {
+                $tenant = $tenants
+                    ->firstWhere('id', $tenancy->tenant_id);
             }
 
             /*
@@ -473,43 +575,92 @@ class BookingSeeder extends Seeder
                 ->subDays(rand(1, 90))
                 ->subHours(rand(1, 12));
 
-            $startDate = (clone $bookingDate)
-                ->addDays(rand(1, 30))
-                ->startOfDay();
-
             /*
-            | Viewing bookings are normally short appointments.
+            | Historical records should generally have dates in the past.
             */
 
-            if ($template['booking_type'] === Booking::TYPE_VIEWING) {
-                $startDate = (clone $bookingDate)
-                    ->addDays(rand(1, 14))
+            if (
+                in_array(
+                    $template['status'],
+                    [
+                        Booking::STATUS_COMPLETED,
+                        Booking::STATUS_CANCELLED,
+                        Booking::STATUS_REJECTED,
+                        Booking::STATUS_EXPIRED,
+                    ],
+                    true
+                )
+            ) {
+                $startDate = $bookingDate
+                    ->copy()
+                    ->addDays(rand(1, 10))
                     ->startOfDay();
 
-                $endDate = (clone $startDate);
+                /*
+                | Ensure the end date is also historically sensible.
+                */
+                $endDate = $startDate
+                    ->copy()
+                    ->addDays(
+                        $template['booking_type'] === Booking::TYPE_VIEWING
+                            ? 0
+                            : rand(30, 180)
+                    );
             } else {
-                $endDate = (clone $startDate)
-                    ->addMonths(rand(1, 12));
+                $startDate = Carbon::now()
+                    ->addDays(rand(3, 30))
+                    ->startOfDay();
+
+                $endDate = $startDate
+                    ->copy()
+                    ->addDays(
+                        $template['booking_type'] === Booking::TYPE_VIEWING
+                            ? 0
+                            : rand(30, 180)
+                    );
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Check-in / check-out
+            | Viewing bookings are single-day appointments.
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $template['booking_type'] === Booking::TYPE_VIEWING
+            ) {
+                $endDate = $startDate->copy();
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Check-in / Check-out
             |--------------------------------------------------------------------------
             */
 
             $checkInDate = null;
             $checkOutDate = null;
 
-            if ($template['booking_type'] !== Booking::TYPE_VIEWING) {
-                $checkInDate = $startDate->copy();
-
-                $checkOutDate = $endDate->copy();
+            if (
+                $template['booking_type'] !== Booking::TYPE_VIEWING
+            ) {
+                if (
+                    in_array(
+                        $template['status'],
+                        [
+                            Booking::STATUS_COMPLETED,
+                        ],
+                        true
+                    )
+                ) {
+                    $checkInDate = $startDate->copy();
+                    $checkOutDate = $endDate->copy();
+                }
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Financial calculation
+            | Financial Calculation
             |--------------------------------------------------------------------------
             */
 
@@ -521,12 +672,13 @@ class BookingSeeder extends Seeder
 
             $totalAmount = max(
                 0,
-                $subtotal - (float) $template['discount_amount']
+                $subtotal -
+                (float) $template['discount_amount']
             );
 
             /*
             |--------------------------------------------------------------------------
-            | Amount paid
+            | Amount Paid
             |--------------------------------------------------------------------------
             */
 
@@ -538,7 +690,7 @@ class BookingSeeder extends Seeder
                     round($totalAmount * 0.50, 2),
 
                 Booking::PAYMENT_REFUNDED =>
-                    0,
+                    $totalAmount,
 
                 default =>
                     0,
@@ -546,7 +698,7 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Payment information
+            | Payment Information
             |--------------------------------------------------------------------------
             */
 
@@ -560,6 +712,7 @@ class BookingSeeder extends Seeder
                     [
                         Booking::PAYMENT_PAID,
                         Booking::PAYMENT_PARTIAL,
+                        Booking::PAYMENT_REFUNDED,
                     ],
                     true
                 )
@@ -567,17 +720,19 @@ class BookingSeeder extends Seeder
                 $paymentMethod = 'mpesa';
 
                 $paymentReference =
-                    'MPESA-' . strtoupper(
+                    'MPESA-' .
+                    strtoupper(
                         str()->random(10)
                     );
 
-                $paidAt = $bookingDate->copy()
+                $paidAt = $bookingDate
+                    ->copy()
                     ->addHours(rand(1, 48));
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Status timestamps
+            | Status Timestamps
             |--------------------------------------------------------------------------
             */
 
@@ -586,6 +741,10 @@ class BookingSeeder extends Seeder
             $rejectedAt = null;
             $cancelledAt = null;
             $completedAt = null;
+
+            /*
+            | Confirmed
+            */
 
             if (
                 in_array(
@@ -598,9 +757,14 @@ class BookingSeeder extends Seeder
                     true
                 )
             ) {
-                $confirmedAt = $bookingDate->copy()
+                $confirmedAt = $bookingDate
+                    ->copy()
                     ->addHours(rand(1, 24));
             }
+
+            /*
+            | Approved
+            */
 
             if (
                 in_array(
@@ -612,48 +776,74 @@ class BookingSeeder extends Seeder
                     true
                 )
             ) {
-                $approvedAt = $bookingDate->copy()
+                $approvedAt = $bookingDate
+                    ->copy()
                     ->addHours(rand(2, 48));
             }
 
-            if ($template['status'] === Booking::STATUS_REJECTED) {
-                $rejectedAt = $bookingDate->copy()
+            /*
+            | Rejected
+            */
+
+            if (
+                $template['status'] === Booking::STATUS_REJECTED
+            ) {
+                $rejectedAt = $bookingDate
+                    ->copy()
                     ->addDays(rand(1, 5));
             }
 
-            if ($template['status'] === Booking::STATUS_CANCELLED) {
-                $cancelledAt = $bookingDate->copy()
+            /*
+            | Cancelled
+            */
+
+            if (
+                $template['status'] === Booking::STATUS_CANCELLED
+            ) {
+                $cancelledAt = $bookingDate
+                    ->copy()
                     ->addDays(rand(1, 5));
             }
 
-            if ($template['status'] === Booking::STATUS_COMPLETED) {
-                $completedAt = $endDate->copy()
+            /*
+            | Completed
+            */
+
+            if (
+                $template['status'] === Booking::STATUS_COMPLETED
+            ) {
+                $completedAt = $endDate
+                    ->copy()
                     ->endOfDay();
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Rejection / cancellation reasons
+            | Rejection / Cancellation Reasons
             |--------------------------------------------------------------------------
             */
 
             $rejectionReason = null;
 
-            if ($template['status'] === Booking::STATUS_REJECTED) {
+            if (
+                $template['status'] === Booking::STATUS_REJECTED
+            ) {
                 $rejectionReason =
                     'Booking application did not meet the required approval criteria.';
             }
 
             $cancellationReason = null;
 
-            if ($template['status'] === Booking::STATUS_CANCELLED) {
+            if (
+                $template['status'] === Booking::STATUS_CANCELLED
+            ) {
                 $cancellationReason =
                     'Customer cancelled the booking.';
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Customer details
+            | Customer Snapshot
             |--------------------------------------------------------------------------
             */
 
@@ -671,34 +861,48 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Create booking
+            | Metadata
             |--------------------------------------------------------------------------
+            */
+
+            $metadata = [
+                'source' => $template['source'],
+                'channel' => $template['source'] === Booking::SOURCE_WEBSITE
+                    ? 'online'
+                    : 'offline',
+                'seeded' => true,
+                'booking_index' => $index + 1,
+                'seeded_at' => Carbon::now()->toIso8601String(),
+            ];
+
+            /*
+            |--------------------------------------------------------------------------
+            | CREATE BOOKING
+            |--------------------------------------------------------------------------
+            |
+            | booking_number, reference, slug, total_amount and balance are
+            | intentionally allowed to be handled by the Booking model.
+            |
             */
 
             Booking::create([
                 /*
-                | Identification
+                |--------------------------------------------------------------------------
+                | Creator / Customer
+                |--------------------------------------------------------------------------
                 */
-                'booking_number' =>
-                    'BK-' . strtoupper(
-                        str()->random(10)
-                    ),
 
-                'reference' =>
-                    'REF-' . strtoupper(
-                        str()->random(12)
-                    ),
-
-                'slug' => null,
-
-                /*
-                | Relationships
-                */
                 'user_id' => $customer->id,
 
                 'customer_id' => $customer->id,
 
                 'tenant_id' => $tenant?->id,
+
+                /*
+                |--------------------------------------------------------------------------
+                | Property Relationships
+                |--------------------------------------------------------------------------
+                */
 
                 'property_id' => $property->id,
 
@@ -709,8 +913,11 @@ class BookingSeeder extends Seeder
                 'tenancy_id' => $tenancy?->id,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Booking
+                |--------------------------------------------------------------------------
                 */
+
                 'booking_type' =>
                     $template['booking_type'],
 
@@ -720,43 +927,69 @@ class BookingSeeder extends Seeder
                 'payment_status' =>
                     $template['payment_status'],
 
+                'source' =>
+                    $template['source'],
+
                 /*
+                |--------------------------------------------------------------------------
                 | Dates
+                |--------------------------------------------------------------------------
                 */
-                'booking_date' => $bookingDate,
 
-                'start_date' => $startDate,
+                'booking_date' =>
+                    $bookingDate,
 
-                'end_date' => $endDate,
+                'start_date' =>
+                    $startDate,
 
-                'check_in_date' => $checkInDate,
+                'end_date' =>
+                    $endDate,
 
-                'check_out_date' => $checkOutDate,
+                'check_in_date' =>
+                    $checkInDate,
 
-                'confirmed_at' => $confirmedAt,
+                'check_out_date' =>
+                    $checkOutDate,
 
-                'approved_at' => $approvedAt,
+                'confirmed_at' =>
+                    $confirmedAt,
 
-                'rejected_at' => $rejectedAt,
+                'approved_at' =>
+                    $approvedAt,
 
-                'cancelled_at' => $cancelledAt,
+                'rejected_at' =>
+                    $rejectedAt,
 
-                'completed_at' => $completedAt,
+                'cancelled_at' =>
+                    $cancelledAt,
+
+                'completed_at' =>
+                    $completedAt,
 
                 /*
-                | Customer
+                |--------------------------------------------------------------------------
+                | Customer Snapshot
+                |--------------------------------------------------------------------------
                 */
-                'first_name' => $firstName,
 
-                'last_name' => $lastName,
+                'first_name' =>
+                    $firstName,
 
-                'email' => $email,
+                'last_name' =>
+                    $lastName,
 
-                'phone' => $phone,
+                'email' =>
+                    $email,
+
+                'phone' =>
+                    $phone,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Financial
+                |--------------------------------------------------------------------------
                 */
+
                 'rent_amount' =>
                     $template['rent_amount'],
 
@@ -772,21 +1005,15 @@ class BookingSeeder extends Seeder
                 'discount_amount' =>
                     $template['discount_amount'],
 
-                'total_amount' =>
-                    $totalAmount,
-
                 'amount_paid' =>
                     $amountPaid,
 
-                'balance' =>
-                    max(
-                        0,
-                        $totalAmount - $amountPaid
-                    ),
-
                 /*
-                | Guest information
+                |--------------------------------------------------------------------------
+                | Guest Information
+                |--------------------------------------------------------------------------
                 */
+
                 'number_of_adults' =>
                     $template['number_of_adults'],
 
@@ -806,8 +1033,11 @@ class BookingSeeder extends Seeder
                     $cancellationReason,
 
                 /*
+                |--------------------------------------------------------------------------
                 | Payment
+                |--------------------------------------------------------------------------
                 */
+
                 'payment_method' =>
                     $paymentMethod,
 
@@ -818,24 +1048,29 @@ class BookingSeeder extends Seeder
                     $paidAt,
 
                 /*
-                | SEO / Metadata
+                |--------------------------------------------------------------------------
+                | SEO
+                |--------------------------------------------------------------------------
                 */
+
                 'meta_title' =>
-                    $template['booking_type'] .
+                    ucfirst($template['booking_type']) .
                     ' booking - ' .
                     $property->name,
 
                 'meta_description' =>
                     'Booking for ' .
                     $property->name .
-                    ' created through the estate management system.',
+                    ' created through the EstateKenya property management system.',
 
-                'metadata' => [
-                    'source' => 'website',
-                    'channel' => 'online',
-                    'seeded' => true,
-                    'booking_index' => $index + 1,
-                ],
+                /*
+                |--------------------------------------------------------------------------
+                | Metadata
+                |--------------------------------------------------------------------------
+                */
+
+                'metadata' =>
+                    $metadata,
             ]);
         }
 
