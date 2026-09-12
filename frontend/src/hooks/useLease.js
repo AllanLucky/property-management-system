@@ -1,15 +1,9 @@
-import {
-    useCallback,
-    useMemo,
-} from "react";
-
-import {
-    useDispatch,
-    useSelector,
-} from "react-redux";
+import { useCallback, useMemo } from "react";
+import { useDispatch, useSelector } from "react-redux";
 
 import {
     fetchLeases,
+    fetchExpiredLeases,
     fetchLease,
     createLease,
     updateLease,
@@ -19,118 +13,162 @@ import {
     forceDeleteLease,
     activateLease,
     signLease,
+    expireLease,
+    expireEndedLeases,
     terminateLease,
     cancelLease,
     fetchLeaseStatistics,
     uploadLeaseDocument,
     deleteLeaseDocument,
+
     clearLeaseError,
     clearCurrentLease,
     clearLeaseMessage,
     resetLeaseState,
+
+    selectLeases,
+    selectExpiredLeases,
+    selectCurrentLease,
+    selectSelectedLease,
+    selectLeaseStatistics,
+    selectLeasePagination,
+    selectExpiredLeasePagination,
+
+    selectLeaseLoading,
+    selectLeaseListLoading,
+    selectLeaseDetailsLoading,
+    selectLeaseCreateLoading,
+    selectLeaseUpdateLoading,
+    selectLeaseDeleteLoading,
+    selectLeaseRestoreLoading,
+    selectLeaseLifecycleLoading,
+    selectLeaseExpiredLoading,
+    selectLeaseExpireLoading,
+    selectLeaseExpireEndedLoading,
+    selectLeaseStatisticsLoading,
+    selectLeaseDocumentLoading,
+
+    selectLeaseError,
+    selectLeaseErrors,
+    selectLeaseMessage,
+    selectLeaseSuccess,
 } from "../store/leaseSlice";
 
-/*
-|--------------------------------------------------------------------------
-| useLease
-|--------------------------------------------------------------------------
-|
-| Centralized React hook for Lease state and operations.
-|
-| IMPORTANT:
-| This hook uses a NAMED EXPORT:
-|
-|     import { useLease } from "../../../hooks/useLease";
-|
-| The Redux store is expected to register the reducer as:
-|
-|     leases: leaseReducer
-|
-| Therefore the selector below intentionally uses:
-|
-|     state.leases
-|
-|--------------------------------------------------------------------------
-*/
-
-export const useLease = () => {
+const useLease = () => {
     const dispatch = useDispatch();
 
     /*
     |--------------------------------------------------------------------------
-    | Redux State
+    | Data
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    | The Redux store uses:
-    |
-    |     leases: leaseReducer
-    |
-    | Therefore this MUST be state.leases rather than state.lease.
-    |
     */
 
-    const leaseState = useSelector(
-        (state) => state.leases || {}
+    const leases = useSelector(selectLeases);
+
+    const expiredLeases = useSelector(selectExpiredLeases);
+
+    const currentLease = useSelector(selectCurrentLease);
+
+    const selectedLease = useSelector(selectSelectedLease);
+
+    const statistics = useSelector(selectLeaseStatistics);
+
+    const pagination = useSelector(selectLeasePagination);
+
+    const expiredPagination = useSelector(
+        selectExpiredLeasePagination
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Core State
+    | Loading
     |--------------------------------------------------------------------------
     */
 
-    const {
-        leases = [],
-        currentLease = null,
-        selectedLease = null,
+    const loading = useSelector(selectLeaseLoading);
 
-        statistics = null,
+    const loadingList = useSelector(selectLeaseListLoading);
 
-        pagination = null,
+    const loadingDetails = useSelector(
+        selectLeaseDetailsLoading
+    );
 
-        loading = false,
-        loadingList = false,
-        loadingDetails = false,
-        loadingCreate = false,
-        loadingUpdate = false,
-        loadingDelete = false,
-        loadingRestore = false,
-        loadingLifecycle = false,
-        loadingStatistics = false,
-        loadingDocument = false,
+    const loadingCreate = useSelector(
+        selectLeaseCreateLoading
+    );
 
-        error = null,
-        errors = null,
+    const loadingUpdate = useSelector(
+        selectLeaseUpdateLoading
+    );
 
-        message = null,
+    const loadingDelete = useSelector(
+        selectLeaseDeleteLoading
+    );
 
-        success = false,
-    } = leaseState;
+    const loadingRestore = useSelector(
+        selectLeaseRestoreLoading
+    );
+
+    const loadingLifecycle = useSelector(
+        selectLeaseLifecycleLoading
+    );
+
+    const loadingExpired = useSelector(
+        selectLeaseExpiredLoading
+    );
+
+    const loadingExpire = useSelector(
+        selectLeaseExpireLoading
+    );
+
+    const loadingExpireEnded = useSelector(
+        selectLeaseExpireEndedLoading
+    );
+
+    const loadingStatistics = useSelector(
+        selectLeaseStatisticsLoading
+    );
+
+    const loadingDocument = useSelector(
+        selectLeaseDocumentLoading
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | Fetch Leases
+    | Errors / Status
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch leases with optional filters and pagination.
-     *
-     * Example:
-     *
-     * fetchAll({
-     *     page: 1,
-     *     per_page: 15,
-     *     search: "LSE-000005",
-     *     status: "active",
-     * });
-     */
+    const error = useSelector(selectLeaseError);
+
+    const errors = useSelector(selectLeaseErrors);
+
+    const message = useSelector(selectLeaseMessage);
+
+    const success = useSelector(selectLeaseSuccess);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fetch All Leases
+    |--------------------------------------------------------------------------
+    */
+
     const fetchAll = useCallback(
         (params = {}) => {
-            return dispatch(
-                fetchLeases(params)
-            );
+            return dispatch(fetchLeases(params));
+        },
+        [dispatch]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fetch Expired Leases
+    |--------------------------------------------------------------------------
+    */
+
+    const fetchExpired = useCallback(
+        (params = {}) => {
+            return dispatch(fetchExpiredLeases(params));
         },
         [dispatch]
     );
@@ -141,9 +179,6 @@ export const useLease = () => {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch one lease by ID.
-     */
     const fetchOne = useCallback(
         (leaseId) => {
             if (!leaseId) {
@@ -152,46 +187,30 @@ export const useLease = () => {
                 );
             }
 
-            return dispatch(
-                fetchLease(leaseId)
-            );
+            return dispatch(fetchLease(leaseId));
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Create Lease
+    | Create
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Create a new lease.
-     */
     const create = useCallback(
         (payload) => {
-            if (!payload) {
-                return Promise.reject(
-                    new Error("Lease payload is required.")
-                );
-            }
-
-            return dispatch(
-                createLease(payload)
-            );
+            return dispatch(createLease(payload));
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Update Lease
+    | Update
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fully update an existing lease.
-     */
     const update = useCallback(
         (leaseId, payload) => {
             if (!leaseId) {
@@ -200,16 +219,10 @@ export const useLease = () => {
                 );
             }
 
-            if (!payload) {
-                return Promise.reject(
-                    new Error("Lease payload is required.")
-                );
-            }
-
             return dispatch(
                 updateLease({
                     leaseId,
-                    payload,
+                    data: payload,
                 })
             );
         },
@@ -218,13 +231,10 @@ export const useLease = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Patch Lease
+    | Patch
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Partially update an existing lease.
-     */
     const patch = useCallback(
         (leaseId, payload) => {
             if (!leaseId) {
@@ -233,16 +243,10 @@ export const useLease = () => {
                 );
             }
 
-            if (!payload) {
-                return Promise.reject(
-                    new Error("Lease payload is required.")
-                );
-            }
-
             return dispatch(
                 patchLease({
                     leaseId,
-                    payload,
+                    data: payload,
                 })
             );
         },
@@ -251,13 +255,10 @@ export const useLease = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Delete Lease
+    | Delete
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Soft delete a lease.
-     */
     const remove = useCallback(
         (leaseId) => {
             if (!leaseId) {
@@ -266,22 +267,17 @@ export const useLease = () => {
                 );
             }
 
-            return dispatch(
-                deleteLease(leaseId)
-            );
+            return dispatch(deleteLease(leaseId));
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Restore Lease
+    | Restore
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Restore a soft-deleted lease.
-     */
     const restore = useCallback(
         (leaseId) => {
             if (!leaseId) {
@@ -290,22 +286,17 @@ export const useLease = () => {
                 );
             }
 
-            return dispatch(
-                restoreLease(leaseId)
-            );
+            return dispatch(restoreLease(leaseId));
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Force Delete Lease
+    | Force Delete
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Permanently delete a lease.
-     */
     const forceDelete = useCallback(
         (leaseId) => {
             if (!leaseId) {
@@ -314,22 +305,17 @@ export const useLease = () => {
                 );
             }
 
-            return dispatch(
-                forceDeleteLease(leaseId)
-            );
+            return dispatch(forceDeleteLease(leaseId));
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Lease Lifecycle
+    | Activate
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Activate lease.
-     */
     const activate = useCallback(
         (leaseId) => {
             if (!leaseId) {
@@ -338,19 +324,17 @@ export const useLease = () => {
                 );
             }
 
-            return dispatch(
-                activateLease(leaseId)
-            );
+            return dispatch(activateLease(leaseId));
         },
         [dispatch]
     );
 
-    /**
-     * Sign lease.
-     *
-     * Payload is optional because some APIs only require
-     * the lease ID for signing.
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Sign
+    |--------------------------------------------------------------------------
+    */
+
     const sign = useCallback(
         (leaseId, payload = {}) => {
             if (!leaseId) {
@@ -362,16 +346,48 @@ export const useLease = () => {
             return dispatch(
                 signLease({
                     leaseId,
-                    payload,
+                    data: payload,
                 })
             );
         },
         [dispatch]
     );
 
-    /**
-     * Terminate lease.
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Expire Individual Lease
+    |--------------------------------------------------------------------------
+    */
+
+    const expire = useCallback(
+        (leaseId) => {
+            if (!leaseId) {
+                return Promise.reject(
+                    new Error("Lease ID is required.")
+                );
+            }
+
+            return dispatch(expireLease(leaseId));
+        },
+        [dispatch]
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Process Ended Leases
+    |--------------------------------------------------------------------------
+    */
+
+    const expireEnded = useCallback(() => {
+        return dispatch(expireEndedLeases());
+    }, [dispatch]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Terminate
+    |--------------------------------------------------------------------------
+    */
+
     const terminate = useCallback(
         (leaseId, payload = {}) => {
             if (!leaseId) {
@@ -383,16 +399,19 @@ export const useLease = () => {
             return dispatch(
                 terminateLease({
                     leaseId,
-                    payload,
+                    data: payload,
                 })
             );
         },
         [dispatch]
     );
 
-    /**
-     * Cancel lease.
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Cancel
+    |--------------------------------------------------------------------------
+    */
+
     const cancel = useCallback(
         (leaseId, payload = {}) => {
             if (!leaseId) {
@@ -404,7 +423,7 @@ export const useLease = () => {
             return dispatch(
                 cancelLease({
                     leaseId,
-                    payload,
+                    data: payload,
                 })
             );
         },
@@ -417,67 +436,68 @@ export const useLease = () => {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch lease statistics.
-     */
     const fetchStatistics = useCallback(
         (params = {}) => {
-            return dispatch(
-                fetchLeaseStatistics(params)
-            );
+            return dispatch(fetchLeaseStatistics(params));
         },
         [dispatch]
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Lease Documents
+    | Upload Document
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Upload a lease document.
-     *
-     * @param {number|string} leaseId
-     * @param {FormData} formData
-     */
     const uploadDocument = useCallback(
-        (leaseId, formData) => {
+        (leaseId, file) => {
             if (!leaseId) {
                 return Promise.reject(
                     new Error("Lease ID is required.")
                 );
             }
 
-            if (!formData) {
+            if (!file) {
                 return Promise.reject(
-                    new Error("Document data is required.")
+                    new Error("Document file is required.")
                 );
             }
 
             return dispatch(
                 uploadLeaseDocument({
                     leaseId,
-                    formData,
+                    file,
                 })
             );
         },
         [dispatch]
     );
 
-    /**
-     * Delete a lease document.
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Delete Document
+    |--------------------------------------------------------------------------
+    */
+
     const deleteDocument = useCallback(
-        (leaseId) => {
+        (leaseId, documentId) => {
             if (!leaseId) {
                 return Promise.reject(
                     new Error("Lease ID is required.")
                 );
             }
 
+            if (!documentId) {
+                return Promise.reject(
+                    new Error("Document ID is required.")
+                );
+            }
+
             return dispatch(
-                deleteLeaseDocument(leaseId)
+                deleteLeaseDocument({
+                    leaseId,
+                    documentId,
+                })
             );
         },
         [dispatch]
@@ -485,94 +505,66 @@ export const useLease = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | State Cleanup
+    | Clear Error
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Clear current/single lease.
-     */
-    const clearCurrent = useCallback(
-        () => {
-            dispatch(
-                clearCurrentLease()
-            );
-        },
-        [dispatch]
-    );
-
-    /**
-     * Clear lease errors.
-     */
-    const clearError = useCallback(
-        () => {
-            dispatch(
-                clearLeaseError()
-            );
-        },
-        [dispatch]
-    );
-
-    /**
-     * Clear lease success/message state.
-     */
-    const clearMessage = useCallback(
-        () => {
-            dispatch(
-                clearLeaseMessage()
-            );
-        },
-        [dispatch]
-    );
-
-    /**
-     * Reset the complete lease state.
-     */
-    const reset = useCallback(
-        () => {
-            dispatch(
-                resetLeaseState()
-            );
-        },
-        [dispatch]
-    );
+    const clearError = useCallback(() => {
+        dispatch(clearLeaseError());
+    }, [dispatch]);
 
     /*
     |--------------------------------------------------------------------------
-    | Derived State
+    | Clear Current Lease
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether there are no leases.
-     */
-    const isEmpty = useMemo(
-        () =>
-            !loadingList &&
-            Array.isArray(leases) &&
-            leases.length === 0,
-        [
-            loadingList,
-            leases,
-        ]
-    );
+    const clearCurrent = useCallback(() => {
+        dispatch(clearCurrentLease());
+    }, [dispatch]);
 
-    /**
-     * Determine whether any lease operation is loading.
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Clear Message
+    |--------------------------------------------------------------------------
+    */
+
+    const clearMessage = useCallback(() => {
+        dispatch(clearLeaseMessage());
+    }, [dispatch]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reset
+    |--------------------------------------------------------------------------
+    */
+
+    const reset = useCallback(() => {
+        dispatch(resetLeaseState());
+    }, [dispatch]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Busy State
+    |--------------------------------------------------------------------------
+    */
+
     const isBusy = useMemo(
         () =>
             Boolean(
                 loading ||
-                loadingList ||
-                loadingDetails ||
-                loadingCreate ||
-                loadingUpdate ||
-                loadingDelete ||
-                loadingRestore ||
-                loadingLifecycle ||
-                loadingStatistics ||
-                loadingDocument
+                    loadingList ||
+                    loadingDetails ||
+                    loadingCreate ||
+                    loadingUpdate ||
+                    loadingDelete ||
+                    loadingRestore ||
+                    loadingLifecycle ||
+                    loadingExpired ||
+                    loadingExpire ||
+                    loadingExpireEnded ||
+                    loadingStatistics ||
+                    loadingDocument
             ),
         [
             loading,
@@ -583,498 +575,17 @@ export const useLease = () => {
             loadingDelete,
             loadingRestore,
             loadingLifecycle,
+            loadingExpired,
+            loadingExpire,
+            loadingExpireEnded,
             loadingStatistics,
             loadingDocument,
         ]
     );
 
-    /**
-     * Determine whether lease creation is running.
-     */
-    const isCreating = useMemo(
-        () => Boolean(loadingCreate),
-        [loadingCreate]
-    );
-
-    /**
-     * Determine whether lease update is running.
-     */
-    const isUpdating = useMemo(
-        () => Boolean(loadingUpdate),
-        [loadingUpdate]
-    );
-
-    /**
-     * Determine whether lease deletion is running.
-     */
-    const isDeleting = useMemo(
-        () => Boolean(loadingDelete),
-        [loadingDelete]
-    );
-
-    /**
-     * Determine whether statistics are loading.
-     */
-    const isLoadingStatistics = useMemo(
-        () => Boolean(loadingStatistics),
-        [loadingStatistics]
-    );
-
-    /**
-     * Determine whether a document operation is running.
-     */
-    const isDocumentLoading = useMemo(
-        () => Boolean(loadingDocument),
-        [loadingDocument]
-    );
-
-    /**
-     * Determine whether there is a lease error.
-     */
-    const hasError = useMemo(
-        () => Boolean(error || errors),
-        [
-            error,
-            errors,
-        ]
-    );
-
-    /**
-     * Determine whether the latest operation succeeded.
-     */
-    const isSuccess = useMemo(
-        () => Boolean(success),
-        [success]
-    );
-
     /*
     |--------------------------------------------------------------------------
-    | Lease Lookup Helpers
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Find a lease by ID in the currently loaded collection.
-     */
-    const findLease = useCallback(
-        (leaseId) => {
-            if (
-                !leaseId ||
-                !Array.isArray(leases)
-            ) {
-                return null;
-            }
-
-            return (
-                leases.find(
-                    (lease) =>
-                        String(lease?.id) ===
-                        String(leaseId)
-                ) || null
-            );
-        },
-        [leases]
-    );
-
-    /**
-     * Find lease by lease number.
-     */
-    const findByLeaseNumber = useCallback(
-        (leaseNumber) => {
-            if (
-                !leaseNumber ||
-                !Array.isArray(leases)
-            ) {
-                return null;
-            }
-
-            const normalizedLeaseNumber =
-                String(leaseNumber)
-                    .trim()
-                    .toLowerCase();
-
-            return (
-                leases.find(
-                    (lease) =>
-                        String(
-                            lease?.lease_number || ""
-                        )
-                            .trim()
-                            .toLowerCase() ===
-                        normalizedLeaseNumber
-                ) || null
-            );
-        },
-        [leases]
-    );
-
-    /**
-     * Find lease by tenancy ID.
-     */
-    const findByTenancy = useCallback(
-        (tenancyId) => {
-            if (
-                !tenancyId ||
-                !Array.isArray(leases)
-            ) {
-                return null;
-            }
-
-            return (
-                leases.find(
-                    (lease) =>
-                        String(
-                            lease?.tenancy_id ??
-                            lease?.tenancy?.id ??
-                            ""
-                        ) ===
-                        String(tenancyId)
-                ) || null
-            );
-        },
-        [leases]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Tenant Helpers
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Get tenant from lease.
-     *
-     * Expected relationship:
-     *
-     * lease
-     *   └── tenancy
-     *       └── tenant
-     */
-    const getTenant = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.tenant ||
-                lease?.tenant ||
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get tenant full name.
-     */
-    const getTenantName = useCallback(
-        (lease) => {
-            const tenant =
-                lease?.tenancy?.tenant ||
-                lease?.tenant ||
-                null;
-
-            if (!tenant) {
-                return "—";
-            }
-
-            return (
-                tenant.full_name ||
-                [
-                    tenant.first_name,
-                    tenant.other_names,
-                    tenant.last_name,
-                ]
-                    .filter(Boolean)
-                    .join(" ")
-                    .trim() ||
-                "—"
-            );
-        },
-        []
-    );
-
-    /**
-     * Get tenant email.
-     */
-    const getTenantEmail = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.tenant?.email ||
-                lease?.tenant?.email ||
-                lease?.tenancy?.user?.email ||
-                lease?.user?.email ||
-                "—"
-            );
-        },
-        []
-    );
-
-    /**
-     * Get tenant phone.
-     */
-    const getTenantPhone = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.tenant?.phone ||
-                lease?.tenant?.phone ||
-                lease?.tenancy?.user?.phone ||
-                lease?.user?.phone ||
-                "—"
-            );
-        },
-        []
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Property Helpers
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Get property ID.
-     */
-    const getPropertyId = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.property_id ??
-                lease?.property_id ??
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get apartment ID.
-     */
-    const getApartmentId = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.apartment_id ??
-                lease?.apartment_id ??
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get unit ID.
-     */
-    const getUnitId = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.unit_id ??
-                lease?.unit_id ??
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get property object.
-     */
-    const getProperty = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.property ||
-                lease?.property ||
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get apartment object.
-     */
-    const getApartment = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.apartment ||
-                lease?.apartment ||
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get unit object.
-     */
-    const getUnit = useCallback(
-        (lease) => {
-            return (
-                lease?.tenancy?.unit ||
-                lease?.unit ||
-                null
-            );
-        },
-        []
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Status Helpers
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Determine whether lease is active.
-     */
-    const isActiveLease = useCallback(
-        (lease) => {
-            return Boolean(
-                lease?.is_active ||
-                lease?.status === "active"
-            );
-        },
-        []
-    );
-
-    /**
-     * Determine whether lease is expired.
-     */
-    const isExpiredLease = useCallback(
-        (lease) => {
-            return Boolean(
-                lease?.is_expired ||
-                lease?.status === "expired"
-            );
-        },
-        []
-    );
-
-    /**
-     * Determine whether lease is terminated.
-     */
-    const isTerminatedLease = useCallback(
-        (lease) => {
-            return Boolean(
-                lease?.is_terminated ||
-                lease?.status === "terminated"
-            );
-        },
-        []
-    );
-
-    /**
-     * Determine whether lease is draft.
-     */
-    const isDraftLease = useCallback(
-        (lease) => {
-            return (
-                lease?.status === "draft"
-            );
-        },
-        []
-    );
-
-    /**
-     * Determine whether lease is cancelled.
-     */
-    const isCancelledLease = useCallback(
-        (lease) => {
-            return (
-                lease?.status === "cancelled"
-            );
-        },
-        []
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Financial Helpers
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Get rent amount.
-     */
-    const getRentAmount = useCallback(
-        (lease) => {
-            return (
-                lease?.rent_amount ??
-                lease?.tenancy?.rent_amount ??
-                0
-            );
-        },
-        []
-    );
-
-    /**
-     * Get deposit amount.
-     */
-    const getDepositAmount = useCallback(
-        (lease) => {
-            return (
-                lease?.deposit_amount ??
-                lease?.tenancy?.deposit_amount ??
-                0
-            );
-        },
-        []
-    );
-
-    /**
-     * Get service charge.
-     */
-    const getServiceCharge = useCallback(
-        (lease) => {
-            return (
-                lease?.service_charge ??
-                lease?.tenancy?.service_charge ??
-                0
-            );
-        },
-        []
-    );
-
-    /**
-     * Get late fee.
-     */
-    const getLateFee = useCallback(
-        (lease) => {
-            return (
-                lease?.late_fee ??
-                lease?.tenancy?.late_fee ??
-                0
-            );
-        },
-        []
-    );
-
-    /**
-     * Get payment frequency.
-     */
-    const getPaymentFrequency = useCallback(
-        (lease) => {
-            return (
-                lease?.payment_frequency ??
-                lease?.tenancy?.payment_frequency ??
-                null
-            );
-        },
-        []
-    );
-
-    /**
-     * Get due day.
-     */
-    const getDueDay = useCallback(
-        (lease) => {
-            return (
-                lease?.due_day ??
-                lease?.tenancy?.due_day ??
-                null
-            );
-        },
-        []
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Memoized API
+    | Public API
     |--------------------------------------------------------------------------
     */
 
@@ -1082,11 +593,13 @@ export const useLease = () => {
         () => ({
             /*
             |--------------------------------------------------------------------------
-            | State
+            | Data
             |--------------------------------------------------------------------------
             */
 
             leases,
+
+            expiredLeases,
 
             currentLease,
 
@@ -1095,6 +608,14 @@ export const useLease = () => {
             statistics,
 
             pagination,
+
+            expiredPagination,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Loading
+            |--------------------------------------------------------------------------
+            */
 
             loading,
 
@@ -1112,9 +633,23 @@ export const useLease = () => {
 
             loadingLifecycle,
 
+            loadingExpired,
+
+            loadingExpire,
+
+            loadingExpireEnded,
+
             loadingStatistics,
 
             loadingDocument,
+
+            isBusy,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Errors / Status
+            |--------------------------------------------------------------------------
+            */
 
             error,
 
@@ -1126,27 +661,33 @@ export const useLease = () => {
 
             /*
             |--------------------------------------------------------------------------
-            | Derived State
+            | List
             |--------------------------------------------------------------------------
             */
 
-            isEmpty,
+            fetchAll,
 
-            isBusy,
+            fetchLeases: fetchAll,
 
-            isCreating,
+            /*
+            |--------------------------------------------------------------------------
+            | Expired
+            |--------------------------------------------------------------------------
+            */
 
-            isUpdating,
+            fetchExpired,
 
-            isDeleting,
+            fetchExpiredLeases: fetchExpired,
 
-            isLoadingStatistics,
+            /*
+            |--------------------------------------------------------------------------
+            | Details
+            |--------------------------------------------------------------------------
+            */
 
-            isDocumentLoading,
+            fetchOne,
 
-            hasError,
-
-            isSuccess,
+            fetchLease: fetchOne,
 
             /*
             |--------------------------------------------------------------------------
@@ -1154,21 +695,29 @@ export const useLease = () => {
             |--------------------------------------------------------------------------
             */
 
-            fetchAll,
-
-            fetchOne,
-
             create,
+
+            createLease: create,
 
             update,
 
+            updateLease: update,
+
             patch,
+
+            patchLease: patch,
 
             remove,
 
+            deleteLease: remove,
+
             restore,
 
+            restoreLease: restore,
+
             forceDelete,
+
+            forceDeleteLease: forceDelete,
 
             /*
             |--------------------------------------------------------------------------
@@ -1178,11 +727,27 @@ export const useLease = () => {
 
             activate,
 
+            activateLease: activate,
+
             sign,
+
+            signLease: sign,
+
+            expire,
+
+            expireLease: expire,
+
+            expireEnded,
+
+            expireEndedLeases: expireEnded,
 
             terminate,
 
+            terminateLease: terminate,
+
             cancel,
+
+            cancelLease: cancel,
 
             /*
             |--------------------------------------------------------------------------
@@ -1192,6 +757,8 @@ export const useLease = () => {
 
             fetchStatistics,
 
+            fetchLeaseStatistics: fetchStatistics,
+
             /*
             |--------------------------------------------------------------------------
             | Documents
@@ -1200,112 +767,34 @@ export const useLease = () => {
 
             uploadDocument,
 
+            uploadLeaseDocument: uploadDocument,
+
             deleteDocument,
+
+            deleteLeaseDocument: deleteDocument,
 
             /*
             |--------------------------------------------------------------------------
-            | State Management
+            | State Controls
             |--------------------------------------------------------------------------
             */
 
-            clearCurrent,
-
             clearError,
+
+            clearCurrent,
 
             clearMessage,
 
             reset,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Lookup Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            findLease,
-
-            findByLeaseNumber,
-
-            findByTenancy,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            getTenant,
-
-            getTenantName,
-
-            getTenantEmail,
-
-            getTenantPhone,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Property Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            getPropertyId,
-
-            getApartmentId,
-
-            getUnitId,
-
-            getProperty,
-
-            getApartment,
-
-            getUnit,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Status Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            isActiveLease,
-
-            isExpiredLease,
-
-            isTerminatedLease,
-
-            isDraftLease,
-
-            isCancelledLease,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Financial Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            getRentAmount,
-
-            getDepositAmount,
-
-            getServiceCharge,
-
-            getLateFee,
-
-            getPaymentFrequency,
-
-            getDueDay,
         }),
         [
-            /*
-            |--------------------------------------------------------------------------
-            | State
-            |--------------------------------------------------------------------------
-            */
-
             leases,
+            expiredLeases,
             currentLease,
             selectedLease,
             statistics,
             pagination,
+            expiredPagination,
 
             loading,
             loadingList,
@@ -1315,37 +804,21 @@ export const useLease = () => {
             loadingDelete,
             loadingRestore,
             loadingLifecycle,
+            loadingExpired,
+            loadingExpire,
+            loadingExpireEnded,
             loadingStatistics,
             loadingDocument,
+
+            isBusy,
 
             error,
             errors,
             message,
             success,
 
-            /*
-            |--------------------------------------------------------------------------
-            | Derived State
-            |--------------------------------------------------------------------------
-            */
-
-            isEmpty,
-            isBusy,
-            isCreating,
-            isUpdating,
-            isDeleting,
-            isLoadingStatistics,
-            isDocumentLoading,
-            hasError,
-            isSuccess,
-
-            /*
-            |--------------------------------------------------------------------------
-            | CRUD Actions
-            |--------------------------------------------------------------------------
-            */
-
             fetchAll,
+            fetchExpired,
             fetchOne,
             create,
             update,
@@ -1353,104 +826,24 @@ export const useLease = () => {
             remove,
             restore,
             forceDelete,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Lifecycle Actions
-            |--------------------------------------------------------------------------
-            */
-
             activate,
             sign,
+            expire,
+            expireEnded,
             terminate,
             cancel,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Statistics
-            |--------------------------------------------------------------------------
-            */
-
             fetchStatistics,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Documents
-            |--------------------------------------------------------------------------
-            */
-
             uploadDocument,
             deleteDocument,
 
-            /*
-            |--------------------------------------------------------------------------
-            | State Management
-            |--------------------------------------------------------------------------
-            */
-
-            clearCurrent,
             clearError,
+            clearCurrent,
             clearMessage,
             reset,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Lookup Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            findLease,
-            findByLeaseNumber,
-            findByTenancy,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tenant Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            getTenant,
-            getTenantName,
-            getTenantEmail,
-            getTenantPhone,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Property Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            getPropertyId,
-            getApartmentId,
-            getUnitId,
-            getProperty,
-            getApartment,
-            getUnit,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Status Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            isActiveLease,
-            isExpiredLease,
-            isTerminatedLease,
-            isDraftLease,
-            isCancelledLease,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Financial Helpers
-            |--------------------------------------------------------------------------
-            */
-
-            getRentAmount,
-            getDepositAmount,
-            getServiceCharge,
-            getLateFee,
-            getPaymentFrequency,
-            getDueDay,
         ]
     );
 };
+
+export { useLease };
+
+export default useLease;

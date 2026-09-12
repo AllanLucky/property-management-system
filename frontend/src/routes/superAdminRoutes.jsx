@@ -224,6 +224,7 @@ import {
 import {
   CreateLease,
   EditLease,
+  ExpiredLease,
   LeaseDetails,
   LeaseList,
 } from "../modules/super-admin/leases";
@@ -969,9 +970,10 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* ==================================================================
-          LEASES
-      ================================================================== */}
+      ```jsx
+      {/* ================================================================== 
+    LEASES
+================================================================== */}
 
       {/* Lease List */}
       <Route
@@ -993,6 +995,17 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      {/* Expired Leases */}
+      <Route
+        path="leases/expired"
+        element={
+          <PermissionGuard permission="leases.view">
+            <ExpiredLease />
+          </PermissionGuard>
+        }
+      />
+
+      {/* Lease Details */}
       <Route
         path="leases/:id"
         element={
@@ -1011,6 +1024,7 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
+
     </>
   );
 };

@@ -16,7 +16,6 @@ import {
   BarChart3,
 
   Building,
-  Columns3,
   Square,
 
   UserCheck,
@@ -118,9 +117,7 @@ const superAdminSidebar = [
     icon: Building,
     children: [
       { title: "Apartments", path: "/super-admin/apartments" },
-      { title: "Floors", path: "/super-admin/floors", icon: Columns3 },
       { title: "Units", path: "/super-admin/units", icon: Square },
-      { title: "Unit Occupancy", path: "/super-admin/units/occupancy", icon: UserCheck },
       { title: "Vacant Units", path: "/super-admin/units/vacant", icon: AlertTriangle },
     ],
   },
@@ -132,9 +129,7 @@ const superAdminSidebar = [
     children: [
       { title: "Tenants", path: "/super-admin/tenants" },
       { title: "Tenancies", path: "/super-admin/tenancies", icon: FileText },
-      { title: "Leases", path: "/super-admin/leases", icon: CalendarDays },
-      { title: "Lease Expiry", path: "/super-admin/leases/expiry", icon: Calendar },
-      { title: "Tenant Reports", path: "/super-admin/tenants/reports", icon: FileBarChart },
+      { title: "Leases", path: "/super-admin/leases", icon: CalendarDays }
     ],
   },
 

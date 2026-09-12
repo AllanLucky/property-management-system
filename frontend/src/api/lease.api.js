@@ -1,7 +1,5 @@
 import api from "./axios";
 
-
-
 /*
 |--------------------------------------------------------------------------
 | Base Endpoint
@@ -14,9 +12,38 @@ const LEASE_ENDPOINT = "/leases";
 |--------------------------------------------------------------------------
 | Lease API
 |--------------------------------------------------------------------------
+|
+| Centralized HTTP layer for all Lease-related endpoints.
+|
+| Architecture:
+|
+| Component
+|     ↓
+| useLease
+|     ↓
+| leaseSlice
+|     ↓
+| lease.service
+|     ↓
+| lease.api
+|     ↓
+| Axios
+|
+*/
+
+/*
+|--------------------------------------------------------------------------
+| Lease API
+|--------------------------------------------------------------------------
 */
 
 const leaseApi = {
+    /*
+    |--------------------------------------------------------------------------
+    | Lease Queries
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * ----------------------------------------------------------------------
      * Get Leases
@@ -24,7 +51,7 @@ const leaseApi = {
      *
      * GET /api/leases
      *
-     * Supports query parameters such as:
+     * Supported query parameters may include:
      *
      * - page
      * - per_page
@@ -54,8 +81,38 @@ const leaseApi = {
      * GET /api/leases/{id}
      */
     getLease(leaseId) {
-        return api.get(`${LEASE_ENDPOINT}/${leaseId}`);
+        return api.get(
+            `${LEASE_ENDPOINT}/${leaseId}`
+        );
     },
+
+    /**
+     * ----------------------------------------------------------------------
+     * Get Expired Leases
+     * ----------------------------------------------------------------------
+     *
+     * GET /api/leases/expired
+     *
+     * Uses the dedicated backend endpoint rather than relying on:
+     *
+     * GET /api/leases?status=expired
+     *
+     * This keeps the frontend aligned with the backend lease lifecycle.
+     */
+    getExpiredLeases(params = {}) {
+        return api.get(
+            `${LEASE_ENDPOINT}/expired`,
+            {
+                params,
+            }
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lease Creation & Updates
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * ----------------------------------------------------------------------
@@ -65,7 +122,10 @@ const leaseApi = {
      * POST /api/leases
      */
     createLease(payload) {
-        return api.post(LEASE_ENDPOINT, payload);
+        return api.post(
+            LEASE_ENDPOINT,
+            payload
+        );
     },
 
     /**
@@ -95,6 +155,12 @@ const leaseApi = {
             payload
         );
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lease Deletion & Restoration
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * ----------------------------------------------------------------------
@@ -170,6 +236,50 @@ const leaseApi = {
 
     /**
      * ----------------------------------------------------------------------
+     * Expire Single Lease
+     * ----------------------------------------------------------------------
+     *
+     * POST /api/leases/{id}/expire
+     *
+     * Explicitly expires one lease after the backend verifies:
+     *
+     * - lease exists
+     * - lease is active
+     * - lease has reached its end date
+     * - lease is not terminated
+     * - lease is not cancelled
+     *
+     * The backend remains the source of truth for lifecycle validation.
+     */
+    expireLease(leaseId) {
+        return api.post(
+            `${LEASE_ENDPOINT}/${leaseId}/expire`
+        );
+    },
+
+    /**
+     * ----------------------------------------------------------------------
+     * Expire Ended Leases
+     * ----------------------------------------------------------------------
+     *
+     * POST /api/leases/expire-ended
+     *
+     * Automatically expires all active leases whose end date has passed.
+     *
+     * This endpoint is idempotent:
+     *
+     * - Already expired leases are ignored.
+     * - Active leases ending today are not expired.
+     * - Active leases ending in the future are not expired.
+     */
+    expireEndedLeases() {
+        return api.post(
+            `${LEASE_ENDPOINT}/expire-ended`
+        );
+    },
+
+    /**
+     * ----------------------------------------------------------------------
      * Terminate Lease
      * ----------------------------------------------------------------------
      *
@@ -232,6 +342,7 @@ const leaseApi = {
      * POST /api/leases/{id}/document
      *
      * Expected payload:
+     *
      * FormData
      */
     uploadLeaseDocument(leaseId, formData) {
@@ -266,22 +377,89 @@ const leaseApi = {
 |--------------------------------------------------------------------------
 */
 
-export const getLeases = leaseApi.getLeases;
-export const getLease = leaseApi.getLease;
-export const createLease = leaseApi.createLease;
-export const updateLease = leaseApi.updateLease;
-export const patchLease = leaseApi.patchLease;
-export const deleteLease = leaseApi.deleteLease;
-export const restoreLease = leaseApi.restoreLease;
-export const forceDeleteLease = leaseApi.forceDeleteLease;
+/*
+|--------------------------------------------------------------------------
+| Lease Queries
+|--------------------------------------------------------------------------
+*/
 
-export const activateLease = leaseApi.activateLease;
-export const signLease = leaseApi.signLease;
-export const terminateLease = leaseApi.terminateLease;
-export const cancelLease = leaseApi.cancelLease;
+export const getLeases =
+    leaseApi.getLeases;
+
+export const getLease =
+    leaseApi.getLease;
+
+export const getExpiredLeases =
+    leaseApi.getExpiredLeases;
+
+/*
+|--------------------------------------------------------------------------
+| Lease Creation & Updates
+|--------------------------------------------------------------------------
+*/
+
+export const createLease =
+    leaseApi.createLease;
+
+export const updateLease =
+    leaseApi.updateLease;
+
+export const patchLease =
+    leaseApi.patchLease;
+
+/*
+|--------------------------------------------------------------------------
+| Lease Deletion & Restoration
+|--------------------------------------------------------------------------
+*/
+
+export const deleteLease =
+    leaseApi.deleteLease;
+
+export const restoreLease =
+    leaseApi.restoreLease;
+
+export const forceDeleteLease =
+    leaseApi.forceDeleteLease;
+
+/*
+|--------------------------------------------------------------------------
+| Lease Lifecycle Actions
+|--------------------------------------------------------------------------
+*/
+
+export const activateLease =
+    leaseApi.activateLease;
+
+export const signLease =
+    leaseApi.signLease;
+
+export const expireLease =
+    leaseApi.expireLease;
+
+export const expireEndedLeases =
+    leaseApi.expireEndedLeases;
+
+export const terminateLease =
+    leaseApi.terminateLease;
+
+export const cancelLease =
+    leaseApi.cancelLease;
+
+/*
+|--------------------------------------------------------------------------
+| Lease Statistics
+|--------------------------------------------------------------------------
+*/
 
 export const getLeaseStatistics =
     leaseApi.getLeaseStatistics;
+
+/*
+|--------------------------------------------------------------------------
+| Lease Documents
+|--------------------------------------------------------------------------
+*/
 
 export const uploadLeaseDocument =
     leaseApi.uploadLeaseDocument;
