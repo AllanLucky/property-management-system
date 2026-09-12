@@ -200,6 +200,7 @@ import {
   EditTenant,
   TenantDetails,
   TenantList,
+  TenantReports,
 } from "../modules/super-admin/tenants";
 
 /*
@@ -886,6 +887,15 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="tenants.view">
             <TenantDetails />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="tenants/reports"
+        element={
+          <PermissionGuard permission="tenants.view">
+            <TenantReports />
           </PermissionGuard>
         }
       />

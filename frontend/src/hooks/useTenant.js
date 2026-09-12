@@ -1,28 +1,63 @@
 import { useCallback } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react";
 
 import {
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT CRUD
+  |--------------------------------------------------------------------------
+  */
   fetchTenants,
   fetchTenant,
   createTenant,
   updateTenant,
   deleteTenant,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT SEARCH / LISTS
+  |--------------------------------------------------------------------------
+  */
   searchTenants,
   fetchActiveTenants,
   fetchPendingTenants,
   fetchInactiveTenants,
   fetchBlacklistedTenants,
   fetchAvailableTenantUsers,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT ACTIONS
+  |--------------------------------------------------------------------------
+  */
   activateTenant,
   deactivateTenant,
   blacklistTenant,
   setTenantPending,
   verifyTenant,
   unverifyTenant,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT STATISTICS / REPORTS
+  |--------------------------------------------------------------------------
+  */
   fetchTenantStatistics,
+  fetchTenantReports,
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT RESTORE / DELETE
+  |--------------------------------------------------------------------------
+  */
   restoreTenant,
   forceDeleteTenant,
 
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT STATE ACTIONS
+  |--------------------------------------------------------------------------
+  */
   setTenant,
   clearTenant,
   setTenantFilters,
@@ -35,11 +70,17 @@ import {
   clearTenantError,
   clearTenantSuccess,
 
+  /*
+  |--------------------------------------------------------------------------
+  | DATA SELECTORS
+  |--------------------------------------------------------------------------
+  */
   selectTenants,
   selectTenant,
   selectTenantPagination,
   selectTenantFilters,
   selectTenantStatistics,
+  selectTenantReports,
   selectTenantSearchResults,
   selectActiveTenants,
   selectPendingTenants,
@@ -47,6 +88,11 @@ import {
   selectBlacklistedTenants,
   selectAvailableTenantUsers,
 
+  /*
+  |--------------------------------------------------------------------------
+  | LOADING SELECTORS
+  |--------------------------------------------------------------------------
+  */
   selectTenantLoading,
   selectTenantLoadingTenant,
   selectTenantCreating,
@@ -55,15 +101,28 @@ import {
   selectTenantSearching,
   selectTenantActionLoading,
   selectTenantLoadingStatistics,
+  selectTenantLoadingReports,
   selectTenantLoadingAvailableUsers,
 
+  /*
+  |--------------------------------------------------------------------------
+  | ERROR SELECTORS
+  |--------------------------------------------------------------------------
+  */
   selectTenantError,
   selectTenantCreateError,
   selectTenantUpdateError,
   selectTenantDeleteError,
   selectTenantActionError,
   selectTenantStatisticsError,
+  selectTenantReportsError,
   selectAvailableTenantUsersError,
+
+  /*
+  |--------------------------------------------------------------------------
+  | SUCCESS
+  |--------------------------------------------------------------------------
+  */
   selectTenantSuccessMessage,
 } from "../store/tenantSlice";
 
@@ -72,7 +131,7 @@ import {
 | ERROR NORMALIZER
 |--------------------------------------------------------------------------
 |
-| Converts all supported Laravel / Axios / Redux errors into:
+| Converts supported Laravel / Axios / Redux errors into:
 |
 | {
 |   message,
@@ -119,7 +178,7 @@ const normalizeError = (error) => {
 
   /*
   |--------------------------------------------------------------------------
-  | POSSIBLE RESPONSE OBJECTS
+  | RESPONSE OBJECTS
   |--------------------------------------------------------------------------
   */
 
@@ -212,13 +271,9 @@ const normalizeError = (error) => {
 | getTenant(12)
 | getTenant("12")
 |
-| getTenant({
-|   id: 12
-| })
+| getTenant({ id: 12 })
 |
-| getTenant({
-|   tenant_id: 12
-| })
+| getTenant({ tenant_id: 12 })
 |
 | getTenant({
 |   tenant: {
@@ -258,9 +313,7 @@ const getTenantId = (tenantOrId) => {
     typeof tenantOrId === "string" ||
     typeof tenantOrId === "number"
   ) {
-    const value = String(
-      tenantOrId
-    ).trim();
+    const value = String(tenantOrId).trim();
 
     return value !== "" ? value : null;
   }
@@ -271,9 +324,7 @@ const getTenantId = (tenantOrId) => {
   |--------------------------------------------------------------------------
   */
 
-  if (
-    typeof tenantOrId === "object"
-  ) {
+  if (typeof tenantOrId === "object") {
     const id =
       tenantOrId?.id ??
       tenantOrId?.tenant_id ??
@@ -381,6 +432,10 @@ export const useTenant = () => {
     selectTenantStatistics
   );
 
+  const reports = useSelector(
+    selectTenantReports
+  );
+
   const searchResults = useSelector(
     selectTenantSearchResults
   );
@@ -406,11 +461,8 @@ export const useTenant = () => {
   | AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
   |
-  | These are existing users from the users table who already have
-  | the "tenant" Spatie role and are not yet linked to a tenant.
-  |
-  | They are used by CreateTenant / TenantForm to select the
-  | existing user account instead of creating another user.
+  | Existing users with the tenant role who are not yet
+  | linked to a tenant profile.
   |
   */
 
@@ -456,6 +508,10 @@ export const useTenant = () => {
     selectTenantLoadingStatistics
   );
 
+  const loadingReports = useSelector(
+    selectTenantLoadingReports
+  );
+
   const loadingAvailableUsers = useSelector(
     selectTenantLoadingAvailableUsers
   );
@@ -490,6 +546,10 @@ export const useTenant = () => {
     selectTenantStatisticsError
   );
 
+  const reportsError = useSelector(
+    selectTenantReportsError
+  );
+
   const availableTenantUsersError = useSelector(
     selectAvailableTenantUsersError
   );
@@ -519,10 +579,6 @@ export const useTenant = () => {
   |--------------------------------------------------------------------------
   | FETCH AVAILABLE TENANT USERS
   |--------------------------------------------------------------------------
-  |
-  | Fetches existing users who have the tenant role and are not yet
-  | attached to a tenant profile.
-  |
   */
 
   const getAvailableTenantUsers =
@@ -545,8 +601,9 @@ export const useTenant = () => {
 
   const getTenant = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -600,8 +657,9 @@ export const useTenant = () => {
       tenantOrId,
       tenantData
     ) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -646,8 +704,9 @@ export const useTenant = () => {
 
   const removeTenant = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -778,8 +837,9 @@ export const useTenant = () => {
 
   const activate = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -804,8 +864,9 @@ export const useTenant = () => {
 
   const deactivate = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -830,8 +891,9 @@ export const useTenant = () => {
 
   const blacklist = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -857,8 +919,9 @@ export const useTenant = () => {
   const setPending =
     useCallback(
       async (tenantOrId) => {
-        const id =
-          getTenantId(tenantOrId);
+        const id = getTenantId(
+          tenantOrId
+        );
 
         if (!id) {
           throw createTenantError(
@@ -883,8 +946,9 @@ export const useTenant = () => {
 
   const verify = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -909,8 +973,9 @@ export const useTenant = () => {
 
   const unverify = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -935,8 +1000,9 @@ export const useTenant = () => {
 
   const restore = useCallback(
     async (tenantOrId) => {
-      const id =
-        getTenantId(tenantOrId);
+      const id = getTenantId(
+        tenantOrId
+      );
 
       if (!id) {
         throw createTenantError(
@@ -962,8 +1028,9 @@ export const useTenant = () => {
   const forceDelete =
     useCallback(
       async (tenantOrId) => {
-        const id =
-          getTenantId(tenantOrId);
+        const id = getTenantId(
+          tenantOrId
+        );
 
         if (!id) {
           throw createTenantError(
@@ -997,6 +1064,44 @@ export const useTenant = () => {
       },
       [dispatch]
     );
+
+  /*
+  |--------------------------------------------------------------------------
+  | TENANT REPORTS
+  |--------------------------------------------------------------------------
+  |
+  | Supports:
+  |
+  | getReports()
+  |
+  | getReports({
+  |   start_date: "2026-01-01",
+  |   end_date: "2026-09-12"
+  | })
+  |
+  */
+
+  const getReports = useCallback(
+    async (params = {}) => {
+      if (
+        params !== null &&
+        typeof params !== "object"
+      ) {
+        throw createTenantError(
+          "Tenant report parameters must be an object."
+        );
+      }
+
+      return executeTenantAction(
+        dispatch,
+        fetchTenantReports(
+          params ?? {}
+        ),
+        "Failed to fetch tenant reports:"
+      );
+    },
+    [dispatch]
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -1181,6 +1286,7 @@ export const useTenant = () => {
     pagination,
     filters,
     statistics,
+    reports,
     searchResults,
 
     activeTenants,
@@ -1210,7 +1316,7 @@ export const useTenant = () => {
     searching,
     actionLoading,
     loadingStatistics,
-
+    loadingReports,
     loadingAvailableUsers,
 
     /*
@@ -1225,7 +1331,7 @@ export const useTenant = () => {
     deleteError,
     actionError,
     statisticsError,
-
+    reportsError,
     availableTenantUsersError,
 
     successMessage,
@@ -1305,6 +1411,14 @@ export const useTenant = () => {
     */
 
     getStatistics,
+
+    /*
+    |--------------------------------------------------------------------------
+    | REPORTS
+    |--------------------------------------------------------------------------
+    */
+
+    getReports,
 
     /*
     |--------------------------------------------------------------------------
