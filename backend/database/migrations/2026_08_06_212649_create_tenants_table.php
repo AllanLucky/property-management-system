@@ -27,19 +27,12 @@ return new class extends Migration
             | Tenant Identification
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | Each tenant receives a unique system-generated tenant number.
-            |
-            | Example:
-            | TNT-A8F3K9P2
-=======
-            | Unique identifier assigned to every tenant profile.
+            | Generated automatically by Tenant::generateTenantNumber().
             |
             | Examples:
             |
             | TNT-000001
             | TNT-000002
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
             |
             */
 
@@ -49,33 +42,14 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Linked User Account
+            | Existing User Account
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
             | A tenant profile belongs to an existing User account.
             |
-            | IMPORTANT:
+            | The Tenant module does NOT create a User account.
             |
-            | The tenant module does NOT create another user account.
-            | `user_id` points to the existing user account that already has
-            | the `tenant` Spatie role.
-            |
-            | One user can only be linked to one tenant profile.
-            |
-            | nullOnDelete() ensures that deleting a user does not automatically
-            | delete the tenant profile.
-=======
-            | A Tenant is a profile belonging to an existing User account.
-            |
-            | One User can have only one Tenant profile.
-            |
-            | The User account is created and managed separately.
-            | The Tenant profile only references the existing User.
-            |
-            | nullOnDelete() ensures that deleting a User does not delete
-            | the Tenant profile.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
+            | One User can only have one Tenant profile.
             |
             */
 
@@ -106,8 +80,8 @@ return new class extends Migration
             | Contact Information
             |--------------------------------------------------------------------------
             |
-            | These fields are synchronized from the linked User account by the
-            | TenantService.
+            | These fields may be synchronized from the linked User account
+            | by TenantService.
             |
             */
 
@@ -127,39 +101,15 @@ return new class extends Migration
             $table->date('date_of_birth')
                 ->nullable();
 
-<<<<<<< HEAD
-            $table->enum('gender', [
-                'male',
-                'female',
-                'other',
-            ])
-                ->nullable();
-
-=======
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
-
             /*
             |--------------------------------------------------------------------------
             | Nationality
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | Nationality represents citizenship/national identity.
+            | Represents citizenship/national identity.
             |
             | This is intentionally different from `country`, which represents
             | the tenant's residential/location country.
-=======
-            | Nationality represents the tenant's citizenship or national
-            | identity.
-            |
-            | This is intentionally separate from the `country` field below,
-            | which represents the tenant's residential/location country.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
-            |
-            | Examples:
-            |
-            | nationality = Kenyan
-            | country     = Kenya
             |
             */
 
@@ -167,43 +117,25 @@ return new class extends Migration
                 ->nullable()
                 ->index();
 
-<<<<<<< HEAD
-=======
 
             /*
             |--------------------------------------------------------------------------
             | Gender
             |--------------------------------------------------------------------------
             |
-            | Stored as a string to allow the application to support additional
-            | gender values without requiring a database migration.
+            | Stored as a string rather than an enum so additional values can
+            | be supported without requiring a database migration.
             |
             */
 
             $table->string('gender', 30)
                 ->nullable();
 
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
 
             /*
             |--------------------------------------------------------------------------
             | Identification
             |--------------------------------------------------------------------------
-            |
-<<<<<<< HEAD
-            | Application-level validation should determine whether the tenant
-            | must provide an ID number, passport number, or both.
-            |
-            | Both are nullable because not every tenant will necessarily use
-            | the same identification document.
-=======
-            | At least one identification method can be enforced by
-            | CreateTenantRequest / UpdateTenantRequest.
-            |
-            | These fields are nullable because a tenant does not necessarily
-            | need to have both identification documents.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
-            |
             */
 
             $table->string('id_number', 100)
@@ -218,13 +150,9 @@ return new class extends Migration
             | Residential / Location Information
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | `country` is the tenant's current residential/location country.
-=======
             | `country` represents the tenant's residential/location country.
             |
-            | It is intentionally separate from `nationality`.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
+            | `nationality` represents citizenship/nationality.
             |
             */
 
@@ -292,17 +220,10 @@ return new class extends Migration
             | Tenant Documents
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | File paths are stored in the database.
+            | File paths/URLs are stored here.
             |
-            | The *_public_id columns allow future integration with cloud
-            | storage providers such as Cloudinary or similar services.
-=======
-            | File paths / URLs are stored here.
-            |
-            | The *_public_id fields support cloud storage providers such
+            | The *_public_id columns support cloud storage providers such
             | as Cloudinary or similar services.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
             |
             */
 
@@ -330,17 +251,10 @@ return new class extends Migration
             | Verification
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | `is_verified` describes whether the tenant profile has been
-            | verified.
+            | Verification is independent from the tenant's operational status.
             |
-            | This is separate from the tenant's operational status.
-=======
-            | `is_verified` and `verified_at` represent tenant profile
-            | verification.
-            |
-            | There is intentionally NO `is_active` column.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
+            | `is_verified` is stored.
+            | `verified_at` records when verification occurred.
             |
             */
 
@@ -357,30 +271,22 @@ return new class extends Migration
             | Tenant Status
             |--------------------------------------------------------------------------
             |
-            | Status is the SINGLE source of truth for tenant activity.
+            | This is the persisted source of truth for tenant activity.
             |
-<<<<<<< HEAD
-            | `status` is the SINGLE source of truth for tenant activity.
-            |
-            | Supported states:
-=======
-            | Supported statuses:
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
+            | Supported values are defined by Tenant::STATUSES:
             |
             | pending
             | active
             | inactive
             | blacklisted
             |
-<<<<<<< HEAD
-            | There is intentionally NO `is_active` column.
+            | IMPORTANT:
             |
-            | The application can expose `is_active` as a computed attribute:
+            | There is intentionally NO `is_active` database column.
+            |
+            | The model exposes `is_active` as a computed attribute:
             |
             | status === active
-=======
-            | Do NOT add an `is_active` column here.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
             |
             */
 
@@ -391,11 +297,8 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Notes
+            | Administrative Notes
             |--------------------------------------------------------------------------
-            |
-            | Internal administrative notes related to the tenant.
-            |
             */
 
             $table->text('notes')
@@ -416,12 +319,9 @@ return new class extends Migration
             | Soft Deletes
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | Allows a tenant profile to be restored without permanently
-            | removing the record from the database.
-=======
-            | Tenant profiles are retained for historical and audit purposes.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
+            | Required by:
+            |
+            | use SoftDeletes;
             |
             */
 
@@ -433,7 +333,7 @@ return new class extends Migration
             | Search Indexes
             |--------------------------------------------------------------------------
             |
-            | These support common TenantService filtering and searching.
+            | Supporting common tenant search operations.
             |
             */
 
@@ -473,12 +373,7 @@ return new class extends Migration
             | Composite Indexes
             |--------------------------------------------------------------------------
             |
-<<<<<<< HEAD
-            | These indexes support common filtering and reporting operations.
-=======
-            | These support common filtering combinations used by the
-            | TenantService.
->>>>>>> 8b7665ecc4b1ce4936247280369b61746ee3ee1c
+            | Supporting status, verification, location and user filtering.
             |
             */
 
