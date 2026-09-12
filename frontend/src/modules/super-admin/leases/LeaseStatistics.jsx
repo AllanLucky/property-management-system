@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
+  ArrowRight,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -10,6 +12,16 @@ import {
 } from "lucide-react";
 
 import { useLease } from "../../../hooks/useLease";
+
+/*
+|--------------------------------------------------------------------------
+| Constants
+|--------------------------------------------------------------------------
+*/
+
+const LEASE_ROUTES = {
+  expired: "/super-admin/leases/expired",
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -72,6 +84,7 @@ function StatisticCard({
   description,
   icon: Icon,
   loading = false,
+  action,
 }) {
   return (
     <div
@@ -129,6 +142,12 @@ function StatisticCard({
           />
         </div>
       </div>
+
+      {action && !loading && (
+        <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-800">
+          {action}
+        </div>
+      )}
     </div>
   );
 }
@@ -280,6 +299,68 @@ function EmptyStatistics() {
 
 /*
 |--------------------------------------------------------------------------
+| Expired Navigation Button
+|--------------------------------------------------------------------------
+*/
+
+function ExpiredButton({ count, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="
+        inline-flex
+        w-full
+        items-center
+        justify-between
+        gap-3
+        rounded-xl
+        border
+        border-gray-200
+        bg-gray-50
+        px-3
+        py-2.5
+        text-left
+        transition
+        duration-200
+        hover:border-gray-300
+        hover:bg-gray-100
+        focus:outline-none
+        focus:ring-2
+        focus:ring-gray-300
+        dark:border-gray-700
+        dark:bg-gray-800/70
+        dark:hover:border-gray-600
+        dark:hover:bg-gray-800
+        dark:focus:ring-gray-700
+      "
+      aria-label={`View ${formatNumber(count)} expired leases`}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <CalendarDays
+          className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400"
+          aria-hidden="true"
+        />
+
+        <span className="truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
+          View expired leases
+        </span>
+      </span>
+
+      <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
+        {formatNumber(count)}
+
+        <ArrowRight
+          className="h-3.5 w-3.5"
+          aria-hidden="true"
+        />
+      </span>
+    </button>
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
 | Lease Statistics
 |--------------------------------------------------------------------------
 */
@@ -289,6 +370,14 @@ export default function LeaseStatistics({
   showHeader = true,
   className = "",
 }) {
+  /*
+  |--------------------------------------------------------------------------
+  | Navigation
+  |--------------------------------------------------------------------------
+  */
+
+  const navigate = useNavigate();
+
   /*
   |--------------------------------------------------------------------------
   | Lease Hook
@@ -335,6 +424,16 @@ export default function LeaseStatistics({
 
     loadStatistics();
   }, [autoLoad, loadStatistics]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Navigate To Expired Leases
+  |--------------------------------------------------------------------------
+  */
+
+  const handleViewExpired = useCallback(() => {
+    navigate(LEASE_ROUTES.expired);
+  }, [navigate]);
 
   /*
   |--------------------------------------------------------------------------
@@ -390,11 +489,21 @@ export default function LeaseStatistics({
   return (
     <section className={className}>
       {/* ------------------------------------------------------------------ */}
-      {/* Section Header                                                      */}
+      {/* Section Header                                                     */}
       {/* ------------------------------------------------------------------ */}
 
       {showHeader && (
-        <div className="mb-6">
+        <div
+          className="
+            mb-6
+            flex
+            flex-col
+            gap-4
+            sm:flex-row
+            sm:items-center
+            sm:justify-between
+          "
+        >
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               Lease Statistics
@@ -404,11 +513,57 @@ export default function LeaseStatistics({
               Overview of lease agreements and their current statuses.
             </p>
           </div>
+
+          <button
+            type="button"
+            onClick={handleViewExpired}
+            className="
+              inline-flex
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              border
+              border-gray-300
+              bg-white
+              px-4
+              py-2.5
+              text-sm
+              font-semibold
+              text-gray-700
+              shadow-sm
+              transition
+              duration-200
+              hover:border-gray-400
+              hover:bg-gray-50
+              focus:outline-none
+              focus:ring-2
+              focus:ring-gray-300
+              dark:border-gray-700
+              dark:bg-gray-900
+              dark:text-gray-200
+              dark:hover:border-gray-600
+              dark:hover:bg-gray-800
+              dark:focus:ring-gray-700
+            "
+          >
+            <CalendarDays
+              className="h-4 w-4"
+              aria-hidden="true"
+            />
+
+            Expired Leases
+
+            <ArrowRight
+              className="h-4 w-4"
+              aria-hidden="true"
+            />
+          </button>
         </div>
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Error                                                               */}
+      {/* Error                                                              */}
       {/* ------------------------------------------------------------------ */}
 
       <ErrorBanner
@@ -418,7 +573,7 @@ export default function LeaseStatistics({
       />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Initial Loading                                                     */}
+      {/* Initial Loading                                                    */}
       {/* ------------------------------------------------------------------ */}
 
       {loadingStatistics && !hasStatistics ? (
@@ -476,7 +631,7 @@ export default function LeaseStatistics({
       ) : (
         <>
           {/* -------------------------------------------------------------- */}
-          {/* Summary Cards                                                    */}
+          {/* Summary Cards                                                   */}
           {/* -------------------------------------------------------------- */}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -506,6 +661,12 @@ export default function LeaseStatistics({
               value={expired}
               description="Leases past their end date"
               icon={CalendarDays}
+              action={
+                <ExpiredButton
+                  count={expired}
+                  onClick={handleViewExpired}
+                />
+              }
             />
 
             <StatisticCard
@@ -524,7 +685,7 @@ export default function LeaseStatistics({
           </div>
 
           {/* -------------------------------------------------------------- */}
-          {/* Status Distribution                                              */}
+          {/* Status Distribution                                             */}
           {/* -------------------------------------------------------------- */}
 
           <div
@@ -630,3 +791,4 @@ function StatusBar({ label, value, total }) {
     </div>
   );
 }
+

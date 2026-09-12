@@ -7,6 +7,49 @@ import leaseService from "../services/lease.service";
 
 /*
 |--------------------------------------------------------------------------
+| Constants
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_PER_PAGE = 15;
+
+const DEFAULT_PAGINATION = {
+  current_page: 1,
+  per_page: DEFAULT_PER_PAGE,
+  total: 0,
+  last_page: 1,
+  from: null,
+  to: null,
+  has_more_pages: false,
+};
+
+/*
+|--------------------------------------------------------------------------
+| Stable Selector Fallbacks
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| Never use [] or {} directly inside selectors.
+|
+| Bad:
+|   state.lease?.leases || []
+|
+| Every execution can create a new array reference.
+|
+| Good:
+|   state.lease?.leases ?? EMPTY_LEASES
+|
+|--------------------------------------------------------------------------
+*/
+
+const EMPTY_LEASES = [];
+
+const EMPTY_ERRORS = null;
+
+const EMPTY_PAGINATION = DEFAULT_PAGINATION;
+
+/*
+|--------------------------------------------------------------------------
 | Initial State
 |--------------------------------------------------------------------------
 */
@@ -14,11 +57,22 @@ import leaseService from "../services/lease.service";
 const initialState = {
   /*
   |--------------------------------------------------------------------------
-  | Collection
+  | Main Lease Collection
   |--------------------------------------------------------------------------
   */
 
   leases: [],
+
+  /*
+  |--------------------------------------------------------------------------
+  | Expired Lease Collection
+  |--------------------------------------------------------------------------
+  |
+  | Kept separate from the normal lease collection.
+  |
+  */
+
+  expiredLeases: [],
 
   /*
   |--------------------------------------------------------------------------
@@ -46,18 +100,22 @@ const initialState = {
 
   /*
   |--------------------------------------------------------------------------
-  | Pagination
+  | Main Pagination
   |--------------------------------------------------------------------------
   */
 
   pagination: {
-    current_page: 1,
-    per_page: 15,
-    total: 0,
-    last_page: 1,
-    from: null,
-    to: null,
-    has_more_pages: false,
+    ...DEFAULT_PAGINATION,
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | Expired Pagination
+  |--------------------------------------------------------------------------
+  */
+
+  expiredPagination: {
+    ...DEFAULT_PAGINATION,
   },
 
   /*
@@ -87,6 +145,24 @@ const initialState = {
   loadingDocument: false,
 
   /*
+  | GET /leases/expired
+  */
+
+  loadingExpired: false,
+
+  /*
+  | POST /leases/expire-ended
+  */
+
+  loadingExpireEnded: false,
+
+  /*
+  | POST /leases/{id}/expire
+  */
+
+  loadingExpire: false,
+
+  /*
   |--------------------------------------------------------------------------
   | Error State
   |--------------------------------------------------------------------------
@@ -114,159 +190,486 @@ const initialState = {
 */
 
 /**
- * Normalize rejected thunk errors.
+ * Safely normalize rejected thunk errors.
  */
-const getRejectPayload = (error, fallbackMessage) => {
-  return {
-    message:
-      error?.message ||
-      fallbackMessage ||
-      "An unexpected error occurred.",
+const getRejectPayload = (
+  error,
+  fallbackMessage
+) => ({
+  message:
+    error?.message ||
+    fallbackMessage ||
+    "An unexpected error occurred.",
 
-    errors:
-      error?.errors ||
-      null,
+  errors:
+    error?.errors ||
+    null,
 
-    status:
-      error?.status ||
-      null,
+  status:
+    error?.status ||
+    null,
 
-    code:
-      error?.code ||
-      null,
+  code:
+    error?.code ||
+    null,
 
-    raw:
-      error?.raw ||
-      error ||
-      null,
-  };
-};
+  raw:
+    error?.raw ||
+    error ||
+    null,
+});
 
 /**
- * Extract pagination information from Laravel responses.
- *
- * Supports common Laravel pagination structures:
- *
- * {
- *     data: [],
- *     current_page: 1,
- *     last_page: 5,
- *     per_page: 15,
- *     total: 75,
- *     from: 1,
- *     to: 15
- * }
- *
- * Or:
- *
- * {
- *     data: [],
- *     meta: {
- *         current_page: 1,
- *         ...
- *     }
- * }
+ * Normalize Laravel pagination.
  */
-const normalizePagination = (data) => {
+const normalizePagination = (
+  data
+) => {
   const meta =
     data?.meta ||
     data?.pagination ||
     data ||
     {};
 
+  const rawCurrentPage = Number(
+    meta?.current_page ?? 1
+  );
+
+  const rawPerPage = Number(
+    meta?.per_page ??
+    DEFAULT_PER_PAGE
+  );
+
+  const rawTotal = Number(
+    meta?.total ?? 0
+  );
+
+  const rawLastPage = Number(
+    meta?.last_page ?? 1
+  );
+
+  const currentPage =
+    Number.isFinite(rawCurrentPage) &&
+      rawCurrentPage > 0
+      ? rawCurrentPage
+      : 1;
+
+  const perPage =
+    Number.isFinite(rawPerPage) &&
+      rawPerPage > 0
+      ? rawPerPage
+      : DEFAULT_PER_PAGE;
+
+  const total =
+    Number.isFinite(rawTotal) &&
+      rawTotal >= 0
+      ? rawTotal
+      : 0;
+
+  const lastPage =
+    Number.isFinite(rawLastPage) &&
+      rawLastPage > 0
+      ? rawLastPage
+      : 1;
+
   return {
-    current_page:
-      Number(
-        meta?.current_page ??
-        1
-      ),
+    current_page: currentPage,
 
-    per_page:
-      Number(
-        meta?.per_page ??
-        15
-      ),
+    per_page: perPage,
 
-    total:
-      Number(
-        meta?.total ??
-        0
-      ),
+    total,
 
-    last_page:
-      Number(
-        meta?.last_page ??
-        1
-      ),
+    last_page: lastPage,
 
     from:
-      meta?.from ??
-      null,
+      meta?.from ?? null,
 
     to:
-      meta?.to ??
-      null,
+      meta?.to ?? null,
 
     has_more_pages:
-      Boolean(
-        meta?.has_more_pages ??
-        (
-          Number(
-            meta?.current_page ??
-            1
-          ) <
-          Number(
-            meta?.last_page ??
-            1
-          )
+      meta?.has_more_pages !==
+        undefined
+        ? Boolean(
+          meta.has_more_pages
         )
-      ),
+        : currentPage < lastPage,
   };
 };
 
 /**
- * Extract collection from service response.
+ * Normalize lease collection responses.
+ *
+ * Supports:
+ *
+ * [
+ *   {...}
+ * ]
+ *
+ * {
+ *   data: [...]
+ * }
+ *
+ * {
+ *   data: {
+ *     data: [...]
+ *   }
+ * }
  */
-const normalizeLeaseCollection = (result) => {
-  const data = result?.data;
-
-  if (Array.isArray(data)) {
-    return data;
+const normalizeLeaseCollection = (
+  result
+) => {
+  if (Array.isArray(result)) {
+    return result;
   }
 
-  if (Array.isArray(data?.data)) {
-    return data.data;
+  if (
+    Array.isArray(
+      result?.data
+    )
+  ) {
+    return result.data;
+  }
+
+  if (
+    Array.isArray(
+      result?.data?.data
+    )
+  ) {
+    return result.data.data;
+  }
+
+  if (
+    Array.isArray(
+      result?.leases
+    )
+  ) {
+    return result.leases;
   }
 
   return [];
 };
 
 /**
- * Extract pagination from service response.
+ * Extract pagination information.
  */
-const getPagination = (result) => {
-  const data = result?.data;
+const getPagination = (
+  result
+) => {
+  const data =
+    result?.data;
 
   if (data?.meta) {
-    return normalizePagination(data.meta);
+    return normalizePagination(
+      data
+    );
   }
 
   if (
-    data?.current_page !== undefined ||
-    data?.last_page !== undefined
+    data?.current_page !==
+    undefined ||
+    data?.last_page !==
+    undefined
   ) {
-    return normalizePagination(data);
+    return normalizePagination(
+      data
+    );
   }
 
-  if (result?.response?.data?.meta) {
+  if (
+    result?.meta
+  ) {
     return normalizePagination(
-      result.response.data.meta
+      result
+    );
+  }
+
+  if (
+    result?.current_page !==
+    undefined ||
+    result?.last_page !==
+    undefined
+  ) {
+    return normalizePagination(
+      result
+    );
+  }
+
+  if (
+    result?.response?.data?.meta
+  ) {
+    return normalizePagination(
+      result.response.data
     );
   }
 
   return {
-    ...initialState.pagination,
+    ...DEFAULT_PAGINATION,
   };
+};
+
+/**
+ * Extract a lease from a mutation response.
+ */
+const getLeaseFromResponse = (
+  payload
+) => {
+  if (!payload) {
+    return null;
+  }
+
+  if (
+    payload?.data &&
+    !Array.isArray(
+      payload.data
+    ) &&
+    payload.data?.id
+  ) {
+    return payload.data;
+  }
+
+  if (
+    payload?.lease?.id
+  ) {
+    return payload.lease;
+  }
+
+  if (
+    payload?.result?.data?.id
+  ) {
+    return payload.result.data;
+  }
+
+  if (
+    payload?.result?.lease?.id
+  ) {
+    return payload.result.lease;
+  }
+
+  if (
+    payload?.id
+  ) {
+    return payload;
+  }
+
+  return null;
+};
+
+/**
+ * Normalize lease status.
+ */
+const getLeaseStatus = (
+  lease
+) =>
+  String(
+    lease?.status ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+/**
+ * Determine whether a lease is expired.
+ */
+const isExpiredLease = (
+  lease
+) =>
+  getLeaseStatus(
+    lease
+  ) === "expired";
+
+/**
+ * Find lease in normal collection.
+ */
+const findLeaseIndex = (
+  state,
+  leaseId
+) =>
+  state.leases.findIndex(
+    (lease) =>
+      String(
+        lease?.id
+      ) ===
+      String(leaseId)
+  );
+
+/**
+ * Find lease in expired collection.
+ */
+const findExpiredLeaseIndex = (
+  state,
+  leaseId
+) =>
+  state.expiredLeases.findIndex(
+    (lease) =>
+      String(
+        lease?.id
+      ) ===
+      String(leaseId)
+  );
+
+/**
+ * Insert/update normal lease.
+ */
+const upsertLease = (
+  state,
+  lease
+) => {
+  if (!lease?.id) {
+    return;
+  }
+
+  const index =
+    findLeaseIndex(
+      state,
+      lease.id
+    );
+
+  if (index === -1) {
+    state.leases.unshift(
+      lease
+    );
+
+    return;
+  }
+
+  state.leases[index] =
+    lease;
+};
+
+/**
+ * Insert/update expired lease.
+ */
+const upsertExpiredLease = (
+  state,
+  lease
+) => {
+  if (!lease?.id) {
+    return;
+  }
+
+  const index =
+    findExpiredLeaseIndex(
+      state,
+      lease.id
+    );
+
+  if (index === -1) {
+    state.expiredLeases.unshift(
+      lease
+    );
+
+    return;
+  }
+
+  state.expiredLeases[index] =
+    lease;
+};
+
+/**
+ * Remove normal lease.
+ */
+const removeLease = (
+  state,
+  leaseId
+) => {
+  state.leases =
+    state.leases.filter(
+      (lease) =>
+        String(
+          lease?.id
+        ) !==
+        String(leaseId)
+    );
+};
+
+/**
+ * Remove expired lease.
+ */
+const removeExpiredLease = (
+  state,
+  leaseId
+) => {
+  state.expiredLeases =
+    state.expiredLeases.filter(
+      (lease) =>
+        String(
+          lease?.id
+        ) !==
+        String(leaseId)
+    );
+};
+
+/**
+ * Remove lease everywhere.
+ */
+const removeLeaseEverywhere = (
+  state,
+  leaseId
+) => {
+  removeLease(
+    state,
+    leaseId
+  );
+
+  removeExpiredLease(
+    state,
+    leaseId
+  );
+};
+
+/**
+ * Update current and selected lease.
+ */
+const updateSelectedLease = (
+  state,
+  lease
+) => {
+  if (!lease) {
+    return;
+  }
+
+  state.currentLease =
+    lease;
+
+  state.selectedLease =
+    lease;
+};
+
+/**
+ * Clear errors.
+ */
+const clearErrors = (
+  state
+) => {
+  state.error = null;
+  state.errors = null;
+};
+
+/**
+ * Mark operation successful.
+ */
+const markSuccess = (
+  state,
+  message
+) => {
+  state.success = true;
+
+  state.message =
+    message || null;
+
+  clearErrors(state);
+};
+
+/**
+ * Clear operation state.
+ */
+const resetOperationState = (
+  state
+) => {
+  state.success = false;
+  state.message = null;
+
+  clearErrors(state);
 };
 
 /*
@@ -281,44 +684,57 @@ const getPagination = (result) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Fetch leases.
- *
- * Supports:
- *
- * - pagination
- * - search
- * - status
- * - lease_type
- * - tenancy_id
- * - tenant_id
- * - property_id
- * - apartment_id
- * - unit_id
- * - payment_frequency
- * - date filters
- */
-export const fetchLeases = createAsyncThunk(
-  "lease/fetchLeases",
+export const fetchLeases =
+  createAsyncThunk(
+    "lease/fetchLeases",
 
-  async (
-    params = {},
-    { rejectWithValue }
-  ) => {
-    try {
-      return await leaseService.getLeases(
-        params
-      );
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to fetch leases."
-        )
-      );
+    async (
+      params = {},
+      { rejectWithValue }
+    ) => {
+      try {
+        return await leaseService.getLeases(
+          params
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to fetch leases."
+          )
+        );
+      }
     }
-  }
-);
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Fetch Expired Leases
+|--------------------------------------------------------------------------
+*/
+
+export const fetchExpiredLeases =
+  createAsyncThunk(
+    "lease/fetchExpiredLeases",
+
+    async (
+      params = {},
+      { rejectWithValue }
+    ) => {
+      try {
+        return await leaseService.getExpiredLeases(
+          params
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to fetch expired leases."
+          )
+        );
+      }
+    }
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -326,27 +742,35 @@ export const fetchLeases = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const fetchLease = createAsyncThunk(
-  "lease/fetchLease",
+export const fetchLease =
+  createAsyncThunk(
+    "lease/fetchLease",
 
-  async (
-    leaseId,
-    { rejectWithValue }
-  ) => {
-    try {
-      return await leaseService.getLease(
-        leaseId
-      );
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to fetch lease."
-        )
-      );
+    async (
+      leaseId,
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        return await leaseService.getLease(
+          leaseId
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to fetch lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -354,27 +778,28 @@ export const fetchLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const createLease = createAsyncThunk(
-  "lease/createLease",
+export const createLease =
+  createAsyncThunk(
+    "lease/createLease",
 
-  async (
-    payload,
-    { rejectWithValue }
-  ) => {
-    try {
-      return await leaseService.createLease(
-        payload
-      );
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to create lease."
-        )
-      );
+    async (
+      payload,
+      { rejectWithValue }
+    ) => {
+      try {
+        return await leaseService.createLease(
+          payload
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to create lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -382,28 +807,39 @@ export const createLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const updateLease = createAsyncThunk(
-  "lease/updateLease",
+export const updateLease =
+  createAsyncThunk(
+    "lease/updateLease",
 
-  async (
-    { leaseId, payload },
-    { rejectWithValue }
-  ) => {
-    try {
-      return await leaseService.updateLease(
+    async (
+      {
         leaseId,
-        payload
-      );
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to update lease."
-        )
-      );
+        payload,
+      },
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        return await leaseService.updateLease(
+          leaseId,
+          payload
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to update lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -411,28 +847,39 @@ export const updateLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const patchLease = createAsyncThunk(
-  "lease/patchLease",
+export const patchLease =
+  createAsyncThunk(
+    "lease/patchLease",
 
-  async (
-    { leaseId, payload },
-    { rejectWithValue }
-  ) => {
-    try {
-      return await leaseService.patchLease(
+    async (
+      {
         leaseId,
-        payload
-      );
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to update lease."
-        )
-      );
+        payload,
+      },
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        return await leaseService.patchLease(
+          leaseId,
+          payload
+        );
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to update lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -440,33 +887,41 @@ export const patchLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const deleteLease = createAsyncThunk(
-  "lease/deleteLease",
+export const deleteLease =
+  createAsyncThunk(
+    "lease/deleteLease",
 
-  async (
-    leaseId,
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.deleteLease(
-          leaseId
+    async (
+      leaseId,
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.deleteLease(
+            leaseId
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to delete lease."
+          )
         );
-
-      return {
-        leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to delete lease."
-        )
-      );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -474,33 +929,41 @@ export const deleteLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const restoreLease = createAsyncThunk(
-  "lease/restoreLease",
+export const restoreLease =
+  createAsyncThunk(
+    "lease/restoreLease",
 
-  async (
-    leaseId,
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.restoreLease(
-          leaseId
+    async (
+      leaseId,
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.restoreLease(
+            leaseId
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to restore lease."
+          )
         );
-
-      return {
-        leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to restore lease."
-        )
-      );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -508,33 +971,41 @@ export const restoreLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const forceDeleteLease = createAsyncThunk(
-  "lease/forceDeleteLease",
+export const forceDeleteLease =
+  createAsyncThunk(
+    "lease/forceDeleteLease",
 
-  async (
-    leaseId,
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.forceDeleteLease(
-          leaseId
+    async (
+      leaseId,
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.forceDeleteLease(
+            leaseId
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to permanently delete lease."
+          )
         );
-
-      return {
-        leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to permanently delete lease."
-        )
-      );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -542,33 +1013,41 @@ export const forceDeleteLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const activateLease = createAsyncThunk(
-  "lease/activateLease",
+export const activateLease =
+  createAsyncThunk(
+    "lease/activateLease",
 
-  async (
-    leaseId,
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.activateLease(
-          leaseId
+    async (
+      leaseId,
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.activateLease(
+            leaseId
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to activate lease."
+          )
         );
-
-      return {
-        leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to activate lease."
-        )
-      );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -576,34 +1055,114 @@ export const activateLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const signLease = createAsyncThunk(
-  "lease/signLease",
+export const signLease =
+  createAsyncThunk(
+    "lease/signLease",
 
-  async (
-    { leaseId, payload = {} },
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.signLease(
-          leaseId,
-          payload
-        );
-
-      return {
+    async (
+      {
         leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to sign lease."
-        )
-      );
+        payload = {},
+      },
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.signLease(
+            leaseId,
+            payload
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to sign lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Expire Single Lease
+|--------------------------------------------------------------------------
+*/
+
+export const expireLease =
+  createAsyncThunk(
+    "lease/expireLease",
+
+    async (
+      leaseId,
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.expireLease(
+            leaseId
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to expire lease."
+          )
+        );
+      }
+    }
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Expire Ended Leases
+|--------------------------------------------------------------------------
+*/
+
+export const expireEndedLeases =
+  createAsyncThunk(
+    "lease/expireEndedLeases",
+
+    async (
+      _payload,
+      { rejectWithValue }
+    ) => {
+      try {
+        return await leaseService.expireEndedLeases();
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to expire ended leases."
+          )
+        );
+      }
+    }
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -611,34 +1170,45 @@ export const signLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const terminateLease = createAsyncThunk(
-  "lease/terminateLease",
+export const terminateLease =
+  createAsyncThunk(
+    "lease/terminateLease",
 
-  async (
-    { leaseId, payload = {} },
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.terminateLease(
-          leaseId,
-          payload
-        );
-
-      return {
+    async (
+      {
         leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to terminate lease."
-        )
-      );
+        payload = {},
+      },
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.terminateLease(
+            leaseId,
+            payload
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to terminate lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -646,34 +1216,45 @@ export const terminateLease = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const cancelLease = createAsyncThunk(
-  "lease/cancelLease",
+export const cancelLease =
+  createAsyncThunk(
+    "lease/cancelLease",
 
-  async (
-    { leaseId, payload = {} },
-    { rejectWithValue }
-  ) => {
-    try {
-      const result =
-        await leaseService.cancelLease(
-          leaseId,
-          payload
-        );
-
-      return {
+    async (
+      {
         leaseId,
-        ...result,
-      };
-    } catch (error) {
-      return rejectWithValue(
-        getRejectPayload(
-          error,
-          "Failed to cancel lease."
-        )
-      );
+        payload = {},
+      },
+      { rejectWithValue }
+    ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
+      try {
+        const result =
+          await leaseService.cancelLease(
+            leaseId,
+            payload
+          );
+
+        return {
+          leaseId,
+          ...result,
+        };
+      } catch (error) {
+        return rejectWithValue(
+          getRejectPayload(
+            error,
+            "Failed to cancel lease."
+          )
+        );
+      }
     }
-  }
-);
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -715,9 +1296,19 @@ export const uploadLeaseDocument =
     "lease/uploadLeaseDocument",
 
     async (
-      { leaseId, formData },
+      {
+        leaseId,
+        formData,
+      },
       { rejectWithValue }
     ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
       try {
         const result =
           await leaseService.uploadLeaseDocument(
@@ -754,6 +1345,13 @@ export const deleteLeaseDocument =
       leaseId,
       { rejectWithValue }
     ) => {
+      if (!leaseId) {
+        return rejectWithValue({
+          message:
+            "Lease ID is required.",
+        });
+      }
+
       try {
         const result =
           await leaseService.deleteLeaseDocument(
@@ -793,7 +1391,9 @@ const leaseSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    clearLeaseError: (state) => {
+    clearLeaseError: (
+      state
+    ) => {
       state.error = null;
       state.errors = null;
     },
@@ -804,7 +1404,9 @@ const leaseSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    clearCurrentLease: (state) => {
+    clearCurrentLease: (
+      state
+    ) => {
       state.currentLease = null;
       state.selectedLease = null;
     },
@@ -815,7 +1417,9 @@ const leaseSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    clearLeaseMessage: (state) => {
+    clearLeaseMessage: (
+      state
+    ) => {
       state.message = null;
       state.success = false;
     },
@@ -826,28 +1430,56 @@ const leaseSlice = createSlice({
     |--------------------------------------------------------------------------
     */
 
-    setSelectedLease: (state, action) => {
+    setSelectedLease: (
+      state,
+      action
+    ) => {
       state.selectedLease =
         action.payload || null;
     },
 
     /*
     |--------------------------------------------------------------------------
-    | Reset State
+    | Clear Expired Leases
     |--------------------------------------------------------------------------
     */
 
-    resetLeaseState: () => {
-      return {
-        ...initialState,
-        pagination: {
-          ...initialState.pagination,
-        },
+    clearExpiredLeases: (
+      state
+    ) => {
+      state.expiredLeases = [];
+
+      state.expiredPagination = {
+        ...DEFAULT_PAGINATION,
       };
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reset Lease State
+    |--------------------------------------------------------------------------
+    */
+
+    resetLeaseState: () => ({
+      ...initialState,
+
+      leases: [],
+
+      expiredLeases: [],
+
+      pagination: {
+        ...DEFAULT_PAGINATION,
+      },
+
+      expiredPagination: {
+        ...DEFAULT_PAGINATION,
+      },
+    }),
   },
 
-  extraReducers: (builder) => {
+  extraReducers: (
+    builder
+  ) => {
     /*
     |--------------------------------------------------------------------------
     | Fetch Leases
@@ -861,9 +1493,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingList = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -883,12 +1515,11 @@ const leaseSlice = createSlice({
               action.payload
             );
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Leases fetched successfully.";
-
-          state.error = null;
-          state.errors = null;
+            "Leases fetched successfully."
+          );
         }
       )
 
@@ -913,6 +1544,68 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
+    | Fetch Expired Leases
+    |--------------------------------------------------------------------------
+    */
+
+    builder
+      .addCase(
+        fetchExpiredLeases.pending,
+        (state) => {
+          state.loadingExpired = true;
+
+          resetOperationState(
+            state
+          );
+        }
+      )
+
+      .addCase(
+        fetchExpiredLeases.fulfilled,
+        (state, action) => {
+          state.loadingExpired = false;
+
+          /*
+           * Keep expired leases isolated.
+           */
+          state.expiredLeases =
+            normalizeLeaseCollection(
+              action.payload
+            );
+
+          state.expiredPagination =
+            getPagination(
+              action.payload
+            );
+
+          markSuccess(
+            state,
+            action.payload?.message ||
+            "Expired leases fetched successfully."
+          );
+        }
+      )
+
+      .addCase(
+        fetchExpiredLeases.rejected,
+        (state, action) => {
+          state.loadingExpired = false;
+
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to fetch expired leases.";
+
+          state.errors =
+            action.payload?.errors ||
+            null;
+
+          state.success = false;
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
     | Fetch Single Lease
     |--------------------------------------------------------------------------
     */
@@ -924,8 +1617,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingDetails = true;
 
-          state.error = null;
-          state.errors = null;
+          clearErrors(state);
+
+          state.success = false;
         }
       )
 
@@ -935,20 +1629,45 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingDetails = false;
 
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
+
           state.currentLease =
-            action.payload?.data ||
-            null;
+            lease;
 
           state.selectedLease =
-            action.payload?.data ||
-            null;
+            lease;
 
-          state.message =
+          if (lease) {
+            upsertLease(
+              state,
+              lease
+            );
+
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
+              );
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
+            }
+          }
+
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease fetched successfully.";
-
-          state.error = null;
-          state.errors = null;
+            "Lease fetched successfully."
+          );
         }
       )
 
@@ -966,6 +1685,8 @@ const leaseSlice = createSlice({
           state.errors =
             action.payload?.errors ||
             null;
+
+          state.success = false;
         }
       );
 
@@ -982,10 +1703,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingCreate = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
-          state.message = null;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -995,38 +1715,39 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingCreate = false;
 
-          const createdLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (createdLease) {
-            state.currentLease =
-              createdLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              createdLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            /*
-             * Add to beginning of list.
-             */
             if (
-              Array.isArray(
-                state.leases
+              isExpiredLease(
+                lease
               )
             ) {
-              state.leases.unshift(
-                createdLease
+              upsertExpiredLease(
+                state,
+                lease
               );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease created successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease created successfully."
+          );
         }
       )
 
@@ -1062,10 +1783,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingUpdate = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
-          state.message = null;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1075,41 +1795,44 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingUpdate = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease updated successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease updated successfully."
+          );
         }
       )
 
@@ -1145,9 +1868,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingUpdate = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1157,41 +1880,44 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingUpdate = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease updated successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease updated successfully."
+          );
         }
       )
 
@@ -1227,9 +1953,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingDelete = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1242,19 +1968,16 @@ const leaseSlice = createSlice({
           const leaseId =
             action.payload?.leaseId;
 
-          state.leases =
-            state.leases.filter(
-              (lease) =>
-                String(
-                  lease?.id
-                ) !==
-                String(leaseId)
-            );
+          removeLeaseEverywhere(
+            state,
+            leaseId
+          );
 
           if (
             String(
               state.currentLease?.id
-            ) === String(leaseId)
+            ) ===
+            String(leaseId)
           ) {
             state.currentLease =
               null;
@@ -1263,19 +1986,18 @@ const leaseSlice = createSlice({
           if (
             String(
               state.selectedLease?.id
-            ) === String(leaseId)
+            ) ===
+            String(leaseId)
           ) {
             state.selectedLease =
               null;
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease deleted successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease deleted successfully."
+          );
         }
       )
 
@@ -1311,9 +2033,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingRestore = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1323,45 +2045,47 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingRestore = false;
 
-          const restoredLease =
-            action.payload?.data ||
-            null;
+          const leaseId =
+            action.payload?.leaseId;
 
-          if (restoredLease) {
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    restoredLease?.id
-                  )
-              );
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-            if (index !== -1) {
-              state.leases[index] =
-                restoredLease;
-            } else {
-              state.leases.unshift(
-                restoredLease
+          removeExpiredLease(
+            state,
+            leaseId
+          );
+
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
+
+            upsertLease(
+              state,
+              lease
+            );
+
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
             }
-
-            state.currentLease =
-              restoredLease;
-
-            state.selectedLease =
-              restoredLease;
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease restored successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease restored successfully."
+          );
         }
       )
 
@@ -1386,7 +2110,7 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Force Delete
+    | Force Delete Lease
     |--------------------------------------------------------------------------
     */
 
@@ -1397,9 +2121,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingDelete = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1412,19 +2136,16 @@ const leaseSlice = createSlice({
           const leaseId =
             action.payload?.leaseId;
 
-          state.leases =
-            state.leases.filter(
-              (lease) =>
-                String(
-                  lease?.id
-                ) !==
-                String(leaseId)
-            );
+          removeLeaseEverywhere(
+            state,
+            leaseId
+          );
 
           if (
             String(
               state.currentLease?.id
-            ) === String(leaseId)
+            ) ===
+            String(leaseId)
           ) {
             state.currentLease =
               null;
@@ -1433,19 +2154,18 @@ const leaseSlice = createSlice({
           if (
             String(
               state.selectedLease?.id
-            ) === String(leaseId)
+            ) ===
+            String(leaseId)
           ) {
             state.selectedLease =
               null;
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease permanently deleted successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease permanently deleted successfully."
+          );
         }
       )
 
@@ -1470,7 +2190,7 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Activate
+    | Activate Lease
     |--------------------------------------------------------------------------
     */
 
@@ -1481,9 +2201,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingLifecycle = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1493,41 +2213,44 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingLifecycle = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease activated successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease activated successfully."
+          );
         }
       )
 
@@ -1552,7 +2275,7 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Sign
+    | Sign Lease
     |--------------------------------------------------------------------------
     */
 
@@ -1563,9 +2286,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingLifecycle = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1575,41 +2298,44 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingLifecycle = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease signed successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease signed successfully."
+          );
         }
       )
 
@@ -1634,7 +2360,150 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Terminate
+    | Expire Single Lease
+    |--------------------------------------------------------------------------
+    */
+
+    builder
+      .addCase(
+        expireLease.pending,
+        (state) => {
+          state.loading = true;
+          state.loadingLifecycle = true;
+          state.loadingExpire = true;
+
+          resetOperationState(
+            state
+          );
+        }
+      )
+
+      .addCase(
+        expireLease.fulfilled,
+        (state, action) => {
+          state.loading = false;
+          state.loadingLifecycle = false;
+          state.loadingExpire = false;
+
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
+
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
+
+            upsertLease(
+              state,
+              lease
+            );
+
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
+              );
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
+            }
+          }
+
+          markSuccess(
+            state,
+            action.payload?.message ||
+            "Lease expired successfully."
+          );
+        }
+      )
+
+      .addCase(
+        expireLease.rejected,
+        (state, action) => {
+          state.loading = false;
+          state.loadingLifecycle = false;
+          state.loadingExpire = false;
+
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to expire lease.";
+
+          state.errors =
+            action.payload?.errors ||
+            null;
+
+          state.success = false;
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expire Ended Leases
+    |--------------------------------------------------------------------------
+    */
+
+    builder
+      .addCase(
+        expireEndedLeases.pending,
+        (state) => {
+          state.loading = true;
+          state.loadingLifecycle = true;
+          state.loadingExpireEnded = true;
+
+          resetOperationState(
+            state
+          );
+        }
+      )
+
+      .addCase(
+        expireEndedLeases.fulfilled,
+        (state, action) => {
+          state.loading = false;
+          state.loadingLifecycle = false;
+          state.loadingExpireEnded = false;
+
+          markSuccess(
+            state,
+            action.payload?.message ||
+            "Ended leases processed successfully."
+          );
+        }
+      )
+
+      .addCase(
+        expireEndedLeases.rejected,
+        (state, action) => {
+          state.loading = false;
+          state.loadingLifecycle = false;
+          state.loadingExpireEnded = false;
+
+          state.error =
+            action.payload?.message ||
+            action.error?.message ||
+            "Failed to expire ended leases.";
+
+          state.errors =
+            action.payload?.errors ||
+            null;
+
+          state.success = false;
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Terminate Lease
     |--------------------------------------------------------------------------
     */
 
@@ -1645,9 +2514,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingLifecycle = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1657,41 +2526,37 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingLifecycle = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
-              );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
-            }
+            /*
+             * A terminated lease should no
+             * longer appear in expired list.
+             */
+            removeExpiredLease(
+              state,
+              lease.id
+            );
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease terminated successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease terminated successfully."
+          );
         }
       )
 
@@ -1716,7 +2581,7 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Cancel
+    | Cancel Lease
     |--------------------------------------------------------------------------
     */
 
@@ -1727,9 +2592,9 @@ const leaseSlice = createSlice({
           state.loading = true;
           state.loadingLifecycle = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1739,41 +2604,33 @@ const leaseSlice = createSlice({
           state.loading = false;
           state.loadingLifecycle = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
-              );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
-            }
+            removeExpiredLease(
+              state,
+              lease.id
+            );
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease cancelled successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease cancelled successfully."
+          );
         }
       )
 
@@ -1798,7 +2655,7 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Statistics
+    | Fetch Statistics
     |--------------------------------------------------------------------------
     */
 
@@ -1806,35 +2663,39 @@ const leaseSlice = createSlice({
       .addCase(
         fetchLeaseStatistics.pending,
         (state) => {
-          state.loadingStatistics = true;
+          state.loadingStatistics =
+            true;
 
-          state.error = null;
-          state.errors = null;
+          clearErrors(state);
+
+          state.success = false;
         }
       )
 
       .addCase(
         fetchLeaseStatistics.fulfilled,
         (state, action) => {
-          state.loadingStatistics = false;
+          state.loadingStatistics =
+            false;
 
           state.statistics =
-            action.payload?.data ||
+            action.payload?.data ??
+            action.payload?.statistics ??
             null;
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease statistics fetched successfully.";
-
-          state.error = null;
-          state.errors = null;
+            "Lease statistics fetched successfully."
+          );
         }
       )
 
       .addCase(
         fetchLeaseStatistics.rejected,
         (state, action) => {
-          state.loadingStatistics = false;
+          state.loadingStatistics =
+            false;
 
           state.error =
             action.payload?.message ||
@@ -1844,12 +2705,14 @@ const leaseSlice = createSlice({
           state.errors =
             action.payload?.errors ||
             null;
+
+          state.success = false;
         }
       );
 
     /*
     |--------------------------------------------------------------------------
-    | Upload Document
+    | Upload Lease Document
     |--------------------------------------------------------------------------
     */
 
@@ -1859,9 +2722,9 @@ const leaseSlice = createSlice({
         (state) => {
           state.loadingDocument = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1870,41 +2733,44 @@ const leaseSlice = createSlice({
         (state, action) => {
           state.loadingDocument = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease document uploaded successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease document uploaded successfully."
+          );
         }
       )
 
@@ -1928,7 +2794,7 @@ const leaseSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
-    | Delete Document
+    | Delete Lease Document
     |--------------------------------------------------------------------------
     */
 
@@ -1938,9 +2804,9 @@ const leaseSlice = createSlice({
         (state) => {
           state.loadingDocument = true;
 
-          state.error = null;
-          state.errors = null;
-          state.success = false;
+          resetOperationState(
+            state
+          );
         }
       )
 
@@ -1949,41 +2815,44 @@ const leaseSlice = createSlice({
         (state, action) => {
           state.loadingDocument = false;
 
-          const updatedLease =
-            action.payload?.data ||
-            null;
+          const lease =
+            getLeaseFromResponse(
+              action.payload
+            );
 
-          if (updatedLease) {
-            state.currentLease =
-              updatedLease;
+          if (lease) {
+            updateSelectedLease(
+              state,
+              lease
+            );
 
-            state.selectedLease =
-              updatedLease;
+            upsertLease(
+              state,
+              lease
+            );
 
-            const index =
-              state.leases.findIndex(
-                (lease) =>
-                  String(
-                    lease?.id
-                  ) ===
-                  String(
-                    updatedLease?.id
-                  )
+            if (
+              isExpiredLease(
+                lease
+              )
+            ) {
+              upsertExpiredLease(
+                state,
+                lease
               );
-
-            if (index !== -1) {
-              state.leases[index] =
-                updatedLease;
+            } else {
+              removeExpiredLease(
+                state,
+                lease.id
+              );
             }
           }
 
-          state.message =
+          markSuccess(
+            state,
             action.payload?.message ||
-            "Lease document deleted successfully.";
-
-          state.success = true;
-          state.error = null;
-          state.errors = null;
+            "Lease document deleted successfully."
+          );
         }
       )
 
@@ -2018,74 +2887,271 @@ export const {
   clearCurrentLease,
   clearLeaseMessage,
   setSelectedLease,
+  clearExpiredLeases,
   resetLeaseState,
-} = leaseSlice.actions;
+} =
+  leaseSlice.actions;
 
 /*
 |--------------------------------------------------------------------------
 | Selectors
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| These selectors NEVER create [] or {} during execution.
+|
+|--------------------------------------------------------------------------
 */
 
-export const selectLeaseState = (state) =>
-  state.lease;
+/**
+ * Complete lease state.
+ */
+export const selectLeaseState = (
+  state
+) =>
+  state?.lease ??
+  initialState;
 
-export const selectLeases = (state) =>
-  state.lease?.leases || [];
+/*
+|--------------------------------------------------------------------------
+| Main Lease Selectors
+|--------------------------------------------------------------------------
+*/
 
-export const selectCurrentLease = (state) =>
-  state.lease?.currentLease || null;
+/**
+ * All leases.
+ *
+ * Stable fallback.
+ */
+export const selectLeases = (
+  state
+) => {
+  const leases =
+    state?.lease?.leases;
 
-export const selectSelectedLease = (state) =>
-  state.lease?.selectedLease || null;
+  return Array.isArray(
+    leases
+  )
+    ? leases
+    : EMPTY_LEASES;
+};
 
-export const selectLeaseStatistics = (state) =>
-  state.lease?.statistics || null;
+/**
+ * Current lease.
+ */
+export const selectCurrentLease = (
+  state
+) =>
+  state?.lease?.currentLease ??
+  null;
 
-export const selectLeasePagination = (state) =>
-  state.lease?.pagination || initialState.pagination;
+/**
+ * Selected lease.
+ */
+export const selectSelectedLease = (
+  state
+) =>
+  state?.lease?.selectedLease ??
+  null;
 
-export const selectLeaseLoading = (state) =>
-  Boolean(state.lease?.loading);
+/**
+ * Lease statistics.
+ */
+export const selectLeaseStatistics = (
+  state
+) =>
+  state?.lease?.statistics ??
+  null;
 
-export const selectLeaseListLoading = (state) =>
-  Boolean(state.lease?.loadingList);
+/**
+ * Main pagination.
+ *
+ * Stable fallback.
+ */
+export const selectLeasePagination = (
+  state
+) =>
+  state?.lease?.pagination ??
+  EMPTY_PAGINATION;
 
-export const selectLeaseDetailsLoading = (state) =>
-  Boolean(state.lease?.loadingDetails);
+/*
+|--------------------------------------------------------------------------
+| Expired Lease Selectors
+|--------------------------------------------------------------------------
+*/
 
-export const selectLeaseCreateLoading = (state) =>
-  Boolean(state.lease?.loadingCreate);
+/**
+ * Expired leases.
+ *
+ * Stable fallback.
+ */
+export const selectExpiredLeases = (
+  state
+) => {
+  const leases =
+    state?.lease?.expiredLeases;
 
-export const selectLeaseUpdateLoading = (state) =>
-  Boolean(state.lease?.loadingUpdate);
+  return Array.isArray(
+    leases
+  )
+    ? leases
+    : EMPTY_LEASES;
+};
 
-export const selectLeaseDeleteLoading = (state) =>
-  Boolean(state.lease?.loadingDelete);
+/**
+ * Expired lease pagination.
+ */
+export const selectExpiredLeasePagination = (
+  state
+) =>
+  state?.lease?.expiredPagination ??
+  EMPTY_PAGINATION;
 
-export const selectLeaseRestoreLoading = (state) =>
-  Boolean(state.lease?.loadingRestore);
+/*
+|--------------------------------------------------------------------------
+| Loading Selectors
+|--------------------------------------------------------------------------
+*/
 
-export const selectLeaseLifecycleLoading = (state) =>
-  Boolean(state.lease?.loadingLifecycle);
+export const selectLeaseLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loading
+  );
 
-export const selectLeaseStatisticsLoading = (state) =>
-  Boolean(state.lease?.loadingStatistics);
+export const selectLeaseListLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingList
+  );
 
-export const selectLeaseDocumentLoading = (state) =>
-  Boolean(state.lease?.loadingDocument);
+export const selectLeaseDetailsLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingDetails
+  );
 
-export const selectLeaseError = (state) =>
-  state.lease?.error || null;
+export const selectLeaseCreateLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingCreate
+  );
 
-export const selectLeaseErrors = (state) =>
-  state.lease?.errors || null;
+export const selectLeaseUpdateLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingUpdate
+  );
 
-export const selectLeaseMessage = (state) =>
-  state.lease?.message || null;
+export const selectLeaseDeleteLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingDelete
+  );
 
-export const selectLeaseSuccess = (state) =>
-  Boolean(state.lease?.success);
+export const selectLeaseRestoreLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingRestore
+  );
+
+export const selectLeaseLifecycleLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingLifecycle
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Expiration Loading Selectors
+|--------------------------------------------------------------------------
+*/
+
+export const selectLeaseExpiredLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingExpired
+  );
+
+export const selectLeaseExpireLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingExpire
+  );
+
+export const selectLeaseExpireEndedLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingExpireEnded
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Statistics / Document Loading
+|--------------------------------------------------------------------------
+*/
+
+export const selectLeaseStatisticsLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingStatistics
+  );
+
+export const selectLeaseDocumentLoading = (
+  state
+) =>
+  Boolean(
+    state?.lease?.loadingDocument
+  );
+
+/*
+|--------------------------------------------------------------------------
+| Error Selectors
+|--------------------------------------------------------------------------
+*/
+
+export const selectLeaseError = (
+  state
+) =>
+  state?.lease?.error ??
+  null;
+
+export const selectLeaseErrors = (
+  state
+) =>
+  state?.lease?.errors ??
+  EMPTY_ERRORS;
+
+/*
+|--------------------------------------------------------------------------
+| Message / Success Selectors
+|--------------------------------------------------------------------------
+*/
+
+export const selectLeaseMessage = (
+  state
+) =>
+  state?.lease?.message ??
+  null;
+
+export const selectLeaseSuccess = (
+  state
+) =>
+  Boolean(
+    state?.lease?.success
+  );
 
 /*
 |--------------------------------------------------------------------------
