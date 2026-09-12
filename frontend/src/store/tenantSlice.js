@@ -105,6 +105,28 @@ const initialState = {
 
   /*
   |--------------------------------------------------------------------------
+  | TENANT REPORTS
+  |--------------------------------------------------------------------------
+  |
+  | Example:
+  |
+  | {
+  |   summary: {...},
+  |   status_breakdown: {...},
+  |   verification_breakdown: {...},
+  |   tenancy_breakdown: {...},
+  |   registration: {...},
+  |   period: {...},
+  |   generated_at: "..."
+  | }
+  |
+  |--------------------------------------------------------------------------
+  */
+
+  reports: null,
+
+  /*
+  |--------------------------------------------------------------------------
   | LOADING STATES
   |--------------------------------------------------------------------------
   */
@@ -122,6 +144,8 @@ const initialState = {
   loadingInactive: false,
   loadingBlacklisted: false,
   loadingStatistics: false,
+
+  loadingReports: false,
 
   /*
   |--------------------------------------------------------------------------
@@ -146,6 +170,7 @@ const initialState = {
   searchError: null,
   actionError: null,
   statisticsError: null,
+  reportsError: null,
 
   /*
   |--------------------------------------------------------------------------
@@ -173,25 +198,6 @@ const initialState = {
 
 /**
  * Safely extract a tenant ID.
- *
- * Supports:
- *
- * 15
- * "15"
- *
- * {
- *   id: 15
- * }
- *
- * {
- *   tenant_id: 15
- * }
- *
- * {
- *   tenant: {
- *     id: 15
- *   }
- * }
  */
 const getTenantId = (tenant) => {
   if (
@@ -202,9 +208,7 @@ const getTenantId = (tenant) => {
     return null;
   }
 
-  if (
-    typeof tenant === "object"
-  ) {
+  if (typeof tenant === "object") {
     return (
       tenant?.id ??
       tenant?.tenant_id ??
@@ -232,39 +236,18 @@ const getErrorMessage = (error) => {
   const responseData =
     error?.response?.data;
 
-  /*
-   * Laravel:
-   *
-   * {
-   *   message: "Validation failed."
-   * }
-   */
   if (responseData?.message) {
     return String(
       responseData.message
     );
   }
 
-  /*
-   * Laravel:
-   *
-   * {
-   *   error: "Something went wrong."
-   * }
-   */
   if (responseData?.error) {
     return String(
       responseData.error
     );
   }
 
-  /*
-   * Laravel validation:
-   *
-   * errors: {
-   *   email: [...]
-   * }
-   */
   if (
     responseData?.errors &&
     typeof responseData.errors === "object"
@@ -296,9 +279,6 @@ const getErrorMessage = (error) => {
     }
   }
 
-  /*
-   * Nested Laravel error.
-   */
   if (
     responseData?.errors?.error
   ) {
@@ -307,9 +287,6 @@ const getErrorMessage = (error) => {
     );
   }
 
-  /*
-   * Nested data message.
-   */
   if (
     responseData?.data?.message
   ) {
@@ -318,9 +295,6 @@ const getErrorMessage = (error) => {
     );
   }
 
-  /*
-   * Nested data error.
-   */
   if (
     responseData?.data?.error
   ) {
@@ -329,9 +303,6 @@ const getErrorMessage = (error) => {
     );
   }
 
-  /*
-   * Normalized service error.
-   */
   if (
     error?.message &&
     ![
@@ -386,10 +357,6 @@ const normalizeTenantListResponse = (
     response?.data?.meta ||
     null;
 
-  /*
-   * Some Laravel responses may expose
-   * pagination directly.
-   */
   if (
     !pagination &&
     response?.current_page !== undefined
@@ -450,31 +417,6 @@ const normalizeTenantArrayResponse = (
 
 /**
  * Normalize available tenant users.
- *
- * This supports both:
- *
- * [
- *   {
- *     id: 4,
- *     first_name: "Allan",
- *     last_name: "Nonda",
- *     name: "Allan Nonda",
- *     email: "...",
- *     phone: "..."
- *   }
- * ]
- *
- * and Laravel envelopes:
- *
- * {
- *   data: [...]
- * }
- *
- * {
- *   data: {
- *     data: [...]
- *   }
- * }
  */
 const normalizeAvailableTenantUsers = (
   response
@@ -541,14 +483,8 @@ const normalizeAvailableTenantUsers = (
         return {
           ...user,
 
-          /*
-           * The ID used by the dropdown.
-           */
           id,
 
-          /*
-           * The ID submitted to tenants.user_id.
-           */
           user_id:
             user?.user_id ??
             id,
@@ -583,13 +519,6 @@ const normalizeAvailableTenantUsers = (
         };
       });
 
-  /*
-   * Prevent duplicate users.
-   *
-   * The backend should already prevent this,
-   * but keeping the frontend list unique protects
-   * the dropdown from duplicate options.
-   */
   const seen = new Set();
 
   return normalizedUsers.filter(
@@ -630,33 +559,18 @@ const normalizeTenantResponse = (
     return null;
   }
 
-  /*
-   * Direct tenant object.
-   */
   if (
     response?.id !== undefined
   ) {
     return response;
   }
 
-  /*
-   * {
-   *   data: tenant
-   * }
-   */
   if (
     response?.data?.id !== undefined
   ) {
     return response.data;
   }
 
-  /*
-   * {
-   *   data: {
-   *     data: tenant
-   *   }
-   * }
-   */
   if (
     response?.data?.data?.id !== undefined
   ) {
@@ -680,6 +594,259 @@ const getResponseMessage = (
     response?.data?.data?.message ||
     fallback
   );
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| TENANT REPORT HELPERS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Safely convert report values to numbers.
+ */
+const toReportNumber = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+
+/**
+ * Normalize tenant reports.
+ *
+ * This keeps the backend response structure intact
+ * while ensuring all numeric report values are safe
+ * for charts, cards and calculations.
+ */
+const normalizeTenantReports = (
+  response
+) => {
+  let report = response;
+
+  /*
+   * Support:
+   *
+   * {
+   *   data: {...}
+   * }
+   *
+   * and:
+   *
+   * {
+   *   data: {
+   *     data: {...}
+   *   }
+   * }
+   */
+  if (
+    report &&
+    typeof report === "object" &&
+    !Array.isArray(report)
+  ) {
+    if (
+      report?.data &&
+      typeof report.data === "object" &&
+      !Array.isArray(report.data)
+    ) {
+      if (
+        report.data?.summary ||
+        report.data?.status_breakdown ||
+        report.data?.registration
+      ) {
+        report = report.data;
+      } else if (
+        report.data?.data &&
+        typeof report.data.data === "object"
+      ) {
+        report = report.data.data;
+      }
+    }
+  }
+
+  if (
+    !report ||
+    typeof report !== "object" ||
+    Array.isArray(report)
+  ) {
+    return null;
+  }
+
+  const summary =
+    report?.summary ?? {};
+
+  const statusBreakdown =
+    report?.status_breakdown ?? {};
+
+  const verificationBreakdown =
+    report?.verification_breakdown ?? {};
+
+  const tenancyBreakdown =
+    report?.tenancy_breakdown ?? {};
+
+  const registration =
+    report?.registration ?? {};
+
+  const period =
+    report?.period ?? {};
+
+  return {
+    ...report,
+
+    summary: {
+      ...summary,
+
+      total:
+        toReportNumber(
+          summary?.total
+        ),
+
+      active:
+        toReportNumber(
+          summary?.active
+        ),
+
+      inactive:
+        toReportNumber(
+          summary?.inactive
+        ),
+
+      pending:
+        toReportNumber(
+          summary?.pending
+        ),
+
+      blacklisted:
+        toReportNumber(
+          summary?.blacklisted
+        ),
+
+      verified:
+        toReportNumber(
+          summary?.verified
+        ),
+
+      unverified:
+        toReportNumber(
+          summary?.unverified
+        ),
+
+      with_active_tenancy:
+        toReportNumber(
+          summary?.with_active_tenancy
+        ),
+
+      without_active_tenancy:
+        toReportNumber(
+          summary?.without_active_tenancy
+        ),
+    },
+
+    status_breakdown: {
+      ...statusBreakdown,
+
+      active:
+        toReportNumber(
+          statusBreakdown?.active
+        ),
+
+      inactive:
+        toReportNumber(
+          statusBreakdown?.inactive
+        ),
+
+      pending:
+        toReportNumber(
+          statusBreakdown?.pending
+        ),
+
+      blacklisted:
+        toReportNumber(
+          statusBreakdown?.blacklisted
+        ),
+    },
+
+    verification_breakdown: {
+      ...verificationBreakdown,
+
+      verified:
+        toReportNumber(
+          verificationBreakdown?.verified
+        ),
+
+      unverified:
+        toReportNumber(
+          verificationBreakdown?.unverified
+        ),
+    },
+
+    tenancy_breakdown: {
+      ...tenancyBreakdown,
+
+      with_active_tenancy:
+        toReportNumber(
+          tenancyBreakdown?.with_active_tenancy
+        ),
+
+      without_active_tenancy:
+        toReportNumber(
+          tenancyBreakdown?.without_active_tenancy
+        ),
+    },
+
+    registration: {
+      ...registration,
+
+      total:
+        toReportNumber(
+          registration?.total
+        ),
+
+      active:
+        toReportNumber(
+          registration?.active
+        ),
+
+      pending:
+        toReportNumber(
+          registration?.pending
+        ),
+
+      today:
+        toReportNumber(
+          registration?.today
+        ),
+
+      this_month:
+        toReportNumber(
+          registration?.this_month
+        ),
+
+      this_year:
+        toReportNumber(
+          registration?.this_year
+        ),
+    },
+
+    period: {
+      ...period,
+
+      start_date:
+        period?.start_date ??
+        null,
+
+      end_date:
+        period?.end_date ??
+        null,
+    },
+
+    generated_at:
+      report?.generated_at ??
+      null,
+  };
 };
 
 
@@ -972,13 +1139,6 @@ const normalizePagination = (
 |--------------------------------------------------------------------------
 | FETCH AVAILABLE TENANT USERS
 |--------------------------------------------------------------------------
-|
-| Fetches existing users that already have
-| the tenant Spatie role.
-|
-| GET /api/tenants/available-users
-|
-|--------------------------------------------------------------------------
 */
 
 export const fetchAvailableTenantUsers =
@@ -990,14 +1150,6 @@ export const fetchAvailableTenantUsers =
       { rejectWithValue }
     ) => {
       try {
-        console.log(
-          "Redux: Fetching available tenant users..."
-        );
-
-        /*
-         * tenant.service.js already unwraps and
-         * normalizes the API response.
-         */
         const users =
           await tenantService.getAvailableTenantUsers();
 
@@ -1005,11 +1157,6 @@ export const fetchAvailableTenantUsers =
           normalizeAvailableTenantUsers(
             users
           );
-
-        console.log(
-          "Redux: Available tenant users:",
-          normalizedUsers
-        );
 
         return normalizedUsers;
       } catch (error) {
@@ -1841,6 +1988,82 @@ export const fetchTenantStatistics =
 
 /*
 |--------------------------------------------------------------------------
+| FETCH TENANT REPORTS
+|--------------------------------------------------------------------------
+|
+| GET /api/tenants/reports
+|
+| Supports:
+|
+| fetchTenantReports()
+|
+| fetchTenantReports({
+|   start_date: "2026-09-01",
+|   end_date: "2026-09-12"
+| })
+|
+|--------------------------------------------------------------------------
+*/
+
+export const fetchTenantReports =
+  createAsyncThunk(
+    "tenant/fetchTenantReports",
+
+    async (
+      params = {},
+      { rejectWithValue }
+    ) => {
+      try {
+        if (
+          params !== null &&
+          typeof params !== "object"
+        ) {
+          return rejectWithValue(
+            "Tenant report parameters must be an object."
+          );
+        }
+
+        const response =
+          await tenantService.getTenantReports(
+            params ?? {}
+          );
+
+        const report =
+          normalizeTenantReports(
+            response
+          );
+
+        if (!report) {
+          return rejectWithValue(
+            "Tenant report data was not found."
+          );
+        }
+
+        return {
+          data: report,
+
+          message:
+            getResponseMessage(
+              response,
+              "Tenant reports fetched successfully."
+            ),
+        };
+      } catch (error) {
+        console.error(
+          "Redux: Failed to fetch tenant reports:",
+          error
+        );
+
+        return rejectWithValue(
+          getErrorMessage(error)
+        );
+      }
+    }
+  );
+
+
+/*
+|--------------------------------------------------------------------------
 | RESTORE TENANT
 |--------------------------------------------------------------------------
 */
@@ -2182,6 +2405,21 @@ const tenantSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
+    | CLEAR REPORTS
+    |--------------------------------------------------------------------------
+    */
+
+    clearTenantReports: (
+      state
+    ) => {
+      state.reports = null;
+      state.loadingReports = false;
+      state.reportsError = null;
+    },
+
+
+    /*
+    |--------------------------------------------------------------------------
     | CLEAR ERRORS
     |--------------------------------------------------------------------------
     */
@@ -2196,6 +2434,7 @@ const tenantSlice = createSlice({
       state.searchError = null;
       state.actionError = null;
       state.statisticsError = null;
+      state.reportsError = null;
       state.availableTenantUsersError = null;
     },
 
@@ -2244,9 +2483,15 @@ const tenantSlice = createSlice({
 
       statistics: null,
 
+      reports: null,
+
       loadingAvailableTenantUsers: false,
 
       availableTenantUsersError: null,
+
+      loadingReports: false,
+
+      reportsError: null,
     }),
   },
 
@@ -2290,9 +2535,6 @@ const tenantSlice = createSlice({
           state.loadingAvailableTenantUsers =
             false;
 
-          /*
-           * The thunk returns a clean array.
-           */
           state.availableTenantUsers =
             Array.isArray(
               action.payload
@@ -2302,11 +2544,6 @@ const tenantSlice = createSlice({
 
           state.availableTenantUsersError =
             null;
-
-          console.log(
-            "Redux: Available tenant users stored:",
-            state.availableTenantUsers
-          );
         }
       )
 
@@ -2523,13 +2760,6 @@ const tenantSlice = createSlice({
               state
             );
 
-            /*
-             * The selected user has now been
-             * linked to a tenant profile.
-             *
-             * Remove that user from the
-             * available-user list.
-             */
             const createdUserId =
               createdTenant?.user_id ??
               createdTenant?.user?.id;
@@ -3314,6 +3544,59 @@ const tenantSlice = createSlice({
 
     /*
     |--------------------------------------------------------------------------
+    | TENANT REPORTS
+    |--------------------------------------------------------------------------
+    */
+
+    builder
+      .addCase(
+        fetchTenantReports.pending,
+        (
+          state
+        ) => {
+          state.loadingReports = true;
+          state.reportsError = null;
+        }
+      )
+
+      .addCase(
+        fetchTenantReports.fulfilled,
+        (
+          state,
+          action
+        ) => {
+          state.loadingReports = false;
+
+          state.reports =
+            action.payload?.data ||
+            null;
+
+          state.reportsError = null;
+
+          state.successMessage =
+            action.payload?.message ||
+            null;
+        }
+      )
+
+      .addCase(
+        fetchTenantReports.rejected,
+        (
+          state,
+          action
+        ) => {
+          state.loadingReports = false;
+
+          state.reportsError =
+            action.payload ||
+            action.error?.message ||
+            "Failed to fetch tenant reports.";
+        }
+      );
+
+
+    /*
+    |--------------------------------------------------------------------------
     | RESTORE
     |--------------------------------------------------------------------------
     */
@@ -3502,6 +3785,7 @@ export const {
   resetTenantFilters,
 
   clearTenantSearch,
+  clearTenantReports,
   clearTenantError,
   clearTenantSuccess,
 
@@ -3605,6 +3889,16 @@ export const selectTenantStatistics = (
   state
 ) =>
   getTenantState(state).statistics ||
+  null;
+
+
+/**
+ * Tenant reports.
+ */
+export const selectTenantReports = (
+  state
+) =>
+  getTenantState(state).reports ||
   null;
 
 
@@ -3716,10 +4010,6 @@ export const selectTenantSearching = (
 |--------------------------------------------------------------------------
 | AVAILABLE TENANT USERS LOADING
 |--------------------------------------------------------------------------
-|
-| Both selector names are intentionally exported
-| for compatibility with existing components/hooks.
-|--------------------------------------------------------------------------
 */
 
 export const selectLoadingAvailableTenantUsers = (
@@ -3788,6 +4078,17 @@ export const selectTenantLoadingStatistics = (
   );
 
 
+/**
+ * Tenant reports loading.
+ */
+export const selectTenantLoadingReports = (
+  state
+) =>
+  Boolean(
+    getTenantState(state).loadingReports
+  );
+
+
 /*
 |--------------------------------------------------------------------------
 | ERROR SELECTORS
@@ -3844,6 +4145,16 @@ export const selectTenantStatisticsError = (
 
 
 /**
+ * Tenant reports error.
+ */
+export const selectTenantReportsError = (
+  state
+) =>
+  getTenantState(state).reportsError ||
+  null;
+
+
+/**
  * Available tenant users error.
  */
 export const selectAvailableTenantUsersError = (
@@ -3874,4 +4185,3 @@ export const selectTenantSuccessMessage = (
 */
 
 export default tenantSlice.reducer;
-
