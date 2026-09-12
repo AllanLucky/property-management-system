@@ -1,14 +1,22 @@
+
 import leaseApi from "../api/lease.api";
 
 
 const getResponseData = (response) => {
-    return response?.data?.data ?? response?.data ?? null;
+    return (
+        response?.data?.data ??
+        response?.data ??
+        null
+    );
 };
 
 /**
- * Extract API message.
+ * Extract the API response message.
  */
-const getResponseMessage = (response, fallback = "Request completed successfully.") => {
+const getResponseMessage = (
+    response,
+    fallback = "Request completed successfully."
+) => {
     return (
         response?.data?.message ||
         response?.data?.data?.message ||
@@ -25,7 +33,7 @@ const getResponseMessage = (response, fallback = "Request completed successfully
 /**
  * Normalize Axios/Laravel errors into a predictable structure.
  *
- * This allows hooks/components to work with:
+ * Consumers can safely work with:
  *
  * {
  *     message,
@@ -37,7 +45,6 @@ const getResponseMessage = (response, fallback = "Request completed successfully
  */
 const normalizeError = (error) => {
     const response = error?.response;
-
     const responseData = response?.data;
 
     return {
@@ -64,7 +71,7 @@ const normalizeError = (error) => {
 };
 
 /**
- * Execute an API request and normalize errors.
+ * Execute an API request and normalize any error.
  */
 const execute = async (request) => {
     try {
@@ -72,6 +79,19 @@ const execute = async (request) => {
     } catch (error) {
         throw normalizeError(error);
     }
+};
+
+/**
+ * Create a standard client-side validation error.
+ */
+const validationError = (message) => {
+    return {
+        message,
+        errors: null,
+        status: null,
+        code: null,
+        raw: null,
+    };
 };
 
 /*
@@ -90,8 +110,6 @@ const leaseService = {
     /**
      * Fetch paginated/filterable leases.
      *
-     * @param {Object} params
-     *
      * Supported filters may include:
      *
      * - page
@@ -107,6 +125,8 @@ const leaseService = {
      * - payment_frequency
      * - start_date
      * - end_date
+     *
+     * @param {Object} params
      */
     async getLeases(params = {}) {
         const response = await execute(() =>
@@ -115,10 +135,47 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Leases fetched successfully."
             ),
+
+            response,
+        };
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fetch Expired Leases
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Fetch leases that have already expired.
+     *
+     * Uses the dedicated backend endpoint:
+     *
+     * GET /leases/expired
+     *
+     * This is preferred over fetching all leases and filtering
+     * them in the frontend.
+     *
+     * @param {Object} params
+     */
+    async getExpiredLeases(params = {}) {
+        const response = await execute(() =>
+            leaseApi.getExpiredLeases(params)
+        );
+
+        return {
+            data: getResponseData(response),
+
+            message: getResponseMessage(
+                response,
+                "Expired leases fetched successfully."
+            ),
+
             response,
         };
     },
@@ -136,13 +193,9 @@ const leaseService = {
      */
     async getLease(leaseId) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
@@ -151,10 +204,12 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease fetched successfully."
             ),
+
             response,
         };
     },
@@ -171,14 +226,13 @@ const leaseService = {
      * @param {Object} payload
      */
     async createLease(payload) {
-        if (!payload || typeof payload !== "object") {
-            throw {
-                message: "Lease data is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+        if (
+            !payload ||
+            typeof payload !== "object"
+        ) {
+            throw validationError(
+                "Lease data is required."
+            );
         }
 
         const response = await execute(() =>
@@ -187,10 +241,12 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease created successfully."
             ),
+
             response,
         };
     },
@@ -209,35 +265,35 @@ const leaseService = {
      */
     async updateLease(leaseId, payload) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
-        if (!payload || typeof payload !== "object") {
-            throw {
-                message: "Lease update data is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+        if (
+            !payload ||
+            typeof payload !== "object"
+        ) {
+            throw validationError(
+                "Lease update data is required."
+            );
         }
 
         const response = await execute(() =>
-            leaseApi.updateLease(leaseId, payload)
+            leaseApi.updateLease(
+                leaseId,
+                payload
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease updated successfully."
             ),
+
             response,
         };
     },
@@ -249,42 +305,42 @@ const leaseService = {
     */
 
     /**
-     * Partially update a lease.
+     * Partially update an existing lease.
      *
      * @param {number|string} leaseId
      * @param {Object} payload
      */
     async patchLease(leaseId, payload) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
-        if (!payload || typeof payload !== "object") {
-            throw {
-                message: "Lease update data is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+        if (
+            !payload ||
+            typeof payload !== "object"
+        ) {
+            throw validationError(
+                "Lease update data is required."
+            );
         }
 
         const response = await execute(() =>
-            leaseApi.patchLease(leaseId, payload)
+            leaseApi.patchLease(
+                leaseId,
+                payload
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease updated successfully."
             ),
+
             response,
         };
     },
@@ -302,13 +358,9 @@ const leaseService = {
      */
     async deleteLease(leaseId) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
@@ -317,10 +369,12 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease deleted successfully."
             ),
+
             response,
         };
     },
@@ -338,13 +392,9 @@ const leaseService = {
      */
     async restoreLease(leaseId) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
@@ -353,17 +403,19 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease restored successfully."
             ),
+
             response,
         };
     },
 
     /*
     |--------------------------------------------------------------------------
-    | Force Delete
+    | Force Delete Lease
     |--------------------------------------------------------------------------
     */
 
@@ -374,13 +426,9 @@ const leaseService = {
      */
     async forceDeleteLease(leaseId) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
@@ -389,10 +437,12 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease permanently deleted successfully."
             ),
+
             response,
         };
     },
@@ -410,13 +460,9 @@ const leaseService = {
      */
     async activateLease(leaseId) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
@@ -425,10 +471,12 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease activated successfully."
             ),
+
             response,
         };
     },
@@ -441,31 +489,118 @@ const leaseService = {
 
     /**
      * Sign a lease.
-     *
+    *
      * @param {number|string} leaseId
      * @param {Object} payload
      */
-    async signLease(leaseId, payload = {}) {
+    async signLease(
+        leaseId,
+        payload = {}
+    ) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
-            leaseApi.signLease(leaseId, payload)
+            leaseApi.signLease(
+                leaseId,
+                payload
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease signed successfully."
             ),
+
+            response,
+        };
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lifecycle: Expire Single Lease
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Expire a single ended lease.
+     *
+     * Uses:
+     *
+     * POST /leases/{lease}/expire
+     *
+     * The backend remains responsible for determining whether
+     * the lease is actually eligible for expiration.
+     *
+     * @param {number|string} leaseId
+     */
+    async expireLease(leaseId) {
+        if (!leaseId) {
+            throw validationError(
+                "Lease ID is required."
+            );
+        }
+
+        const response = await execute(() =>
+            leaseApi.expireLease(leaseId)
+        );
+
+        return {
+            data: getResponseData(response),
+
+            message: getResponseMessage(
+                response,
+                "Lease expired successfully."
+            ),
+
+            response,
+        };
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lifecycle: Expire Ended Leases
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Automatically expire all active leases whose end date
+     * has already passed.
+     *
+     * Uses:
+     *
+     * POST /leases/expire-ended
+     *
+     * The operation is idempotent. If no active leases require
+     * expiration, the backend returns expired_count = 0.
+     */
+    async expireEndedLeases() {
+        const response = await execute(() =>
+            leaseApi.expireEndedLeases()
+        );
+
+        const data =
+            getResponseData(response) || {};
+
+        return {
+            data,
+
+            expiredCount:
+                Number(
+                    data?.expired_count ?? 0
+                ),
+
+            message: getResponseMessage(
+                response,
+                "Ended leases processed successfully."
+            ),
+
             response,
         };
     },
@@ -482,27 +617,31 @@ const leaseService = {
      * @param {number|string} leaseId
      * @param {Object} payload
      */
-    async terminateLease(leaseId, payload = {}) {
+    async terminateLease(
+        leaseId,
+        payload = {}
+    ) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
-            leaseApi.terminateLease(leaseId, payload)
+            leaseApi.terminateLease(
+                leaseId,
+                payload
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease terminated successfully."
             ),
+
             response,
         };
     },
@@ -519,27 +658,31 @@ const leaseService = {
      * @param {number|string} leaseId
      * @param {Object} payload
      */
-    async cancelLease(leaseId, payload = {}) {
+    async cancelLease(
+        leaseId,
+        payload = {}
+    ) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
-            leaseApi.cancelLease(leaseId, payload)
+            leaseApi.cancelLease(
+                leaseId,
+                payload
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease cancelled successfully."
             ),
+
             response,
         };
     },
@@ -555,17 +698,23 @@ const leaseService = {
      *
      * @param {Object} params
      */
-    async getLeaseStatistics(params = {}) {
+    async getLeaseStatistics(
+        params = {}
+    ) {
         const response = await execute(() =>
-            leaseApi.getLeaseStatistics(params)
+            leaseApi.getLeaseStatistics(
+                params
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease statistics fetched successfully."
             ),
+
             response,
         };
     },
@@ -582,25 +731,23 @@ const leaseService = {
      * @param {number|string} leaseId
      * @param {FormData} formData
      */
-    async uploadLeaseDocument(leaseId, formData) {
+    async uploadLeaseDocument(
+        leaseId,
+        formData
+    ) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
-        if (!(formData instanceof FormData)) {
-            throw {
-                message: "A valid FormData payload is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+        if (
+            typeof FormData !== "undefined" &&
+            !(formData instanceof FormData)
+        ) {
+            throw validationError(
+                "A valid FormData payload is required."
+            );
         }
 
         const response = await execute(() =>
@@ -612,10 +759,12 @@ const leaseService = {
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease document uploaded successfully."
             ),
+
             response,
         };
     },
@@ -627,25 +776,25 @@ const leaseService = {
      */
     async deleteLeaseDocument(leaseId) {
         if (!leaseId) {
-            throw {
-                message: "Lease ID is required.",
-                errors: null,
-                status: null,
-                code: null,
-                raw: null,
-            };
+            throw validationError(
+                "Lease ID is required."
+            );
         }
 
         const response = await execute(() =>
-            leaseApi.deleteLeaseDocument(leaseId)
+            leaseApi.deleteLeaseDocument(
+                leaseId
+            )
         );
 
         return {
             data: getResponseData(response),
+
             message: getResponseMessage(
                 response,
                 "Lease document deleted successfully."
             ),
+
             response,
         };
     },
@@ -657,15 +806,30 @@ const leaseService = {
 |--------------------------------------------------------------------------
 */
 
-export const getLeases = leaseService.getLeases;
-export const getLease = leaseService.getLease;
+export const getLeases =
+    leaseService.getLeases;
 
-export const createLease = leaseService.createLease;
-export const updateLease = leaseService.updateLease;
-export const patchLease = leaseService.patchLease;
+export const getExpiredLeases =
+    leaseService.getExpiredLeases;
 
-export const deleteLease = leaseService.deleteLease;
-export const restoreLease = leaseService.restoreLease;
+export const getLease =
+    leaseService.getLease;
+
+export const createLease =
+    leaseService.createLease;
+
+export const updateLease =
+    leaseService.updateLease;
+
+export const patchLease =
+    leaseService.patchLease;
+
+export const deleteLease =
+    leaseService.deleteLease;
+
+export const restoreLease =
+    leaseService.restoreLease;
+
 export const forceDeleteLease =
     leaseService.forceDeleteLease;
 
@@ -680,6 +844,12 @@ export const activateLease =
 
 export const signLease =
     leaseService.signLease;
+
+export const expireLease =
+    leaseService.expireLease;
+
+export const expireEndedLeases =
+    leaseService.expireEndedLeases;
 
 export const terminateLease =
     leaseService.terminateLease;

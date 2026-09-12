@@ -5,6 +5,7 @@ export { default as LeaseForm } from "./LeaseForm";
 export { default as CreateLease } from "./CreateLease";
 export { default as EditLease } from "./EditLease";
 export { default as LeaseDetails } from "./LeaseDetails";
+export { default as ExpiredLease } from "./ExpiredLease";
 export { default as LeaseActions } from "./LeaseActions";
 export { default as LeaseHeader } from "./LeaseHeader";
 export { default as LeasePagination } from "./LeasePagination";
