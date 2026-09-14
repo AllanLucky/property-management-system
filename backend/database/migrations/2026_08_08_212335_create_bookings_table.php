@@ -25,6 +25,16 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | BOOKING IDENTIFICATION
             |--------------------------------------------------------------------------
+            |
+            | booking_number:
+            |     Internal human-readable booking identifier.
+            |
+            | reference:
+            |     External/reference identifier.
+            |
+            | slug:
+            |     URL-friendly unique identifier.
+            |
             */
 
             $table->string('booking_number', 50)
@@ -45,7 +55,7 @@ return new class extends Migration
             |     User who created the booking.
             |
             | customer_id:
-            |     User/customer making the booking.
+            |     User/customer associated with the booking.
             |
             | tenant_id:
             |     Existing tenant profile when applicable.
@@ -72,12 +82,8 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | PROPERTY RELATIONSHIPS
+            | PROPERTY / APARTMENT / UNIT RELATIONSHIPS
             |--------------------------------------------------------------------------
-            |
-            | A booking should retain its property/unit reference while the
-            | property-management history exists.
-            |
             */
 
             $table->foreignId('property_id')
@@ -103,8 +109,7 @@ return new class extends Migration
             | TENANCY RELATIONSHIP
             |--------------------------------------------------------------------------
             |
-            | A confirmed/approved booking may later be converted into a
-            | tenancy.
+            | A confirmed/approved booking may later be converted into a tenancy.
             |
             */
 
@@ -161,8 +166,25 @@ return new class extends Migration
             | BOOKING SOURCE
             |--------------------------------------------------------------------------
             |
-            | Examples:
-            | website, walk_in, agent, phone, referral, other
+            | Identifies where the booking originated.
+            |
+            | website:
+            |     Booking made through the website/application.
+            |
+            | walk_in:
+            |     Customer physically visited the office/property.
+            |
+            | agent:
+            |     Booking originated through an agent.
+            |
+            | phone:
+            |     Booking made through a phone call.
+            |
+            | referral:
+            |     Booking originated through a referral.
+            |
+            | other:
+            |     Any other source.
             |
             */
 
@@ -222,8 +244,8 @@ return new class extends Migration
             | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
             |
-            | Store customer details at booking time so historical records
-            | remain accurate even if the user's profile changes later.
+            | These fields preserve the customer's information as it existed
+            | when the booking was created.
             |
             */
 
@@ -244,8 +266,16 @@ return new class extends Migration
             | FINANCIAL DETAILS
             |--------------------------------------------------------------------------
             |
-            | Monetary values use decimal(15,2), suitable for KES amounts
-            | while providing sufficient capacity for larger transactions.
+            | All monetary values are stored as decimal(15,2).
+            |
+            | total_amount:
+            |     Calculated booking amount.
+            |
+            | amount_paid:
+            |     Amount already received.
+            |
+            | balance:
+            |     Outstanding amount.
             |
             */
 
@@ -275,7 +305,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | OCCUPANTS
+            | OCCUPANCY / GUEST INFORMATION
             |--------------------------------------------------------------------------
             */
 
@@ -351,7 +381,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC INDEXES
+            | BASIC REPORTING INDEXES
             |--------------------------------------------------------------------------
             */
 
@@ -408,8 +438,8 @@ return new class extends Migration
             | UNIT AVAILABILITY INDEX
             |--------------------------------------------------------------------------
             |
-            | Useful when checking whether a unit already has a booking
-            | overlapping the requested dates.
+            | Supports queries that check whether a unit has an overlapping
+            | booking for a requested period.
             |
             */
 
@@ -469,6 +499,27 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | SOURCE REPORTING INDEX
+            |--------------------------------------------------------------------------
+            |
+            | Supports booking-source reports such as:
+            |
+            | website
+            | walk_in
+            | agent
+            | phone
+            | referral
+            | other
+            |
+            */
+
+            $table->index([
+                'source',
+                'status',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
             | PAYMENT REPORTING INDEX
             |--------------------------------------------------------------------------
             */
@@ -480,6 +531,17 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | FINANCIAL REPORTING INDEX
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'payment_status',
+                'amount_paid',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
             | EXPIRY / DATE REPORTING INDEX
             |--------------------------------------------------------------------------
             */
@@ -487,6 +549,17 @@ return new class extends Migration
             $table->index([
                 'status',
                 'end_date',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | DATE RANGE REPORTING INDEX
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index([
+                'booking_date',
+                'status',
             ]);
         });
     }
