@@ -14,120 +14,158 @@ class BookingResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        /*
+        |--------------------------------------------------------------------------
+        | Resolve the underlying Booking model
+        |--------------------------------------------------------------------------
+        |
+        | JsonResource itself does not contain the Booking model methods such as
+        | isFullyPaid(), isPending(), isActive(), etc.
+        |
+        | Always work with the underlying model through $booking.
+        |
+        */
+        $booking = $this->resource;
+
         return [
             /*
             |--------------------------------------------------------------------------
             | IDENTIFICATION
             |--------------------------------------------------------------------------
             */
-            'id' => $this->id,
-            'booking_number' => $this->booking_number,
-            'reference' => $this->reference,
-            'slug' => $this->slug,
+            'id' => $booking->id,
+            'booking_number' => $booking->booking_number,
+            'reference' => $booking->reference,
+            'slug' => $booking->slug,
 
             /*
             |--------------------------------------------------------------------------
             | RELATIONSHIP IDS
             |--------------------------------------------------------------------------
             */
-            'user_id' => $this->user_id,
-            'customer_id' => $this->customer_id,
-            'tenant_id' => $this->tenant_id,
-            'property_id' => $this->property_id,
-            'apartment_id' => $this->apartment_id,
-            'unit_id' => $this->unit_id,
-            'tenancy_id' => $this->tenancy_id,
+            'user_id' => $booking->user_id,
+            'customer_id' => $booking->customer_id,
+            'tenant_id' => $booking->tenant_id,
+            'property_id' => $booking->property_id,
+            'apartment_id' => $booking->apartment_id,
+            'unit_id' => $booking->unit_id,
+            'tenancy_id' => $booking->tenancy_id,
 
             /*
             |--------------------------------------------------------------------------
             | BOOKING CLASSIFICATION
             |--------------------------------------------------------------------------
             */
-            'booking_type' => $this->booking_type,
-            'status' => $this->status,
-            'payment_status' => $this->payment_status,
-            'source' => $this->source,
+            'booking_type' => $booking->booking_type,
+            'status' => $booking->status,
+            'payment_status' => $booking->payment_status,
+            'source' => $booking->source,
 
             /*
             |--------------------------------------------------------------------------
             | DATES
             |--------------------------------------------------------------------------
             */
-            'booking_date' => $this->booking_date?->toISOString(),
-            'start_date' => $this->start_date?->toDateString(),
-            'end_date' => $this->end_date?->toDateString(),
+            'booking_date' => $booking->booking_date?->toISOString(),
 
-            'check_in_date' => $this->check_in_date?->toDateString(),
-            'check_out_date' => $this->check_out_date?->toDateString(),
+            'start_date' => $booking->start_date?->toDateString(),
+            'end_date' => $booking->end_date?->toDateString(),
 
-            'confirmed_at' => $this->confirmed_at?->toISOString(),
-            'approved_at' => $this->approved_at?->toISOString(),
-            'rejected_at' => $this->rejected_at?->toISOString(),
-            'cancelled_at' => $this->cancelled_at?->toISOString(),
-            'completed_at' => $this->completed_at?->toISOString(),
+            'check_in_date' => $booking->check_in_date?->toDateString(),
+            'check_out_date' => $booking->check_out_date?->toDateString(),
+
+            'confirmed_at' => $booking->confirmed_at?->toISOString(),
+            'approved_at' => $booking->approved_at?->toISOString(),
+            'rejected_at' => $booking->rejected_at?->toISOString(),
+            'cancelled_at' => $booking->cancelled_at?->toISOString(),
+            'completed_at' => $booking->completed_at?->toISOString(),
 
             /*
             |--------------------------------------------------------------------------
             | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
+            |
+            | This represents the customer information stored directly on the
+            | booking at the time it was created.
+            |
             */
             'customer' => [
-                'first_name' => $this->first_name,
-                'last_name' => $this->last_name,
+                'first_name' => $booking->first_name,
+                'last_name' => $booking->last_name,
+
                 'full_name' => trim(
                     collect([
-                        $this->first_name,
-                        $this->last_name,
-                    ])->filter()->implode(' ')
+                        $booking->first_name,
+                        $booking->last_name,
+                    ])
+                        ->filter()
+                        ->implode(' ')
                 ),
-                'email' => $this->email,
-                'phone' => $this->phone,
+
+                'email' => $booking->email,
+                'phone' => $booking->phone,
             ],
 
             /*
             |--------------------------------------------------------------------------
-            | CUSTOMER USER
+            | APPLICATION USER
             |--------------------------------------------------------------------------
-            |
-            | The authenticated/application user who owns or created
-            | the booking is different from the customer snapshot.
-            |
             */
-            'user' => $this->whenLoaded('user', function () {
-                return $this->user ? [
-                    'id' => $this->user->id,
-                    'first_name' => $this->user->first_name,
-                    'last_name' => $this->user->last_name,
+            'user' => $this->whenLoaded('user', function () use ($booking) {
+                if (!$booking->user) {
+                    return null;
+                }
+
+                return [
+                    'id' => $booking->user->id,
+                    'first_name' => $booking->user->first_name,
+                    'last_name' => $booking->user->last_name,
+
                     'name' => trim(
                         collect([
-                            $this->user->first_name,
-                            $this->user->last_name,
-                        ])->filter()->implode(' ')
+                            $booking->user->first_name,
+                            $booking->user->last_name,
+                        ])
+                            ->filter()
+                            ->implode(' ')
                     ),
-                    'email' => $this->user->email,
-                    'phone' => $this->user->phone,
-                ] : null;
+
+                    'email' => $booking->user->email,
+                    'phone' => $booking->user->phone,
+                ];
             }),
 
             /*
             |--------------------------------------------------------------------------
             | CUSTOMER ACCOUNT
             |--------------------------------------------------------------------------
+            |
+            | Kept separately from the customer snapshot to avoid breaking
+            | existing frontend consumers.
+            |
             */
-            'customer_user' => $this->whenLoaded('customer', function () {
-                return $this->customer ? [
-                    'id' => $this->customer->id,
-                    'first_name' => $this->customer->first_name,
-                    'last_name' => $this->customer->last_name,
+            'customer_user' => $this->whenLoaded('customer', function () use ($booking) {
+                if (!$booking->customer) {
+                    return null;
+                }
+
+                return [
+                    'id' => $booking->customer->id,
+                    'first_name' => $booking->customer->first_name,
+                    'last_name' => $booking->customer->last_name,
+
                     'name' => trim(
                         collect([
-                            $this->customer->first_name,
-                            $this->customer->last_name,
-                        ])->filter()->implode(' ')
+                            $booking->customer->first_name,
+                            $booking->customer->last_name,
+                        ])
+                            ->filter()
+                            ->implode(' ')
                     ),
-                    'email' => $this->customer->email,
-                    'phone' => $this->customer->phone,
-                ] : null;
+
+                    'email' => $booking->customer->email,
+                    'phone' => $booking->customer->phone,
+                ];
             }),
 
             /*
@@ -135,32 +173,46 @@ class BookingResource extends JsonResource
             | TENANT
             |--------------------------------------------------------------------------
             */
-            'tenant' => $this->whenLoaded('tenant', function () {
-                return $this->tenant ? [
-                    'id' => $this->tenant->id,
-                    'tenant_number' => $this->tenant->tenant_number,
-                    'user_id' => $this->tenant->user_id,
-                    'status' => $this->tenant->status,
+            'tenant' => $this->whenLoaded('tenant', function () use ($booking) {
+                if (!$booking->tenant) {
+                    return null;
+                }
 
-                    'user' => $this->when(
-                        $this->tenant->relationLoaded('user'),
-                        function () {
-                            return $this->tenant->user ? [
-                                'id' => $this->tenant->user->id,
-                                'first_name' => $this->tenant->user->first_name,
-                                'last_name' => $this->tenant->user->last_name,
-                                'name' => trim(
-                                    collect([
-                                        $this->tenant->user->first_name,
-                                        $this->tenant->user->last_name,
-                                    ])->filter()->implode(' ')
-                                ),
-                                'email' => $this->tenant->user->email,
-                                'phone' => $this->tenant->user->phone,
-                            ] : null;
-                        }
-                    ),
-                ] : null;
+                $tenant = [
+                    'id' => $booking->tenant->id,
+                    'tenant_number' => $booking->tenant->tenant_number,
+                    'user_id' => $booking->tenant->user_id,
+                    'status' => $booking->tenant->status,
+                ];
+
+                /*
+                |--------------------------------------------------------------------------
+                | TENANT USER
+                |--------------------------------------------------------------------------
+                */
+                if ($booking->tenant->relationLoaded('user')) {
+                    $tenant['user'] = $booking->tenant->user
+                        ? [
+                            'id' => $booking->tenant->user->id,
+                            'first_name' => $booking->tenant->user->first_name,
+                            'last_name' => $booking->tenant->user->last_name,
+
+                            'name' => trim(
+                                collect([
+                                    $booking->tenant->user->first_name,
+                                    $booking->tenant->user->last_name,
+                                ])
+                                    ->filter()
+                                    ->implode(' ')
+                            ),
+
+                            'email' => $booking->tenant->user->email,
+                            'phone' => $booking->tenant->user->phone,
+                        ]
+                        : null;
+                }
+
+                return $tenant;
             }),
 
             /*
@@ -168,14 +220,18 @@ class BookingResource extends JsonResource
             | PROPERTY
             |--------------------------------------------------------------------------
             */
-            'property' => $this->whenLoaded('property', function () {
-                return $this->property ? [
-                    'id' => $this->property->id,
-                    'name' => $this->property->name,
-                    'slug' => $this->property->slug,
-                    'code' => $this->property->code ?? null,
-                    'status' => $this->property->status ?? null,
-                ] : null;
+            'property' => $this->whenLoaded('property', function () use ($booking) {
+                if (!$booking->property) {
+                    return null;
+                }
+
+                return [
+                    'id' => $booking->property->id,
+                    'name' => $booking->property->name ?? null,
+                    'slug' => $booking->property->slug ?? null,
+                    'code' => $booking->property->code ?? null,
+                    'status' => $booking->property->status ?? null,
+                ];
             }),
 
             /*
@@ -183,14 +239,18 @@ class BookingResource extends JsonResource
             | APARTMENT
             |--------------------------------------------------------------------------
             */
-            'apartment' => $this->whenLoaded('apartment', function () {
-                return $this->apartment ? [
-                    'id' => $this->apartment->id,
-                    'name' => $this->apartment->name,
-                    'slug' => $this->apartment->slug ?? null,
-                    'code' => $this->apartment->code ?? null,
-                    'status' => $this->apartment->status ?? null,
-                ] : null;
+            'apartment' => $this->whenLoaded('apartment', function () use ($booking) {
+                if (!$booking->apartment) {
+                    return null;
+                }
+
+                return [
+                    'id' => $booking->apartment->id,
+                    'name' => $booking->apartment->name ?? null,
+                    'slug' => $booking->apartment->slug ?? null,
+                    'code' => $booking->apartment->code ?? null,
+                    'status' => $booking->apartment->status ?? null,
+                ];
             }),
 
             /*
@@ -198,17 +258,22 @@ class BookingResource extends JsonResource
             | UNIT
             |--------------------------------------------------------------------------
             */
-            'unit' => $this->whenLoaded('unit', function () {
-                return $this->unit ? [
-                    'id' => $this->unit->id,
-                    'unit_number' => $this->unit->unit_number ?? null,
-                    'name' => $this->unit->name ?? null,
-                    'code' => $this->unit->code ?? null,
-                    'status' => $this->unit->status ?? null,
-                    'price' => $this->unit->price ?? null,
-                    'deposit' => $this->unit->deposit ?? null,
-                    'service_charge' => $this->unit->service_charge ?? null,
-                ] : null;
+            'unit' => $this->whenLoaded('unit', function () use ($booking) {
+                if (!$booking->unit) {
+                    return null;
+                }
+
+                return [
+                    'id' => $booking->unit->id,
+                    'unit_number' => $booking->unit->unit_number ?? null,
+                    'name' => $booking->unit->name ?? null,
+                    'code' => $booking->unit->code ?? null,
+                    'status' => $booking->unit->status ?? null,
+
+                    'price' => $booking->unit->price ?? null,
+                    'deposit' => $booking->unit->deposit ?? null,
+                    'service_charge' => $booking->unit->service_charge ?? null,
+                ];
             }),
 
             /*
@@ -216,19 +281,26 @@ class BookingResource extends JsonResource
             | TENANCY
             |--------------------------------------------------------------------------
             */
-            'tenancy' => $this->whenLoaded('tenancy', function () {
-                return $this->tenancy ? [
-                    'id' => $this->tenancy->id,
-                    'tenancy_number' => $this->tenancy->tenancy_number,
-                    'tenant_id' => $this->tenancy->tenant_id,
-                    'property_id' => $this->tenancy->property_id,
-                    'apartment_id' => $this->tenancy->apartment_id,
-                    'unit_id' => $this->tenancy->unit_id,
-                    'start_date' => $this->tenancy->start_date?->toDateString(),
-                    'end_date' => $this->tenancy->end_date?->toDateString(),
-                    'status' => $this->tenancy->status,
-                    'is_active' => (bool) $this->tenancy->is_active,
-                ] : null;
+            'tenancy' => $this->whenLoaded('tenancy', function () use ($booking) {
+                if (!$booking->tenancy) {
+                    return null;
+                }
+
+                return [
+                    'id' => $booking->tenancy->id,
+                    'tenancy_number' => $booking->tenancy->tenancy_number,
+
+                    'tenant_id' => $booking->tenancy->tenant_id,
+                    'property_id' => $booking->tenancy->property_id,
+                    'apartment_id' => $booking->tenancy->apartment_id,
+                    'unit_id' => $booking->tenancy->unit_id,
+
+                    'start_date' => $booking->tenancy->start_date?->toDateString(),
+                    'end_date' => $booking->tenancy->end_date?->toDateString(),
+
+                    'status' => $booking->tenancy->status,
+                    'is_active' => (bool) $booking->tenancy->is_active,
+                ];
             }),
 
             /*
@@ -237,18 +309,27 @@ class BookingResource extends JsonResource
             |--------------------------------------------------------------------------
             */
             'financials' => [
-                'rent_amount' => $this->rent_amount,
-                'deposit_amount' => $this->deposit_amount,
-                'service_charge' => $this->service_charge,
-                'booking_fee' => $this->booking_fee,
-                'discount_amount' => $this->discount_amount,
-                'total_amount' => $this->total_amount,
-                'amount_paid' => $this->amount_paid,
-                'balance' => $this->balance,
+                'rent_amount' => $booking->rent_amount,
+                'deposit_amount' => $booking->deposit_amount,
+                'service_charge' => $booking->service_charge,
+                'booking_fee' => $booking->booking_fee,
+                'discount_amount' => $booking->discount_amount,
 
-                'is_fully_paid' => (bool) $this->isFullyPaid(),
-                'is_partially_paid' => (bool) $this->isPartiallyPaid(),
-                'has_balance' => (bool) $this->hasBalance(),
+                'total_amount' => $booking->total_amount,
+                'amount_paid' => $booking->amount_paid,
+                'balance' => $booking->balance,
+
+                /*
+                |--------------------------------------------------------------------------
+                | Payment State
+                |--------------------------------------------------------------------------
+                |
+                | These methods belong to Booking model, not BookingResource.
+                |
+                */
+                'is_fully_paid' => (bool) $booking->isFullyPaid(),
+                'is_partially_paid' => (bool) $booking->isPartiallyPaid(),
+                'has_balance' => (bool) $booking->hasBalance(),
             ],
 
             /*
@@ -257,10 +338,12 @@ class BookingResource extends JsonResource
             |--------------------------------------------------------------------------
             */
             'occupancy' => [
-                'number_of_adults' => $this->number_of_adults,
-                'number_of_children' => $this->number_of_children,
-                'total_guests' => (int) $this->number_of_adults
-                    + (int) $this->number_of_children,
+                'number_of_adults' => (int) $booking->number_of_adults,
+                'number_of_children' => (int) $booking->number_of_children,
+
+                'total_guests' =>
+                    (int) $booking->number_of_adults +
+                    (int) $booking->number_of_children,
             ],
 
             /*
@@ -268,16 +351,16 @@ class BookingResource extends JsonResource
             | REQUESTS / NOTES
             |--------------------------------------------------------------------------
             */
-            'special_requests' => $this->special_requests,
-            'notes' => $this->notes,
+            'special_requests' => $booking->special_requests,
+            'notes' => $booking->notes,
 
             /*
             |--------------------------------------------------------------------------
             | REJECTION / CANCELLATION
             |--------------------------------------------------------------------------
             */
-            'rejection_reason' => $this->rejection_reason,
-            'cancellation_reason' => $this->cancellation_reason,
+            'rejection_reason' => $booking->rejection_reason,
+            'cancellation_reason' => $booking->cancellation_reason,
 
             /*
             |--------------------------------------------------------------------------
@@ -285,9 +368,9 @@ class BookingResource extends JsonResource
             |--------------------------------------------------------------------------
             */
             'payment' => [
-                'method' => $this->payment_method,
-                'reference' => $this->payment_reference,
-                'paid_at' => $this->paid_at?->toISOString(),
+                'method' => $booking->payment_method,
+                'reference' => $booking->payment_reference,
+                'paid_at' => $booking->paid_at?->toISOString(),
             ],
 
             /*
@@ -296,25 +379,28 @@ class BookingResource extends JsonResource
             |--------------------------------------------------------------------------
             */
             'meta' => [
-                'title' => $this->meta_title,
-                'description' => $this->meta_description,
-                'metadata' => $this->metadata,
+                'title' => $booking->meta_title,
+                'description' => $booking->meta_description,
+                'metadata' => $booking->metadata,
             ],
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS HELPERS
+            | STATUS INFORMATION
             |--------------------------------------------------------------------------
+            |
+            | All status helper methods belong to the Booking model.
+            |
             */
             'status_info' => [
-                'is_pending' => (bool) $this->isPending(),
-                'is_confirmed' => (bool) $this->isConfirmed(),
-                'is_approved' => (bool) $this->isApproved(),
-                'is_rejected' => (bool) $this->isRejected(),
-                'is_cancelled' => (bool) $this->isCancelled(),
-                'is_completed' => (bool) $this->isCompleted(),
-                'is_expired' => (bool) $this->isExpired(),
-                'is_active' => (bool) $this->isActive(),
+                'is_pending' => (bool) $booking->isPending(),
+                'is_confirmed' => (bool) $booking->isConfirmed(),
+                'is_approved' => (bool) $booking->isApproved(),
+                'is_rejected' => (bool) $booking->isRejected(),
+                'is_cancelled' => (bool) $booking->isCancelled(),
+                'is_completed' => (bool) $booking->isCompleted(),
+                'is_expired' => (bool) $booking->isExpired(),
+                'is_active' => (bool) $booking->isActive(),
             ],
 
             /*
@@ -322,9 +408,9 @@ class BookingResource extends JsonResource
             | SYSTEM TIMESTAMPS
             |--------------------------------------------------------------------------
             */
-            'created_at' => $this->created_at?->toISOString(),
-            'updated_at' => $this->updated_at?->toISOString(),
-            'deleted_at' => $this->deleted_at?->toISOString(),
+            'created_at' => $booking->created_at?->toISOString(),
+            'updated_at' => $booking->updated_at?->toISOString(),
+            'deleted_at' => $booking->deleted_at?->toISOString(),
         ];
     }
 }
