@@ -61,10 +61,6 @@ class Booking extends Model
     |--------------------------------------------------------------------------
     | BOOKING SOURCE CONSTANTS
     |--------------------------------------------------------------------------
-    |
-    | These values are optional. Keep them here so the service/request layer
-    | can validate against one centralized list.
-    |
     */
 
     public const SOURCE_WEBSITE = 'website';
@@ -138,7 +134,6 @@ class Booking extends Model
     */
 
     protected $fillable = [
-
         /*
         |--------------------------------------------------------------------------
         | IDENTIFICATION
@@ -199,10 +194,6 @@ class Booking extends Model
         |--------------------------------------------------------------------------
         | CUSTOMER SNAPSHOT
         |--------------------------------------------------------------------------
-        |
-        | These fields preserve the customer information that existed at the
-        | time the booking was created.
-        |
         */
 
         'first_name',
@@ -271,7 +262,6 @@ class Booking extends Model
     protected function casts(): array
     {
         return [
-
             /*
             |--------------------------------------------------------------------------
             | Dates
@@ -344,11 +334,10 @@ class Booking extends Model
         */
 
         static::creating(function (Booking $booking): void {
-
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Generate booking number
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->booking_number)) {
@@ -358,9 +347,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Generate public reference
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->reference)) {
@@ -370,9 +359,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Generate slug
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->slug)) {
@@ -382,9 +371,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Default status
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->status)) {
@@ -392,9 +381,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Default payment status
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->payment_status)) {
@@ -402,9 +391,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Default booking type
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->booking_type)) {
@@ -412,9 +401,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Default booking date
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (empty($booking->booking_date)) {
@@ -422,9 +411,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Default guest counts
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (is_null($booking->number_of_adults)) {
@@ -436,9 +425,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Default financial values
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             $booking->rent_amount = $booking->rent_amount ?? 0;
@@ -446,11 +435,12 @@ class Booking extends Model
             $booking->service_charge = $booking->service_charge ?? 0;
             $booking->booking_fee = $booking->booking_fee ?? 0;
             $booking->discount_amount = $booking->discount_amount ?? 0;
+            $booking->amount_paid = $booking->amount_paid ?? 0;
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Calculate total
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (is_null($booking->total_amount)) {
@@ -458,19 +448,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
-            | Default amount paid
-            |----------------------------------------------------------------------
-            */
-
-            if (is_null($booking->amount_paid)) {
-                $booking->amount_paid = 0;
-            }
-
-            /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Calculate balance
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             $booking->balance = $booking->calculateBalance();
@@ -483,11 +463,10 @@ class Booking extends Model
         */
 
         static::updating(function (Booking $booking): void {
-
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Recalculate total when financial components change
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -501,9 +480,9 @@ class Booking extends Model
             }
 
             /*
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             | Recalculate balance
-            |----------------------------------------------------------------------
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -527,7 +506,10 @@ class Booking extends Model
      */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(
+            User::class,
+            'user_id'
+        );
     }
 
     /**
@@ -661,18 +643,37 @@ class Booking extends Model
 
     /**
      * Determine whether the booking has been fully paid.
+     *
+     * Uses the calculated financial balance as the source of truth.
      */
-    public function isPaid(): bool
+    public function isFullyPaid(): bool
     {
-        return $this->payment_status === self::PAYMENT_PAID;
+        return $this->calculateBalance() <= 0;
     }
 
     /**
      * Determine whether the booking has been partially paid.
+     *
+     * A booking is partially paid when some amount has been paid,
+     * but the full balance is still outstanding.
      */
     public function isPartiallyPaid(): bool
     {
-        return $this->payment_status === self::PAYMENT_PARTIAL;
+        $paid = (float) ($this->amount_paid ?? 0);
+        $total = (float) ($this->total_amount ?? 0);
+
+        return $paid > 0 && $paid < $total;
+    }
+
+    /**
+     * Determine whether the booking is considered paid.
+     *
+     * Kept for backwards compatibility with existing service code.
+     */
+    public function isPaid(): bool
+    {
+        return $this->isFullyPaid()
+            || $this->payment_status === self::PAYMENT_PAID;
     }
 
     /**
@@ -890,23 +891,15 @@ class Booking extends Model
             return false;
         }
 
-        if (
-            $this->start_date->lte($today) &&
-            (
+        return $this->start_date->lte($today)
+            && (
                 !$this->end_date ||
                 $this->end_date->gte($today)
-            )
-        ) {
-            return true;
-        }
-
-        return false;
+            );
     }
 
     /**
-     * Determine whether the booking overlaps the supplied date range.
-     *
-     * Used by the service/repository layer when checking unit availability.
+     * Determine whether this booking overlaps the supplied date range.
      */
     public function overlapsDates(
         $startDate,
@@ -1211,9 +1204,6 @@ class Booking extends Model
 
     /**
      * Bookings that overlap a date range.
-     *
-     * Example:
-     * Booking::overlapping($startDate, $endDate)->get();
      */
     public function scopeOverlapping(
         Builder $query,
@@ -1252,13 +1242,13 @@ class Booking extends Model
      */
     public function scopeEnded(Builder $query): Builder
     {
-        return $query->whereNotNull(
-            'end_date'
-        )->whereDate(
-            'end_date',
-            '<',
-            now()->toDateString()
-        );
+        return $query
+            ->whereNotNull('end_date')
+            ->whereDate(
+                'end_date',
+                '<',
+                now()->toDateString()
+            );
     }
 
     /**
@@ -1307,6 +1297,10 @@ class Booking extends Model
         }
 
         $search = trim($search);
+
+        if ($search === '') {
+            return $query;
+        }
 
         return $query->where(function (Builder $query) use (
             $search
