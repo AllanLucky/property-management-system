@@ -17,10 +17,74 @@ use Throwable;
 
 class BookingController extends Controller
 {
+    /*
+    |--------------------------------------------------------------------------
+    | DEPENDENCIES
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Booking service instance.
      */
     protected BookingService $bookingService;
+
+    /**
+     * Standard relationships returned with booking responses.
+     *
+     * Keeping these relationships centralized ensures that:
+     *
+     * - index
+     * - show
+     * - create
+     * - update
+     * - workflow actions
+     * - restore
+     *
+     * all return a consistent booking structure.
+     */
+    protected array $bookingRelations = [
+        'user',
+        'customer',
+        'tenant.user',
+        'property',
+        'apartment',
+        'unit',
+        'tenancy',
+    ];
+
+    /**
+     * Standard booking filters accepted by listing endpoints.
+     */
+    protected array $bookingFilters = [
+        'search',
+        'status',
+        'payment_status',
+        'booking_type',
+        'source',
+        'property_id',
+        'apartment_id',
+        'unit_id',
+        'customer_id',
+        'tenant_id',
+        'tenancy_id',
+        'start_date',
+        'end_date',
+        'booking_date',
+        'paid_date',
+    ];
+
+    /**
+     * Filters accepted by statistics endpoints.
+     */
+    protected array $statisticsFilters = [
+        'start_date',
+        'end_date',
+        'property_id',
+        'apartment_id',
+        'unit_id',
+        'booking_type',
+        'source',
+    ];
 
     /**
      * Create a new controller instance.
@@ -43,36 +107,20 @@ class BookingController extends Controller
     {
         try {
             $bookings = $this->bookingService->paginate(
-                (int) $request->input('per_page', 15),
-                $request->only([
-                    'search',
-                    'status',
-                    'payment_status',
-                    'booking_type',
-                    'source',
-                    'property_id',
-                    'apartment_id',
-                    'unit_id',
-                    'customer_id',
-                    'tenant_id',
-                    'start_date',
-                    'end_date',
-                ])
+                $this->perPage($request),
+                $this->filters($request)
             );
 
-            $bookings->through(
-                fn ($booking) => new BookingResource($booking)
-            );
+            $this->transformPaginator($bookings);
 
             return ApiResponse::paginated(
                 $bookings,
                 'Bookings fetched successfully.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to fetch bookings.'
+            return $this->serverError(
+                'Unable to fetch bookings.',
+                $e
             );
         }
     }
@@ -87,15 +135,7 @@ class BookingController extends Controller
                 $request->validated()
             );
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::created(
                 new BookingResource($booking),
@@ -106,11 +146,14 @@ class BookingController extends Controller
                 $e->errors(),
                 'Booking validation failed.'
             );
+        } catch (ModelNotFoundException $e) {
+            return ApiResponse::notFound(
+                'Required booking resource was not found.'
+            );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to create booking.'
+            return $this->serverError(
+                'Unable to create booking.',
+                $e
             );
         }
     }
@@ -123,15 +166,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->findOrFail($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::success(
                 new BookingResource($booking),
@@ -142,10 +177,9 @@ class BookingController extends Controller
                 'Booking not found.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to fetch booking.'
+            return $this->serverError(
+                'Unable to fetch booking.',
+                $e
             );
         }
     }
@@ -163,15 +197,7 @@ class BookingController extends Controller
                 $request->validated()
             );
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -187,16 +213,15 @@ class BookingController extends Controller
                 'Booking update validation failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to update booking.'
+            return $this->serverError(
+                'Unable to update booking.',
+                $e
             );
         }
     }
 
     /**
-     * Delete the specified booking.
+     * Soft-delete the specified booking.
      */
     public function destroy(int|string $id): JsonResponse
     {
@@ -217,10 +242,9 @@ class BookingController extends Controller
                 'Booking deletion validation failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to delete booking.'
+            return $this->serverError(
+                'Unable to delete booking.',
+                $e
             );
         }
     }
@@ -237,37 +261,30 @@ class BookingController extends Controller
     public function search(Request $request): JsonResponse
     {
         try {
-            $results = $this->bookingService->search(
-                $request->input('search', ''),
-                (int) $request->input('per_page', 15),
-                $request->only([
-                    'status',
-                    'payment_status',
-                    'booking_type',
-                    'source',
-                    'property_id',
-                    'apartment_id',
-                    'unit_id',
-                    'customer_id',
-                    'tenant_id',
-                    'start_date',
-                    'end_date',
-                ])
+            $search = trim(
+                (string) $request->input('search', '')
             );
 
-            $results->through(
-                fn ($booking) => new BookingResource($booking)
+            if ($search === '') {
+                return $this->index($request);
+            }
+
+            $results = $this->bookingService->search(
+                $search,
+                $this->perPage($request),
+                $this->filters($request)
             );
+
+            $this->transformPaginator($results);
 
             return ApiResponse::paginated(
                 $results,
                 'Bookings search completed successfully.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to search bookings.'
+            return $this->serverError(
+                'Unable to search bookings.',
+                $e
             );
         }
     }
@@ -285,26 +302,22 @@ class BookingController extends Controller
     {
         try {
             $statistics = $this->bookingService->getStatistics(
-                $request->only([
-                    'start_date',
-                    'end_date',
-                    'property_id',
-                    'apartment_id',
-                    'unit_id',
-                    'booking_type',
-                    'source',
-                ])
+                $request->only($this->statisticsFilters)
             );
 
             return ApiResponse::success(
                 $statistics,
                 'Booking statistics fetched successfully.'
             );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Booking statistics validation failed.'
+            );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to fetch booking statistics.'
+            return $this->serverError(
+                'Unable to fetch booking statistics.',
+                $e
             );
         }
     }
@@ -328,6 +341,7 @@ class BookingController extends Controller
                     'unit_id',
                     'customer_id',
                     'tenant_id',
+                    'tenancy_id',
                 ])
             );
 
@@ -341,10 +355,9 @@ class BookingController extends Controller
                 'Booking report validation failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to generate booking report.'
+            return $this->serverError(
+                'Unable to generate booking report.',
+                $e
             );
         }
     }
@@ -384,31 +397,20 @@ class BookingController extends Controller
     {
         try {
             $bookings = $this->bookingService->getActive(
-                (int) $request->input('per_page', 15),
-                $request->only([
-                    'property_id',
-                    'apartment_id',
-                    'unit_id',
-                    'customer_id',
-                    'tenant_id',
-                    'start_date',
-                    'end_date',
-                ])
+                $this->perPage($request),
+                $this->filters($request)
             );
 
-            $bookings->through(
-                fn ($booking) => new BookingResource($booking)
-            );
+            $this->transformPaginator($bookings);
 
             return ApiResponse::paginated(
                 $bookings,
                 'Active bookings fetched successfully.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to fetch active bookings.'
+            return $this->serverError(
+                'Unable to fetch active bookings.',
+                $e
             );
         }
     }
@@ -467,35 +469,20 @@ class BookingController extends Controller
         try {
             $bookings = $this->bookingService->getByStatus(
                 $status,
-                (int) $request->input('per_page', 15),
-                $request->only([
-                    'search',
-                    'payment_status',
-                    'booking_type',
-                    'source',
-                    'property_id',
-                    'apartment_id',
-                    'unit_id',
-                    'customer_id',
-                    'tenant_id',
-                    'start_date',
-                    'end_date',
-                ])
+                $this->perPage($request),
+                $this->filters($request)
             );
 
-            $bookings->through(
-                fn ($booking) => new BookingResource($booking)
-            );
+            $this->transformPaginator($bookings);
 
             return ApiResponse::paginated(
                 $bookings,
                 ucfirst($status) . ' bookings fetched successfully.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                "Unable to fetch {$status} bookings."
+            return $this->serverError(
+                "Unable to fetch {$status} bookings.",
+                $e
             );
         }
     }
@@ -514,15 +501,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->confirm($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -538,10 +517,9 @@ class BookingController extends Controller
                 'Booking confirmation failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to confirm booking.'
+            return $this->serverError(
+                'Unable to confirm booking.',
+                $e
             );
         }
     }
@@ -554,15 +532,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->approve($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -578,10 +548,9 @@ class BookingController extends Controller
                 'Booking approval failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to approve booking.'
+            return $this->serverError(
+                'Unable to approve booking.',
+                $e
             );
         }
     }
@@ -594,15 +563,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->checkIn($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -618,10 +579,9 @@ class BookingController extends Controller
                 'Booking check-in failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to check in booking.'
+            return $this->serverError(
+                'Unable to check in booking.',
+                $e
             );
         }
     }
@@ -634,15 +594,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->complete($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -658,10 +610,9 @@ class BookingController extends Controller
                 'Booking completion failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to complete booking.'
+            return $this->serverError(
+                'Unable to complete booking.',
+                $e
             );
         }
     }
@@ -679,15 +630,7 @@ class BookingController extends Controller
                 $request->validated()
             );
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -703,10 +646,9 @@ class BookingController extends Controller
                 'Booking cancellation failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to cancel booking.'
+            return $this->serverError(
+                'Unable to cancel booking.',
+                $e
             );
         }
     }
@@ -733,15 +675,7 @@ class BookingController extends Controller
                 $validated['rejection_reason']
             );
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -757,10 +691,9 @@ class BookingController extends Controller
                 'Booking rejection failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to reject booking.'
+            return $this->serverError(
+                'Unable to reject booking.',
+                $e
             );
         }
     }
@@ -773,15 +706,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->expire($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -797,10 +722,9 @@ class BookingController extends Controller
                 'Booking expiry failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to expire booking.'
+            return $this->serverError(
+                'Unable to expire booking.',
+                $e
             );
         }
     }
@@ -813,18 +737,68 @@ class BookingController extends Controller
 
     /**
      * Get units available for booking.
+     *
+     * Required:
+     * - start_date
+     * - end_date
+     *
+     * Optional:
+     * - property_id
+     * - apartment_id
+     * - booking_id
+     *
+     * Example:
+     *
+     * GET /api/bookings/available-units
+     *     ?start_date=2026-09-15
+     *     &end_date=2026-09-30
      */
     public function availableUnits(Request $request): JsonResponse
     {
         try {
+            $validated = $request->validate([
+                'start_date' => [
+                    'required',
+                    'date',
+                ],
+
+                'end_date' => [
+                    'required',
+                    'date',
+                    'after_or_equal:start_date',
+                ],
+
+                'property_id' => [
+                    'nullable',
+                    'integer',
+                    'exists:properties,id',
+                ],
+
+                'apartment_id' => [
+                    'nullable',
+                    'integer',
+                    'exists:apartments,id',
+                ],
+
+                'booking_id' => [
+                    'nullable',
+                    'integer',
+                    'exists:bookings,id',
+                ],
+            ]);
+
             $units = $this->bookingService->getAvailableUnits(
-                $request->only([
-                    'property_id',
-                    'apartment_id',
-                    'start_date',
-                    'end_date',
-                    'booking_id',
-                ])
+                $validated['start_date'],
+                $validated['end_date'],
+                isset($validated['property_id'])
+                    ? (int) $validated['property_id']
+                    : null,
+                isset($validated['apartment_id'])
+                    ? (int) $validated['apartment_id']
+                    : null,
+                isset($validated['booking_id'])
+                    ? (int) $validated['booking_id']
+                    : null
             );
 
             return ApiResponse::collection(
@@ -837,10 +811,9 @@ class BookingController extends Controller
                 'Availability validation failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to fetch available units.'
+            return $this->serverError(
+                'Unable to fetch available units.',
+                $e
             );
         }
     }
@@ -860,10 +833,9 @@ class BookingController extends Controller
                 'Available booking users fetched successfully.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to fetch available booking users.'
+            return $this->serverError(
+                'Unable to fetch available booking users.',
+                $e
             );
         }
     }
@@ -882,15 +854,7 @@ class BookingController extends Controller
         try {
             $booking = $this->bookingService->restore($id);
 
-            $booking->load([
-                'user',
-                'customer',
-                'tenant.user',
-                'property',
-                'apartment',
-                'unit',
-                'tenancy',
-            ]);
+            $this->loadBookingRelations($booking);
 
             return ApiResponse::updated(
                 new BookingResource($booking),
@@ -906,10 +870,9 @@ class BookingController extends Controller
                 'Booking restoration failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to restore booking.'
+            return $this->serverError(
+                'Unable to restore booking.',
+                $e
             );
         }
     }
@@ -936,11 +899,90 @@ class BookingController extends Controller
                 'Permanent booking deletion failed.'
             );
         } catch (Throwable $e) {
-            report($e);
-
-            return ApiResponse::serverError(
-                'Unable to permanently delete booking.'
+            return $this->serverError(
+                'Unable to permanently delete booking.',
+                $e
             );
         }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | PRIVATE / PROTECTED HELPERS
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Load the standard booking relationships.
+     */
+    protected function loadBookingRelations($booking): void
+    {
+        $booking->load($this->bookingRelations);
+    }
+
+    /**
+     * Transform every booking in a paginator into BookingResource.
+     *
+     * The paginator itself is preserved so ApiResponse::paginated()
+     * can generate the standard pagination metadata and links.
+     */
+    protected function transformPaginator($paginator): void
+    {
+        $paginator->through(
+            fn ($booking) => new BookingResource($booking)
+        );
+    }
+
+    /**
+     * Return the requested pagination size.
+     *
+     * The repository remains responsible for applying the final
+     * maximum allowed page size.
+     */
+    protected function perPage(Request $request): int
+    {
+        return max(
+            1,
+            (int) $request->input('per_page', 15)
+        );
+    }
+
+    /**
+     * Return normalized booking filters.
+     */
+    protected function filters(Request $request): array
+    {
+        return $request->only(
+            $this->bookingFilters
+        );
+    }
+
+    /**
+     * Return a consistent server-error response.
+     *
+     * Detailed exception information is exposed only in local
+     * environments. Production receives only the safe public message.
+     */
+    protected function serverError(
+        string $message,
+        Throwable $e
+    ): JsonResponse {
+        report($e);
+
+        $errors = null;
+
+        if (app()->environment('local')) {
+            $errors = [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ];
+        }
+
+        return ApiResponse::serverError(
+            $message,
+            $errors
+        );
     }
 }
