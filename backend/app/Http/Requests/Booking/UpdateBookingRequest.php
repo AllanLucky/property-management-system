@@ -21,13 +21,13 @@ class UpdateBookingRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        $data = [];
+
         /*
         |--------------------------------------------------------------------------
-        | Normalize Optional Values
+        | BOOKING CLASSIFICATION
         |--------------------------------------------------------------------------
         */
-
-        $data = [];
 
         if ($this->has('booking_type')) {
             $data['booking_type'] = $this->filled('booking_type')
@@ -41,9 +41,21 @@ class UpdateBookingRequest extends FormRequest
                 : null;
         }
 
-        if ($this->has('payment_status')) {
-            $data['payment_status'] = $this->filled('payment_status')
-                ? strtolower(trim((string) $this->payment_status))
+        /*
+        |--------------------------------------------------------------------------
+        | CUSTOMER INFORMATION
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('first_name')) {
+            $data['first_name'] = $this->filled('first_name')
+                ? trim((string) $this->first_name)
+                : null;
+        }
+
+        if ($this->has('last_name')) {
+            $data['last_name'] = $this->filled('last_name')
+                ? trim((string) $this->last_name)
                 : null;
         }
 
@@ -59,17 +71,29 @@ class UpdateBookingRequest extends FormRequest
                 : null;
         }
 
-        if ($this->has('first_name')) {
-            $data['first_name'] = $this->filled('first_name')
-                ? trim((string) $this->first_name)
-                : null;
+        /*
+        |--------------------------------------------------------------------------
+        | DATES
+        |--------------------------------------------------------------------------
+        */
+
+        foreach ([
+            'booking_date',
+            'start_date',
+            'end_date',
+            'check_in_date',
+            'check_out_date',
+        ] as $field) {
+            if ($this->has($field) && $this->filled($field)) {
+                $data[$field] = trim((string) $this->{$field});
+            }
         }
 
-        if ($this->has('last_name')) {
-            $data['last_name'] = $this->filled('last_name')
-                ? trim((string) $this->last_name)
-                : null;
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | REQUESTS / NOTES
+        |--------------------------------------------------------------------------
+        */
 
         if ($this->has('special_requests')) {
             $data['special_requests'] = $this->filled('special_requests')
@@ -83,6 +107,12 @@ class UpdateBookingRequest extends FormRequest
                 : null;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENT INFORMATION
+        |--------------------------------------------------------------------------
+        */
+
         if ($this->has('payment_method')) {
             $data['payment_method'] = $this->filled('payment_method')
                 ? strtolower(trim((string) $this->payment_method))
@@ -94,6 +124,12 @@ class UpdateBookingRequest extends FormRequest
                 ? trim((string) $this->payment_reference)
                 : null;
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | MERGE NORMALIZED VALUES
+        |--------------------------------------------------------------------------
+        */
 
         if (!empty($data)) {
             $this->merge($data);
@@ -108,16 +144,20 @@ class UpdateBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | USER / CUSTOMER / TENANT
             |--------------------------------------------------------------------------
+            |
+            | user_id identifies the authenticated creator/owner of the booking.
+            | It must never be changed through a normal update.
+            |
+            | customer_id identifies the customer user account.
+            | tenant_id identifies the tenant profile.
+            |
             */
 
-            /*
-            | user_id identifies the authenticated creator/owner of the booking.
-            | It should not be changed during an ordinary booking update.
-            */
             'user_id' => [
                 'prohibited',
             ],
@@ -162,9 +202,15 @@ class UpdateBookingRequest extends FormRequest
             ],
 
             /*
-            | Tenancy may be attached later when the booking becomes
-            | an actual tenancy.
+            |--------------------------------------------------------------------------
+            | TENANCY
+            |--------------------------------------------------------------------------
+            |
+            | A tenancy can be attached or detached when permitted by the
+            | BookingService/business workflow.
+            |
             */
+
             'tenancy_id' => [
                 'sometimes',
                 'nullable',
@@ -203,10 +249,11 @@ class UpdateBookingRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS
+            | STATUS / WORKFLOW
             |--------------------------------------------------------------------------
             |
-            | Status transitions must use dedicated BookingService actions.
+            | Booking status must be changed through dedicated workflow
+            | actions such as confirm, approve, reject, cancel, complete, etc.
             |
             */
 
@@ -239,7 +286,8 @@ class UpdateBookingRequest extends FormRequest
             | PAYMENT STATUS
             |--------------------------------------------------------------------------
             |
-            | Payment status should be controlled by the payment/service layer.
+            | Payment status belongs to the payment workflow and should not be
+            | manually changed through the general booking update endpoint.
             |
             */
 
@@ -289,6 +337,13 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
+            |
+            | These fields are useful for walk-in/unregistered customers and
+            | historical booking snapshots.
+            |
+            | When customer_id is supplied, BookingService should normally
+            | synchronize these values from the selected User.
+            |
             */
 
             'first_name' => [
@@ -324,8 +379,9 @@ class UpdateBookingRequest extends FormRequest
             | FINANCIAL INFORMATION
             |--------------------------------------------------------------------------
             |
-            | Component amounts can be updated.
-            | total_amount and balance remain server calculated.
+            | Component amounts may be changed.
+            |
+            | total_amount and balance are ALWAYS calculated by BookingService.
             |
             */
 
@@ -370,6 +426,12 @@ class UpdateBookingRequest extends FormRequest
                 'min:0',
                 'max:999999999999.99',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | SERVER-CALCULATED FINANCIAL FIELDS
+            |--------------------------------------------------------------------------
+            */
 
             'total_amount' => [
                 'prohibited',
@@ -424,7 +486,7 @@ class UpdateBookingRequest extends FormRequest
             | REJECTION / CANCELLATION
             |--------------------------------------------------------------------------
             |
-            | These are managed by dedicated workflow requests.
+            | These fields are controlled by dedicated workflow actions.
             |
             */
 
@@ -464,6 +526,9 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | GENERATED IDENTIFIERS
             |--------------------------------------------------------------------------
+            |
+            | These identifiers are immutable.
+            |
             */
 
             'booking_number' => [
@@ -514,6 +579,7 @@ class UpdateBookingRequest extends FormRequest
     public function messages(): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | RELATIONSHIPS
@@ -569,10 +635,10 @@ class UpdateBookingRequest extends FormRequest
             */
 
             'total_amount.prohibited' =>
-                'Total amount is calculated automatically.',
+                'Total amount is calculated automatically and cannot be changed directly.',
 
             'balance.prohibited' =>
-                'Balance is calculated automatically.',
+                'Balance is calculated automatically and cannot be changed directly.',
 
             'amount_paid.max' =>
                 'The amount paid exceeds the maximum allowed value.',

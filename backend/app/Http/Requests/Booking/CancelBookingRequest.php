@@ -4,12 +4,12 @@ namespace App\Http\Requests\Booking;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class CancelBookingRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Determine if the authenticated user is authorized
+     * to cancel a booking.
      */
     public function authorize(): bool
     {
@@ -21,15 +21,41 @@ class CancelBookingRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'cancellation_reason' => $this->filled('cancellation_reason')
-                ? trim((string) $this->cancellation_reason)
-                : null,
+        $data = [];
 
-            'payment_reference' => $this->filled('payment_reference')
+        /*
+        |--------------------------------------------------------------------------
+        | CANCELLATION REASON
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('cancellation_reason')) {
+            $data['cancellation_reason'] = $this->filled('cancellation_reason')
+                ? trim((string) $this->cancellation_reason)
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENT REFERENCE
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('payment_reference')) {
+            $data['payment_reference'] = $this->filled('payment_reference')
                 ? trim((string) $this->payment_reference)
-                : null,
-        ]);
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | MERGE NORMALIZED VALUES
+        |--------------------------------------------------------------------------
+        */
+
+        if (!empty($data)) {
+            $this->merge($data);
+        }
     }
 
     /**
@@ -40,12 +66,13 @@ class CancelBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | CANCELLATION REASON
             |--------------------------------------------------------------------------
             |
-            | A cancellation should always have an audit-friendly reason.
+            | Every cancellation must contain an audit-friendly reason.
             |
             */
 
@@ -58,15 +85,15 @@ class CancelBookingRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | REFUND / PAYMENT INFORMATION
+            | PAYMENT REFERENCE
             |--------------------------------------------------------------------------
             |
-            | These fields are optional because not every cancelled booking
-            | will have a payment or refund.
+            | Optional because a booking may have no payment associated with it.
             |
             */
 
             'payment_reference' => [
+                'sometimes',
                 'nullable',
                 'string',
                 'max:150',
@@ -77,10 +104,10 @@ class CancelBookingRequest extends FormRequest
             | REFUND AMOUNT
             |--------------------------------------------------------------------------
             |
-            | The service should determine the actual refundable amount.
-            | This field is therefore intentionally prohibited from the
-            | cancellation request to prevent client-side financial
-            | manipulation.
+            | The client must never decide the refund amount.
+            |
+            | BookingService/payment workflow determines whether the customer
+            | is eligible for a refund and the exact amount.
             |
             */
 
@@ -93,7 +120,7 @@ class CancelBookingRequest extends FormRequest
             | BOOKING STATUS
             |--------------------------------------------------------------------------
             |
-            | Status must be changed by BookingService.
+            | Cancellation changes the status internally through BookingService.
             |
             */
 
@@ -110,12 +137,29 @@ class CancelBookingRequest extends FormRequest
             | PAYMENT STATUS
             |--------------------------------------------------------------------------
             |
-            | Payment state should be calculated/updated by the service
-            | according to the cancellation and refund workflow.
+            | Payment status must be controlled by the cancellation/payment
+            | workflow and must not be supplied by the frontend.
             |
             */
 
             'payment_status' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | REFUND WORKFLOW FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | These are intentionally protected from direct client manipulation.
+            |
+            */
+
+            'refunded_at' => [
+                'prohibited',
+            ],
+
+            'refund_reference' => [
                 'prohibited',
             ],
         ];
@@ -129,6 +173,13 @@ class CancelBookingRequest extends FormRequest
     public function messages(): array
     {
         return [
+
+            /*
+            |--------------------------------------------------------------------------
+            | CANCELLATION
+            |--------------------------------------------------------------------------
+            */
+
             'cancellation_reason.required' =>
                 'Please provide a reason for cancelling this booking.',
 
@@ -138,11 +189,35 @@ class CancelBookingRequest extends FormRequest
             'cancellation_reason.max' =>
                 'The cancellation reason may not exceed 5000 characters.',
 
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENT
+            |--------------------------------------------------------------------------
+            */
+
             'payment_reference.max' =>
                 'The payment reference may not exceed 150 characters.',
 
+            /*
+            |--------------------------------------------------------------------------
+            | REFUND
+            |--------------------------------------------------------------------------
+            */
+
             'refund_amount.prohibited' =>
                 'Refund amount must be determined by the booking service.',
+
+            'refunded_at.prohibited' =>
+                'Refund date is generated automatically.',
+
+            'refund_reference.prohibited' =>
+                'Refund reference is generated automatically.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | STATUS / WORKFLOW
+            |--------------------------------------------------------------------------
+            */
 
             'status.prohibited' =>
                 'Booking status cannot be changed directly during cancellation.',
@@ -170,4 +245,4 @@ class CancelBookingRequest extends FormRequest
     {
         return $this->validated('payment_reference');
     }
-}
+} 

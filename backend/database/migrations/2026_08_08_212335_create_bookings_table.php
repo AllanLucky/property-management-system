@@ -52,13 +52,13 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             |
             | user_id:
-            |     User who created the booking.
+            |     Authenticated user who created the booking.
             |
             | customer_id:
-            |     User/customer associated with the booking.
+            |     User account associated with the booking.
             |
             | tenant_id:
-            |     Existing tenant profile when applicable.
+            |     Tenant profile associated with the booking, when applicable.
             |
             */
 
@@ -109,7 +109,7 @@ return new class extends Migration
             | TENANCY RELATIONSHIP
             |--------------------------------------------------------------------------
             |
-            | A confirmed/approved booking may later be converted into a tenancy.
+            | A booking may later be associated with a tenancy.
             |
             */
 
@@ -151,6 +151,12 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | PAYMENT STATUS
             |--------------------------------------------------------------------------
+            |
+            | This value is calculated by BookingService from:
+            |
+            | amount_paid
+            | total_amount
+            |
             */
 
             $table->enum('payment_status', [
@@ -165,27 +171,6 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | BOOKING SOURCE
             |--------------------------------------------------------------------------
-            |
-            | Identifies where the booking originated.
-            |
-            | website:
-            |     Booking made through the website/application.
-            |
-            | walk_in:
-            |     Customer physically visited the office/property.
-            |
-            | agent:
-            |     Booking originated through an agent.
-            |
-            | phone:
-            |     Booking made through a phone call.
-            |
-            | referral:
-            |     Booking originated through a referral.
-            |
-            | other:
-            |     Any other source.
-            |
             */
 
             $table->enum('source', [
@@ -220,7 +205,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS TIMESTAMPS
+            | WORKFLOW TIMESTAMPS
             |--------------------------------------------------------------------------
             */
 
@@ -244,8 +229,14 @@ return new class extends Migration
             | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
             |
-            | These fields preserve the customer's information as it existed
-            | when the booking was created.
+            | These fields preserve customer information at booking time.
+            |
+            | They are especially useful for:
+            |
+            | - walk-in customers
+            | - historical booking records
+            | - deleted/deactivated customer accounts
+            | - audit/history
             |
             */
 
@@ -266,16 +257,21 @@ return new class extends Migration
             | FINANCIAL DETAILS
             |--------------------------------------------------------------------------
             |
-            | All monetary values are stored as decimal(15,2).
+            | All monetary values use decimal(15,2).
             |
-            | total_amount:
-            |     Calculated booking amount.
+            | Calculation:
             |
-            | amount_paid:
-            |     Amount already received.
+            | total_amount =
+            |     rent_amount
+            |     + deposit_amount
+            |     + service_charge
+            |     + booking_fee
+            |     - discount_amount
             |
-            | balance:
-            |     Outstanding amount.
+            | balance =
+            |     total_amount - amount_paid
+            |
+            | total_amount and balance are calculated by BookingService.
             |
             */
 
@@ -326,6 +322,12 @@ return new class extends Migration
 
             $table->text('notes')
                 ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
+            | WORKFLOW REASONS
+            |--------------------------------------------------------------------------
+            */
 
             $table->text('rejection_reason')
                 ->nullable();
@@ -381,7 +383,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC REPORTING INDEXES
+            | STATUS / WORKFLOW INDEXES
             |--------------------------------------------------------------------------
             */
 
@@ -392,6 +394,12 @@ return new class extends Migration
             $table->index('booking_type');
 
             $table->index('source');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DATE INDEXES
+            |--------------------------------------------------------------------------
+            */
 
             $table->index('booking_date');
 
@@ -438,8 +446,7 @@ return new class extends Migration
             | UNIT AVAILABILITY INDEX
             |--------------------------------------------------------------------------
             |
-            | Supports queries that check whether a unit has an overlapping
-            | booking for a requested period.
+            | Used by overlapping-booking queries.
             |
             */
 
@@ -448,7 +455,7 @@ return new class extends Migration
                 'status',
                 'start_date',
                 'end_date',
-            ]);
+            ], 'bookings_unit_availability_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -460,7 +467,7 @@ return new class extends Migration
                 'property_id',
                 'status',
                 'start_date',
-            ]);
+            ], 'bookings_property_status_start_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -472,7 +479,7 @@ return new class extends Migration
                 'apartment_id',
                 'status',
                 'start_date',
-            ]);
+            ], 'bookings_apartment_status_start_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -484,7 +491,7 @@ return new class extends Migration
                 'customer_id',
                 'status',
                 'booking_date',
-            ]);
+            ], 'bookings_customer_status_date_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -495,28 +502,18 @@ return new class extends Migration
             $table->index([
                 'tenant_id',
                 'status',
-            ]);
+            ], 'bookings_tenant_status_index');
 
             /*
             |--------------------------------------------------------------------------
             | SOURCE REPORTING INDEX
             |--------------------------------------------------------------------------
-            |
-            | Supports booking-source reports such as:
-            |
-            | website
-            | walk_in
-            | agent
-            | phone
-            | referral
-            | other
-            |
             */
 
             $table->index([
                 'source',
                 'status',
-            ]);
+            ], 'bookings_source_status_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -527,7 +524,7 @@ return new class extends Migration
             $table->index([
                 'payment_status',
                 'paid_at',
-            ]);
+            ], 'bookings_payment_paid_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -538,7 +535,7 @@ return new class extends Migration
             $table->index([
                 'payment_status',
                 'amount_paid',
-            ]);
+            ], 'bookings_payment_amount_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -549,7 +546,7 @@ return new class extends Migration
             $table->index([
                 'status',
                 'end_date',
-            ]);
+            ], 'bookings_status_end_index');
 
             /*
             |--------------------------------------------------------------------------
@@ -560,7 +557,7 @@ return new class extends Migration
             $table->index([
                 'booking_date',
                 'status',
-            ]);
+            ], 'bookings_date_status_index');
         });
     }
 

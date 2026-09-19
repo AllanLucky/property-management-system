@@ -31,20 +31,30 @@ class BookingController extends Controller
     /**
      * Standard relationships returned with booking responses.
      *
-     * Keeping these relationships centralized ensures that:
+     * Keep this list centralized so index, show, create, update and
+     * workflow endpoints return a consistent booking structure.
      *
-     * - index
-     * - show
-     * - create
-     * - update
-     * - workflow actions
-     * - restore
+     * Important distinction:
      *
-     * all return a consistent booking structure.
+     * user
+     *     = authenticated booking creator/owner
+     *
+     * customer
+     *     = customer user account
+     *
+     * customer_user
+     *     = optional compatibility relationship if defined on Booking
+     *
+     * tenant
+     *     = tenant profile
+     *
+     * tenancy
+     *     = actual tenancy record
      */
     protected array $bookingRelations = [
         'user',
         'customer',
+        'customer_user',
         'tenant.user',
         'property',
         'apartment',
@@ -146,7 +156,7 @@ class BookingController extends Controller
                 $e->errors(),
                 'Booking validation failed.'
             );
-        } catch (ModelNotFoundException $e) {
+        } catch (ModelNotFoundException) {
             return ApiResponse::notFound(
                 'Required booking resource was not found.'
             );
@@ -160,6 +170,10 @@ class BookingController extends Controller
 
     /**
      * Display the specified booking.
+     *
+     * This endpoint is especially important for the edit page.
+     *
+     * GET /api/bookings/{id}
      */
     public function show(int|string $id): JsonResponse
     {
@@ -265,6 +279,9 @@ class BookingController extends Controller
                 (string) $request->input('search', '')
             );
 
+            /*
+             * Empty search behaves exactly like the normal index endpoint.
+             */
             if ($search === '') {
                 return $this->index($request);
             }
@@ -655,6 +672,9 @@ class BookingController extends Controller
 
     /**
      * Reject a booking.
+     *
+     * The rejection workflow is kept separate from the general update
+     * endpoint so rejection reasons remain auditable.
      */
     public function reject(
         Request $request,
@@ -769,18 +789,21 @@ class BookingController extends Controller
                 ],
 
                 'property_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:properties,id',
                 ],
 
                 'apartment_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:apartments,id',
                 ],
 
                 'booking_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:bookings,id',
@@ -824,8 +847,12 @@ class BookingController extends Controller
     public function availableUsers(Request $request): JsonResponse
     {
         try {
+            $search = $request->filled('search')
+                ? trim((string) $request->input('search'))
+                : null;
+
             $users = $this->bookingService->getAvailableUsers(
-                $request->input('search')
+                $search
             );
 
             return ApiResponse::collection(
@@ -913,7 +940,10 @@ class BookingController extends Controller
     */
 
     /**
-     * Load the standard booking relationships.
+     * Load all standard booking relationships.
+     *
+     * This ensures that every single-booking response contains the
+     * information required by the frontend edit/view pages.
      */
     protected function loadBookingRelations($booking): void
     {
@@ -936,14 +966,17 @@ class BookingController extends Controller
     /**
      * Return the requested pagination size.
      *
-     * The repository remains responsible for applying the final
-     * maximum allowed page size.
+     * The repository/service remains responsible for applying the
+     * final maximum page size.
      */
     protected function perPage(Request $request): int
     {
         return max(
             1,
-            (int) $request->input('per_page', 15)
+            min(
+                100,
+                (int) $request->input('per_page', 15)
+            )
         );
     }
 
@@ -961,7 +994,7 @@ class BookingController extends Controller
      * Return a consistent server-error response.
      *
      * Detailed exception information is exposed only in local
-     * environments. Production receives only the safe public message.
+     * environments.
      */
     protected function serverError(
         string $message,
