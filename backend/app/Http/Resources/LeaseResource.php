@@ -11,10 +11,10 @@ class LeaseResource extends JsonResource
      * Transform the resource into an array.
      *
      * ==========================================================================
-     * LEASE ARCHITECTURE
+     * LEASE API ARCHITECTURE
      * ==========================================================================
      *
-     * The application follows this relationship:
+     * Relationship hierarchy:
      *
      * Tenant
      *    ↓
@@ -22,28 +22,25 @@ class LeaseResource extends JsonResource
      *    ↓
      * Lease
      *
-     * A lease belongs to a tenancy and must not duplicate tenancy-owned
-     * information such as:
+     * A lease belongs to a tenancy. Tenant, property, apartment, unit and
+     * user information is therefore resolved through the tenancy relationship.
      *
-     * - tenant
-     * - user
-     * - property
-     * - apartment
-     * - unit
-     *
-     * Those relationships are resolved through the tenancy relationship.
+     * This resource intentionally does not duplicate tenancy-owned data.
      *
      * ==========================================================================
      * RESOURCE RESPONSIBILITY
      * ==========================================================================
      *
-     * This resource is the detailed representation of a lease.
+     * The service/repository layer is responsible for:
      *
-     * The repository/service layer is responsible for retrieving and
-     * preparing the model. This resource is responsible only for transforming
-     * the model into the API response.
+     * - retrieving the lease
+     * - applying business rules
+     * - loading required relationships
      *
-     * Relationships are included only when they have already been loaded.
+     * This resource is responsible only for API transformation.
+     *
+     * Relationships are transformed only when they have already been loaded.
+     * This prevents accidental N+1 queries from the resource layer.
      *
      * @return array<string, mixed>
      */
@@ -52,7 +49,7 @@ class LeaseResource extends JsonResource
         return [
             /*
             |--------------------------------------------------------------------------
-            | Primary Lease Information
+            | Identity
             |--------------------------------------------------------------------------
             */
             'id' => $this->id,
@@ -77,6 +74,40 @@ class LeaseResource extends JsonResource
 
             /*
             |--------------------------------------------------------------------------
+            | Lease Lifecycle
+            |--------------------------------------------------------------------------
+            |
+            | These flags are intentionally exposed separately from `status`.
+            | This allows the frontend to make decisions without duplicating
+            | backend lease-state logic.
+            |
+            */
+            'status' => $this->status,
+            'status_label' => $this->status_label,
+
+            'is_active' => $this->is_active,
+            'is_expired' => $this->is_expired,
+            'is_terminated' => $this->is_terminated,
+            'is_cancelled' => $this->is_cancelled,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Expiration State
+            |--------------------------------------------------------------------------
+            |
+            | `has_ended` indicates that the lease end date has already passed.
+            |
+            | `should_expire` indicates whether the current lease state meets
+            | the application's automatic expiration criteria.
+            |
+            | These values should come from the Lease model's business logic.
+            |
+            */
+            'has_ended' => $this->has_ended,
+            'should_expire' => $this->should_expire,
+
+            /*
+            |--------------------------------------------------------------------------
             | Financial Terms
             |--------------------------------------------------------------------------
             */
@@ -93,17 +124,6 @@ class LeaseResource extends JsonResource
             'payment_frequency' => $this->payment_frequency,
             'due_day' => $this->due_day,
             'notice_period_days' => $this->notice_period_days,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Lease Status
-            |--------------------------------------------------------------------------
-            */
-            'status' => $this->status,
-            'status_label' => $this->status_label,
-            'is_active' => $this->is_active,
-            'is_expired' => $this->is_expired,
-            'is_terminated' => $this->is_terminated,
 
             /*
             |--------------------------------------------------------------------------
@@ -127,18 +147,16 @@ class LeaseResource extends JsonResource
             | Tenancy
             |--------------------------------------------------------------------------
             |
-            | The tenancy relationship is the source of:
-            |
+            | TenancyResource is the single source for:
+            *
             | - tenant
             | - user
             | - property
             | - apartment
             | - unit
             |
-            | TenancyResource handles those relationships.
-            |
-            | `relationLoaded()` prevents the resource from accidentally
-            | triggering additional database queries.
+            | `relationLoaded()` is important here because a Resource should
+            | never unexpectedly execute another database query.
             |
             */
             'tenancy' => $this->when(

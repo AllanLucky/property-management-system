@@ -757,7 +757,10 @@ class LeaseController extends Controller
     */
 
     /**
-     * Mark a lease as expired.
+     * Manually mark a lease as expired.
+     *
+     * This endpoint is useful when an administrator needs to
+     * explicitly expire a lease.
      */
     public function expire(int $id): JsonResponse
     {
@@ -780,6 +783,47 @@ class LeaseController extends Controller
         } catch (Throwable $e) {
             return $this->serverError(
                 'Unable to expire lease.',
+                $e
+            );
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | AUTO EXPIRE ENDED LEASES
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Automatically expire all active leases whose end date has passed.
+     *
+     * This endpoint is intended for administrative/system use and can
+     * also be called by a scheduled task or queue process.
+     */
+    public function expireEnded(): JsonResponse
+    {
+        try {
+            $this->authorize('expireAny', Lease::class);
+
+            $count = $this->leaseService->expireEndedLeases();
+
+            return ApiResponse::success(
+                [
+                    'expired_count' => $count,
+                    'processed_at' => now()->toISOString(),
+                ],
+                $count > 0
+                    ? "{$count} lease(s) expired successfully."
+                    : 'No active leases required expiration.'
+            );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Unable to expire ended leases.'
+            );
+        } catch (Throwable $e) {
+            return $this->serverError(
+                'Unable to expire ended leases.',
                 $e
             );
         }
@@ -870,38 +914,6 @@ class LeaseController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | AUTO EXPIRE
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Expire all active leases whose end date has passed.
-     *
-     * This endpoint is intended for administrative/system use.
-     */
-    public function expireEnded(): JsonResponse
-    {
-        try {
-            $count = $this->leaseService->expireEndedLeases();
-
-            return ApiResponse::success(
-                [
-                    'expired_count' => $count,
-                ],
-                $count > 0
-                    ? "{$count} lease(s) expired successfully."
-                    : 'No leases required expiration.'
-            );
-        } catch (Throwable $e) {
-            return $this->serverError(
-                'Unable to expire ended leases.',
-                $e
-            );
-        }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
     | PRIVATE RESPONSE HELPERS
     |--------------------------------------------------------------------------
     */
@@ -925,3 +937,4 @@ class LeaseController extends Controller
         );
     }
 }
+

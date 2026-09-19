@@ -70,6 +70,14 @@ use App\Http\Controllers\Api\Tenancy\TenancyController;
 
 use App\Http\Controllers\Api\Lease\LeaseController;
 
+
+/*
+|--------------------------------------------------------------------------
+| BOOKING
+|--------------------------------------------------------------------------
+*/
+use App\Http\Controllers\Api\Booking\BookingController;
+
 /*
 |--------------------------------------------------------------------------
 | ACTIVITY LOGS
@@ -89,71 +97,30 @@ Route::prefix('auth')
     ->name('auth.')
     ->group(function () {
 
-        /*
-        |--------------------------------------------------------------------------
-        | REGISTER
-        |--------------------------------------------------------------------------
-        */
-
         Route::post(
             'register',
             [AuthController::class, 'register']
         )->name('register');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | LOGIN
-        |--------------------------------------------------------------------------
-        */
 
         Route::post(
             'login',
             [AuthController::class, 'login']
         )->name('login');
 
-
-        /*
-        |--------------------------------------------------------------------------
-        | FORGOT PASSWORD
-        |--------------------------------------------------------------------------
-        */
-
         Route::post(
             'forgot-password',
             [PasswordController::class, 'forgotPassword']
         )->name('forgot-password');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | RESET PASSWORD
-        |--------------------------------------------------------------------------
-        */
 
         Route::post(
             'reset-password',
             [PasswordController::class, 'resetPassword']
         )->name('reset-password');
 
-
-        /*
-        |--------------------------------------------------------------------------
-        | VERIFY OTP
-        |--------------------------------------------------------------------------
-        */
-
         Route::post(
             'verify-otp',
             [VerificationController::class, 'verifyOtp']
         )->name('verify-otp');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | RESEND OTP
-        |--------------------------------------------------------------------------
-        */
 
         Route::post(
             'resend-otp',
@@ -181,63 +148,17 @@ Route::middleware('auth:sanctum')->group(function () {
             'roles',
             'permissions',
         ]);
-    })->name('user');
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | AUTHENTICATION
-    |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | Canonical logout endpoint:
-    |
-    | POST /api/auth/logout
-    |
-    | Canonical refresh endpoint:
-    |
-    | POST /api/auth/refresh-token
-    |
-    */
-
-    Route::prefix('auth')
-        ->name('auth.')
-        ->group(function () {
-
-            Route::post(
-                'logout',
-                [AuthController::class, 'logout']
-            )->name('logout');
-
-            Route::post(
-                'refresh-token',
-                [AuthController::class, 'refreshToken']
-            )->name('refresh-token');
-        });
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | BACKWARD-COMPATIBLE AUTH ROUTES
-    |--------------------------------------------------------------------------
-    |
-    | Keep these temporarily if your existing frontend still calls:
-    |
-    | POST /api/logout
-    | POST /api/refresh-token
-    |
-    */
+    });
 
     Route::post(
         'logout',
         [AuthController::class, 'logout']
-    )->name('legacy.logout');
+    )->name('auth.logout');
 
     Route::post(
         'refresh-token',
         [AuthController::class, 'refreshToken']
-    )->name('legacy.refresh-token');
+    )->name('auth.refresh-token');
 
 
     /*
@@ -617,6 +538,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
+            | ALL TENANT USERS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'all-users',
+                [TenantController::class, 'allTenantUsers']
+            )->name('all-users');
+
+
+            /*
+            |--------------------------------------------------------------------------
             | AVAILABLE TENANT USERS
             |--------------------------------------------------------------------------
             */
@@ -629,7 +562,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | SEARCH
+            | TENANT SEARCH
             |--------------------------------------------------------------------------
             */
 
@@ -641,7 +574,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATISTICS
+            | TENANT STATISTICS
             |--------------------------------------------------------------------------
             */
 
@@ -653,7 +586,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS LISTS
+            | TENANT REPORTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'reports',
+                [TenantController::class, 'reports']
+            )->name('reports');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | TENANT STATUS LISTS
             |--------------------------------------------------------------------------
             */
 
@@ -680,7 +625,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | CRUD
+            | TENANT CRUD
             |--------------------------------------------------------------------------
             */
 
@@ -697,7 +642,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS ACTIONS
+            | TENANT STATUS ACTIONS
             |--------------------------------------------------------------------------
             */
 
@@ -732,7 +677,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | VERIFICATION
+            | TENANT VERIFICATION
             |--------------------------------------------------------------------------
             */
 
@@ -753,7 +698,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | DOCUMENTS
+            | TENANT DOCUMENTS
             |--------------------------------------------------------------------------
             */
 
@@ -781,7 +726,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | RESTORE
+            | TENANT RESTORE
             |--------------------------------------------------------------------------
             */
 
@@ -795,7 +740,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | FORCE DELETE
+            | TENANT FORCE DELETE
             |--------------------------------------------------------------------------
             */
 
@@ -809,7 +754,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | SHOW
+            | TENANT SHOW
             |--------------------------------------------------------------------------
             */
 
@@ -823,7 +768,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | UPDATE
+            | TENANT UPDATE
             |--------------------------------------------------------------------------
             */
 
@@ -844,7 +789,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | DELETE
+            | TENANT DELETE
             |--------------------------------------------------------------------------
             */
 
@@ -869,7 +814,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | SEARCH
+            | TENANCY SEARCH
             |--------------------------------------------------------------------------
             */
 
@@ -881,7 +826,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATISTICS
+            | TENANCY STATISTICS
             |--------------------------------------------------------------------------
             */
 
@@ -893,7 +838,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS LISTS
+            | TENANCY STATUS LISTS
             |--------------------------------------------------------------------------
             */
 
@@ -935,7 +880,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | CRUD
+            | TENANCY CRUD
             |--------------------------------------------------------------------------
             */
 
@@ -1034,7 +979,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | SHOW
+            | TENANCY SHOW
             |--------------------------------------------------------------------------
             */
 
@@ -1048,7 +993,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | UPDATE
+            | TENANCY UPDATE
             |--------------------------------------------------------------------------
             */
 
@@ -1069,7 +1014,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | DELETE
+            | TENANCY DELETE
             |--------------------------------------------------------------------------
             */
 
@@ -1094,7 +1039,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | SEARCH
+            | LEASE SEARCH
             |--------------------------------------------------------------------------
             */
 
@@ -1106,7 +1051,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATISTICS
+            | LEASE STATISTICS
             |--------------------------------------------------------------------------
             */
 
@@ -1118,7 +1063,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | STATUS LISTS
+            | LEASE STATUS LISTS
             |--------------------------------------------------------------------------
             */
 
@@ -1155,7 +1100,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | EXPIRING / UPCOMING
+            | LEASE DATE FILTERS
             |--------------------------------------------------------------------------
             */
 
@@ -1172,7 +1117,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | TENANCY LEASES
+            | LEASES BY TENANCY
             |--------------------------------------------------------------------------
             */
 
@@ -1186,7 +1131,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | LEASE NUMBER
+            | LEASE BY LEASE NUMBER
             |--------------------------------------------------------------------------
             */
 
@@ -1198,9 +1143,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | CREATE
+            | LEASE CRUD
             |--------------------------------------------------------------------------
             */
+
+            Route::get(
+                '/',
+                [LeaseController::class, 'index']
+            )->name('index');
 
             Route::post(
                 '/',
@@ -1210,19 +1160,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | AUTOMATIC EXPIRATION
-            |--------------------------------------------------------------------------
-            */
-
-            Route::post(
-                'expire-ended',
-                [LeaseController::class, 'expireEnded']
-            )->name('expire-ended');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | STATUS ACTIONS
+            | LEASE STATUS ACTIONS
             |--------------------------------------------------------------------------
             */
 
@@ -1271,7 +1209,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | RESTORE
+            | EXPIRE ENDED LEASES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                'expire-ended',
+                [LeaseController::class, 'expireEnded']
+            )->name('expire-ended');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LEASE RESTORE
             |--------------------------------------------------------------------------
             */
 
@@ -1285,7 +1235,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | FORCE DELETE
+            | LEASE FORCE DELETE
             |--------------------------------------------------------------------------
             */
 
@@ -1299,19 +1249,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | LIST
-            |--------------------------------------------------------------------------
-            */
-
-            Route::get(
-                '/',
-                [LeaseController::class, 'index']
-            )->name('index');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | SHOW
+            | LEASE SHOW
             |--------------------------------------------------------------------------
             */
 
@@ -1325,7 +1263,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | UPDATE
+            | LEASE UPDATE
             |--------------------------------------------------------------------------
             */
 
@@ -1346,7 +1284,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             /*
             |--------------------------------------------------------------------------
-            | DELETE
+            | LEASE DELETE
             |--------------------------------------------------------------------------
             */
 
@@ -1357,6 +1295,269 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('id')
                 ->name('destroy');
         });
+
+
+        /*
+|--------------------------------------------------------------------------
+| BOOKINGS
+|--------------------------------------------------------------------------
+*/
+
+    Route::prefix('bookings')
+       ->name('bookings.')
+        ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING SEARCH
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'search',
+            [BookingController::class, 'search']
+        )->name('search');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [BookingController::class, 'statistics']
+        )->name('statistics');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING REPORTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'reports',
+            [BookingController::class, 'reports']
+        )->name('reports');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE UNITS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'available-units',
+            [BookingController::class, 'availableUnits']
+        )->name('available-units');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE USERS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'available-users',
+            [BookingController::class, 'availableUsers']
+        )->name('available-users');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING STATUS LISTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'pending',
+            [BookingController::class, 'pending']
+        )->name('pending');
+
+        Route::get(
+            'confirmed',
+            [BookingController::class, 'confirmed']
+        )->name('confirmed');
+
+        Route::get(
+            'active',
+            [BookingController::class, 'active']
+        )->name('active');
+
+        Route::get(
+            'completed',
+            [BookingController::class, 'completed']
+        )->name('completed');
+
+        Route::get(
+            'cancelled',
+            [BookingController::class, 'cancelled']
+        )->name('cancelled');
+
+        Route::get(
+            'rejected',
+            [BookingController::class, 'rejected']
+        )->name('rejected');
+
+        Route::get(
+            'expired',
+            [BookingController::class, 'expired']
+        )->name('expired');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING CRUD
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [BookingController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [BookingController::class, 'store']
+        )->name('store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING WORKFLOW ACTIONS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{booking}/confirm',
+            [BookingController::class, 'confirm']
+        )
+            ->whereNumber('booking')
+            ->name('confirm');
+
+        Route::post(
+            '{booking}/approve',
+            [BookingController::class, 'approve']
+        )
+            ->whereNumber('booking')
+            ->name('approve');
+
+        Route::post(
+            '{booking}/check-in',
+            [BookingController::class, 'checkIn']
+        )
+            ->whereNumber('booking')
+            ->name('check-in');
+
+        Route::post(
+            '{booking}/complete',
+            [BookingController::class, 'complete']
+        )
+            ->whereNumber('booking')
+            ->name('complete');
+
+        Route::post(
+            '{booking}/cancel',
+            [BookingController::class, 'cancel']
+        )
+            ->whereNumber('booking')
+            ->name('cancel');
+
+        Route::post(
+            '{booking}/reject',
+            [BookingController::class, 'reject']
+        )
+            ->whereNumber('booking')
+            ->name('reject');
+
+        Route::post(
+            '{booking}/expire',
+            [BookingController::class, 'expire']
+        )
+            ->whereNumber('booking')
+            ->name('expire');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING RESTORE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{booking}/restore',
+            [BookingController::class, 'restore']
+        )
+            ->whereNumber('booking')
+            ->name('restore');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING FORCE DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{booking}/force',
+            [BookingController::class, 'forceDelete']
+        )
+            ->whereNumber('booking')
+            ->name('force-delete');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING SHOW
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{booking}',
+            [BookingController::class, 'show']
+        )
+            ->whereNumber('booking')
+            ->name('show');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING UPDATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{booking}',
+            [BookingController::class, 'update']
+        )
+            ->whereNumber('booking')
+            ->name('update');
+
+        Route::patch(
+            '{booking}',
+            [BookingController::class, 'update']
+        )
+            ->whereNumber('booking')
+            ->name('patch');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{booking}',
+            [BookingController::class, 'destroy']
+        )
+            ->whereNumber('booking')
+            ->name('destroy');
+       });
 
 
     /*

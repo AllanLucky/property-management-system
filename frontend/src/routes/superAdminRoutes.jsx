@@ -229,13 +229,17 @@ import {
   LeaseDetails,
   LeaseList,
 } from "../modules/super-admin/leases";
+import { BookingDetails, BookingList, CreateBooking, EditBooking } from "../modules/super-admin/bookings";
 
 /*
 |--------------------------------------------------------------------------
-| ROUTES
+| BOOKINGS
+|--------------------------------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| SUPER ADMIN ROUTES
 |--------------------------------------------------------------------------
 */
-
 const SuperAdminRoutes = () => {
   return (
     <>
@@ -896,15 +900,6 @@ const SuperAdminRoutes = () => {
       />
 
       <Route
-        path="tenants/:id"
-        element={
-          <PermissionGuard permission="tenants.view">
-            <TenantDetails />
-          </PermissionGuard>
-        }
-      />
-
-      <Route
         path="tenants/reports"
         element={
           <PermissionGuard permission="tenants.view">
@@ -913,11 +908,19 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      <Route
+        path="tenants/:id"
+        element={
+          <PermissionGuard permission="tenants.view">
+            <TenantDetails />
+          </PermissionGuard>
+        }
+      />
+
       {/* ==================================================================
           TENANCIES
       ================================================================== */}
 
-      {/* Tenancy List */}
       <Route
         path="tenancies"
         element={
@@ -927,7 +930,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Create Tenancy */}
       <Route
         path="tenancies/create"
         element={
@@ -937,10 +939,10 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Tenancy Statistics
-          IMPORTANT:
-          This route must come before tenancies/:id
+      {/* IMPORTANT:
+          Specific routes must be declared before tenancies/:id
       */}
+
       <Route
         path="tenancies/statistics"
         element={
@@ -950,7 +952,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Edit Tenancy */}
       <Route
         path="tenancies/:id/edit"
         element={
@@ -960,7 +961,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Assign Unit */}
       <Route
         path="tenancies/:id/assign-unit"
         element={
@@ -970,7 +970,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Tenancy Details */}
       <Route
         path="tenancies/:id"
         element={
@@ -980,12 +979,10 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      ```jsx
-      {/* ================================================================== 
-    LEASES
-================================================================== */}
+      {/* ==================================================================
+          LEASES
+      ================================================================== */}
 
-      {/* Lease List */}
       <Route
         path="leases"
         element={
@@ -995,7 +992,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Create Lease */}
       <Route
         path="leases/create"
         element={
@@ -1015,6 +1011,16 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      {/* Lease Edit */}
+      <Route
+        path="leases/:id/edit"
+        element={
+          <PermissionGuard permission="leases.edit">
+            <EditLease />
+          </PermissionGuard>
+        }
+      />
+
       {/* Lease Details */}
       <Route
         path="leases/:id"
@@ -1025,12 +1031,42 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Edit Lease */}
+      {/* ==================================================================
+          BOOKINGS
+      ================================================================== */}
+
       <Route
-        path="leases/:id/edit"
+        path="bookings"
         element={
-          <PermissionGuard permission="leases.edit">
-            <EditLease />
+          <PermissionGuard permission="bookings.view">
+            <BookingList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="bookings/create"
+        element={
+          <PermissionGuard permission="bookings.create">
+            <CreateBooking />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="bookings/:id/edit"
+        element={
+          <PermissionGuard permission="bookings.edit">
+            <EditBooking />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="bookings/:id"
+        element={
+          <PermissionGuard permission="bookings.view">
+            <BookingDetails />
           </PermissionGuard>
         }
       />
