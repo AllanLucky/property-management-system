@@ -13,6 +13,14 @@ import { useBooking } from "../../../hooks/useBooking";
 
 /*
 |--------------------------------------------------------------------------
+| Debug
+|--------------------------------------------------------------------------
+*/
+
+const DEBUG_EDIT_BOOKING = true;
+
+/*
+|--------------------------------------------------------------------------
 | Helpers
 |--------------------------------------------------------------------------
 */
@@ -95,6 +103,19 @@ const extractValidationErrors = (error) => {
 };
 
 /**
+ * Extract API error code.
+ */
+const extractErrorCode = (error) => {
+  return (
+    error?.response?.data?.code ??
+    error?.code ??
+    error?.response?.status ??
+    error?.status ??
+    null
+  );
+};
+
+/**
  * Extract data from common Laravel/API response wrappers.
  */
 const unwrapData = (value) => {
@@ -148,8 +169,6 @@ const looksLikeBooking = (value) => {
 
 /**
  * Extract a single booking object from common API response shapes.
- *
- * Prefer nested data before the outer API envelope.
  */
 const extractObject = (value) => {
   const candidates = [
@@ -164,13 +183,6 @@ const extractObject = (value) => {
       return candidate;
     }
 
-    /*
-     * Some APIs return:
-     *
-     * {
-     *   booking: {...}
-     * }
-     */
     if (looksLikeBooking(candidate?.booking)) {
       return candidate.booking;
     }
@@ -236,11 +248,9 @@ const getId = (value) => {
 /**
  * Normalize route ID specifically.
  *
- * This prevents:
+ * Prevents:
  *
  * /bookings/[object Object]/edit
- *
- * from being used as an API identifier.
  */
 const normalizeRouteId = (value) => {
   if (
@@ -279,8 +289,6 @@ const normalizeRouteId = (value) => {
  * Tenant profile:
  *     tenants.id
  *     tenants.user_id
- *
- * Therefore customer resolution must prefer user_id/user.id.
  */
 const getCustomerUserId = (value) => {
   if (
@@ -502,7 +510,7 @@ const extractTenancies = (response) => {
 };
 
 /**
- * Extract a property from a tenancy.
+ * Extract property from tenancy.
  */
 const extractPropertyFromTenancy = (tenancy) => {
   if (!tenancy) {
@@ -513,7 +521,7 @@ const extractPropertyFromTenancy = (tenancy) => {
 };
 
 /**
- * Extract an apartment from a tenancy.
+ * Extract apartment from tenancy.
  */
 const extractApartmentFromTenancy = (tenancy) => {
   if (!tenancy) {
@@ -524,7 +532,7 @@ const extractApartmentFromTenancy = (tenancy) => {
 };
 
 /**
- * Extract a unit from a tenancy.
+ * Extract unit from tenancy.
  */
 const extractUnitFromTenancy = (tenancy) => {
   if (!tenancy) {
@@ -532,6 +540,65 @@ const extractUnitFromTenancy = (tenancy) => {
   }
 
   return tenancy?.unit ?? null;
+};
+
+/**
+ * Extract property ID from nested apartment/unit data.
+ *
+ * Useful when the API returns:
+ *
+ * apartment:
+ * {
+ *   id: 37,
+ *   name: "...",
+ * }
+ *
+ * without property_id.
+ */
+const getPropertyIdFromApartment = (apartment) => {
+  if (!apartment) {
+    return "";
+  }
+
+  return (
+    getId(apartment?.property_id) ||
+    getId(apartment?.property?.id) ||
+    getId(apartment?.property?.property_id) ||
+    getId(apartment?.pivot?.property_id) ||
+    ""
+  );
+};
+
+/**
+ * Extract property ID from a unit.
+ */
+const getPropertyIdFromUnit = (unit) => {
+  if (!unit) {
+    return "";
+  }
+
+  return (
+    getId(unit?.property_id) ||
+    getId(unit?.property?.id) ||
+    getId(unit?.pivot?.property_id) ||
+    ""
+  );
+};
+
+/**
+ * Extract apartment ID from a unit.
+ */
+const getApartmentIdFromUnit = (unit) => {
+  if (!unit) {
+    return "";
+  }
+
+  return (
+    getId(unit?.apartment_id) ||
+    getId(unit?.apartment?.id) ||
+    getId(unit?.pivot?.apartment_id) ||
+    ""
+  );
 };
 
 /*
@@ -556,6 +623,8 @@ const INITIAL_VALUES = {
   booking_date: "",
   start_date: "",
   end_date: "",
+  check_in_date: "",
+  check_out_date: "",
 
   rent_amount: "",
   deposit_amount: "",
@@ -563,20 +632,27 @@ const INITIAL_VALUES = {
   booking_fee: "",
   discount_amount: "",
 
+  /*
+  | Backend-managed fields.
+  |
+  | These are kept locally only when returned by the API.
+  | They are NEVER sent by buildPayload().
+  */
   total_amount: "",
-  paid_amount: "",
+  amount_paid: "",
+  balance: "",
 
   payment_status: "pending",
   payment_method: "",
   payment_reference: "",
 
-  adults: "1",
-  children: "0",
+  number_of_adults: "1",
+  number_of_children: "0",
 
   check_in_at: "",
   check_out_at: "",
 
-  special_request: "",
+  special_requests: "",
   notes: "",
 };
 
@@ -664,6 +740,7 @@ const normalizeBooking = (booking) => {
   const customer =
     firstValue(
       booking.customer,
+      booking.customer_user,
       booking.user
     );
 
@@ -698,10 +775,10 @@ const normalizeBooking = (booking) => {
 
   const customerUserId =
     firstValue(
-      booking.user_id,
       booking.customer_id,
-      customer?.user_id,
-      customer?.id
+      booking.user_id,
+      customer?.id,
+      customer?.user_id
     );
 
   const tenantId =
@@ -716,6 +793,20 @@ const normalizeBooking = (booking) => {
       tenancy?.id
     );
 
+  const numberOfAdults =
+    firstValue(
+      booking.number_of_adults,
+      booking.adults,
+      "1"
+    );
+
+  const numberOfChildren =
+    firstValue(
+      booking.number_of_children,
+      booking.children,
+      "0"
+    );
+
   return {
     ...INITIAL_VALUES,
 
@@ -728,9 +819,11 @@ const normalizeBooking = (booking) => {
     user_id:
       getCustomerUserId(
         firstValue(
+          booking.customer_user,
+          booking.customer,
           booking.user,
-          customer,
-          booking.user_id
+          booking.user_id,
+          booking.customer_id
         )
       ),
 
@@ -738,7 +831,8 @@ const normalizeBooking = (booking) => {
       getCustomerUserId(
         firstValue(
           booking.customer_id,
-          customer,
+          booking.customer,
+          booking.customer_user,
           booking.user
         )
       ) ||
@@ -755,7 +849,7 @@ const normalizeBooking = (booking) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Property
+    | Property / Apartment / Unit
     |--------------------------------------------------------------------------
     */
 
@@ -821,6 +915,22 @@ const normalizeBooking = (booking) => {
         booking.end_date
       ),
 
+    check_in_date:
+      normalizeDate(
+        booking.check_in_date
+      ),
+
+    check_out_date:
+      normalizeDate(
+        booking.check_out_date
+      ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Financial fields
+    |--------------------------------------------------------------------------
+    */
+
     rent_amount:
       booking.rent_amount ??
       booking.rent ??
@@ -843,14 +953,30 @@ const normalizeBooking = (booking) => {
       booking.discount_amount ??
       "",
 
+    /*
+    | Backend calculated values.
+    */
     total_amount:
       booking.total_amount ??
+      booking.financials?.total_amount ??
       "",
 
-    paid_amount:
-      booking.paid_amount ??
+    amount_paid:
       booking.amount_paid ??
+      booking.paid_amount ??
+      booking.financials?.amount_paid ??
       "",
+
+    balance:
+      booking.balance ??
+      booking.financials?.balance ??
+      "",
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payment
+    |--------------------------------------------------------------------------
+    */
 
     payment_status:
       booking.payment_status ??
@@ -858,19 +984,31 @@ const normalizeBooking = (booking) => {
 
     payment_method:
       booking.payment_method ??
+      booking.payment?.method ??
       "",
 
     payment_reference:
       booking.payment_reference ??
+      booking.payment?.reference ??
       "",
 
-    adults:
-      booking.adults ??
-      "1",
+    /*
+    |--------------------------------------------------------------------------
+    | Occupancy
+    |--------------------------------------------------------------------------
+    */
 
-    children:
-      booking.children ??
-      "0",
+    number_of_adults:
+      numberOfAdults,
+
+    number_of_children:
+      numberOfChildren,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Datetime
+    |--------------------------------------------------------------------------
+    */
 
     check_in_at:
       normalizeDateTime(
@@ -882,7 +1020,14 @@ const normalizeBooking = (booking) => {
         booking.check_out_at
       ),
 
-    special_request:
+    /*
+    |--------------------------------------------------------------------------
+    | Notes
+    |--------------------------------------------------------------------------
+    */
+
+    special_requests:
+      booking.special_requests ??
       booking.special_request ??
       "",
 
@@ -900,12 +1045,11 @@ const normalizeBooking = (booking) => {
 
 const EditBooking = () => {
   const navigate = useNavigate();
-
   const params = useParams();
 
   /*
   |--------------------------------------------------------------------------
-  | CRITICAL ID NORMALIZATION
+  | Critical ID normalization
   |--------------------------------------------------------------------------
   */
 
@@ -915,6 +1059,12 @@ const EditBooking = () => {
     () => normalizeRouteId(rawId),
     [rawId]
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Booking Hook
+  |--------------------------------------------------------------------------
+  */
 
   const {
     getBooking,
@@ -1030,20 +1180,34 @@ const EditBooking = () => {
   */
 
   const effectiveUnits =
-    mergeUnique(
-      units,
-      hookAvailableUnits
+    useMemo(
+      () =>
+        mergeUnique(
+          units,
+          hookAvailableUnits
+        ),
+      [
+        units,
+        hookAvailableUnits,
+      ]
     );
 
   const effectiveCustomers =
-    mergeUnique(
-      customers,
-      hookAvailableUsers
+    useMemo(
+      () =>
+        mergeUnique(
+          customers,
+          hookAvailableUsers
+        ),
+      [
+        customers,
+        hookAvailableUsers,
+      ]
     );
 
   /*
   |--------------------------------------------------------------------------
-  | Load Booking + Supporting Data
+  | Load Booking
   |--------------------------------------------------------------------------
   */
 
@@ -1068,9 +1232,16 @@ const EditBooking = () => {
       try {
         setServerError("");
 
+        if (DEBUG_EDIT_BOOKING) {
+          console.debug(
+            "[EditBooking] Loading booking:",
+            bookingId
+          );
+        }
+
         /*
         |--------------------------------------------------------------------------
-        | Load Booking
+        | Load booking
         |--------------------------------------------------------------------------
         */
 
@@ -1094,6 +1265,13 @@ const EditBooking = () => {
           );
         }
 
+        if (DEBUG_EDIT_BOOKING) {
+          console.debug(
+            "[EditBooking] Booking loaded:",
+            bookingData
+          );
+        }
+
         const normalizedBooking =
           normalizeBooking(
             bookingData
@@ -1109,13 +1287,14 @@ const EditBooking = () => {
 
         /*
         |--------------------------------------------------------------------------
-        | Preserve Existing Related Objects
+        | Existing related objects
         |--------------------------------------------------------------------------
         */
 
         const bookingCustomer =
           firstValue(
             bookingData.customer,
+            bookingData.customer_user,
             bookingData.user
           );
 
@@ -1208,7 +1387,7 @@ const EditBooking = () => {
 
         /*
         |--------------------------------------------------------------------------
-        | Load Available Booking Users
+        | Load available users
         |--------------------------------------------------------------------------
         */
 
@@ -1243,10 +1422,13 @@ const EditBooking = () => {
           );
         } catch (usersError) {
           if (mounted) {
-            setServerError(
-              extractErrorMessage(
-                usersError
-              )
+            /*
+            | Do not destroy the page when the supporting
+            | customer list fails. Existing customer remains.
+            */
+            console.error(
+              "[EditBooking] Available users failed:",
+              usersError
             );
           }
         }
@@ -1254,6 +1436,11 @@ const EditBooking = () => {
         if (!mounted) {
           return;
         }
+
+        console.error(
+          "[EditBooking] Booking load failed:",
+          err
+        );
 
         setServerError(
           extractErrorMessage(err)
@@ -1307,6 +1494,12 @@ const EditBooking = () => {
         try {
           setLoadingRelationship(true);
 
+          /*
+          |--------------------------------------------------------------------------
+          | First attempt: combined customer relationship
+          |--------------------------------------------------------------------------
+          */
+
           if (
             typeof resolveCustomerTenancies ===
             "function"
@@ -1346,6 +1539,15 @@ const EditBooking = () => {
                   )
               );
 
+              /*
+              |--------------------------------------------------------------------------
+              | IMPORTANT:
+              |
+              | Do not overwrite an existing booking tenancy.
+              | Only fill empty values.
+              |--------------------------------------------------------------------------
+              */
+
               setForm(
                 (current) => ({
                   ...current,
@@ -1359,10 +1561,10 @@ const EditBooking = () => {
                     customerId,
 
                   tenant_id:
+                    current.tenant_id ||
                     getTenantProfileId(
                       resolvedTenant
-                    ) ||
-                    current.tenant_id,
+                    ),
 
                   tenancy_id:
                     current.tenancy_id ||
@@ -1389,6 +1591,12 @@ const EditBooking = () => {
               return;
             }
           }
+
+          /*
+          |--------------------------------------------------------------------------
+          | Fallback: customer → tenant
+          |--------------------------------------------------------------------------
+          */
 
           if (
             typeof getTenantByCustomer !==
@@ -1436,12 +1644,18 @@ const EditBooking = () => {
                 customerId,
 
               tenant_id:
+                current.tenant_id ||
                 getTenantProfileId(
                   tenant
-                ) ||
-                current.tenant_id,
+                ),
             })
           );
+
+          /*
+          |--------------------------------------------------------------------------
+          | Tenant → Tenancies
+          |--------------------------------------------------------------------------
+          */
 
           if (
             typeof getTenanciesByTenant ===
@@ -1495,6 +1709,14 @@ const EditBooking = () => {
           const message =
             extractErrorMessage(err);
 
+          console.error(
+            "[EditBooking] Relationship resolution failed:",
+            err
+          );
+
+          /*
+          | Ignore normal "not found" relationship results.
+          */
           if (
             message &&
             !message
@@ -1609,6 +1831,13 @@ const EditBooking = () => {
     const normalizedId =
       getId(propertyId);
 
+    if (DEBUG_EDIT_BOOKING) {
+      console.debug(
+        "[EditBooking] Property changed:",
+        normalizedId
+      );
+    }
+
     setForm((current) => ({
       ...current,
 
@@ -1654,6 +1883,13 @@ const EditBooking = () => {
     const normalizedId =
       getId(apartmentId);
 
+    if (DEBUG_EDIT_BOOKING) {
+      console.debug(
+        "[EditBooking] Apartment changed:",
+        normalizedId
+      );
+    }
+
     setForm((current) => ({
       ...current,
 
@@ -1664,6 +1900,11 @@ const EditBooking = () => {
       tenancy_id: "",
     }));
 
+    /*
+    | Keep apartment list.
+    |
+    | We only clear units because units depend on apartment.
+    */
     setUnits([]);
 
     setFieldErrors(
@@ -1710,6 +1951,9 @@ const EditBooking = () => {
           normalizedId,
       };
 
+      /*
+      | Only auto-fill rent when the field is empty.
+      */
       if (
         selectedUnit &&
         (
@@ -2057,19 +2301,6 @@ const EditBooking = () => {
   |--------------------------------------------------------------------------
   | Fetch Available Units
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | Laravel validates:
-  |
-  | start_date
-  | end_date
-  |
-  | Therefore we MUST NOT call the endpoint until both dates exist.
-  |
-  | For edit mode we also pass booking_id so the backend can exclude
-  | the current booking from availability conflicts.
-  |
   */
 
   useEffect(() => {
@@ -2078,6 +2309,9 @@ const EditBooking = () => {
 
     const apartmentId =
       getId(form.apartment_id);
+
+    const selectedUnitId =
+      getId(form.unit_id);
 
     const startDate =
       normalizeDate(
@@ -2091,7 +2325,7 @@ const EditBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Do not call availability endpoint without required dates.
+    | Required parameters
     |--------------------------------------------------------------------------
     */
 
@@ -2105,7 +2339,7 @@ const EditBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Do not query when date range is invalid.
+    | Validate date range
     |--------------------------------------------------------------------------
     */
 
@@ -2127,13 +2361,7 @@ const EditBooking = () => {
 
     const loadUnits = async () => {
       try {
-        /*
-        |--------------------------------------------------------------------------
-        | Build availability parameters.
-        |--------------------------------------------------------------------------
-        */
-
-        const params = {
+        const requestParams = {
           property_id:
             propertyId,
 
@@ -2144,7 +2372,7 @@ const EditBooking = () => {
             endDate,
 
           /*
-          | Exclude the booking currently being edited.
+          | Exclude current booking from overlap check.
           */
           ...(bookingId
             ? {
@@ -2161,14 +2389,16 @@ const EditBooking = () => {
             : {}),
         };
 
-        console.debug(
-          "[EditBooking] Loading available units:",
-          params
-        );
+        if (DEBUG_EDIT_BOOKING) {
+          console.debug(
+            "[EditBooking] Loading available units:",
+            requestParams
+          );
+        }
 
         const response =
           await getAvailableUnits(
-            params
+            requestParams
           );
 
         if (!mounted) {
@@ -2188,15 +2418,18 @@ const EditBooking = () => {
 
         /*
         |--------------------------------------------------------------------------
-        | Always preserve currently selected unit.
+        | Preserve selected unit.
+        |
+        | This is critical in edit mode because availability endpoints
+        | may exclude or return different fields for the current unit.
         |--------------------------------------------------------------------------
         */
 
         const selectedUnit =
-          units.find(
+          effectiveUnits.find(
             (unit) =>
               getId(unit) ===
-              getId(form.unit_id)
+              selectedUnitId
           );
 
         setUnits(
@@ -2208,12 +2441,6 @@ const EditBooking = () => {
           )
         );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Clear availability error after successful request.
-        |--------------------------------------------------------------------------
-        */
-
         setFieldErrors(
           (current) => {
             const next = {
@@ -2222,6 +2449,7 @@ const EditBooking = () => {
 
             delete next.start_date;
             delete next.end_date;
+            delete next.unit_id;
 
             return next;
           }
@@ -2235,12 +2463,6 @@ const EditBooking = () => {
           "[EditBooking] Available units request failed:",
           err
         );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Show availability validation errors.
-        |--------------------------------------------------------------------------
-        */
 
         const validationErrors =
           extractValidationErrors(err);
@@ -2278,7 +2500,7 @@ const EditBooking = () => {
     form.end_date,
     form.unit_id,
     getAvailableUnits,
-    units,
+    effectiveUnits,
   ]);
 
   /*
@@ -2365,8 +2587,31 @@ const EditBooking = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | Build Payload
+  | Build Update Payload
   |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  |
+  | The backend calculates:
+  |
+  | total_amount
+  | balance
+  | payment_status
+  |
+  | Therefore these MUST NOT be sent from the edit form.
+  |
+  | The backend also expects:
+  |
+  | number_of_adults
+  | number_of_children
+  | special_requests
+  |
+  | instead of:
+  |
+  | adults
+  | children
+  | special_request
+  |
   */
 
   const buildPayload = (values) => {
@@ -2399,15 +2644,21 @@ const EditBooking = () => {
         )
       );
 
-    appendIfValue(
-      "user_id",
-      customerId
-    );
-
+    /*
+    | customer_id is the authoritative booking customer.
+    |
+    | Do NOT send user_id unless your backend explicitly requires it.
+    */
     appendIfValue(
       "customer_id",
       customerId
     );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant
+    |--------------------------------------------------------------------------
+    */
 
     appendIfValue(
       "tenant_id",
@@ -2424,22 +2675,30 @@ const EditBooking = () => {
 
     appendIfValue(
       "property_id",
-      getId(values.property_id)
+      getId(
+        values.property_id
+      )
     );
 
     appendIfValue(
       "apartment_id",
-      getId(values.apartment_id)
+      getId(
+        values.apartment_id
+      )
     );
 
     appendIfValue(
       "unit_id",
-      getId(values.unit_id)
+      getId(
+        values.unit_id
+      )
     );
 
     appendIfValue(
       "tenancy_id",
-      getId(values.tenancy_id)
+      getId(
+        values.tenancy_id
+      )
     );
 
     /*
@@ -2473,6 +2732,18 @@ const EditBooking = () => {
       values.end_date
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Financial inputs
+    |--------------------------------------------------------------------------
+    |
+    | These are allowed inputs.
+    |
+    | total_amount is NOT included because Laravel calculates it.
+    | amount_paid is NOT included because payment workflow manages it.
+    |--------------------------------------------------------------------------
+    */
+
     appendIfValue(
       "rent_amount",
       values.rent_amount
@@ -2498,20 +2769,22 @@ const EditBooking = () => {
       values.discount_amount
     );
 
-    appendIfValue(
-      "total_amount",
-      values.total_amount
-    );
-
-    appendIfValue(
-      "paid_amount",
-      values.paid_amount
-    );
-
-    appendIfValue(
-      "payment_status",
-      values.payment_status
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | Payment
+    |--------------------------------------------------------------------------
+    |
+    | payment_status is backend-managed.
+    |
+    | Do not send:
+    |
+    | payment_status
+    | paid_amount
+    | amount_paid
+    | total_amount
+    | balance
+    |--------------------------------------------------------------------------
+    */
 
     appendIfValue(
       "payment_method",
@@ -2523,15 +2796,75 @@ const EditBooking = () => {
       values.payment_reference
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Occupancy
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      values.number_of_adults !==
+      undefined &&
+      values.number_of_adults !==
+      null &&
+      values.number_of_adults !==
+      ""
+    ) {
+      const adults =
+        Number(
+          values.number_of_adults
+        );
+
+      if (
+        Number.isFinite(adults)
+      ) {
+        payload.number_of_adults =
+          Math.trunc(adults);
+      }
+    }
+
+    if (
+      values.number_of_children !==
+      undefined &&
+      values.number_of_children !==
+      null &&
+      values.number_of_children !==
+      ""
+    ) {
+      const children =
+        Number(
+          values.number_of_children
+        );
+
+      if (
+        Number.isFinite(children)
+      ) {
+        payload.number_of_children =
+          Math.trunc(children);
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dates
+    |--------------------------------------------------------------------------
+    */
+
     appendIfValue(
-      "adults",
-      values.adults
+      "check_in_date",
+      values.check_in_date
     );
 
     appendIfValue(
-      "children",
-      values.children
+      "check_out_date",
+      values.check_out_date
     );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Datetime
+    |--------------------------------------------------------------------------
+    */
 
     appendIfValue(
       "check_in_at",
@@ -2543,14 +2876,96 @@ const EditBooking = () => {
       values.check_out_at
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notes
+    |--------------------------------------------------------------------------
+    */
+
     appendIfValue(
-      "special_request",
-      values.special_request
+      "special_requests",
+      values.special_requests
     );
 
     appendIfValue(
       "notes",
       values.notes
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Explicit safety cleanup
+    |--------------------------------------------------------------------------
+    |
+    | These fields must NEVER reach PUT /bookings/{id}.
+    |--------------------------------------------------------------------------
+    */
+
+    const managedFields = [
+      "status",
+      "payment_status",
+
+      "total_amount",
+      "balance",
+
+      "amount_paid",
+      "paid_amount",
+
+      "booking_number",
+      "reference",
+      "slug",
+
+      "confirmed_at",
+      "approved_at",
+      "rejected_at",
+      "cancelled_at",
+      "completed_at",
+      "expired_at",
+
+      "rejection_reason",
+      "cancellation_reason",
+
+      "created_at",
+      "updated_at",
+      "deleted_at",
+
+      "meta",
+      "financials",
+      "occupancy",
+      "status_info",
+      "payment",
+    ];
+
+    managedFields.forEach(
+      (field) => {
+        delete payload[field];
+      }
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Legacy aliases
+    |--------------------------------------------------------------------------
+    */
+
+    delete payload.adults;
+    delete payload.children;
+    delete payload.special_request;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Remove undefined
+    |--------------------------------------------------------------------------
+    */
+
+    Object.keys(payload).forEach(
+      (key) => {
+        if (
+          payload[key] === undefined
+        ) {
+          delete payload[key];
+        }
+      }
     );
 
     return payload;
@@ -2569,7 +2984,7 @@ const EditBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Never update using an invalid/object ID.
+    | Validate booking ID
     |--------------------------------------------------------------------------
     */
 
@@ -2581,17 +2996,20 @@ const EditBooking = () => {
 
       await Swal.fire({
         icon: "error",
-        title:
-          "Invalid Booking",
+        title: "Invalid Booking",
         text: message,
-        confirmButtonText:
-          "Close",
-        confirmButtonColor:
-          "#dc2626",
+        confirmButtonText: "Close",
+        confirmButtonColor: "#dc2626",
       });
 
       return;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Determine submitted values
+    |--------------------------------------------------------------------------
+    */
 
     const submittedValues =
       eventOrValues &&
@@ -2606,7 +3024,7 @@ const EditBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Normalize IDs before validation.
+    | Normalize IDs
     |--------------------------------------------------------------------------
     */
 
@@ -2653,7 +3071,28 @@ const EditBooking = () => {
         getId(
           submittedValues.tenancy_id
         ),
+
+      number_of_adults:
+        submittedValues.number_of_adults ??
+        submittedValues.adults ??
+        "1",
+
+      number_of_children:
+        submittedValues.number_of_children ??
+        submittedValues.children ??
+        "0",
+
+      special_requests:
+        submittedValues.special_requests ??
+        submittedValues.special_request ??
+        "",
     };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Client validation
+    |--------------------------------------------------------------------------
+    */
 
     if (
       !validate(
@@ -2668,18 +3107,57 @@ const EditBooking = () => {
       setServerError("");
       setFieldErrors({});
 
+      /*
+      |--------------------------------------------------------------------------
+      | Build clean backend payload
+      |--------------------------------------------------------------------------
+      */
+
       const payload =
         buildPayload(
           normalizedValues
         );
 
-      console.debug(
-        "[EditBooking] Updating booking:",
-        {
-          bookingId,
-          payload,
-        }
-      );
+      if (DEBUG_EDIT_BOOKING) {
+        console.group(
+          "[EditBooking] Updating booking"
+        );
+
+        console.debug(
+          "Booking ID:",
+          bookingId
+        );
+
+        console.debug(
+          "Original values:",
+          normalizedValues
+        );
+
+        console.debug(
+          "PUT payload:",
+          payload
+        );
+
+        console.debug(
+          "Managed fields intentionally excluded:",
+          [
+            "status",
+            "payment_status",
+            "total_amount",
+            "balance",
+            "amount_paid",
+            "paid_amount",
+          ]
+        );
+
+        console.groupEnd();
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Update
+      |--------------------------------------------------------------------------
+      */
 
       const response =
         await updateBooking(
@@ -2687,19 +3165,23 @@ const EditBooking = () => {
           payload
         );
 
+      if (DEBUG_EDIT_BOOKING) {
+        console.debug(
+          "[EditBooking] Update response:",
+          response
+        );
+      }
+
       const message =
         response?.message ||
         "Booking updated successfully.";
 
       await Swal.fire({
         icon: "success",
-        title:
-          "Booking Updated",
+        title: "Booking Updated",
         text: message,
-        confirmButtonText:
-          "View Bookings",
-        confirmButtonColor:
-          "#4f46e5",
+        confirmButtonText: "View Bookings",
+        confirmButtonColor: "#4f46e5",
       });
 
       navigate(
@@ -2709,27 +3191,135 @@ const EditBooking = () => {
         }
       );
     } catch (err) {
+      console.error(
+        "[EditBooking] Update failed:",
+        err
+      );
+
       const message =
         extractErrorMessage(err);
 
       const validationErrors =
         extractValidationErrors(err);
 
-      setServerError(message);
+      const errorCode =
+        extractErrorCode(err);
+
+      setServerError(
+        message
+      );
 
       setFieldErrors(
         validationErrors || {}
       );
 
+      /*
+      |--------------------------------------------------------------------------
+      | Detailed development logging
+      |--------------------------------------------------------------------------
+      */
+
+      if (DEBUG_EDIT_BOOKING) {
+        console.group(
+          "[EditBooking] UPDATE ERROR"
+        );
+
+        console.error(
+          "Booking ID:",
+          bookingId
+        );
+
+        console.error(
+          "HTTP/API code:",
+          errorCode
+        );
+
+        console.error(
+          "Message:",
+          message
+        );
+
+        console.error(
+          "Validation errors:",
+          validationErrors
+        );
+
+        console.error(
+          "Response:",
+          err?.response?.data
+        );
+
+        console.error(
+          "Axios error:",
+          err
+        );
+
+        console.groupEnd();
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Friendly error title
+      |--------------------------------------------------------------------------
+      */
+
+      const title =
+        Number(errorCode) === 422
+          ? "Validation Failed"
+          : Number(errorCode) === 500
+            ? "Server Error"
+            : "Unable to Update Booking";
+
+      let displayMessage =
+        message;
+
+      /*
+      |--------------------------------------------------------------------------
+      | Make Laravel validation easier to understand
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        validationErrors &&
+        Object.keys(
+          validationErrors
+        ).length > 0
+      ) {
+        const validationText =
+          Object.entries(
+            validationErrors
+          )
+            .flatMap(
+              ([
+                field,
+                messages,
+              ]) => {
+                const list =
+                  Array.isArray(
+                    messages
+                  )
+                    ? messages
+                    : [messages];
+
+                return list.map(
+                  (item) =>
+                    `${field}: ${item}`
+                );
+              }
+            )
+            .join("\n");
+
+        displayMessage =
+          validationText ||
+          message;
+      }
+
       await Swal.fire({
         icon: "error",
-        title:
-          "Unable to Update Booking",
-        text: message,
-        confirmButtonText:
-          "Close",
-        confirmButtonColor:
-          "#dc2626",
+        title,
+        text: displayMessage,
+        confirmButtonText: "Close",
+        confirmButtonColor: "#dc2626",
       });
     } finally {
       setSubmitting(false);
@@ -2754,18 +3344,6 @@ const EditBooking = () => {
 
       return;
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FIXED:
-    |
-    | The previous version had:
-    |
-    | / super- admin / bookings / ${bookingId}
-    |
-    | which creates an invalid URL.
-    |--------------------------------------------------------------------------
-    */
 
     navigate(
       `/super-admin/bookings/${encodeURIComponent(
@@ -2960,7 +3538,7 @@ const EditBooking = () => {
                 Unable to load booking
               </h2>
 
-              <p className="mt-1 text-sm leading-6 text-red-700">
+              <p className="mt-1 whitespace-pre-line text-sm leading-6 text-red-700">
                 {serverError ||
                   extractErrorMessage(error)}
               </p>
@@ -2984,43 +3562,106 @@ const EditBooking = () => {
 
       <BookingForm
         mode="edit"
+
+        /*
+        |--------------------------------------------------------------------------
+        | IMPORTANT:
+        |
+        | The normalized booking state is the actual initial/current data.
+        | Passing INITIAL_VALUES here can cause the form to fall back to
+        | empty defaults in components that inspect initialValues.
+        |--------------------------------------------------------------------------
+        */
+
         initialValues={
-          INITIAL_VALUES
+          form
         }
-        values={form}
-        properties={properties}
-        apartments={apartments}
-        units={effectiveUnits}
-        customers={effectiveCustomers}
-        tenants={tenants}
-        tenancies={tenancies}
+
+        values={
+          form
+        }
+
+        properties={
+          properties
+        }
+
+        apartments={
+          apartments
+        }
+
+        units={
+          effectiveUnits
+        }
+
+        customers={
+          effectiveCustomers
+        }
+
+        tenants={
+          tenants
+        }
+
+        tenancies={
+          tenancies
+        }
+
         errors={{
           ...errors,
           ...fieldErrors,
         }}
+
         loading={
           loading ||
           isLoadingBooking ||
           loadingRelationship
         }
-        submitting={isUpdating}
+
+        submitting={
+          isUpdating
+        }
+
         loadingUnits={
           isLoadingUnits
         }
+
         loadingUsers={
           isLoadingUsers
         }
-        onChange={handleChange}
-        onSubmit={handleSubmit}
-        onCancel={handleCancel}
+
+        onChange={
+          handleChange
+        }
+
+        onSubmit={
+          handleSubmit
+        }
+
+        onCancel={
+          handleCancel
+        }
+
         onPropertyChange={
           handlePropertyChange
         }
+
         onApartmentChange={
           handleApartmentChange
         }
+
         onUnitChange={
           handleUnitChange
+        }
+
+        onCustomerChange={
+          handleCustomerChange
+        }
+
+        onTenantChange={
+          handleTenantChange
+        }
+
+        onTenancyChange={
+          handleTenancyChange
         }
       />
     </div>

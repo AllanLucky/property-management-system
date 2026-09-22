@@ -200,7 +200,7 @@ const normalizeId = (value) => {
   }
 
   if (typeof value === "object") {
-    return String(
+    const resolved =
       value?.id ??
       value?.value ??
       value?.property_id ??
@@ -217,8 +217,17 @@ const normalizeId = (value) => {
       value?.customerId ??
       value?.user_id ??
       value?.userId ??
-      "",
-    );
+      "";
+
+    if (
+      resolved === null ||
+      resolved === undefined ||
+      resolved === ""
+    ) {
+      return "";
+    }
+
+    return String(resolved);
   }
 
   return String(value);
@@ -440,14 +449,6 @@ const getCustomerId = (customer) => {
     return "";
   }
 
-  /*
-   * For the booking available-users endpoint:
-   *
-   * user.id = customer id used by the booking form.
-   *
-   * For a tenant profile:
-   * tenant.user_id = the customer/user account.
-   */
   return (
     customer?.customer_id ??
     customer?.customerId ??
@@ -663,6 +664,18 @@ const getUnitPrice = (unit) =>
   unit?.monthly_rent ??
   "";
 
+const formatStatus = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) =>
+      char.toUpperCase(),
+    );
+};
+
 /*
 |--------------------------------------------------------------------------
 | ERROR HELPERS
@@ -752,6 +765,7 @@ const InputField = ({
   type = "text",
   placeholder = "",
   min,
+  max,
   step,
   disabled = false,
   readOnly = false,
@@ -781,6 +795,7 @@ const InputField = ({
         onChange={onChange}
         placeholder={placeholder}
         min={min}
+        max={max}
         step={step}
         disabled={disabled}
         readOnly={readOnly}
@@ -851,21 +866,19 @@ const SelectField = ({
             {placeholder}
           </option>
 
-          {options.map(
-            (option, index) => (
-              <option
-                key={`${String(
-                  option.value,
-                )}-${index}`}
-                value={option.value}
-                disabled={
-                  option.disabled
-                }
-              >
-                {option.label}
-              </option>
-            ),
-          )}
+          {options.map((option, index) => (
+            <option
+              key={`${String(
+                option.value,
+              )}-${index}`}
+              value={option.value}
+              disabled={Boolean(
+                option.disabled,
+              )}
+            >
+              {option.label}
+            </option>
+          ))}
         </select>
 
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -978,6 +991,8 @@ const BookingForm = ({
     booking_type: "reservation",
     source: "other",
     payment_status: "pending",
+    number_of_adults: 1,
+    number_of_children: 0,
     ...initialValues,
     ...values,
   };
@@ -993,20 +1008,18 @@ const BookingForm = ({
     [properties],
   );
 
-  const explicitApartments =
-    useMemo(
-      () => getCollection(apartments),
-      [apartments],
-    );
+  const explicitApartments = useMemo(
+    () => getCollection(apartments),
+    [apartments],
+  );
 
-  const nestedApartments =
-    useMemo(
-      () =>
-        getNestedApartmentsFromProperties(
-          propertyList,
-        ),
-      [propertyList],
-    );
+  const nestedApartments = useMemo(
+    () =>
+      getNestedApartmentsFromProperties(
+        propertyList,
+      ),
+    [propertyList],
+  );
 
   const apartmentList = useMemo(
     () =>
@@ -1047,11 +1060,10 @@ const BookingForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const selectedCustomerId =
-    normalizeId(
-      form.customer_id ||
-      form.user_id,
-    );
+  const selectedCustomerId = normalizeId(
+    form.customer_id ||
+    form.user_id,
+  );
 
   const selectedCustomer = useMemo(() => {
     if (!selectedCustomerId) {
@@ -1089,18 +1101,10 @@ const BookingForm = ({
     );
 
   const resolvedTenant = useMemo(() => {
-    /*
-     * Priority 1:
-     * Tenant explicitly resolved by useBooking.
-     */
     if (normalizedSelectedTenant) {
       return normalizedSelectedTenant;
     }
 
-    /*
-     * Priority 2:
-     * Existing tenant_id from the booking.
-     */
     const tenantId = normalizeId(
       form.tenant_id,
     );
@@ -1120,18 +1124,13 @@ const BookingForm = ({
       }
     }
 
-    /*
-     * Priority 3:
-     * Match tenant.user_id with selected customer/user.
-     */
-    const customerUserId =
-      normalizeId(
-        getCustomerLookupId(
-          selectedCustomer,
-        ) ||
-        form.user_id ||
-        form.customer_id,
-      );
+    const customerUserId = normalizeId(
+      getCustomerLookupId(
+        selectedCustomer,
+      ) ||
+      form.user_id ||
+      form.customer_id,
+    );
 
     if (!customerUserId) {
       return null;
@@ -1190,17 +1189,11 @@ const BookingForm = ({
 
   const relationshipTenancyList =
     useMemo(() => {
-      const customerId =
-        normalizeId(
-          form.customer_id ||
-          form.user_id,
-        );
+      const customerId = normalizeId(
+        form.customer_id ||
+        form.user_id,
+      );
 
-      /*
-       * Once a customer/user is selected,
-       * only use that customer's resolved
-       * tenancies.
-       */
       if (customerId) {
         return resolvedCustomerTenancyList;
       }
@@ -1221,30 +1214,68 @@ const BookingForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const filteredApartments =
-    useMemo(() => {
-      const propertyId =
-        normalizeId(
-          form.property_id,
+  const filteredApartments = useMemo(() => {
+    const propertyId = normalizeId(
+      form.property_id,
+    );
+
+    const selectedApartmentId = normalizeId(
+      form.apartment_id,
+    );
+
+    if (!propertyId) {
+      return [];
+    }
+
+    const matches = apartmentList.filter(
+      (apartment) => {
+        const apartmentId = normalizeId(
+          apartment?.id ??
+          apartment?.apartment_id,
         );
 
-      if (!propertyId) {
-        return [];
-      }
-
-      return apartmentList.filter(
-        (apartment) =>
-          sameId(
+        const apartmentPropertyId =
+          normalizeId(
             getPropertyIdFromApartment(
               apartment,
             ),
+          );
+
+        /*
+         * Normal case:
+         * Apartment explicitly belongs to selected property.
+         */
+        if (
+          apartmentPropertyId &&
+          sameId(
+            apartmentPropertyId,
             propertyId,
-          ),
-      );
-    }, [
-      apartmentList,
-      form.property_id,
-    ]);
+          )
+        ) {
+          return true;
+        }
+
+        if (
+          selectedApartmentId &&
+          apartmentId &&
+          sameId(
+            apartmentId,
+            selectedApartmentId,
+          )
+        ) {
+          return true;
+        }
+
+        return false;
+      },
+    );
+
+    return uniqueById(matches);
+  }, [
+    apartmentList,
+    form.property_id,
+    form.apartment_id,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1253,15 +1284,13 @@ const BookingForm = ({
   */
 
   const filteredUnits = useMemo(() => {
-    const apartmentId =
-      normalizeId(
-        form.apartment_id,
-      );
+    const apartmentId = normalizeId(
+      form.apartment_id,
+    );
 
-    const propertyId =
-      normalizeId(
-        form.property_id,
-      );
+    const propertyId = normalizeId(
+      form.property_id,
+    );
 
     if (!apartmentId) {
       return [];
@@ -1281,11 +1310,6 @@ const BookingForm = ({
         return true;
       }
 
-      /*
-       * If the unit has an apartment relation
-       * but it does not match the selected
-       * apartment, reject it.
-       */
       if (unitApartmentId) {
         return false;
       }
@@ -1318,74 +1342,44 @@ const BookingForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const filteredTenancies =
-    useMemo(() => {
-      const tenantId = normalizeId(
-        form.tenant_id,
-      );
+  const filteredTenancies = useMemo(() => {
+    const tenantId = normalizeId(
+      form.tenant_id,
+    );
 
-      const propertyId =
-        normalizeId(
-          form.property_id,
-        );
+    const propertyId = normalizeId(
+      form.property_id,
+    );
 
-      const unitId = normalizeId(
-        form.unit_id,
-      );
+    const unitId = normalizeId(
+      form.unit_id,
+    );
 
-      const hasCustomer =
-        Boolean(
-          normalizeId(
-            form.customer_id ||
-            form.user_id,
-          ),
-        );
+    const hasCustomer = Boolean(
+      normalizeId(
+        form.customer_id ||
+        form.user_id,
+      ),
+    );
 
-      return relationshipTenancyList.filter(
-        (tenancy) => {
-          const tenancyTenantId =
-            getTenancyTenantId(
-              tenancy,
-            );
+    return relationshipTenancyList.filter(
+      (tenancy) => {
+        const tenancyTenantId =
+          getTenancyTenantId(
+            tenancy,
+          );
 
-          const tenancyPropertyId =
-            getTenancyPropertyId(
-              tenancy,
-            );
+        const tenancyPropertyId =
+          getTenancyPropertyId(
+            tenancy,
+          );
 
-          const tenancyUnitId =
-            getTenancyUnitId(
-              tenancy,
-            );
+        const tenancyUnitId =
+          getTenancyUnitId(
+            tenancy,
+          );
 
-          /*
-           * Customer-specific tenancies are
-           * already resolved for the customer.
-           *
-           * Do not apply property/unit filtering
-           * here because the tenancy itself may
-           * be what is going to populate those
-           * fields.
-           */
-          if (hasCustomer) {
-            if (
-              tenantId &&
-              tenancyTenantId &&
-              !sameId(
-                tenancyTenantId,
-                tenantId,
-              )
-            ) {
-              return false;
-            }
-
-            return true;
-          }
-
-          /*
-           * No customer selected:
-           * use normal relationship filters.
-           */
+        if (hasCustomer) {
           if (
             tenantId &&
             tenancyTenantId &&
@@ -1397,39 +1391,53 @@ const BookingForm = ({
             return false;
           }
 
-          if (
-            propertyId &&
-            tenancyPropertyId &&
-            !sameId(
-              tenancyPropertyId,
-              propertyId,
-            )
-          ) {
-            return false;
-          }
-
-          if (
-            unitId &&
-            tenancyUnitId &&
-            !sameId(
-              tenancyUnitId,
-              unitId,
-            )
-          ) {
-            return false;
-          }
-
           return true;
-        },
-      );
-    }, [
-      relationshipTenancyList,
-      form.customer_id,
-      form.user_id,
-      form.tenant_id,
-      form.property_id,
-      form.unit_id,
-    ]);
+        }
+
+        if (
+          tenantId &&
+          tenancyTenantId &&
+          !sameId(
+            tenancyTenantId,
+            tenantId,
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          propertyId &&
+          tenancyPropertyId &&
+          !sameId(
+            tenancyPropertyId,
+            propertyId,
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          unitId &&
+          tenancyUnitId &&
+          !sameId(
+            tenancyUnitId,
+            unitId,
+          )
+        ) {
+          return false;
+        }
+
+        return true;
+      },
+    );
+  }, [
+    relationshipTenancyList,
+    form.customer_id,
+    form.user_id,
+    form.tenant_id,
+    form.property_id,
+    form.unit_id,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1441,11 +1449,6 @@ const BookingForm = ({
     () =>
       customerList
         .map((customer) => {
-          /*
-           * The booking customer is the user account.
-           * Prefer user_id when available, otherwise
-           * use the user/customer id.
-           */
           const customerId =
             getCustomerUserId(customer) ||
             getCustomerId(customer);
@@ -1495,7 +1498,8 @@ const BookingForm = ({
           getUserName(tenantUser) ||
           getUserName(tenant) ||
           tenant?.tenant_number ||
-          `Tenant #${getTenantId(tenant) || "—"}`;
+          `Tenant #${getTenantId(tenant) || "—"
+          }`;
 
         const tenantId =
           getTenantId(tenant);
@@ -1555,21 +1559,11 @@ const BookingForm = ({
               : null,
           ].filter(Boolean);
 
-          const status =
-            tenancy?.status
-              ? ` — ${String(
-                tenancy.status,
-              )
-                .replace(
-                  /_/g,
-                  " ",
-                )
-                .replace(
-                  /\b\w/g,
-                  (char) =>
-                    char.toUpperCase(),
-                )}`
-              : "";
+          const status = tenancy?.status
+            ? ` — ${formatStatus(
+              tenancy.status,
+            )}`
+            : "";
 
           return {
             value: String(
@@ -1617,16 +1611,9 @@ const BookingForm = ({
             ).toLowerCase();
 
           const statusLabel = status
-            ? ` — ${String(status)
-              .replace(
-                /_/g,
-                " ",
-              )
-              .replace(
-                /\b\w/g,
-                (char) =>
-                  char.toUpperCase(),
-              )}`
+            ? ` — ${formatStatus(
+              status,
+            )}`
             : "";
 
           const priceLabel =
@@ -1727,23 +1714,6 @@ const BookingForm = ({
       return;
     }
 
-    /*
-     * The booking customer is the existing
-     * user account.
-     *
-     * available-users response:
-     *
-     * {
-     *   id: 4,
-     *   first_name: "...",
-     *   roles: [...]
-     * }
-     *
-     * Therefore:
-     *
-     * user_id = customer.id
-     * customer_id = customer.id
-     */
     const resolvedUserId =
       getCustomerUserId(customer) ||
       getCustomerId(customer);
@@ -1786,10 +1756,6 @@ const BookingForm = ({
           customer,
         ),
 
-      /*
-       * Changing customer invalidates
-       * the previous relationship.
-       */
       tenant_id: "",
       tenancy_id: "",
       property_id: "",
@@ -1827,10 +1793,6 @@ const BookingForm = ({
 
     onChange?.(event);
 
-    /*
-     * Tenant change invalidates the
-     * selected tenancy/location.
-     */
     const clearFields = {
       tenancy_id: "",
       property_id: "",
@@ -1893,10 +1855,6 @@ const BookingForm = ({
       return;
     }
 
-    /*
-     * Only use the resolved customer tenancy
-     * collection.
-     */
     const tenancy =
       filteredTenancies.find(
         (item) =>
@@ -2114,25 +2072,16 @@ const BookingForm = ({
     lastAppliedTenancyId.current =
       tenancyId;
 
-    /*
-     * Resolve property.
-     */
     const propertyId =
       getTenancyPropertyId(
         tenancy,
       );
 
-    /*
-     * Resolve apartment.
-     */
     const apartmentId =
       getTenancyApartmentId(
         tenancy,
       );
 
-    /*
-     * Resolve unit.
-     */
     const unitId =
       getTenancyUnitId(
         tenancy,
@@ -2299,7 +2248,8 @@ const BookingForm = ({
     if (
       form.rent_amount !==
       undefined &&
-      form.rent_amount !== null &&
+      form.rent_amount !==
+      null &&
       form.rent_amount !== ""
     ) {
       return;
@@ -2323,18 +2273,28 @@ const BookingForm = ({
   | CALCULATED FINANCIALS
   |--------------------------------------------------------------------------
   |
-  | total_amount and balance are calculated values.
-  | They must not be written back into the form state because the
-  | StoreBookingRequest explicitly prohibits clients from submitting
-  | total_amount and balance.
+  | The backend remains authoritative for total_amount,
+  | balance and payment_status.
+  |
+  | These values are displayed here only.
+  |--------------------------------------------------------------------------
   */
 
   const calculatedTotal = useMemo(() => {
-    const rent = Number(form.rent_amount) || 0;
-    const deposit = Number(form.deposit_amount) || 0;
-    const service = Number(form.service_charge) || 0;
-    const bookingFee = Number(form.booking_fee) || 0;
-    const discount = Number(form.discount_amount) || 0;
+    const rent =
+      Number(form.rent_amount) || 0;
+
+    const deposit =
+      Number(form.deposit_amount) || 0;
+
+    const service =
+      Number(form.service_charge) || 0;
+
+    const bookingFee =
+      Number(form.booking_fee) || 0;
+
+    const discount =
+      Number(form.discount_amount) || 0;
 
     const total =
       rent +
@@ -2354,21 +2314,53 @@ const BookingForm = ({
     form.discount_amount,
   ]);
 
-  /*
-  |--------------------------------------------------------------------------
-  | PAYMENT BALANCE
-  |--------------------------------------------------------------------------
-  */
+  const amountPaid = useMemo(
+    () =>
+      Math.max(
+        0,
+        Number(
+          form.amount_paid ??
+          form.paid_amount ??
+          0,
+        ) || 0,
+      ),
+    [
+      form.amount_paid,
+      form.paid_amount,
+    ],
+  );
 
-  const calculatedBalance =
-    Math.max(
-      0,
-      calculatedTotal -
-      (Number(
-        form.amount_paid ??
-        form.paid_amount,
-      ) || 0),
-    );
+  const calculatedBalance = useMemo(
+    () =>
+      Math.max(
+        0,
+        calculatedTotal -
+        amountPaid,
+      ),
+    [
+      calculatedTotal,
+      amountPaid,
+    ],
+  );
+
+  const calculatedPaymentStatus =
+    useMemo(() => {
+      if (amountPaid <= 0) {
+        return "pending";
+      }
+
+      if (
+        calculatedTotal > 0 &&
+        amountPaid >= calculatedTotal
+      ) {
+        return "paid";
+      }
+
+      return "partial";
+    }, [
+      calculatedTotal,
+      amountPaid,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -2449,6 +2441,7 @@ const BookingForm = ({
           getCustomerId(
             selectedCustomer,
           ),
+
         userId:
           getCustomerUserId(
             selectedCustomer,
@@ -2456,18 +2449,22 @@ const BookingForm = ({
           getCustomerId(
             selectedCustomer,
           ),
+
         firstName:
           getCustomerFirstName(
             selectedCustomer,
           ),
+
         lastName:
           getCustomerLastName(
             selectedCustomer,
           ),
+
         email:
           getCustomerEmail(
             selectedCustomer,
           ),
+
         phone:
           getCustomerPhone(
             selectedCustomer,
@@ -2476,16 +2473,21 @@ const BookingForm = ({
       : {
         customerId:
           form.customer_id || "",
+
         userId:
           form.user_id ||
           form.customer_id ||
           "",
+
         firstName:
           form.first_name || "",
+
         lastName:
           form.last_name || "",
+
         email:
           form.email || "",
+
         phone:
           form.phone || "",
       };
@@ -2523,30 +2525,111 @@ const BookingForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const selectedTenancy =
+  const selectedTenancy = useMemo(() => {
+    const tenancyId =
+      normalizeId(
+        form.tenancy_id,
+      );
+
+    if (!tenancyId) {
+      return null;
+    }
+
+    return (
+      relationshipTenancyList.find(
+        (tenancy) =>
+          sameId(
+            getTenancyId(tenancy),
+            tenancyId,
+          ),
+      ) ?? null
+    );
+  }, [
+    form.tenancy_id,
+    relationshipTenancyList,
+  ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | SELECTED PROPERTY / APARTMENT / UNIT
+  |--------------------------------------------------------------------------
+  */
+
+  const selectedProperty =
     useMemo(() => {
-      const tenancyId =
+      const propertyId =
         normalizeId(
-          form.tenancy_id,
+          form.property_id,
         );
 
-      if (!tenancyId) {
+      if (!propertyId) {
         return null;
       }
 
       return (
-        relationshipTenancyList.find(
-          (tenancy) =>
+        propertyList.find(
+          (property) =>
             sameId(
-              getTenancyId(tenancy),
-              tenancyId,
+              property?.id ??
+              property?.property_id,
+              propertyId,
             ),
         ) ?? null
       );
     }, [
-      form.tenancy_id,
-      relationshipTenancyList,
+      propertyList,
+      form.property_id,
     ]);
+
+  const selectedApartment =
+    useMemo(() => {
+      const apartmentId =
+        normalizeId(
+          form.apartment_id,
+        );
+
+      if (!apartmentId) {
+        return null;
+      }
+
+      return (
+        filteredApartments.find(
+          (apartment) =>
+            sameId(
+              apartment?.id ??
+              apartment?.apartment_id,
+              apartmentId,
+            ),
+        ) ?? null
+      );
+    }, [
+      filteredApartments,
+      form.apartment_id,
+    ]);
+
+  const selectedUnit = useMemo(() => {
+    const unitId = normalizeId(
+      form.unit_id,
+    );
+
+    if (!unitId) {
+      return null;
+    }
+
+    return (
+      filteredUnits.find(
+        (unit) =>
+          sameId(
+            unit?.id ??
+            unit?.unit_id,
+            unitId,
+          ),
+      ) ?? null
+    );
+  }, [
+    filteredUnits,
+    form.unit_id,
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -2594,7 +2677,7 @@ const BookingForm = ({
             placeholder={
               loadingUsers
                 ? "Loading customers..."
-                : "Select customer (optional)"
+                : "Select customer"
             }
           />
 
@@ -2617,7 +2700,8 @@ const BookingForm = ({
               )}
               disabled={
                 formDisabled ||
-                relationshipLoading
+                relationshipLoading ||
+                !customerSelected
               }
               placeholder={
                 relationshipLoading
@@ -2645,7 +2729,8 @@ const BookingForm = ({
                   {resolvedTenant?.tenant_number ||
                     `#${getTenantId(
                       resolvedTenant,
-                    ) || "—"}`}{" "}
+                    ) || "—"
+                    }`}{" "}
                   resolved successfully.
                 </p>
               )}
@@ -2906,7 +2991,8 @@ const BookingForm = ({
                 {relationshipHasTenant
                   ? `Tenant #${getTenantId(
                     resolvedTenant,
-                  ) || "—"}`
+                  ) || "—"
+                  }`
                   : "Tenant not resolved"}
               </span>
 
@@ -2977,26 +3063,31 @@ const BookingForm = ({
             required
             disabled={formDisabled}
             placeholder="Select property"
-            options={propertyList.map(
-              (property) => ({
-                value: String(
-                  property?.id ??
-                  property?.property_id ??
-                  "",
-                ),
-                label:
-                  getPropertyName(
-                    property,
+            options={propertyList
+              .map(
+                (property) => ({
+                  value: String(
+                    property?.id ??
+                    property?.property_id ??
+                    "",
                   ),
-              }),
-            )}
+                  label:
+                    getPropertyName(
+                      property,
+                    ),
+                }),
+              )
+              .filter(
+                (option) =>
+                  option.value,
+              )}
           />
 
           <SelectField
             label="Apartment"
             name="apartment_id"
             value={
-              form.apartment_id
+              normalizeId(form.apartment_id)
             }
             onChange={
               handleApartmentSelect
@@ -3017,19 +3108,24 @@ const BookingForm = ({
                   ? "No apartments available"
                   : "Select apartment"
             }
-            options={filteredApartments.map(
-              (apartment) => ({
-                value: String(
-                  apartment?.id ??
-                  apartment?.apartment_id ??
-                  "",
-                ),
-                label:
-                  getApartmentName(
-                    apartment,
+            options={filteredApartments
+              .map(
+                (apartment) => ({
+                  value: String(
+                    apartment?.id ??
+                    apartment?.apartment_id ??
+                    "",
                   ),
-              }),
-            )}
+                  label:
+                    getApartmentName(
+                      apartment,
+                    ),
+                }),
+              )
+              .filter(
+                (option) =>
+                  option.value,
+              )}
           />
 
           <div className="md:col-span-2">
@@ -3060,7 +3156,9 @@ const BookingForm = ({
                       ? "No available units"
                       : "Select unit"
               }
-              options={unitOptions}
+              options={
+                unitOptions
+              }
             />
           </div>
         </div>
@@ -3076,58 +3174,45 @@ const BookingForm = ({
                 </p>
 
                 <p className="mt-1 text-xs leading-5 text-indigo-700">
-                  {(() => {
-                    const selectedProperty =
-                      propertyList.find(
-                        (property) =>
-                          sameId(
-                            property?.id ??
-                            property?.property_id,
-                            form.property_id,
-                          ),
-                      );
-
-                    const selectedApartment =
-                      filteredApartments.find(
-                        (apartment) =>
-                          sameId(
-                            apartment?.id ??
-                            apartment?.apartment_id,
-                            form.apartment_id,
-                          ),
-                      );
-
-                    const selectedUnit =
-                      filteredUnits.find(
-                        (unit) =>
-                          sameId(
-                            unit?.id ??
-                            unit?.unit_id,
-                            form.unit_id,
-                          ),
-                      );
-
-                    return [
-                      selectedProperty
-                        ? getPropertyName(
-                          selectedProperty,
-                        )
-                        : null,
-                      selectedApartment
-                        ? getApartmentName(
-                          selectedApartment,
-                        )
-                        : null,
-                      selectedUnit
-                        ? getUnitName(
-                          selectedUnit,
-                        )
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" / ");
-                  })()}
+                  {[
+                    selectedProperty
+                      ? getPropertyName(
+                        selectedProperty,
+                      )
+                      : null,
+                    selectedApartment
+                      ? getApartmentName(
+                        selectedApartment,
+                      )
+                      : null,
+                    selectedUnit
+                      ? getUnitName(
+                        selectedUnit,
+                      )
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" / ") ||
+                    "Selected unit"}
                 </p>
+
+                {selectedUnit?.status && (
+                  <span
+                    className={[
+                      "mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                      String(
+                        selectedUnit.status,
+                      ).toLowerCase() ===
+                        "reserved"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-gray-100 text-gray-700",
+                    ].join(" ")}
+                  >
+                    {formatStatus(
+                      selectedUnit.status,
+                    )}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -3274,7 +3359,7 @@ const BookingForm = ({
       <Section
         icon={CircleDollarSign}
         title="Financial Information"
-        description="Enter the booking charges. The total amount is calculated automatically."
+        description="Enter the booking charges. Total and outstanding balance are calculated automatically."
       >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <InputField
@@ -3382,10 +3467,7 @@ const BookingForm = ({
             name="total_amount_display"
             type="number"
             value={
-              calculatedTotal > 0
-                ? calculatedTotal
-                : form.total_amount ??
-                ""
+              calculatedTotal
             }
             error={getFieldError(
               errors,
@@ -3406,9 +3488,7 @@ const BookingForm = ({
             <p className="mt-1 text-lg font-bold text-gray-900">
               KES{" "}
               {formatNumber(
-                calculatedTotal > 0
-                  ? calculatedTotal
-                  : form.total_amount || 0,
+                calculatedTotal,
               ) || "0"}
             </p>
           </div>
@@ -3421,9 +3501,7 @@ const BookingForm = ({
             <p className="mt-1 text-lg font-bold text-emerald-800">
               KES{" "}
               {formatNumber(
-                form.amount_paid ??
-                form.paid_amount ??
-                0,
+                amountPaid,
               ) || "0"}
             </p>
           </div>
@@ -3450,28 +3528,48 @@ const BookingForm = ({
       <Section
         icon={Wallet}
         title="Payment Information"
-        description="Record the payment status, method and transaction reference."
+        description="Record the payment amount, method and transaction reference. Payment status is calculated by the backend."
       >
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <SelectField
-            label="Payment Status"
-            name="payment_status"
-            value={
-              form.payment_status
-            }
-            onChange={
-              handleInputChange
-            }
-            options={
-              PAYMENT_STATUSES
-            }
-            error={getFieldError(
-              errors,
-              "payment_status",
-            )}
-            disabled={formDisabled}
-            placeholder="Select payment status"
-          />
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Payment Status
+            </label>
+
+            <div className="flex min-h-[42px] items-center rounded-xl border border-gray-200 bg-gray-50 px-3.5">
+              <span
+                className={[
+                  "rounded-full px-2.5 py-1 text-xs font-semibold",
+                  calculatedPaymentStatus ===
+                    "paid"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : calculatedPaymentStatus ===
+                      "partial"
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-gray-100 text-gray-600",
+                ].join(" ")}
+              >
+                {
+                  PAYMENT_STATUSES.find(
+                    (item) =>
+                      item.value ===
+                      calculatedPaymentStatus,
+                  )?.label
+                }
+              </span>
+
+              <span className="ml-2 text-xs text-gray-500">
+                Calculated automatically
+              </span>
+            </div>
+
+            <FieldError
+              error={getFieldError(
+                errors,
+                "payment_status",
+              )}
+            />
+          </div>
 
           <SelectField
             label="Payment Method"
@@ -3520,7 +3618,8 @@ const BookingForm = ({
             name="payment_reference"
             type="text"
             value={
-              form.payment_reference
+              form.payment_reference ??
+              ""
             }
             onChange={
               handleInputChange
@@ -3549,12 +3648,13 @@ const BookingForm = ({
             label="Adults"
             name="number_of_adults"
             type="number"
-            min="0"
+            min="1"
+            max="100"
             step="1"
             value={
               form.number_of_adults ??
               form.adults ??
-              ""
+              1
             }
             onChange={
               handleInputChange
@@ -3571,11 +3671,12 @@ const BookingForm = ({
             name="number_of_children"
             type="number"
             min="0"
+            max="100"
             step="1"
             value={
               form.number_of_children ??
               form.children ??
-              ""
+              0
             }
             onChange={
               handleInputChange
@@ -3595,11 +3696,13 @@ const BookingForm = ({
             <p className="mt-1 text-xl font-bold text-gray-900">
               {(Number(
                 form.number_of_adults ??
-                form.adults,
+                form.adults ??
+                0,
               ) || 0) +
                 (Number(
                   form.number_of_children ??
-                  form.children,
+                  form.children ??
+                  0,
                 ) || 0)}
             </p>
           </div>
@@ -3638,7 +3741,7 @@ const BookingForm = ({
           <TextAreaField
             label="Notes"
             name="notes"
-            value={form.notes}
+            value={form.notes ?? ""}
             onChange={
               handleInputChange
             }
@@ -3674,6 +3777,49 @@ const BookingForm = ({
                   Review the fields above
                   and try again.
                 </p>
+
+                <div className="mt-3 space-y-1">
+                  {Object.entries(
+                    errors,
+                  ).map(
+                    ([field, message]) => {
+                      const fieldMessage =
+                        Array.isArray(
+                          message,
+                        )
+                          ? message.join(
+                            " ",
+                          )
+                          : String(
+                            message ??
+                            "",
+                          );
+
+                      if (
+                        !fieldMessage
+                      ) {
+                        return null;
+                      }
+
+                      return (
+                        <p
+                          key={field}
+                          className="text-xs text-red-700"
+                        >
+                          <span className="font-semibold">
+                            {formatStatus(
+                              field,
+                            )}
+                            :
+                          </span>{" "}
+                          {
+                            fieldMessage
+                          }
+                        </p>
+                      );
+                    },
+                  )}
+                </div>
               </div>
             </div>
           </div>
