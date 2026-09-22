@@ -64,7 +64,18 @@ const safeArray = (value) => {
 };
 
 /**
- * Get a generic resource ID.
+ * Check whether value is a plain object.
+ */
+const isPlainObject = (value) => {
+    return (
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+    );
+};
+
+/**
+ * Generic resource ID.
  */
 const getId = (value) => {
     if (
@@ -95,14 +106,11 @@ const getId = (value) => {
 };
 
 /**
- * Get the USER ID of a booking customer.
+ * Get USER ID of a booking customer.
  *
- * Customer = users.id
- *
- * Tenant profile = tenants.id
- * Tenant profile user = tenants.user_id
- *
- * These must not be confused.
+ * customer_id = users.id
+ * tenant_id   = tenants.id
+ * tenancy_id  = tenancies.id
  */
 const getCustomerUserId = (value) => {
     if (
@@ -132,7 +140,7 @@ const getCustomerUserId = (value) => {
 };
 
 /**
- * Get the TENANT PROFILE ID.
+ * Get TENANT PROFILE ID.
  *
  * Tenancy queries require tenants.id,
  * not users.id.
@@ -163,7 +171,7 @@ const getTenantProfileId = (value) => {
 };
 
 /**
- * Get a tenancy ID.
+ * Get tenancy ID.
  */
 const getTenancyId = (value) => {
     if (
@@ -189,10 +197,789 @@ const getTenancyId = (value) => {
     );
 };
 
+/*
+|--------------------------------------------------------------------------
+| Financial Normalization
+|--------------------------------------------------------------------------
+*/
+
 /**
- * Unwrap the useful data portion from a service response.
+ * Determine whether a value actually exists.
  */
-const unwrapData = (result) => {
+const hasFinancialValue = (value) => {
+    return (
+        value !== null &&
+        value !== undefined &&
+        value !== ""
+    );
+};
+
+/**
+ * Determine whether a monetary value is effectively zero.
+ */
+const isZeroMoney = (value) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return true;
+    }
+
+    if (
+        typeof value === "number"
+    ) {
+        return Number.isFinite(value)
+            ? value === 0
+            : true;
+    }
+
+    if (
+        typeof value === "string"
+    ) {
+        const normalized =
+            value
+                .trim()
+                .replace(/,/g, "");
+
+        if (!normalized) {
+            return true;
+        }
+
+        const numeric =
+            Number(normalized);
+
+        return Number.isFinite(numeric)
+            ? numeric === 0
+            : false;
+    }
+
+    return false;
+};
+
+/**
+ * Pick a financial value.
+ *
+ * IMPORTANT:
+ *
+ * If an earlier response transformation produced
+ * "0.00", but another valid source contains a
+ * non-zero backend value, the non-zero value wins.
+ *
+ * This prevents:
+ *
+ * financials.total_amount = "0.00"
+ *
+ * from hiding:
+ *
+ * booking.data.financials.total_amount = "98710.00"
+ */
+const pickFinancialValue = (
+    ...values
+) => {
+    let zeroValue;
+
+    for (const value of values) {
+        if (!hasFinancialValue(value)) {
+            continue;
+        }
+
+        if (!isZeroMoney(value)) {
+            return value;
+        }
+
+        if (
+            zeroValue === undefined
+        ) {
+            zeroValue = value;
+        }
+    }
+
+    return zeroValue;
+};
+
+/**
+ * Normalize monetary values without destroying
+ * backend-provided values.
+ *
+ * Supported:
+ *
+ * "70000.00"
+ * "70,000.00"
+ * 70000
+ * 70000.5
+ */
+const normalizeMoney = (
+    value,
+    fallback = "0.00"
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return fallback;
+    }
+
+    /*
+     * Handle nested monetary objects.
+     */
+    if (isPlainObject(value)) {
+        const nestedValue =
+            value?.value ??
+            value?.amount ??
+            value?.total ??
+            value?.numeric_value;
+
+        if (
+            nestedValue !== undefined
+        ) {
+            return normalizeMoney(
+                nestedValue,
+                fallback
+            );
+        }
+
+        return fallback;
+    }
+
+    /*
+     * String amount.
+     */
+    if (
+        typeof value === "string"
+    ) {
+        const trimmed =
+            value.trim();
+
+        if (!trimmed) {
+            return fallback;
+        }
+
+        const normalized =
+            trimmed.replace(
+                /,/g,
+                ""
+            );
+
+        const numericValue =
+            Number(normalized);
+
+        if (
+            Number.isFinite(
+                numericValue
+            )
+        ) {
+            return numericValue.toFixed(2);
+        }
+
+        /*
+         * Preserve non-standard strings
+         * instead of destroying the value.
+         */
+        return trimmed;
+    }
+
+    /*
+     * Numeric amount.
+     */
+    if (
+        typeof value === "number" &&
+        Number.isFinite(value)
+    ) {
+        return value.toFixed(2);
+    }
+
+    return fallback;
+};
+
+/**
+ * Safely convert a backend boolean.
+ */
+const normalizeBoolean = (
+    value
+) => {
+    if (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "true"
+    ) {
+        return true;
+    }
+
+    if (
+        value === false ||
+        value === 0 ||
+        value === "0" ||
+        value === "false"
+    ) {
+        return false;
+    }
+
+    return undefined;
+};
+
+/**
+ * Extract a financial object from a possible
+ * wrapper.
+ *
+ * Supports:
+ *
+ * financials
+ * financials.data
+ * booking.financials
+ * booking.data.financials
+ * booking.data
+ */
+const extractFinancialSources = (
+    financials,
+    booking = {}
+) => {
+    const sources = [];
+
+    const addSource = (value) => {
+        if (
+            isPlainObject(value) &&
+            !sources.includes(value)
+        ) {
+            sources.push(value);
+        }
+    };
+
+    /*
+     * Most specific sources first.
+     */
+    addSource(financials);
+    addSource(financials?.data);
+
+    addSource(
+        booking?.financials
+    );
+
+    addSource(
+        booking?.financials?.data
+    );
+
+    addSource(
+        booking?.data?.financials
+    );
+
+    addSource(
+        booking?.data?.financials?.data
+    );
+
+    /*
+     * Some backend/service responses may
+     * flatten financial values.
+     */
+    addSource(
+        booking?.data
+    );
+
+    addSource(
+        booking
+    );
+
+    return sources;
+};
+
+/**
+ * Find a financial field across all available
+ * financial sources.
+ */
+const findFinancialValue = (
+    sources,
+    aliases = []
+) => {
+    const values = [];
+
+    sources.forEach(
+        (source) => {
+            aliases.forEach(
+                (alias) => {
+                    values.push(
+                        source?.[alias]
+                    );
+                }
+            );
+        }
+    );
+
+    return pickFinancialValue(
+        ...values
+    );
+};
+
+/**
+ * Find a backend financial boolean.
+ */
+const findFinancialBoolean = (
+    sources,
+    aliases = []
+) => {
+    for (
+        const source of sources
+    ) {
+        for (
+            const alias of aliases
+        ) {
+            const value =
+                normalizeBoolean(
+                    source?.[alias]
+                );
+
+            if (
+                value !== undefined
+            ) {
+                return value;
+            }
+        }
+    }
+
+    return undefined;
+};
+
+/**
+ * Normalize booking financials.
+ *
+ * Backend values are always preferred.
+ */
+const normalizeBookingFinancials = (
+    financials,
+    booking = {}
+) => {
+    const sources =
+        extractFinancialSources(
+            financials,
+            booking
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * RENT
+     * ---------------------------------------------------------------
+     */
+    const rentAmount =
+        normalizeMoney(
+            findFinancialValue(
+                sources,
+                [
+                    "rent_amount",
+                    "rentAmount",
+                    "rent",
+                ]
+            )
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * DEPOSIT
+     * ---------------------------------------------------------------
+     */
+    const depositAmount =
+        normalizeMoney(
+            findFinancialValue(
+                sources,
+                [
+                    "deposit_amount",
+                    "depositAmount",
+                    "deposit",
+                ]
+            )
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * SERVICE CHARGE
+     * ---------------------------------------------------------------
+     */
+    const serviceCharge =
+        normalizeMoney(
+            findFinancialValue(
+                sources,
+                [
+                    "service_charge",
+                    "service_charge_amount",
+                    "serviceCharge",
+                    "serviceChargeAmount",
+                ]
+            )
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * BOOKING FEE
+     * ---------------------------------------------------------------
+     */
+    const bookingFee =
+        normalizeMoney(
+            findFinancialValue(
+                sources,
+                [
+                    "booking_fee",
+                    "booking_fee_amount",
+                    "bookingFee",
+                    "bookingFeeAmount",
+                ]
+            )
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * DISCOUNT
+     * ---------------------------------------------------------------
+     */
+    const discountAmount =
+        normalizeMoney(
+            findFinancialValue(
+                sources,
+                [
+                    "discount_amount",
+                    "discountAmount",
+                    "discount",
+                ]
+            )
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * TOTAL AMOUNT
+     * ---------------------------------------------------------------
+     *
+     * Expected backend value:
+     *
+     * financials.total_amount = "98710.00"
+     */
+    const rawTotalAmount =
+        findFinancialValue(
+            sources,
+            [
+                "total_amount",
+                "totalAmount",
+                "total",
+            ]
+        );
+
+    const totalAmount =
+        normalizeMoney(
+            rawTotalAmount
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * AMOUNT PAID
+     * ---------------------------------------------------------------
+     *
+     * Expected backend value:
+     *
+     * financials.amount_paid = "10000.00"
+     */
+    const rawAmountPaid =
+        findFinancialValue(
+            sources,
+            [
+                "amount_paid",
+                "amountPaid",
+                "paid_amount",
+                "paidAmount",
+                "total_paid",
+                "totalPaid",
+                "paid",
+            ]
+        );
+
+    const amountPaid =
+        normalizeMoney(
+            rawAmountPaid
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * BALANCE
+     * ---------------------------------------------------------------
+     *
+     * Expected backend value:
+     *
+     * financials.balance = "88710.00"
+     */
+    const rawBalance =
+        findFinancialValue(
+            sources,
+            [
+                "balance",
+                "balance_amount",
+                "balanceAmount",
+            ]
+        );
+
+    const balance =
+        normalizeMoney(
+            rawBalance
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * NUMERIC VALUES
+     * ---------------------------------------------------------------
+     */
+    const numericTotal =
+        Number(
+            String(
+                totalAmount
+            ).replace(
+                /,/g,
+                ""
+            )
+        ) || 0;
+
+    const numericPaid =
+        Number(
+            String(
+                amountPaid
+            ).replace(
+                /,/g,
+                ""
+            )
+        ) || 0;
+
+    const numericBalance =
+        Number(
+            String(
+                balance
+            ).replace(
+                /,/g,
+                ""
+            )
+        ) || 0;
+
+    /*
+     * ---------------------------------------------------------------
+     * BACKEND FLAGS
+     * ---------------------------------------------------------------
+     */
+    const backendFullyPaid =
+        findFinancialBoolean(
+            sources,
+            [
+                "is_fully_paid",
+                "isFullyPaid",
+            ]
+        );
+
+    const backendPartiallyPaid =
+        findFinancialBoolean(
+            sources,
+            [
+                "is_partially_paid",
+                "isPartiallyPaid",
+            ]
+        );
+
+    const backendHasBalance =
+        findFinancialBoolean(
+            sources,
+            [
+                "has_balance",
+                "hasBalance",
+            ]
+        );
+
+    /*
+     * ---------------------------------------------------------------
+     * DERIVED FLAGS
+     * ---------------------------------------------------------------
+     */
+    const isFullyPaid =
+        backendFullyPaid !==
+            undefined
+            ? backendFullyPaid
+            : numericTotal > 0 &&
+            numericBalance <= 0;
+
+    const isPartiallyPaid =
+        backendPartiallyPaid !==
+            undefined
+            ? backendPartiallyPaid
+            : numericPaid > 0 &&
+            numericBalance > 0;
+
+    const hasBalance =
+        backendHasBalance !==
+            undefined
+            ? backendHasBalance
+            : numericBalance > 0;
+
+    /*
+     * Preserve all original financial properties
+     * from the most specific source.
+     */
+    const primarySource =
+        sources[0] ?? {};
+
+    return {
+        ...primarySource,
+
+        rent_amount:
+            rentAmount,
+
+        deposit_amount:
+            depositAmount,
+
+        service_charge:
+            serviceCharge,
+
+        booking_fee:
+            bookingFee,
+
+        discount_amount:
+            discountAmount,
+
+        total_amount:
+            totalAmount,
+
+        amount_paid:
+            amountPaid,
+
+        balance:
+            balance,
+
+        is_fully_paid:
+            isFullyPaid,
+
+        is_partially_paid:
+            isPartiallyPaid,
+
+        has_balance:
+            hasBalance,
+    };
+};
+
+/**
+ * Detect whether an object looks like an actual booking.
+ */
+const isBookingObject = (
+    value
+) => {
+    return (
+        isPlainObject(value) &&
+        (
+            value?.id !== undefined ||
+            value?.booking_number !==
+            undefined ||
+            value?.reference !==
+            undefined ||
+            value?.slug !== undefined
+        )
+    );
+};
+
+/**
+ * Normalize a single booking.
+ *
+ * Handles both:
+ *
+ * booking
+ *
+ * and:
+ *
+ * {
+ *   data: booking
+ * }
+ *
+ * and:
+ *
+ * {
+ *   booking: booking
+ * }
+ */
+const normalizeBooking = (
+    booking
+) => {
+    if (
+        !isPlainObject(
+            booking
+        )
+    ) {
+        return booking;
+    }
+
+    /*
+     * If the object is a wrapper, unwrap the
+     * actual booking first.
+     */
+    let actualBooking =
+        booking;
+
+    if (
+        !isBookingObject(
+            actualBooking
+        )
+    ) {
+        const candidates = [
+            booking?.booking,
+            booking?.data?.booking,
+            booking?.data?.data?.booking,
+            booking?.data?.data,
+            booking?.data,
+        ];
+
+        const nestedBooking =
+            candidates.find(
+                isBookingObject
+            );
+
+        if (
+            nestedBooking
+        ) {
+            actualBooking =
+                nestedBooking;
+        }
+    }
+
+    /*
+     * Normalize the financials from both the
+     * financials property and the entire booking.
+     */
+    const normalizedFinancials =
+        normalizeBookingFinancials(
+            actualBooking?.financials,
+            actualBooking
+        );
+
+    return {
+        ...actualBooking,
+
+        financials:
+            normalizedFinancials,
+    };
+};
+
+/**
+ * Normalize booking collection.
+ */
+const normalizeBookings = (
+    value
+) => {
+    return safeArray(
+        value
+    ).map(
+        normalizeBooking
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Response Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Unwrap a single resource safely.
+ */
+const unwrapResource = (
+    result
+) => {
     if (
         result === null ||
         result === undefined
@@ -200,54 +987,94 @@ const unwrapData = (result) => {
         return null;
     }
 
-    if (
-        result?.data !== undefined &&
-        result?.data !== null
+    const candidates = [
+        result?.booking,
+
+        result?.data?.booking,
+
+        result?.data?.data?.booking,
+
+        result?.data?.data?.data,
+
+        result?.data?.data,
+
+        result?.data,
+
+        result,
+    ];
+
+    for (
+        const candidate of candidates
     ) {
-        return result.data;
+        if (
+            isBookingObject(
+                candidate
+            )
+        ) {
+            return normalizeBooking(
+                candidate
+            );
+        }
     }
 
-    return result;
+    return null;
 };
 
 /**
  * Normalize collection responses.
- *
- * Supports:
- *
- * []
- *
- * { data: [] }
- *
- * { items: [] }
- *
- * { results: [] }
- *
- * { records: [] }
  */
-const normalizeCollection = (value) => {
-    if (Array.isArray(value)) {
-        return value;
+const normalizeCollection = (
+    value
+) => {
+    if (
+        Array.isArray(value)
+    ) {
+        return normalizeBookings(
+            value
+        );
     }
 
     if (
-        value &&
-        typeof value === "object"
+        isPlainObject(value)
     ) {
-        if (Array.isArray(value.data)) {
-            return value.data;
+        if (
+            Array.isArray(
+                value.data
+            )
+        ) {
+            return normalizeBookings(
+                value.data
+            );
         }
 
-        if (Array.isArray(value.items)) {
-            return value.items;
+        if (
+            Array.isArray(
+                value.items
+            )
+        ) {
+            return normalizeBookings(
+                value.items
+            );
         }
 
-        if (Array.isArray(value.results)) {
-            return value.results;
+        if (
+            Array.isArray(
+                value.results
+            )
+        ) {
+            return normalizeBookings(
+                value.results
+            );
         }
 
-        if (Array.isArray(value.records)) {
-            return value.records;
+        if (
+            Array.isArray(
+                value.records
+            )
+        ) {
+            return normalizeBookings(
+                value.records
+            );
         }
     }
 
@@ -255,23 +1082,37 @@ const normalizeCollection = (value) => {
 };
 
 /**
- * Extract a collection from different service response shapes.
+ * Extract booking collection.
  */
-const extractCollection = (result) => {
+const extractCollection = (
+    result
+) => {
     const candidates = [
         result,
+
         result?.data,
+
         result?.data?.data,
+
         result?.data?.items,
+
         result?.data?.results,
+
         result?.data?.records,
     ];
 
-    for (const candidate of candidates) {
+    for (
+        const candidate of candidates
+    ) {
         const collection =
-            normalizeCollection(candidate);
+            normalizeCollection(
+                candidate
+            );
 
-        if (collection.length > 0) {
+        if (
+            collection.length >
+            0
+        ) {
             return collection;
         }
     }
@@ -282,41 +1123,51 @@ const extractCollection = (result) => {
 /**
  * Extract tenant from different service response shapes.
  */
-const extractTenant = (result) => {
+const extractTenant = (
+    result
+) => {
     const candidates = [
         result?.tenant,
+
         result?.data?.tenant,
+
         result?.data?.data?.tenant,
+
         result?.data?.data?.data?.tenant,
     ];
 
-    for (const tenant of candidates) {
+    for (
+        const tenant of candidates
+    ) {
         if (
-            tenant &&
-            typeof tenant === "object" &&
-            !Array.isArray(tenant)
+            isPlainObject(
+                tenant
+            )
         ) {
             return tenant;
         }
     }
 
-    /*
-     * Sometimes the service returns the tenant
-     * directly as data.
-     */
     const directCandidates = [
         result?.data,
+
         result?.data?.data,
     ];
 
-    for (const candidate of directCandidates) {
+    for (
+        const candidate of directCandidates
+    ) {
         if (
-            candidate &&
-            typeof candidate === "object" &&
-            !Array.isArray(candidate) &&
+            isPlainObject(
+                candidate
+            ) &&
             candidate?.id
         ) {
-            if (!Array.isArray(candidate?.data)) {
+            if (
+                !Array.isArray(
+                    candidate?.data
+                )
+            ) {
                 return candidate;
             }
         }
@@ -337,16 +1188,26 @@ const extractEmbeddedTenantTenancies = (
 
     const candidates = [
         tenant?.tenancies,
+
         tenant?.active_tenancies,
+
         tenant?.activeTenancies,
+
         tenant?.tenancy,
     ];
 
-    for (const candidate of candidates) {
+    for (
+        const candidate of candidates
+    ) {
         const collection =
-            normalizeCollection(candidate);
+            normalizeCollection(
+                candidate
+            );
 
-        if (collection.length > 0) {
+        if (
+            collection.length >
+            0
+        ) {
             return collection;
         }
     }
@@ -355,30 +1216,44 @@ const extractEmbeddedTenantTenancies = (
 };
 
 /**
- * Extract tenancies from a relationship response.
+ * Extract tenancies from relationship response.
  */
-const extractTenancies = (result) => {
+const extractTenancies = (
+    result
+) => {
     const candidates = [
         result?.tenancies,
+
         result?.data?.tenancies,
+
         result?.data?.data?.tenancies,
+
         result?.data?.data?.data?.tenancies,
     ];
 
-    for (const candidate of candidates) {
+    for (
+        const candidate of candidates
+    ) {
         const collection =
-            normalizeCollection(candidate);
+            normalizeCollection(
+                candidate
+            );
 
-        if (collection.length > 0) {
+        if (
+            collection.length >
+            0
+        ) {
             return collection;
         }
     }
 
-    return extractCollection(result);
+    return extractCollection(
+        result
+    );
 };
 
 /**
- * Merge collections without duplicate tenancy IDs.
+ * Merge collections without duplicate IDs.
  */
 const mergeUniqueById = (
     ...collections
@@ -387,32 +1262,49 @@ const mergeUniqueById = (
     const seen = new Set();
 
     collections
-        .flatMap((collection) =>
-            safeArray(collection)
+        .flatMap(
+            (collection) =>
+                safeArray(
+                    collection
+                )
         )
-        .forEach((item) => {
-            if (!item) {
-                return;
-            }
-
-            const id = getTenancyId(item);
-
-            if (
-                id !== null &&
-                id !== undefined &&
-                id !== ""
-            ) {
-                const key = String(id);
-
-                if (seen.has(key)) {
+        .forEach(
+            (item) => {
+                if (!item) {
                     return;
                 }
 
-                seen.add(key);
-            }
+                const id =
+                    getTenancyId(
+                        item
+                    );
 
-            merged.push(item);
-        });
+                if (
+                    id !== null &&
+                    id !== undefined &&
+                    id !== ""
+                ) {
+                    const key =
+                        String(id);
+
+                    if (
+                        seen.has(
+                            key
+                        )
+                    ) {
+                        return;
+                    }
+
+                    seen.add(
+                        key
+                    );
+                }
+
+                merged.push(
+                    item
+                );
+            }
+        );
 
     return merged;
 };
@@ -489,7 +1381,7 @@ const normalizePagination = (
 
 /*
 |--------------------------------------------------------------------------
-| Normalize Available User Search
+| Available User Search
 |--------------------------------------------------------------------------
 */
 
@@ -507,11 +1399,15 @@ const normalizeAvailableUserSearch = (
         typeof value === "string" ||
         typeof value === "number"
     ) {
-        return String(value).trim();
+        return String(
+            value
+        ).trim();
     }
 
     if (
-        typeof value === "object"
+        isPlainObject(
+            value
+        )
     ) {
         if (
             typeof value.search ===
@@ -563,12 +1459,15 @@ const normalizeAvailableUserSearch = (
 
 const initialState = {
     bookings: [],
+
     currentBooking: null,
 
     statistics: null,
+
     reports: null,
 
     availableUnits: [],
+
     availableUsers: [],
 
     /*
@@ -578,25 +1477,41 @@ const initialState = {
     */
 
     selectedCustomer: null,
+
     selectedTenant: null,
+
     customerTenancies: [],
 
     customerRelationshipLoading: false,
+
     customerRelationshipError: null,
+
     customerRelationshipErrors: null,
+
     customerRelationshipLoaded: false,
 
     pagination: {
         current_page: 1,
+
         last_page: 1,
-        per_page: DEFAULT_PER_PAGE,
+
+        per_page:
+            DEFAULT_PER_PAGE,
+
         total: 0,
+
         from: null,
+
         to: null,
+
         path: null,
+
         first_page_url: null,
+
         last_page_url: null,
+
         next_page_url: null,
+
         prev_page_url: null,
     },
 
@@ -605,29 +1520,48 @@ const initialState = {
     },
 
     page: 1,
-    perPage: DEFAULT_PER_PAGE,
+
+    perPage:
+        DEFAULT_PER_PAGE,
 
     total: 0,
+
     lastPage: 1,
+
     from: null,
+
     to: null,
 
     loading: false,
+
     loadingList: false,
+
     loadingSingle: false,
+
     loadingCreate: false,
+
     loadingUpdate: false,
+
     loadingDelete: false,
+
     loadingSearch: false,
+
     loadingStatistics: false,
+
     loadingReports: false,
+
     loadingAction: false,
+
     loadingAvailability: false,
+
     loadingUsers: false,
+
     loadingRestore: false,
+
     loadingForceDelete: false,
 
     error: null,
+
     errors: null,
 
     initialized: false,
@@ -639,28 +1573,42 @@ const initialState = {
 |--------------------------------------------------------------------------
 */
 
-export const fetchBookings = createAsyncThunk(
-    "bookings/fetchBookings",
-    async (
-        params = {},
-        { rejectWithValue }
-    ) => {
-        const result =
-            await bookingService.getAll(
-                params
-            );
+export const fetchBookings =
+    createAsyncThunk(
+        "bookings/fetchBookings",
+        async (
+            params = {},
+            {
+                rejectWithValue,
+            }
+        ) => {
+            const result =
+                await bookingService.getAll(
+                    params
+                );
 
-        if (!result.success) {
-            return rejectWithValue({
-                message: getErrorMessage(result),
-                errors: getValidationErrors(result),
-                code: result.code,
-            });
+            if (
+                !result.success
+            ) {
+                return rejectWithValue({
+                    message:
+                        getErrorMessage(
+                            result
+                        ),
+
+                    errors:
+                        getValidationErrors(
+                            result
+                        ),
+
+                    code:
+                        result.code,
+                });
+            }
+
+            return result;
         }
-
-        return result;
-    }
-);
+    );
 
 /*
 |--------------------------------------------------------------------------
@@ -668,26 +1616,42 @@ export const fetchBookings = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const fetchBooking = createAsyncThunk(
-    "bookings/fetchBooking",
-    async (
-        id,
-        { rejectWithValue }
-    ) => {
-        const result =
-            await bookingService.getById(id);
+export const fetchBooking =
+    createAsyncThunk(
+        "bookings/fetchBooking",
+        async (
+            id,
+            {
+                rejectWithValue,
+            }
+        ) => {
+            const result =
+                await bookingService.getById(
+                    id
+                );
 
-        if (!result.success) {
-            return rejectWithValue({
-                message: getErrorMessage(result),
-                errors: getValidationErrors(result),
-                code: result.code,
-            });
+            if (
+                !result.success
+            ) {
+                return rejectWithValue({
+                    message:
+                        getErrorMessage(
+                            result
+                        ),
+
+                    errors:
+                        getValidationErrors(
+                            result
+                        ),
+
+                    code:
+                        result.code,
+                });
+            }
+
+            return result;
         }
-
-        return result;
-    }
-);
+    );
 
 /*
 |--------------------------------------------------------------------------
@@ -695,28 +1659,42 @@ export const fetchBooking = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const createBooking = createAsyncThunk(
-    "bookings/createBooking",
-    async (
-        payload,
-        { rejectWithValue }
-    ) => {
-        const result =
-            await bookingService.create(
-                payload
-            );
+export const createBooking =
+    createAsyncThunk(
+        "bookings/createBooking",
+        async (
+            payload,
+            {
+                rejectWithValue,
+            }
+        ) => {
+            const result =
+                await bookingService.create(
+                    payload
+                );
 
-        if (!result.success) {
-            return rejectWithValue({
-                message: getErrorMessage(result),
-                errors: getValidationErrors(result),
-                code: result.code,
-            });
+            if (
+                !result.success
+            ) {
+                return rejectWithValue({
+                    message:
+                        getErrorMessage(
+                            result
+                        ),
+
+                    errors:
+                        getValidationErrors(
+                            result
+                        ),
+
+                    code:
+                        result.code,
+                });
+            }
+
+            return result;
         }
-
-        return result;
-    }
-);
+    );
 
 /*
 |--------------------------------------------------------------------------
@@ -724,29 +1702,46 @@ export const createBooking = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const updateBooking = createAsyncThunk(
-    "bookings/updateBooking",
-    async (
-        { id, data },
-        { rejectWithValue }
-    ) => {
-        const result =
-            await bookingService.update(
+export const updateBooking =
+    createAsyncThunk(
+        "bookings/updateBooking",
+        async (
+            {
                 id,
-                data
-            );
+                data,
+            },
+            {
+                rejectWithValue,
+            }
+        ) => {
+            const result =
+                await bookingService.update(
+                    id,
+                    data
+                );
 
-        if (!result.success) {
-            return rejectWithValue({
-                message: getErrorMessage(result),
-                errors: getValidationErrors(result),
-                code: result.code,
-            });
+            if (
+                !result.success
+            ) {
+                return rejectWithValue({
+                    message:
+                        getErrorMessage(
+                            result
+                        ),
+
+                    errors:
+                        getValidationErrors(
+                            result
+                        ),
+
+                    code:
+                        result.code,
+                });
+            }
+
+            return result;
         }
-
-        return result;
-    }
-);
+    );
 
 /*
 |--------------------------------------------------------------------------
@@ -754,29 +1749,46 @@ export const updateBooking = createAsyncThunk(
 |--------------------------------------------------------------------------
 */
 
-export const deleteBooking = createAsyncThunk(
-    "bookings/deleteBooking",
-    async (
-        id,
-        { rejectWithValue }
-    ) => {
-        const result =
-            await bookingService.delete(id);
+export const deleteBooking =
+    createAsyncThunk(
+        "bookings/deleteBooking",
+        async (
+            id,
+            {
+                rejectWithValue,
+            }
+        ) => {
+            const result =
+                await bookingService.delete(
+                    id
+                );
 
-        if (!result.success) {
-            return rejectWithValue({
-                message: getErrorMessage(result),
-                errors: getValidationErrors(result),
-                code: result.code,
-            });
+            if (
+                !result.success
+            ) {
+                return rejectWithValue({
+                    message:
+                        getErrorMessage(
+                            result
+                        ),
+
+                    errors:
+                        getValidationErrors(
+                            result
+                        ),
+
+                    code:
+                        result.code,
+                });
+            }
+
+            return {
+                ...result,
+
+                deletedId: id,
+            };
         }
-
-        return {
-            ...result,
-            deletedId: id,
-        };
-    }
-);
+    );
 
 /*
 |--------------------------------------------------------------------------
@@ -792,7 +1804,9 @@ export const searchBookings =
                 search = "",
                 ...params
             } = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService.search(
@@ -800,14 +1814,20 @@ export const searchBookings =
                     params
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -828,21 +1848,29 @@ export const fetchBookingStatistics =
         "bookings/fetchBookingStatistics",
         async (
             params = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService.statistics(
                     params
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -863,21 +1891,29 @@ export const fetchBookingReports =
         "bookings/fetchBookingReports",
         async (
             params = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService.reports(
                     params
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -901,21 +1937,31 @@ const createStatusThunk = (
         `bookings/${name}`,
         async (
             params = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService[
                     serviceMethod
-                ](params);
+                ](
+                    params
+                );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -981,25 +2027,39 @@ const createActionThunk = (
         `bookings/${name}`,
         async (
             payload,
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
-                Array.isArray(payload)
+                Array.isArray(
+                    payload
+                )
                     ? await bookingService[
                         serviceMethod
-                    ](...payload)
+                    ](
+                        ...payload
+                    )
                     : await bookingService[
                         serviceMethod
-                    ](payload);
+                    ](
+                        payload
+                    );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -1059,7 +2119,9 @@ export const cancelBooking =
                 id,
                 data = {},
             },
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService.cancel(
@@ -1067,14 +2129,20 @@ export const cancelBooking =
                     data
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -1098,7 +2166,9 @@ export const rejectBooking =
                 id,
                 rejection_reason,
             },
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService.reject(
@@ -1106,14 +2176,20 @@ export const rejectBooking =
                     rejection_reason
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -1134,21 +2210,29 @@ export const fetchAvailableUnits =
         "bookings/fetchAvailableUnits",
         async (
             params = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const result =
                 await bookingService.availableUnits(
                     params
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -1169,7 +2253,9 @@ export const fetchAvailableUsers =
         "bookings/fetchAvailableUsers",
         async (
             search = "",
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const normalizedSearch =
                 normalizeAvailableUserSearch(
@@ -1183,14 +2269,20 @@ export const fetchAvailableUsers =
                     )
                     : await bookingService.availableUsers();
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
@@ -1206,38 +2298,29 @@ export const fetchAvailableUsers =
 |--------------------------------------------------------------------------
 */
 
-/**
- * Resolve:
- *
- * User/customer
- *      ↓
- * Tenant profile
- *      ↓
- * Tenancies
- *
- * IDs:
- *
- * customer = users.id
- * tenant   = tenants.id
- * tenancy  = tenancies.id
- */
 export const resolveCustomerTenancies =
     createAsyncThunk(
         "bookings/resolveCustomerTenancies",
         async (
             customer,
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const customerId =
                 getCustomerUserId(
                     customer
                 );
 
-            if (!customerId) {
+            if (
+                !customerId
+            ) {
                 return rejectWithValue({
                     message:
                         "Customer ID is required.",
+
                     errors: null,
+
                     code: 422,
                 });
             }
@@ -1247,24 +2330,34 @@ export const resolveCustomerTenancies =
                     customerId
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
             }
 
             const tenant =
-                extractTenant(result);
+                extractTenant(
+                    result
+                );
 
             const responseTenancies =
-                extractTenancies(result);
+                extractTenancies(
+                    result
+                );
 
             const embeddedTenancies =
                 extractEmbeddedTenantTenancies(
@@ -1287,6 +2380,7 @@ export const resolveCustomerTenancies =
                     null,
 
                 tenant,
+
                 tenancies,
             };
         }
@@ -1303,18 +2397,24 @@ export const fetchTenantByCustomer =
         "bookings/fetchTenantByCustomer",
         async (
             customer,
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const customerId =
                 getCustomerUserId(
                     customer
                 );
 
-            if (!customerId) {
+            if (
+                !customerId
+            ) {
                 return rejectWithValue({
                     message:
                         "Customer ID is required.",
+
                     errors: null,
+
                     code: 422,
                 });
             }
@@ -1324,21 +2424,29 @@ export const fetchTenantByCustomer =
                     customerId
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
             }
 
             const tenant =
-                extractTenant(result);
+                extractTenant(
+                    result
+                );
 
             const tenancies =
                 extractEmbeddedTenantTenancies(
@@ -1349,9 +2457,11 @@ export const fetchTenantByCustomer =
                 ...result,
 
                 customer:
-                    customer ?? null,
+                    customer ??
+                    null,
 
                 tenant,
+
                 tenancies,
             };
         }
@@ -1371,18 +2481,24 @@ export const fetchTenanciesByTenant =
                 tenant,
                 params = {},
             } = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const tenantId =
                 getTenantProfileId(
                     tenant
                 );
 
-            if (!tenantId) {
+            if (
+                !tenantId
+            ) {
                 return rejectWithValue({
                     message:
                         "Tenant ID is required.",
+
                     errors: null,
+
                     code: 422,
                 });
             }
@@ -1393,21 +2509,29 @@ export const fetchTenanciesByTenant =
                     params
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
             }
 
             const responseTenancies =
-                extractTenancies(result);
+                extractTenancies(
+                    result
+                );
 
             const embeddedTenancies =
                 extractEmbeddedTenantTenancies(
@@ -1418,7 +2542,8 @@ export const fetchTenanciesByTenant =
                 ...result,
 
                 tenant:
-                    tenant ?? null,
+                    tenant ??
+                    null,
 
                 tenancies:
                     mergeUniqueById(
@@ -1443,18 +2568,24 @@ export const fetchActiveTenanciesByTenant =
                 tenant,
                 params = {},
             } = {},
-            { rejectWithValue }
+            {
+                rejectWithValue,
+            }
         ) => {
             const tenantId =
                 getTenantProfileId(
                     tenant
                 );
 
-            if (!tenantId) {
+            if (
+                !tenantId
+            ) {
                 return rejectWithValue({
                     message:
                         "Tenant ID is required.",
+
                     errors: null,
+
                     code: 422,
                 });
             }
@@ -1465,21 +2596,29 @@ export const fetchActiveTenanciesByTenant =
                     params
                 );
 
-            if (!result.success) {
+            if (
+                !result.success
+            ) {
                 return rejectWithValue({
                     message:
-                        getErrorMessage(result),
+                        getErrorMessage(
+                            result
+                        ),
+
                     errors:
                         getValidationErrors(
                             result
                         ),
+
                     code:
                         result.code,
                 });
             }
 
             const responseTenancies =
-                extractTenancies(result);
+                extractTenancies(
+                    result
+                );
 
             const embeddedTenancies =
                 extractEmbeddedTenantTenancies(
@@ -1490,7 +2629,8 @@ export const fetchActiveTenanciesByTenant =
                 ...result,
 
                 tenant:
-                    tenant ?? null,
+                    tenant ??
+                    null,
 
                 tenancies:
                     mergeUniqueById(
@@ -1512,6 +2652,7 @@ export const clearCustomerRelationship =
         "bookings/clearCustomerRelationship",
         async () => ({
             success: true,
+
             data: null,
         })
     );
@@ -1542,1402 +2683,244 @@ export const forceDeleteBooking =
 
 /*
 |--------------------------------------------------------------------------
+| Shared State Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Replace a booking in the collection.
+ */
+const replaceBookingInState = (
+    state,
+    booking
+) => {
+    if (!booking) {
+        return;
+    }
+
+    const normalizedBooking =
+        normalizeBooking(
+            booking
+        );
+
+    state.currentBooking =
+        normalizedBooking;
+
+    const index =
+        state.bookings.findIndex(
+            (item) =>
+                String(
+                    item?.id
+                ) ===
+                String(
+                    normalizedBooking?.id
+                )
+        );
+
+    if (
+        index !== -1
+    ) {
+        state.bookings[index] =
+            normalizedBooking;
+    } else {
+        state.bookings.unshift(
+            normalizedBooking
+        );
+    }
+};
+
+/**
+ * Apply paginated booking response.
+ */
+const applyBookingCollection = (
+    state,
+    result
+) => {
+    /*
+     * Normalize the collection exactly once
+     * at the Redux boundary.
+     */
+    state.bookings =
+        extractCollection(
+            result
+        );
+
+    state.pagination =
+        normalizePagination(
+            result?.meta,
+            state.pagination
+        );
+
+    state.page =
+        state.pagination
+            .current_page;
+
+    state.perPage =
+        state.pagination
+            .per_page;
+
+    state.total =
+        state.pagination
+            .total;
+
+    state.lastPage =
+        state.pagination
+            .last_page;
+
+    state.from =
+        state.pagination
+            .from;
+
+    state.to =
+        state.pagination
+            .to;
+};
+
+/*
+|--------------------------------------------------------------------------
 | Slice
 |--------------------------------------------------------------------------
 */
 
-const bookingSlice = createSlice({
-    name: "bookings",
-
-    initialState,
-
-    reducers: {
-        /*
-        |--------------------------------------------------------------------------
-        | Filters
-        |--------------------------------------------------------------------------
-        */
-
-        setFilters: (
-            state,
-            action
-        ) => {
-            state.filters = {
-                ...state.filters,
-                ...(action.payload ?? {}),
-            };
-
-            state.page = 1;
-        },
-
-        clearFilters: (state) => {
-            state.filters = {
-                ...INITIAL_FILTERS,
-            };
-
-            state.page = 1;
-        },
-
-        /*
-        |--------------------------------------------------------------------------
-        | Pagination
-        |--------------------------------------------------------------------------
-        */
-
-        setPage: (
-            state,
-            action
-        ) => {
-            const page =
-                Number(
-                    action.payload
-                ) || 1;
-
-            state.page = Math.max(
-                1,
-                page
-            );
-        },
-
-        setPerPage: (
-            state,
-            action
-        ) => {
-            const perPage =
-                Number(
-                    action.payload
-                ) ||
-                DEFAULT_PER_PAGE;
-
-            state.perPage = Math.min(
-                Math.max(
-                    perPage,
-                    1
-                ),
-                100
-            );
-
-            state.page = 1;
-        },
-
-        /*
-        |--------------------------------------------------------------------------
-        | Current Booking
-        |--------------------------------------------------------------------------
-        */
-
-        clearCurrentBooking: (
-            state
-        ) => {
-            state.currentBooking = null;
-        },
-
-        /*
-        |--------------------------------------------------------------------------
-        | Customer Relationship
-        |--------------------------------------------------------------------------
-        */
-
-        setSelectedCustomer: (
-            state,
-            action
-        ) => {
-            state.selectedCustomer =
-                action.payload ?? null;
-        },
-
-        setSelectedTenant: (
-            state,
-            action
-        ) => {
-            state.selectedTenant =
-                action.payload ?? null;
-        },
-
-        setCustomerTenancies: (
-            state,
-            action
-        ) => {
-            state.customerTenancies =
-                safeArray(
-                    action.payload
-                );
-        },
-
-        clearCustomerRelationship: (
-            state
-        ) => {
-            state.selectedCustomer =
-                null;
-
-            state.selectedTenant =
-                null;
-
-            state.customerTenancies =
-                [];
-
-            state.customerRelationshipLoading =
-                false;
-
-            state.customerRelationshipError =
-                null;
-
-            state.customerRelationshipErrors =
-                null;
-
-            state.customerRelationshipLoaded =
-                false;
-        },
-
-        /*
-        |--------------------------------------------------------------------------
-        | Errors
-        |--------------------------------------------------------------------------
-        */
-
-        clearError: (
-            state
-        ) => {
-            state.error = null;
-            state.errors = null;
-        },
-
-        clearCustomerRelationshipError: (
-            state
-        ) => {
-            state.customerRelationshipError =
-                null;
-
-            state.customerRelationshipErrors =
-                null;
-        },
-
-        /*
-        |--------------------------------------------------------------------------
-        | Reset
-        |--------------------------------------------------------------------------
-        */
-
-        resetBookingState: () => ({
-            ...initialState,
-        }),
-    },
-
-    extraReducers: (builder) => {
-        /*
-        |--------------------------------------------------------------------------
-        | Fetch Bookings
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchBookings.pending,
-                (state) => {
-                    state.loading = true;
-                    state.loadingList = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBookings.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    const result =
-                        action.payload;
-
-                    state.loading = false;
-                    state.loadingList = false;
-
-                    state.bookings =
-                        extractCollection(
-                            result
-                        );
-
-                    state.pagination =
-                        normalizePagination(
-                            result?.meta,
-                            state.pagination
-                        );
-
-                    state.page =
-                        state.pagination
-                            .current_page;
-
-                    state.perPage =
-                        state.pagination
-                            .per_page;
-
-                    state.total =
-                        state.pagination.total;
-
-                    state.lastPage =
-                        state.pagination
-                            .last_page;
-
-                    state.from =
-                        state.pagination.from;
-
-                    state.to =
-                        state.pagination.to;
-
-                    state.initialized = true;
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBookings.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loading = false;
-                    state.loadingList = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to fetch bookings.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-
-                    state.initialized = true;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Single Booking
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchBooking.pending,
-                (state) => {
-                    state.loadingSingle = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBooking.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingSingle = false;
-
-                    state.currentBooking =
-                        unwrapData(
-                            action.payload
-                        );
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBooking.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingSingle = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to fetch booking.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Create
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                createBooking.pending,
-                (state) => {
-                    state.loadingCreate = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                createBooking.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingCreate = false;
-
-                    const booking =
-                        unwrapData(
-                            action.payload
-                        );
-
-                    if (booking) {
-                        state.currentBooking =
-                            booking;
-
-                        state.bookings = [
-                            booking,
-                            ...state.bookings,
-                        ];
-
-                        if (
-                            state.total >= 0
-                        ) {
-                            state.total += 1;
-                        }
-                    }
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                createBooking.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingCreate = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to create booking.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Update
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                updateBooking.pending,
-                (state) => {
-                    state.loadingUpdate = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                updateBooking.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingUpdate = false;
-
-                    const booking =
-                        unwrapData(
-                            action.payload
-                        );
-
-                    if (booking) {
-                        state.currentBooking =
-                            booking;
-
-                        const index =
-                            state.bookings.findIndex(
-                                (item) =>
-                                    String(
-                                        item?.id
-                                    ) ===
-                                    String(
-                                        booking?.id
-                                    )
-                            );
-
-                        if (index !== -1) {
-                            state.bookings[index] =
-                                booking;
-                        }
-                    }
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                updateBooking.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingUpdate = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to update booking.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Delete
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                deleteBooking.pending,
-                (state) => {
-                    state.loadingDelete = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                deleteBooking.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingDelete = false;
-
-                    const deletedId =
-                        action.payload?.deletedId;
-
-                    state.bookings =
-                        state.bookings.filter(
-                            (booking) =>
-                                String(
-                                    booking?.id
-                                ) !==
-                                String(
-                                    deletedId
-                                )
-                        );
-
-                    if (
-                        String(
-                            state.currentBooking?.id
-                        ) ===
-                        String(
-                            deletedId
-                        )
-                    ) {
-                        state.currentBooking = null;
-                    }
-
-                    if (state.total > 0) {
-                        state.total -= 1;
-                    }
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                deleteBooking.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingDelete = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to delete booking.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Search
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                searchBookings.pending,
-                (state) => {
-                    state.loadingSearch = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                searchBookings.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    const result =
-                        action.payload;
-
-                    state.loadingSearch = false;
-
-                    state.bookings =
-                        extractCollection(
-                            result
-                        );
-
-                    state.pagination =
-                        normalizePagination(
-                            result?.meta,
-                            state.pagination
-                        );
-
-                    state.page =
-                        state.pagination
-                            .current_page;
-
-                    state.perPage =
-                        state.pagination
-                            .per_page;
-
-                    state.total =
-                        state.pagination.total;
-
-                    state.lastPage =
-                        state.pagination
-                            .last_page;
-
-                    state.from =
-                        state.pagination.from;
-
-                    state.to =
-                        state.pagination.to;
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                searchBookings.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingSearch = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Booking search failed.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Statistics
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchBookingStatistics.pending,
-                (state) => {
-                    state.loadingStatistics = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBookingStatistics.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingStatistics = false;
-
-                    state.statistics =
-                        unwrapData(
-                            action.payload
-                        );
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBookingStatistics.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingStatistics = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to fetch booking statistics.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Reports
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchBookingReports.pending,
-                (state) => {
-                    state.loadingReports = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBookingReports.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingReports = false;
-
-                    state.reports =
-                        unwrapData(
-                            action.payload
-                        );
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchBookingReports.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingReports = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to fetch booking reports.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Status Lists
-        |--------------------------------------------------------------------------
-        */
-
-        const statusCases = [
-            fetchPendingBookings,
-            fetchConfirmedBookings,
-            fetchActiveBookings,
-            fetchCompletedBookings,
-            fetchCancelledBookings,
-            fetchExpiredBookings,
-            fetchRejectedBookings,
-        ];
-
-        statusCases.forEach(
-            (thunk) => {
-                builder
-                    .addCase(
-                        thunk.pending,
-                        (state) => {
-                            state.loadingList = true;
-                            state.error = null;
-                            state.errors = null;
-                        }
-                    )
-
-                    .addCase(
-                        thunk.fulfilled,
-                        (
-                            state,
-                            action
-                        ) => {
-                            const result =
-                                action.payload;
-
-                            state.loadingList = false;
-
-                            state.bookings =
-                                extractCollection(
-                                    result
-                                );
-
-                            state.pagination =
-                                normalizePagination(
-                                    result?.meta,
-                                    state.pagination
-                                );
-
-                            state.page =
-                                state.pagination
-                                    .current_page;
-
-                            state.perPage =
-                                state.pagination
-                                    .per_page;
-
-                            state.total =
-                                state.pagination.total;
-
-                            state.lastPage =
-                                state.pagination
-                                    .last_page;
-
-                            state.from =
-                                state.pagination.from;
-
-                            state.to =
-                                state.pagination.to;
-
-                            state.error = null;
-                            state.errors = null;
-                        }
-                    )
-
-                    .addCase(
-                        thunk.rejected,
-                        (
-                            state,
-                            action
-                        ) => {
-                            state.loadingList = false;
-
-                            state.error =
-                                action.payload?.message ??
-                                action.error?.message ??
-                                "Failed to fetch bookings.";
-
-                            state.errors =
-                                action.payload?.errors ??
-                                null;
-                        }
+const bookingSlice =
+    createSlice({
+        name: "bookings",
+
+        initialState,
+
+        reducers: {
+            /*
+            |--------------------------------------------------------------------------
+            | Filters
+            |--------------------------------------------------------------------------
+            */
+
+            setFilters: (
+                state,
+                action
+            ) => {
+                state.filters = {
+                    ...state.filters,
+
+                    ...(action.payload ??
+                        {}),
+                };
+
+                state.page = 1;
+            },
+
+            clearFilters: (
+                state
+            ) => {
+                state.filters = {
+                    ...INITIAL_FILTERS,
+                };
+
+                state.page = 1;
+            },
+
+            /*
+            |--------------------------------------------------------------------------
+            | Pagination
+            |--------------------------------------------------------------------------
+            */
+
+            setPage: (
+                state,
+                action
+            ) => {
+                const page =
+                    Number(
+                        action.payload
+                    ) || 1;
+
+                state.page =
+                    Math.max(
+                        1,
+                        page
                     );
-            }
-        );
+            },
 
-        /*
-        |--------------------------------------------------------------------------
-        | Workflow Actions
-        |--------------------------------------------------------------------------
-        */
+            setPerPage: (
+                state,
+                action
+            ) => {
+                const perPage =
+                    Number(
+                        action.payload
+                    ) ||
+                    DEFAULT_PER_PAGE;
 
-        const workflowCases = [
-            confirmBooking,
-            approveBooking,
-            checkInBooking,
-            completeBooking,
-            cancelBooking,
-            rejectBooking,
-            expireBooking,
-        ];
-
-        workflowCases.forEach(
-            (thunk) => {
-                builder
-                    .addCase(
-                        thunk.pending,
-                        (state) => {
-                            state.loadingAction = true;
-                            state.error = null;
-                            state.errors = null;
-                        }
-                    )
-
-                    .addCase(
-                        thunk.fulfilled,
-                        (
-                            state,
-                            action
-                        ) => {
-                            state.loadingAction = false;
-
-                            const booking =
-                                unwrapData(
-                                    action.payload
-                                );
-
-                            if (booking) {
-                                state.currentBooking =
-                                    booking;
-
-                                const index =
-                                    state.bookings.findIndex(
-                                        (item) =>
-                                            String(
-                                                item?.id
-                                            ) ===
-                                            String(
-                                                booking?.id
-                                            )
-                                    );
-
-                                if (
-                                    index !== -1
-                                ) {
-                                    state.bookings[
-                                        index
-                                    ] = booking;
-                                }
-                            }
-
-                            state.error = null;
-                            state.errors = null;
-                        }
-                    )
-
-                    .addCase(
-                        thunk.rejected,
-                        (
-                            state,
-                            action
-                        ) => {
-                            state.loadingAction = false;
-
-                            state.error =
-                                action.payload?.message ??
-                                action.error?.message ??
-                                "Booking action failed.";
-
-                            state.errors =
-                                action.payload?.errors ??
-                                null;
-                        }
+                state.perPage =
+                    Math.min(
+                        Math.max(
+                            perPage,
+                            1
+                        ),
+                        100
                     );
-            }
-        );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Available Units
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchAvailableUnits.pending,
-                (state) => {
-                    state.loadingAvailability = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchAvailableUnits.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingAvailability = false;
-
-                    state.availableUnits =
-                        extractCollection(
-                            action.payload
-                        );
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchAvailableUnits.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingAvailability = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to fetch available units.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Available Users
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchAvailableUsers.pending,
-                (state) => {
-                    state.loadingUsers = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchAvailableUsers.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingUsers = false;
-
-                    state.availableUsers =
-                        extractCollection(
-                            action.payload
-                        );
-
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
-
-            .addCase(
-                fetchAvailableUsers.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingUsers = false;
-
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to fetch available booking users.";
-
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Customer → Tenant → Tenancy
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                resolveCustomerTenancies.pending,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        true;
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-
-                    state.customerRelationshipLoaded =
-                        false;
-
-                    state.selectedCustomer =
-                        action.meta?.arg ??
-                        null;
-
-                    state.selectedTenant = null;
-                    state.customerTenancies = [];
-                }
-            )
-
-            .addCase(
-                resolveCustomerTenancies.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    state.selectedCustomer =
-                        action.payload?.customer ??
-                        state.selectedCustomer ??
-                        null;
-
-                    state.selectedTenant =
-                        action.payload?.tenant ??
-                        null;
-
-                    state.customerTenancies =
-                        mergeUniqueById(
-                            action.payload?.tenancies,
-                            extractEmbeddedTenantTenancies(
-                                action.payload?.tenant
-                            )
-                        );
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-                }
-            )
-
-            .addCase(
-                resolveCustomerTenancies.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    state.selectedTenant = null;
-                    state.customerTenancies = [];
-
-                    state.customerRelationshipError =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to load customer tenant and tenancy information.";
-
-                    state.customerRelationshipErrors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Fetch Tenant By Customer
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchTenantByCustomer.pending,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        true;
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-
-                    state.customerRelationshipLoaded =
-                        false;
-
-                    state.selectedCustomer =
-                        action.meta?.arg ??
-                        null;
-
-                    state.selectedTenant = null;
-                    state.customerTenancies = [];
-                }
-            )
-
-            .addCase(
-                fetchTenantByCustomer.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    state.selectedCustomer =
-                        action.payload?.customer ??
-                        state.selectedCustomer ??
-                        null;
-
-                    state.selectedTenant =
-                        action.payload?.tenant ??
-                        null;
-
-                    state.customerTenancies =
-                        mergeUniqueById(
-                            action.payload?.tenancies,
-                            extractEmbeddedTenantTenancies(
-                                action.payload?.tenant
-                            )
-                        );
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-                }
-            )
-
-            .addCase(
-                fetchTenantByCustomer.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    state.selectedTenant = null;
-                    state.customerTenancies = [];
-
-                    state.customerRelationshipError =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to load tenant information.";
-
-                    state.customerRelationshipErrors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Fetch Tenancies By Tenant
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchTenanciesByTenant.pending,
-                (state) => {
-                    state.customerRelationshipLoading =
-                        true;
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-                }
-            )
-
-            .addCase(
-                fetchTenanciesByTenant.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    if (
-                        action.payload?.tenant
-                    ) {
-                        state.selectedTenant =
-                            action.payload.tenant;
-                    }
-
-                    state.customerTenancies =
-                        mergeUniqueById(
-                            action.payload?.tenancies,
-                            extractEmbeddedTenantTenancies(
-                                action.payload?.tenant
-                            )
-                        );
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-                }
-            )
-
-            .addCase(
-                fetchTenanciesByTenant.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    state.customerTenancies = [];
-
-                    state.customerRelationshipError =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to load tenant tenancies.";
-
-                    state.customerRelationshipErrors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Fetch Active Tenancies By Tenant
-        |--------------------------------------------------------------------------
-        */
-
-        builder
-            .addCase(
-                fetchActiveTenanciesByTenant.pending,
-                (state) => {
-                    state.customerRelationshipLoading =
-                        true;
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-                }
-            )
-
-            .addCase(
-                fetchActiveTenanciesByTenant.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    if (
-                        action.payload?.tenant
-                    ) {
-                        state.selectedTenant =
-                            action.payload.tenant;
-                    }
-
-                    state.customerTenancies =
-                        mergeUniqueById(
-                            action.payload?.tenancies,
-                            extractEmbeddedTenantTenancies(
-                                action.payload?.tenant
-                            )
-                        );
-
-                    state.customerRelationshipError =
-                        null;
-
-                    state.customerRelationshipErrors =
-                        null;
-                }
-            )
-
-            .addCase(
-                fetchActiveTenanciesByTenant.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.customerRelationshipLoading =
-                        false;
-
-                    state.customerRelationshipLoaded =
-                        true;
-
-                    state.customerTenancies = [];
-
-                    state.customerRelationshipError =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to load active tenant tenancies.";
-
-                    state.customerRelationshipErrors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Clear Customer Relationship
-        |--------------------------------------------------------------------------
-        */
-
-        builder.addCase(
-            clearCustomerRelationship.fulfilled,
-            (state) => {
-                state.selectedCustomer = null;
-                state.selectedTenant = null;
-                state.customerTenancies = [];
+                state.page = 1;
+            },
+
+            /*
+            |--------------------------------------------------------------------------
+            | Current Booking
+            |--------------------------------------------------------------------------
+            */
+
+            clearCurrentBooking: (
+                state
+            ) => {
+                state.currentBooking =
+                    null;
+            },
+
+            /*
+            |--------------------------------------------------------------------------
+            | Customer Relationship
+            |--------------------------------------------------------------------------
+            */
+
+            setSelectedCustomer: (
+                state,
+                action
+            ) => {
+                state.selectedCustomer =
+                    action.payload ??
+                    null;
+            },
+
+            setSelectedTenant: (
+                state,
+                action
+            ) => {
+                state.selectedTenant =
+                    action.payload ??
+                    null;
+            },
+
+            setCustomerTenancies: (
+                state,
+                action
+            ) => {
+                state.customerTenancies =
+                    safeArray(
+                        action.payload
+                    );
+            },
+
+            clearCustomerRelationship: (
+                state
+            ) => {
+                state.selectedCustomer =
+                    null;
+
+                state.selectedTenant =
+                    null;
+
+                state.customerTenancies =
+                    [];
 
                 state.customerRelationshipLoading =
                     false;
@@ -2950,167 +2933,1627 @@ const bookingSlice = createSlice({
 
                 state.customerRelationshipLoaded =
                     false;
-            }
-        );
+            },
 
-        /*
-        |--------------------------------------------------------------------------
-        | Restore
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | Errors
+            |--------------------------------------------------------------------------
+            */
 
-        builder
-            .addCase(
-                restoreBooking.pending,
-                (state) => {
-                    state.loadingRestore = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
+            clearError: (
+                state
+            ) => {
+                state.error = null;
 
-            .addCase(
-                restoreBooking.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingRestore = false;
+                state.errors = null;
+            },
 
-                    const booking =
-                        unwrapData(
-                            action.payload
+            clearCustomerRelationshipError: (
+                state
+            ) => {
+                state.customerRelationshipError =
+                    null;
+
+                state.customerRelationshipErrors =
+                    null;
+            },
+
+            /*
+            |--------------------------------------------------------------------------
+            | Reset
+            |--------------------------------------------------------------------------
+            */
+
+            resetBookingState: () => ({
+                ...initialState,
+
+                filters: {
+                    ...INITIAL_FILTERS,
+                },
+
+                pagination: {
+                    ...initialState.pagination,
+                },
+            }),
+        },
+
+        extraReducers: (
+            builder
+        ) => {
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch Bookings
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchBookings.pending,
+                    (
+                        state
+                    ) => {
+                        state.loading =
+                            true;
+
+                        state.loadingList =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBookings.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        const result =
+                            action.payload;
+
+                        state.loading =
+                            false;
+
+                        state.loadingList =
+                            false;
+
+                        applyBookingCollection(
+                            state,
+                            result
                         );
 
-                    if (booking) {
+                        state.initialized =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBookings.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loading =
+                            false;
+
+                        state.loadingList =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to fetch bookings.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+
+                        state.initialized =
+                            true;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Single Booking
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchBooking.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingSingle =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBooking.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingSingle =
+                            false;
+
+                        const booking =
+                            unwrapResource(
+                                action.payload
+                            );
+
                         state.currentBooking =
                             booking;
 
-                        const index =
-                            state.bookings.findIndex(
-                                (item) =>
-                                    String(
-                                        item?.id
-                                    ) ===
-                                    String(
-                                        booking?.id
-                                    )
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBooking.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingSingle =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to fetch booking.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    createBooking.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingCreate =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    createBooking.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingCreate =
+                            false;
+
+                        const booking =
+                            unwrapResource(
+                                action.payload
                             );
 
-                        if (index !== -1) {
-                            state.bookings[index] =
-                                booking;
-                        } else {
-                            state.bookings.unshift(
+                        if (
+                            booking
+                        ) {
+                            const normalizedBooking =
+                                normalizeBooking(
+                                    booking
+                                );
+
+                            state.currentBooking =
+                                normalizedBooking;
+
+                            state.bookings = [
+                                normalizedBooking,
+
+                                ...state.bookings,
+                            ];
+
+                            state.total += 1;
+                        }
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    createBooking.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingCreate =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to create booking.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Update
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    updateBooking.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingUpdate =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    updateBooking.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingUpdate =
+                            false;
+
+                        const booking =
+                            unwrapResource(
+                                action.payload
+                            );
+
+                        if (
+                            booking
+                        ) {
+                            replaceBookingInState(
+                                state,
                                 booking
                             );
                         }
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
                     }
+                )
 
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
+                .addCase(
+                    updateBooking.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingUpdate =
+                            false;
 
-            .addCase(
-                restoreBooking.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingRestore = false;
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to update booking.";
 
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to restore booking.";
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
 
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
-                }
-            );
+            /*
+            |--------------------------------------------------------------------------
+            | Delete
+            |--------------------------------------------------------------------------
+            */
 
-        /*
-        |--------------------------------------------------------------------------
-        | Force Delete
-        |--------------------------------------------------------------------------
-        */
+            builder
+                .addCase(
+                    deleteBooking.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingDelete =
+                            true;
 
-        builder
-            .addCase(
-                forceDeleteBooking.pending,
-                (state) => {
-                    state.loadingForceDelete = true;
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
+                        state.error =
+                            null;
 
-            .addCase(
-                forceDeleteBooking.fulfilled,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingForceDelete = false;
+                        state.errors =
+                            null;
+                    }
+                )
 
-                    const deletedId =
-                        getId(
-                            action.meta?.arg
+                .addCase(
+                    deleteBooking.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingDelete =
+                            false;
+
+                        const deletedId =
+                            action.payload
+                                ?.deletedId;
+
+                        state.bookings =
+                            state.bookings.filter(
+                                (
+                                    booking
+                                ) =>
+                                    String(
+                                        booking?.id
+                                    ) !==
+                                    String(
+                                        deletedId
+                                    )
+                            );
+
+                        if (
+                            String(
+                                state.currentBooking
+                                    ?.id
+                            ) ===
+                            String(
+                                deletedId
+                            )
+                        ) {
+                            state.currentBooking =
+                                null;
+                        }
+
+                        if (
+                            state.total >
+                            0
+                        ) {
+                            state.total -=
+                                1;
+                        }
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    deleteBooking.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingDelete =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to delete booking.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Search
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    searchBookings.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingSearch =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    searchBookings.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingSearch =
+                            false;
+
+                        applyBookingCollection(
+                            state,
+                            action.payload
                         );
 
-                    state.bookings =
-                        state.bookings.filter(
-                            (booking) =>
-                                String(
-                                    booking?.id
-                                ) !==
-                                String(
-                                    deletedId
-                                )
-                        );
+                        state.error =
+                            null;
 
-                    if (
-                        String(
-                            state.currentBooking?.id
-                        ) ===
-                        String(
-                            deletedId
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    searchBookings.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingSearch =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Booking search failed.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Statistics
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchBookingStatistics.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingStatistics =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBookingStatistics.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingStatistics =
+                            false;
+
+                        state.statistics =
+                            action.payload
+                                ?.data ??
+                            action.payload ??
+                            null;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBookingStatistics.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingStatistics =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to fetch booking statistics.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Reports
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchBookingReports.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingReports =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBookingReports.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingReports =
+                            false;
+
+                        state.reports =
+                            action.payload
+                                ?.data ??
+                            action.payload ??
+                            null;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchBookingReports.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingReports =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to fetch booking reports.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Status Lists
+            |--------------------------------------------------------------------------
+            */
+
+            const statusCases = [
+                fetchPendingBookings,
+
+                fetchConfirmedBookings,
+
+                fetchActiveBookings,
+
+                fetchCompletedBookings,
+
+                fetchCancelledBookings,
+
+                fetchExpiredBookings,
+
+                fetchRejectedBookings,
+            ];
+
+            statusCases.forEach(
+                (
+                    thunk
+                ) => {
+                    builder
+                        .addCase(
+                            thunk.pending,
+                            (
+                                state
+                            ) => {
+                                state.loadingList =
+                                    true;
+
+                                state.error =
+                                    null;
+
+                                state.errors =
+                                    null;
+                            }
                         )
-                    ) {
-                        state.currentBooking = null;
-                    }
 
-                    if (state.total > 0) {
-                        state.total -= 1;
-                    }
+                        .addCase(
+                            thunk.fulfilled,
+                            (
+                                state,
+                                action
+                            ) => {
+                                state.loadingList =
+                                    false;
 
-                    state.error = null;
-                    state.errors = null;
-                }
-            )
+                                applyBookingCollection(
+                                    state,
+                                    action.payload
+                                );
 
-            .addCase(
-                forceDeleteBooking.rejected,
-                (
-                    state,
-                    action
-                ) => {
-                    state.loadingForceDelete = false;
+                                state.error =
+                                    null;
 
-                    state.error =
-                        action.payload?.message ??
-                        action.error?.message ??
-                        "Failed to permanently delete booking.";
+                                state.errors =
+                                    null;
+                            }
+                        )
 
-                    state.errors =
-                        action.payload?.errors ??
-                        null;
+                        .addCase(
+                            thunk.rejected,
+                            (
+                                state,
+                                action
+                            ) => {
+                                state.loadingList =
+                                    false;
+
+                                state.error =
+                                    action.payload
+                                        ?.message ??
+                                    action.error
+                                        ?.message ??
+                                    "Failed to fetch bookings.";
+
+                                state.errors =
+                                    action.payload
+                                        ?.errors ??
+                                    null;
+                            }
+                        );
                 }
             );
-    },
-});
+
+            /*
+            |--------------------------------------------------------------------------
+            | Workflow Actions
+            |--------------------------------------------------------------------------
+            */
+
+            const workflowCases = [
+                confirmBooking,
+
+                approveBooking,
+
+                checkInBooking,
+
+                completeBooking,
+
+                cancelBooking,
+
+                rejectBooking,
+
+                expireBooking,
+            ];
+
+            workflowCases.forEach(
+                (
+                    thunk
+                ) => {
+                    builder
+                        .addCase(
+                            thunk.pending,
+                            (
+                                state
+                            ) => {
+                                state.loadingAction =
+                                    true;
+
+                                state.error =
+                                    null;
+
+                                state.errors =
+                                    null;
+                            }
+                        )
+
+                        .addCase(
+                            thunk.fulfilled,
+                            (
+                                state,
+                                action
+                            ) => {
+                                state.loadingAction =
+                                    false;
+
+                                const booking =
+                                    unwrapResource(
+                                        action.payload
+                                    );
+
+                                if (
+                                    booking
+                                ) {
+                                    replaceBookingInState(
+                                        state,
+                                        booking
+                                    );
+                                }
+
+                                state.error =
+                                    null;
+
+                                state.errors =
+                                    null;
+                            }
+                        )
+
+                        .addCase(
+                            thunk.rejected,
+                            (
+                                state,
+                                action
+                            ) => {
+                                state.loadingAction =
+                                    false;
+
+                                state.error =
+                                    action.payload
+                                        ?.message ??
+                                    action.error
+                                        ?.message ??
+                                    "Booking action failed.";
+
+                                state.errors =
+                                    action.payload
+                                        ?.errors ??
+                                    null;
+                            }
+                        );
+                }
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Available Units
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchAvailableUnits.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingAvailability =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchAvailableUnits.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingAvailability =
+                            false;
+
+                        state.availableUnits =
+                            extractCollection(
+                                action.payload
+                            );
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchAvailableUnits.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingAvailability =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to fetch available units.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Available Users
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchAvailableUsers.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingUsers =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchAvailableUsers.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingUsers =
+                            false;
+
+                        state.availableUsers =
+                            extractCollection(
+                                action.payload
+                            );
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchAvailableUsers.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingUsers =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to fetch available booking users.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Customer → Tenant → Tenancy
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    resolveCustomerTenancies.pending,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            true;
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+
+                        state.customerRelationshipLoaded =
+                            false;
+
+                        state.selectedCustomer =
+                            action.meta?.arg ??
+                            null;
+
+                        state.selectedTenant =
+                            null;
+
+                        state.customerTenancies =
+                            [];
+                    }
+                )
+
+                .addCase(
+                    resolveCustomerTenancies.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        state.selectedCustomer =
+                            action.payload
+                                ?.customer ??
+                            state.selectedCustomer ??
+                            null;
+
+                        state.selectedTenant =
+                            action.payload
+                                ?.tenant ??
+                            null;
+
+                        state.customerTenancies =
+                            mergeUniqueById(
+                                action.payload
+                                    ?.tenancies,
+
+                                extractEmbeddedTenantTenancies(
+                                    action.payload
+                                        ?.tenant
+                                )
+                            );
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    resolveCustomerTenancies.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        state.selectedTenant =
+                            null;
+
+                        state.customerTenancies =
+                            [];
+
+                        state.customerRelationshipError =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to load customer tenant and tenancy information.";
+
+                        state.customerRelationshipErrors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch Tenant By Customer
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchTenantByCustomer.pending,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            true;
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+
+                        state.customerRelationshipLoaded =
+                            false;
+
+                        state.selectedCustomer =
+                            action.meta?.arg ??
+                            null;
+
+                        state.selectedTenant =
+                            null;
+
+                        state.customerTenancies =
+                            [];
+                    }
+                )
+
+                .addCase(
+                    fetchTenantByCustomer.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        state.selectedCustomer =
+                            action.payload
+                                ?.customer ??
+                            state.selectedCustomer ??
+                            null;
+
+                        state.selectedTenant =
+                            action.payload
+                                ?.tenant ??
+                            null;
+
+                        state.customerTenancies =
+                            mergeUniqueById(
+                                action.payload
+                                    ?.tenancies,
+
+                                extractEmbeddedTenantTenancies(
+                                    action.payload
+                                        ?.tenant
+                                )
+                            );
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchTenantByCustomer.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        state.selectedTenant =
+                            null;
+
+                        state.customerTenancies =
+                            [];
+
+                        state.customerRelationshipError =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to load tenant information.";
+
+                        state.customerRelationshipErrors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch Tenancies By Tenant
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchTenanciesByTenant.pending,
+                    (
+                        state
+                    ) => {
+                        state.customerRelationshipLoading =
+                            true;
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchTenanciesByTenant.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        if (
+                            action.payload
+                                ?.tenant
+                        ) {
+                            state.selectedTenant =
+                                action.payload.tenant;
+                        }
+
+                        state.customerTenancies =
+                            mergeUniqueById(
+                                action.payload
+                                    ?.tenancies,
+
+                                extractEmbeddedTenantTenancies(
+                                    action.payload
+                                        ?.tenant
+                                )
+                            );
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchTenanciesByTenant.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        state.customerTenancies =
+                            [];
+
+                        state.customerRelationshipError =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to load tenant tenancies.";
+
+                        state.customerRelationshipErrors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Fetch Active Tenancies By Tenant
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    fetchActiveTenanciesByTenant.pending,
+                    (
+                        state
+                    ) => {
+                        state.customerRelationshipLoading =
+                            true;
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchActiveTenanciesByTenant.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        if (
+                            action.payload
+                                ?.tenant
+                        ) {
+                            state.selectedTenant =
+                                action.payload.tenant;
+                        }
+
+                        state.customerTenancies =
+                            mergeUniqueById(
+                                action.payload
+                                    ?.tenancies,
+
+                                extractEmbeddedTenantTenancies(
+                                    action.payload
+                                        ?.tenant
+                                )
+                            );
+
+                        state.customerRelationshipError =
+                            null;
+
+                        state.customerRelationshipErrors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    fetchActiveTenanciesByTenant.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.customerRelationshipLoading =
+                            false;
+
+                        state.customerRelationshipLoaded =
+                            true;
+
+                        state.customerTenancies =
+                            [];
+
+                        state.customerRelationshipError =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to load active tenant tenancies.";
+
+                        state.customerRelationshipErrors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Clear Customer Relationship
+            |--------------------------------------------------------------------------
+            */
+
+            builder.addCase(
+                clearCustomerRelationship.fulfilled,
+                (
+                    state
+                ) => {
+                    state.selectedCustomer =
+                        null;
+
+                    state.selectedTenant =
+                        null;
+
+                    state.customerTenancies =
+                        [];
+
+                    state.customerRelationshipLoading =
+                        false;
+
+                    state.customerRelationshipError =
+                        null;
+
+                    state.customerRelationshipErrors =
+                        null;
+
+                    state.customerRelationshipLoaded =
+                        false;
+                }
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Restore
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    restoreBooking.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingRestore =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    restoreBooking.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingRestore =
+                            false;
+
+                        const booking =
+                            unwrapResource(
+                                action.payload
+                            );
+
+                        if (
+                            booking
+                        ) {
+                            replaceBookingInState(
+                                state,
+                                booking
+                            );
+                        }
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    restoreBooking.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingRestore =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to restore booking.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Force Delete
+            |--------------------------------------------------------------------------
+            */
+
+            builder
+                .addCase(
+                    forceDeleteBooking.pending,
+                    (
+                        state
+                    ) => {
+                        state.loadingForceDelete =
+                            true;
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    forceDeleteBooking.fulfilled,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingForceDelete =
+                            false;
+
+                        const deletedId =
+                            getId(
+                                action.meta
+                                    ?.arg
+                            );
+
+                        state.bookings =
+                            state.bookings.filter(
+                                (
+                                    booking
+                                ) =>
+                                    String(
+                                        booking?.id
+                                    ) !==
+                                    String(
+                                        deletedId
+                                    )
+                            );
+
+                        if (
+                            String(
+                                state.currentBooking
+                                    ?.id
+                            ) ===
+                            String(
+                                deletedId
+                            )
+                        ) {
+                            state.currentBooking =
+                                null;
+                        }
+
+                        if (
+                            state.total >
+                            0
+                        ) {
+                            state.total -=
+                                1;
+                        }
+
+                        state.error =
+                            null;
+
+                        state.errors =
+                            null;
+                    }
+                )
+
+                .addCase(
+                    forceDeleteBooking.rejected,
+                    (
+                        state,
+                        action
+                    ) => {
+                        state.loadingForceDelete =
+                            false;
+
+                        state.error =
+                            action.payload
+                                ?.message ??
+                            action.error
+                                ?.message ??
+                            "Failed to permanently delete booking.";
+
+                        state.errors =
+                            action.payload
+                                ?.errors ??
+                            null;
+                    }
+                );
+        },
+    });
 
 /*
 |--------------------------------------------------------------------------
@@ -3120,17 +4563,25 @@ const bookingSlice = createSlice({
 
 export const {
     setFilters,
+
     clearFilters,
+
     setPage,
+
     setPerPage,
+
     clearCurrentBooking,
 
     setSelectedCustomer,
+
     setSelectedTenant,
+
     setCustomerTenancies,
+
     clearCustomerRelationshipError,
 
     clearError,
+
     resetBookingState,
 } = bookingSlice.actions;
 
@@ -3143,7 +4594,8 @@ export const {
 export const selectBookings = (
     state
 ) =>
-    state.bookings?.bookings ?? [];
+    state.bookings?.bookings ??
+    [];
 
 export const selectCurrentBooking = (
     state
@@ -3177,6 +4629,128 @@ export const selectAvailableUsers = (
 
 /*
 |--------------------------------------------------------------------------
+| Booking Financial Selectors
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get financials for current booking.
+ */
+export const selectCurrentBookingFinancials = (
+    state
+) =>
+    state.bookings
+        ?.currentBooking
+        ?.financials ??
+    null;
+
+/**
+ * Get current booking total.
+ */
+export const selectCurrentBookingTotal = (
+    state
+) =>
+    state.bookings
+        ?.currentBooking
+        ?.financials
+        ?.total_amount ??
+    "0.00";
+
+/**
+ * Get current booking amount paid.
+ */
+export const selectCurrentBookingAmountPaid = (
+    state
+) =>
+    state.bookings
+        ?.currentBooking
+        ?.financials
+        ?.amount_paid ??
+    "0.00";
+
+/**
+ * Get current booking balance.
+ */
+export const selectCurrentBookingBalance = (
+    state
+) =>
+    state.bookings
+        ?.currentBooking
+        ?.financials
+        ?.balance ??
+    "0.00";
+
+/**
+ * Get financials for a booking.
+ */
+export const selectBookingFinancials = (
+    state,
+    bookingId
+) => {
+    const booking =
+        (
+            state.bookings
+                ?.bookings ??
+            []
+        ).find(
+            (
+                item
+            ) =>
+                String(
+                    item?.id
+                ) ===
+                String(
+                    bookingId
+                )
+        );
+
+    return (
+        booking?.financials ??
+        null
+    );
+};
+
+/**
+ * Get booking total by ID.
+ */
+export const selectBookingTotal = (
+    state,
+    bookingId
+) =>
+    selectBookingFinancials(
+        state,
+        bookingId
+    )?.total_amount ??
+    "0.00";
+
+/**
+ * Get booking amount paid by ID.
+ */
+export const selectBookingAmountPaid = (
+    state,
+    bookingId
+) =>
+    selectBookingFinancials(
+        state,
+        bookingId
+    )?.amount_paid ??
+    "0.00";
+
+/**
+ * Get booking balance by ID.
+ */
+export const selectBookingBalance = (
+    state,
+    bookingId
+) =>
+    selectBookingFinancials(
+        state,
+        bookingId
+    )?.balance ??
+    "0.00";
+
+/*
+|--------------------------------------------------------------------------
 | Customer → Tenant → Tenancy Selectors
 |--------------------------------------------------------------------------
 */
@@ -3184,32 +4758,38 @@ export const selectAvailableUsers = (
 export const selectSelectedCustomer = (
     state
 ) =>
-    state.bookings?.selectedCustomer ??
+    state.bookings
+        ?.selectedCustomer ??
     null;
 
 export const selectSelectedTenant = (
     state
 ) =>
-    state.bookings?.selectedTenant ??
+    state.bookings
+        ?.selectedTenant ??
     null;
 
 export const selectCustomerTenancies = (
     state
 ) =>
-    state.bookings?.customerTenancies ??
+    state.bookings
+        ?.customerTenancies ??
     [];
 
 export const selectCustomerTenancyCount = (
     state
 ) =>
-    state.bookings?.customerTenancies
-        ?.length ?? 0;
+    state.bookings
+        ?.customerTenancies
+        ?.length ??
+    0;
 
 export const selectHasCustomerTenant = (
     state
 ) =>
     Boolean(
-        state.bookings?.selectedTenant
+        state.bookings
+            ?.selectedTenant
     );
 
 export const selectHasCustomerTenancies = (
@@ -3217,29 +4797,38 @@ export const selectHasCustomerTenancies = (
 ) =>
     (
         state.bookings
-            ?.customerTenancies ?? []
+            ?.customerTenancies ??
+        []
     ).length > 0;
 
 export const selectCustomerRelationshipLoading =
-    (state) =>
+    (
+        state
+    ) =>
         state.bookings
             ?.customerRelationshipLoading ??
         false;
 
 export const selectCustomerRelationshipError =
-    (state) =>
+    (
+        state
+    ) =>
         state.bookings
             ?.customerRelationshipError ??
         null;
 
 export const selectCustomerRelationshipErrors =
-    (state) =>
+    (
+        state
+    ) =>
         state.bookings
             ?.customerRelationshipErrors ??
         null;
 
 export const selectCustomerRelationshipLoaded =
-    (state) =>
+    (
+        state
+    ) =>
         state.bookings
             ?.customerRelationshipLoaded ??
         false;
@@ -3274,7 +4863,7 @@ export const selectBookingPerPage = (
     state.bookings?.perPage ??
     DEFAULT_PER_PAGE;
 
-export const selectBookingTotal = (
+export const selectBookingTotalCount = (
     state
 ) =>
     state.bookings?.total ??

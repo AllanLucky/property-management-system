@@ -2,6 +2,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -12,7 +13,7 @@ import {
     fetchBookings,
     fetchBooking,
     createBooking,
-    updateBooking,
+    updateBooking as updateBookingAction,
     deleteBooking,
     searchBookings,
     fetchBookingStatistics,
@@ -24,7 +25,6 @@ import {
     fetchCompletedBookings,
     fetchCancelledBookings,
     fetchExpiredBookings,
-    fetchRejectedBookings,
 
     confirmBooking,
     approveBooking,
@@ -45,26 +45,283 @@ import {
     setPage,
     setPerPage,
     clearCurrentBooking,
-    clearError,
-    resetBookingState,
 } from "../store/bookingSlice";
 
 /*
 |--------------------------------------------------------------------------
-| Helpers
+| Constants
 |--------------------------------------------------------------------------
 */
 
-/**
- * Safely extract an ID from:
- *
- * 123
- * "123"
- * { id: 123 }
- * { value: 123 }
- * { user_id: 123 }
- */
-const getBookingId = (value) => {
+const EMPTY_FILTERS = Object.freeze({});
+const DEFAULT_PER_PAGE = 15;
+
+/*
+|--------------------------------------------------------------------------
+| Object Helpers
+|--------------------------------------------------------------------------
+*/
+
+const isPlainObject = (value) => {
+    return (
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+    );
+};
+
+const parseObject = (value) => {
+    if (isPlainObject(value)) {
+        return value;
+    }
+
+    if (typeof value !== "string") {
+        return {};
+    }
+
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+        return {};
+    }
+
+    try {
+        const parsed = JSON.parse(trimmed);
+
+        return isPlainObject(parsed)
+            ? parsed
+            : {};
+    } catch {
+        return {};
+    }
+};
+
+const getNestedValue = (
+    object,
+    path
+) => {
+    if (
+        object === null ||
+        object === undefined ||
+        path === null ||
+        path === undefined ||
+        path === ""
+    ) {
+        return undefined;
+    }
+
+    const parts = Array.isArray(path)
+        ? path
+        : String(path)
+            .split(".")
+            .filter(Boolean);
+
+    return parts.reduce(
+        (current, key) => {
+            if (
+                current === null ||
+                current === undefined
+            ) {
+                return undefined;
+            }
+
+            if (
+                typeof current !== "object"
+            ) {
+                return undefined;
+            }
+
+            return current[key];
+        },
+        object
+    );
+};
+
+const firstDefinedNested = (
+    object,
+    paths = [],
+    fallback = undefined
+) => {
+    for (const path of paths) {
+        const value =
+            getNestedValue(
+                object,
+                path
+            );
+
+        if (
+            value !== undefined &&
+            value !== null
+        ) {
+            return value;
+        }
+    }
+
+    return fallback;
+};
+
+const firstPresent = (
+    ...values
+) => {
+    for (const value of values) {
+        if (
+            value !== undefined &&
+            value !== null &&
+            value !== ""
+        ) {
+            return value;
+        }
+    }
+
+    return undefined;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Booking Resource Detection
+|--------------------------------------------------------------------------
+*/
+
+const isBookingResource = (
+    value
+) => {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+
+    return (
+        value.booking_number !== undefined ||
+        value.reference !== undefined ||
+        value.booking_type !== undefined ||
+        (
+            value.id !== undefined &&
+            (
+                value.property_id !== undefined ||
+                value.customer_id !== undefined ||
+                value.unit_id !== undefined
+            )
+        )
+    );
+};
+
+const extractBookingResource = (
+    response,
+    visited = new Set()
+) => {
+    if (
+        response === null ||
+        response === undefined
+    ) {
+        return null;
+    }
+
+    if (
+        typeof response === "object"
+    ) {
+        if (visited.has(response)) {
+            return null;
+        }
+
+        visited.add(response);
+    }
+
+    if (
+        isBookingResource(response)
+    ) {
+        return response;
+    }
+
+    if (Array.isArray(response)) {
+        for (const item of response) {
+            const resolved =
+                extractBookingResource(
+                    item,
+                    visited
+                );
+
+            if (resolved) {
+                return resolved;
+            }
+        }
+
+        return null;
+    }
+
+    if (!isPlainObject(response)) {
+        return null;
+    }
+
+    const candidates = [
+        response?.data?.data,
+        response?.data?.booking,
+        response?.data,
+        response?.payload?.data?.data,
+        response?.payload?.data?.booking,
+        response?.payload?.data,
+        response?.payload?.booking,
+        response?.payload,
+        response?.booking,
+        response?.result?.data,
+        response?.result?.booking,
+        response?.result,
+        response?.response?.data?.data,
+        response?.response?.data?.booking,
+        response?.response?.data,
+    ];
+
+    for (const candidate of candidates) {
+        if (
+            candidate === undefined ||
+            candidate === null
+        ) {
+            continue;
+        }
+
+        const resolved =
+            extractBookingResource(
+                candidate,
+                visited
+            );
+
+        if (resolved) {
+            return resolved;
+        }
+    }
+
+    for (
+        const value of Object.values(response)
+    ) {
+        if (
+            value === null ||
+            value === undefined ||
+            typeof value !== "object"
+        ) {
+            continue;
+        }
+
+        const resolved =
+            extractBookingResource(
+                value,
+                visited
+            );
+
+        if (resolved) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| ID Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getBookingId = (
+    value
+) => {
     if (
         value === null ||
         value === undefined
@@ -73,412 +330,1283 @@ const getBookingId = (value) => {
     }
 
     if (
-        typeof value === "object"
+        typeof value === "number"
     ) {
-        return (
-            value?.id ??
-            value?.value ??
-            value?.user_id ??
-            null
-        );
+        return Number.isFinite(value)
+            ? value
+            : null;
     }
-
-    return value;
-};
-
-/**
- * Normalize API / Redux errors into a predictable shape.
- */
-const normalizeError = (error) => {
-    if (!error) {
-        return null;
-    }
-
-    if (typeof error === "string") {
-        return {
-            message: error,
-            errors: null,
-            code: null,
-        };
-    }
-
-    const responseData =
-        error?.response?.data ??
-        error?.payload ??
-        error;
-
-    return {
-        message:
-            responseData?.message ??
-            error?.message ??
-            "Something went wrong. Please try again.",
-
-        errors:
-            responseData?.errors ??
-            null,
-
-        code:
-            responseData?.code ??
-            error?.response?.status ??
-            null,
-    };
-};
-
-/**
- * Remove empty values before sending filters
- * to Redux/API.
- *
- * Keeps:
- * - 0
- * - false
- * - valid strings
- * - valid dates
- */
-const cleanFilters = (filters = {}) => {
-    if (
-        !filters ||
-        typeof filters !== "object" ||
-        Array.isArray(filters)
-    ) {
-        return {};
-    }
-
-    return Object.fromEntries(
-        Object.entries(filters).filter(
-            ([, value]) =>
-                value !== undefined &&
-                value !== null &&
-                value !== ""
-        )
-    );
-};
-
-/**
- * Clean nested search parameters.
- *
- * Example:
- *
- * {
- *     search: {
- *         search: ""
- *     }
- * }
- *
- * becomes:
- *
- * {}
- */
-const cleanSearchParams = (params = {}) => {
-    if (
-        !params ||
-        typeof params !== "object" ||
-        Array.isArray(params)
-    ) {
-        return {};
-    }
-
-    const cleaned = {
-        ...params,
-    };
-
-    /*
-    |--------------------------------------------------------------------------
-    | Nested search object
-    |--------------------------------------------------------------------------
-    */
 
     if (
-        cleaned.search &&
-        typeof cleaned.search === "object" &&
-        !Array.isArray(cleaned.search)
+        typeof value === "string"
     ) {
-        const nestedSearch =
-            cleanFilters(
-                cleaned.search
-            );
+        const trimmed =
+            value.trim();
 
         if (
-            Object.keys(
-                nestedSearch
-            ).length > 0
+            !trimmed ||
+            trimmed === "[object Object]"
         ) {
-            cleaned.search =
-                nestedSearch;
-        } else {
-            delete cleaned.search;
+            return null;
         }
+
+        return trimmed;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Empty search string
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        typeof cleaned.search === "string" &&
-        !cleaned.search.trim()
-    ) {
-        delete cleaned.search;
-    }
-
-    return cleanFilters(
-        cleaned
-    );
-};
-
-/**
- * Normalize Laravel collection / pagination responses.
- *
- * Supports:
- *
- * 1. Axios:
- *
- * response.data.data = []
- *
- * 2. Axios:
- *
- * response.data.data = {
- *     data: []
- * }
- *
- * 3. Axios:
- *
- * response.data.data = {
- *     id: 1
- * }
- *
- * 4. Direct:
- *
- * []
- *
- * 5. Direct:
- *
- * {
- *     id: 1
- * }
- */
-const extractCollection = (response) => {
-    let payload =
-        response?.data?.data ??
-        response?.data ??
-        response ??
-        [];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Laravel pagination wrapper
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        payload &&
-        typeof payload === "object" &&
-        !Array.isArray(payload) &&
-        Array.isArray(payload.data)
-    ) {
-        payload = payload.data;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Array
-    |--------------------------------------------------------------------------
-    */
-
-    if (Array.isArray(payload)) {
-        return payload;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Single resource
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        payload &&
-        typeof payload === "object" &&
-        payload.id
-    ) {
-        return [payload];
-    }
-
-    return [];
-};
-
-/**
- * Extract the first resource from a Laravel
- * collection/resource response.
- *
- * Handles both:
- *
- * data: []
- *
- * and:
- *
- * data: {}
- */
-const extractFirstResource = (response) => {
-    const payload =
-        response?.data?.data ??
-        response?.data ??
-        response ??
-        null;
-
-    if (!payload) {
+    if (!isPlainObject(value)) {
         return null;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Collection
-    |--------------------------------------------------------------------------
-    */
+    const candidates = [
+        value.id,
+        value.booking_id,
+        value.value,
+        value?.booking?.id,
+        value?.data?.id,
+        value?.data?.booking_id,
+    ];
 
-    if (Array.isArray(payload)) {
-        return payload[0] ?? null;
-    }
+    for (const candidate of candidates) {
+        const resolved =
+            getBookingId(candidate);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Pagination wrapper
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        payload &&
-        typeof payload === "object" &&
-        Array.isArray(payload.data)
-    ) {
-        return payload.data[0] ?? null;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Single resource
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        payload &&
-        typeof payload === "object" &&
-        payload.id
-    ) {
-        return payload;
+        if (
+            resolved !== null &&
+            resolved !== undefined &&
+            resolved !== ""
+        ) {
+            return resolved;
+        }
     }
 
     return null;
 };
 
-/**
- * Extract tenancies embedded inside a tenant resource.
- *
- * Your tenant API currently returns:
- *
- * tenant.tenancies
- *
- * and:
- *
- * tenant.active_tenancies
- *
- * We use these before making another API request.
- */
-const extractTenantTenancies = (tenant) => {
+/*
+|--------------------------------------------------------------------------
+| Error Helpers
+|--------------------------------------------------------------------------
+*/
+
+const normalizeError = (
+    error
+) => {
+    if (!error) {
+        return null;
+    }
+
+    const payload =
+        error?.payload ??
+        error;
+
+    const message =
+        payload?.message ??
+        payload?.error?.message ??
+        error?.message ??
+        "An unexpected error occurred.";
+
+    const errors =
+        payload?.errors ??
+        payload?.data?.errors ??
+        error?.errors ??
+        null;
+
+    const status =
+        payload?.status ??
+        payload?.code ??
+        error?.status ??
+        error?.response?.status ??
+        null;
+
+    return {
+        message,
+        errors,
+        status,
+        raw: error,
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
+| Filter Helpers
+|--------------------------------------------------------------------------
+*/
+
+const cleanFilters = (
+    filters = {}
+) => {
+    if (!isPlainObject(filters)) {
+        return {};
+    }
+
+    return Object.entries(filters).reduce(
+        (result, [key, value]) => {
+            if (
+                value !== undefined &&
+                value !== null &&
+                value !== ""
+            ) {
+                result[key] = value;
+            }
+
+            return result;
+        },
+        {}
+    );
+};
+
+const cleanSearchParams = (
+    params = {}
+) => {
+    if (!isPlainObject(params)) {
+        return {};
+    }
+
+    const cleaned =
+        cleanFilters(params);
+
     if (
-        !tenant ||
-        typeof tenant !== "object"
+        isPlainObject(
+            cleaned.search
+        )
+    ) {
+        cleaned.search =
+            cleanFilters(
+                cleaned.search
+            );
+    }
+
+    return cleaned;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Update Payload Helpers
+|--------------------------------------------------------------------------
+|
+| These fields are generated / protected by the backend.
+|
+| In particular, user_id must NOT be submitted during booking edits.
+| Laravel currently reports user_id as prohibited.
+|
+| booking_number / reference / slug are also treated as generated
+| identifiers and are never sent during an update.
+|--------------------------------------------------------------------------
+*/
+
+const PROTECTED_UPDATE_FIELDS = [
+    "id",
+    "booking_id",
+    "user_id",
+    "booking_number",
+    "reference",
+    "slug",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+];
+
+const sanitizeBookingUpdatePayload = (
+    data
+) => {
+    if (!isPlainObject(data)) {
+        return {};
+    }
+
+    const payload = {
+        ...data,
+    };
+
+    PROTECTED_UPDATE_FIELDS.forEach(
+        (field) => {
+            delete payload[field];
+        }
+    );
+
+    return payload;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Stable Request Keys
+|--------------------------------------------------------------------------
+*/
+
+const createRequestKey = (
+    value
+) => {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return String(value);
+    }
+
+    if (
+        typeof value !== "object"
+    ) {
+        return JSON.stringify(
+            value
+        );
+    }
+
+    if (Array.isArray(value)) {
+        return `[${value
+            .map(createRequestKey)
+            .join(",")}]`;
+    }
+
+    return `{${Object.keys(value)
+        .sort()
+        .map(
+            (key) =>
+                `${JSON.stringify(
+                    key
+                )}:${createRequestKey(
+                    value[key]
+                )}`
+        )
+        .join(",")}}`;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Number / Money Helpers
+|--------------------------------------------------------------------------
+*/
+
+const toFiniteNumber = (
+    value,
+    fallback = null
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return fallback;
+    }
+
+    if (
+        typeof value === "number"
+    ) {
+        return Number.isFinite(value)
+            ? Number(value)
+            : fallback;
+    }
+
+    if (
+        typeof value !== "string"
+    ) {
+        return fallback;
+    }
+
+    let normalized =
+        value.trim();
+
+    if (!normalized) {
+        return fallback;
+    }
+
+    const negative =
+        normalized.startsWith("(") &&
+        normalized.endsWith(")");
+
+    normalized = normalized
+        .replace(/,/g, "")
+        .replace(/[^\d.-]/g, "");
+
+    if (!normalized) {
+        return fallback;
+    }
+
+    const number =
+        Number(normalized);
+
+    if (
+        !Number.isFinite(number)
+    ) {
+        return fallback;
+    }
+
+    return negative
+        ? -Math.abs(number)
+        : number;
+};
+
+const normalizeBookingAmount = (
+    value,
+    fallback = null
+) => {
+    const number =
+        toFiniteNumber(
+            value,
+            fallback
+        );
+
+    if (
+        number === null ||
+        !Number.isFinite(number)
+    ) {
+        return fallback;
+    }
+
+    return Number(
+        Number(number).toFixed(2)
+    );
+};
+
+const roundMoney = (
+    value
+) => {
+    const number =
+        toFiniteNumber(
+            value,
+            0
+        );
+
+    return Number(
+        Number(number).toFixed(2)
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Boolean Helpers
+|--------------------------------------------------------------------------
+*/
+
+const normalizeBoolean = (
+    value,
+    fallback = false
+) => {
+    if (
+        value === true ||
+        value === false
+    ) {
+        return value;
+    }
+
+    if (
+        typeof value === "number"
+    ) {
+        return value !== 0;
+    }
+
+    if (
+        typeof value === "string"
+    ) {
+        const normalized =
+            value
+                .trim()
+                .toLowerCase();
+
+        if (
+            [
+                "true",
+                "1",
+                "yes",
+                "on",
+            ].includes(normalized)
+        ) {
+            return true;
+        }
+
+        if (
+            [
+                "false",
+                "0",
+                "no",
+                "off",
+            ].includes(normalized)
+        ) {
+            return false;
+        }
+    }
+
+    return fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Payment Helpers
+|--------------------------------------------------------------------------
+*/
+
+const isPaymentCountable = (
+    payment
+) => {
+    if (!isPlainObject(payment)) {
+        return false;
+    }
+
+    const status =
+        String(
+            firstPresent(
+                payment.status,
+                payment.payment_status,
+                payment.transaction_status,
+                payment.state
+            ) ?? ""
+        )
+            .trim()
+            .toLowerCase();
+
+    if (!status) {
+        return true;
+    }
+
+    return [
+        "paid",
+        "completed",
+        "complete",
+        "successful",
+        "success",
+        "confirmed",
+        "approved",
+        "processed",
+    ].includes(status);
+};
+
+const sumPaymentCollection = (
+    payments
+) => {
+    if (!Array.isArray(payments)) {
+        return null;
+    }
+
+    let total = 0;
+    let foundAmount = false;
+
+    for (const payment of payments) {
+        if (
+            !isPaymentCountable(
+                payment
+            )
+        ) {
+            continue;
+        }
+
+        const amount =
+            firstPresent(
+                payment?.amount_paid,
+                payment?.paid_amount,
+                payment?.amount,
+                payment?.payment_amount,
+                payment?.total_amount
+            );
+
+        const numericAmount =
+            toFiniteNumber(
+                amount,
+                null
+            );
+
+        if (
+            numericAmount !== null
+        ) {
+            total +=
+                numericAmount;
+
+            foundAmount = true;
+        }
+    }
+
+    return foundAmount
+        ? roundMoney(total)
+        : null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Financial Normalization
+|--------------------------------------------------------------------------
+*/
+
+const normalizeBookingFinancials = (
+    financials,
+    booking = {}
+) => {
+    const root =
+        isPlainObject(booking)
+            ? booking
+            : {};
+
+    const primaryFinancials =
+        parseObject(
+            financials
+        );
+
+    const financialContainers = [
+        parseObject(
+            root.financial_summary
+        ),
+        parseObject(
+            root.payment_summary
+        ),
+        parseObject(
+            root.amounts
+        ),
+        parseObject(
+            root.summary
+        ),
+        primaryFinancials,
+    ];
+
+    const source =
+        Object.assign(
+            {},
+            ...financialContainers
+        );
+
+    const rentAmount =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "rent_amount",
+                    "rent",
+                ],
+                firstPresent(
+                    root.rent_amount,
+                    root.rent
+                )
+            ),
+            null
+        );
+
+    const depositAmount =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "deposit_amount",
+                    "deposit",
+                ],
+                firstPresent(
+                    root.deposit_amount,
+                    root.deposit
+                )
+            ),
+            null
+        );
+
+    const serviceCharge =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "service_charge",
+                    "service_charge_amount",
+                ],
+                firstPresent(
+                    root.service_charge,
+                    root.service_charge_amount
+                )
+            ),
+            null
+        );
+
+    const bookingFee =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "booking_fee",
+                    "booking_fee_amount",
+                ],
+                firstPresent(
+                    root.booking_fee,
+                    root.booking_fee_amount
+                )
+            ),
+            null
+        );
+
+    const discountAmount =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "discount_amount",
+                    "discount",
+                ],
+                firstPresent(
+                    root.discount_amount,
+                    root.discount
+                )
+            ),
+            null
+        );
+
+    let totalAmount =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "total_amount",
+                    "grand_total",
+                    "booking_total",
+                    "total",
+                    "total_due",
+                    "total_payable",
+                ],
+                firstPresent(
+                    root.total_amount,
+                    root.grand_total,
+                    root.booking_total,
+                    root.total,
+                    root.total_due,
+                    root.total_payable
+                )
+            ),
+            null
+        );
+
+    if (
+        totalAmount === null
+    ) {
+        const hasCharge =
+            [
+                rentAmount,
+                depositAmount,
+                serviceCharge,
+                bookingFee,
+                discountAmount,
+            ].some(
+                (value) =>
+                    value !== null
+            );
+
+        if (hasCharge) {
+            const charges =
+                (rentAmount ?? 0) +
+                (depositAmount ?? 0) +
+                (serviceCharge ?? 0) +
+                (bookingFee ?? 0);
+
+            const discount =
+                discountAmount ?? 0;
+
+            totalAmount =
+                roundMoney(
+                    Math.max(
+                        charges -
+                        discount,
+                        0
+                    )
+                );
+        }
+    }
+
+    let amountPaid =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "amount_paid",
+                    "paid_amount",
+                    "amountPaid",
+                    "paid",
+                    "total_paid",
+                    "paid_total",
+                    "payments_total",
+                ],
+                firstPresent(
+                    root.amount_paid,
+                    root.paid_amount,
+                    root.amountPaid,
+                    root.paid,
+                    root.total_paid,
+                    root.paid_total,
+                    root.payments_total
+                )
+            ),
+            null
+        );
+
+    if (
+        amountPaid === null
+    ) {
+        const paymentCollections = [
+            source?.payments,
+            root?.payments,
+            source?.payment_records,
+            root?.payment_records,
+        ];
+
+        for (
+            const payments of
+            paymentCollections
+        ) {
+            const calculatedPaid =
+                sumPaymentCollection(
+                    payments
+                );
+
+            if (
+                calculatedPaid !== null
+            ) {
+                amountPaid =
+                    calculatedPaid;
+
+                break;
+            }
+        }
+    }
+
+    if (
+        amountPaid === null &&
+        (
+            totalAmount !== null ||
+            rentAmount !== null ||
+            depositAmount !== null ||
+            serviceCharge !== null ||
+            bookingFee !== null ||
+            discountAmount !== null
+        )
+    ) {
+        amountPaid = 0;
+    }
+
+    let balance =
+        normalizeBookingAmount(
+            firstDefinedNested(
+                source,
+                [
+                    "balance",
+                    "balance_amount",
+                    "amount_due",
+                    "remaining_balance",
+                ],
+                firstPresent(
+                    root.balance,
+                    root.balance_amount,
+                    root.amount_due,
+                    root.remaining_balance
+                )
+            ),
+            null
+        );
+
+    if (
+        totalAmount !== null &&
+        amountPaid !== null
+    ) {
+        balance =
+            roundMoney(
+                Math.max(
+                    totalAmount -
+                    amountPaid,
+                    0
+                )
+            );
+    }
+
+    let paymentStatus =
+        firstDefinedNested(
+            source,
+            [
+                "payment_status",
+                "paymentStatus",
+            ],
+            firstPresent(
+                root.payment_status,
+                root.paymentStatus
+            )
+        );
+
+    if (
+        paymentStatus !==
+        undefined &&
+        paymentStatus !==
+        null &&
+        paymentStatus !== ""
+    ) {
+        paymentStatus =
+            String(
+                paymentStatus
+            )
+                .trim()
+                .toLowerCase();
+    } else {
+        paymentStatus = null;
+    }
+
+    if (
+        !paymentStatus &&
+        totalAmount !== null &&
+        amountPaid !== null
+    ) {
+        if (
+            amountPaid <= 0
+        ) {
+            paymentStatus =
+                "pending";
+        } else if (
+            totalAmount <= 0 ||
+            amountPaid >=
+            totalAmount
+        ) {
+            paymentStatus =
+                "paid";
+        } else {
+            paymentStatus =
+                "partial";
+        }
+    }
+
+    const backendFullyPaid =
+        firstDefinedNested(
+            source,
+            [
+                "is_fully_paid",
+                "isFullyPaid",
+            ],
+            firstPresent(
+                root.is_fully_paid,
+                root.isFullyPaid
+            )
+        );
+
+    const backendPartiallyPaid =
+        firstDefinedNested(
+            source,
+            [
+                "is_partially_paid",
+                "isPartiallyPaid",
+            ],
+            firstPresent(
+                root.is_partially_paid,
+                root.isPartiallyPaid
+            )
+        );
+
+    const backendHasBalance =
+        firstDefinedNested(
+            source,
+            [
+                "has_balance",
+                "hasBalance",
+            ],
+            firstPresent(
+                root.has_balance,
+                root.hasBalance
+            )
+        );
+
+    const isFullyPaid =
+        backendFullyPaid !==
+            undefined
+            ? normalizeBoolean(
+                backendFullyPaid
+            )
+            : (
+                totalAmount !== null &&
+                amountPaid !== null &&
+                (
+                    totalAmount <= 0 ||
+                    amountPaid >=
+                    totalAmount
+                )
+            );
+
+    const isPartiallyPaid =
+        backendPartiallyPaid !==
+            undefined
+            ? normalizeBoolean(
+                backendPartiallyPaid
+            )
+            : (
+                totalAmount !== null &&
+                amountPaid !== null &&
+                amountPaid > 0 &&
+                amountPaid <
+                totalAmount
+            );
+
+    const hasBalance =
+        backendHasBalance !==
+            undefined
+            ? normalizeBoolean(
+                backendHasBalance
+            )
+            : (
+                balance !== null &&
+                balance > 0
+            );
+
+    const hasActualFinancialData =
+        [
+            rentAmount,
+            depositAmount,
+            serviceCharge,
+            bookingFee,
+            discountAmount,
+            totalAmount,
+            amountPaid,
+            balance,
+        ].some(
+            (value) =>
+                value !== null
+        );
+
+    return {
+        ...source,
+
+        rent_amount:
+            rentAmount,
+
+        deposit_amount:
+            depositAmount,
+
+        service_charge:
+            serviceCharge,
+
+        booking_fee:
+            bookingFee,
+
+        discount_amount:
+            discountAmount,
+
+        total_amount:
+            totalAmount,
+
+        amount_paid:
+            amountPaid,
+
+        paid_amount:
+            amountPaid,
+
+        balance,
+
+        payment_status:
+            paymentStatus,
+
+        total:
+            totalAmount,
+
+        paid:
+            amountPaid,
+
+        remaining_balance:
+            balance,
+
+        is_fully_paid:
+            isFullyPaid,
+
+        isFullyPaid:
+            isFullyPaid,
+
+        is_partially_paid:
+            isPartiallyPaid,
+
+        isPartiallyPaid:
+            isPartiallyPaid,
+
+        has_balance:
+            hasBalance,
+
+        hasBalance:
+            hasBalance,
+
+        has_actual_financial_data:
+            hasActualFinancialData,
+
+        hasActualFinancialData:
+            hasActualFinancialData,
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
+| Booking Normalization
+|--------------------------------------------------------------------------
+*/
+
+const normalizeBooking = (
+    booking
+) => {
+    if (
+        !isPlainObject(booking)
+    ) {
+        return booking;
+    }
+
+    const financials =
+        normalizeBookingFinancials(
+            booking.financials,
+            booking
+        );
+
+    return {
+        ...booking,
+
+        financials,
+
+        rent_amount:
+            financials.rent_amount,
+
+        deposit_amount:
+            financials.deposit_amount,
+
+        service_charge:
+            financials.service_charge,
+
+        booking_fee:
+            financials.booking_fee,
+
+        discount_amount:
+            financials.discount_amount,
+
+        total_amount:
+            financials.total_amount,
+
+        amount_paid:
+            financials.amount_paid,
+
+        paid_amount:
+            financials.amount_paid,
+
+        balance:
+            financials.balance,
+
+        payment_status:
+            financials.payment_status,
+
+        total:
+            financials.total_amount,
+
+        paid:
+            financials.amount_paid,
+
+        remaining_balance:
+            financials.balance,
+
+        is_fully_paid:
+            financials.is_fully_paid,
+
+        isFullyPaid:
+            financials.isFullyPaid,
+
+        is_partially_paid:
+            financials.is_partially_paid,
+
+        isPartiallyPaid:
+            financials.isPartiallyPaid,
+
+        has_balance:
+            financials.has_balance,
+
+        hasBalance:
+            financials.hasBalance,
+
+        has_actual_financial_data:
+            financials.has_actual_financial_data,
+
+        hasActualFinancialData:
+            financials.hasActualFinancialData,
+    };
+};
+
+const normalizeBookings = (
+    bookings
+) => {
+    if (
+        !Array.isArray(bookings)
     ) {
         return [];
     }
 
-    const tenancies = [
-        ...(
-            Array.isArray(
-                tenant?.tenancies
-            )
-                ? tenant.tenancies
-                : []
-        ),
-
-        ...(
-            Array.isArray(
-                tenant?.active_tenancies
-            )
-                ? tenant.active_tenancies
-                : []
-        ),
-
-        ...(
-            Array.isArray(
-                tenant?.activeTenancies
-            )
-                ? tenant.activeTenancies
-                : []
-        ),
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Remove duplicate tenancy IDs
-    |--------------------------------------------------------------------------
-    */
-
-    const seen = new Set();
-
-    return tenancies.filter(
-        (tenancy) => {
-            const id =
-                getBookingId(
-                    tenancy
-                );
-
-            if (!id) {
-                return true;
-            }
-
-            const key =
-                String(id);
-
-            if (
-                seen.has(key)
-            ) {
-                return false;
-            }
-
-            seen.add(key);
-
-            return true;
-        }
+    return bookings.map(
+        normalizeBooking
     );
 };
 
-/**
- * Extract user/customer ID from a customer object.
- *
- * Booking customer_id represents the USER ID.
- */
-const getCustomerUserId = (
-    customer
+/*
+|--------------------------------------------------------------------------
+| Response Helpers
+|--------------------------------------------------------------------------
+*/
+
+const extractCollection = (
+    response,
+    visited = new Set()
 ) => {
     if (
-        customer === null ||
-        customer === undefined
+        response === null ||
+        response === undefined
+    ) {
+        return [];
+    }
+
+    if (
+        Array.isArray(response)
+    ) {
+        return response;
+    }
+
+    if (
+        typeof response === "object"
+    ) {
+        if (visited.has(response)) {
+            return [];
+        }
+
+        visited.add(response);
+    }
+
+    if (!isPlainObject(response)) {
+        return [];
+    }
+
+    const candidates = [
+        response?.data?.data,
+        response?.data?.items,
+        response?.data?.bookings,
+        response?.data,
+        response?.payload?.data?.data,
+        response?.payload?.data?.items,
+        response?.payload?.data?.bookings,
+        response?.payload?.data,
+        response?.payload,
+        response?.bookings,
+        response?.items,
+        response?.result?.data,
+        response?.result,
+    ];
+
+    for (const candidate of candidates) {
+        if (
+            Array.isArray(candidate)
+        ) {
+            return candidate;
+        }
+    }
+
+    return [];
+};
+
+const extractFirstResource = (
+    response,
+    visited = new Set()
+) => {
+    if (
+        response === null ||
+        response === undefined
     ) {
         return null;
     }
 
     if (
-        typeof customer !== "object"
+        Array.isArray(response)
     ) {
-        return customer;
+        return (
+            response[0] ?? null
+        );
+    }
+
+    if (
+        typeof response === "object"
+    ) {
+        if (visited.has(response)) {
+            return null;
+        }
+
+        visited.add(response);
+    }
+
+    if (!isPlainObject(response)) {
+        return null;
+    }
+
+    if (
+        response.id !==
+        undefined &&
+        response.id !== null
+    ) {
+        return response;
+    }
+
+    const candidates = [
+        response?.data?.data,
+        response?.data?.tenant,
+        response?.data,
+        response?.payload?.data?.data,
+        response?.payload?.data?.tenant,
+        response?.payload?.data,
+        response?.payload?.tenant,
+        response?.payload,
+        response?.tenant,
+        response?.result?.data,
+        response?.result,
+    ];
+
+    for (const candidate of candidates) {
+        if (
+            candidate === null ||
+            candidate === undefined
+        ) {
+            continue;
+        }
+
+        const resource =
+            extractFirstResource(
+                candidate,
+                visited
+            );
+
+        if (resource) {
+            return resource;
+        }
+    }
+
+    return null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Tenant / Tenancy Helpers
+|--------------------------------------------------------------------------
+*/
+
+const extractTenantTenancies = (
+    tenant
+) => {
+    if (!tenant) {
+        return [];
+    }
+
+    const candidates = [
+        tenant.tenancies,
+        tenant.data?.tenancies,
+        tenant.data?.data?.tenancies,
+        tenant.activeTenancies,
+        tenant.active_tenancies,
+    ];
+
+    for (const candidate of candidates) {
+        if (
+            Array.isArray(candidate)
+        ) {
+            return candidate;
+        }
+    }
+
+    return [];
+};
+
+const getCustomerUserId = (
+    customer
+) => {
+    if (!customer) {
+        return null;
     }
 
     return (
-        customer?.user_id ??
-        customer?.user?.id ??
-        customer?.customer_id ??
-        customer?.id ??
+        customer.user_id ??
+        customer.user?.id ??
+        customer.id ??
         null
     );
 };
@@ -489,71 +1617,157 @@ const getCustomerUserId = (
 |--------------------------------------------------------------------------
 */
 
-export const useBooking = ({
-    autoFetch = true,
-    initialFilters = {},
-    initialPerPage = 15,
-} = {}) => {
-    const dispatch = useDispatch();
-
-    /*
-    |--------------------------------------------------------------------------
-    | Redux State
-    |--------------------------------------------------------------------------
-    */
-
-    const bookingState = useSelector(
-        (state) =>
-            state.bookings ?? {}
-    );
+export const useBooking = (
+    options = {}
+) => {
+    const dispatch =
+        useDispatch();
 
     const {
-        bookings = [],
-        currentBooking = null,
+        autoFetch = true,
+        initialFilters =
+        EMPTY_FILTERS,
+        initialPage,
+        initialPerPage,
+    } = options;
+
+    /*
+     * ------------------------------------------------------------------
+     * Redux state
+     * ------------------------------------------------------------------
+     */
+
+    const bookingState =
+        useSelector(
+            (state) =>
+                state.bookings ??
+                {}
+        );
+
+    const {
+        bookings:
+        rawBookings = [],
+
+        currentBooking:
+        rawCurrentBooking =
+        null,
 
         loading = false,
+        isLoading = false,
         loadingList = false,
-        loadingSingle = false,
+        loadingDetails = false,
         loadingCreate = false,
         loadingUpdate = false,
         loadingDelete = false,
         loadingSearch = false,
         loadingStatistics = false,
         loadingReports = false,
-        loadingAction = false,
+        loadingWorkflow = false,
         loadingAvailability = false,
-        loadingUsers = false,
-        loadingRestore = false,
-        loadingForceDelete = false,
 
         error = null,
         errors = null,
 
-        statistics = null,
-        reports = null,
+        statistics:
+        rawStatistics = null,
 
-        availableUnits = [],
-        availableUsers = [],
+        reports:
+        rawReports = null,
 
-        pagination = {},
-        filters: reduxFilters = {},
+        availableUnits:
+        rawAvailableUnits = [],
 
-        page = 1,
-        perPage = initialPerPage,
+        availableUsers:
+        rawAvailableUsers = [],
 
-        total = 0,
-        lastPage = 1,
-        from = null,
-        to = null,
+        tenancies:
+        rawTenancies = [],
+
+        pagination:
+        rawPagination = null,
+
+        filters:
+        rawFilters =
+        EMPTY_FILTERS,
+
+        page:
+        reduxPage = 1,
+
+        perPage:
+        reduxPerPage =
+        DEFAULT_PER_PAGE,
+
+        total:
+        reduxTotal = 0,
+
+        lastPage:
+        reduxLastPage = 1,
+
+        from:
+        reduxFrom = null,
+
+        to:
+        reduxTo = null,
 
         initialized = false,
     } = bookingState;
 
     /*
-    |--------------------------------------------------------------------------
-    | Customer → Tenant → Tenancy State
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Stable filters
+     * ------------------------------------------------------------------
+     */
+
+    const safeInitialFilters =
+        useMemo(
+            () =>
+                cleanFilters(
+                    initialFilters
+                ),
+            [initialFilters]
+        );
+
+    const safeReduxFilters =
+        useMemo(
+            () =>
+                cleanFilters(
+                    rawFilters
+                ),
+            [rawFilters]
+        );
+
+    const mergedFilters =
+        useMemo(
+            () => ({
+                ...safeInitialFilters,
+                ...safeReduxFilters,
+            }),
+            [
+                safeInitialFilters,
+                safeReduxFilters,
+            ]
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Request refs
+     * ------------------------------------------------------------------
+     */
+
+    const initialFetchStartedRef =
+        useRef(false);
+
+    const activeBookingsRequestRef =
+        useRef(null);
+
+    const activeStatisticsRequestRef =
+        useRef(null);
+
+    /*
+     * ------------------------------------------------------------------
+     * Customer -> Tenant -> Tenancy
+     * ------------------------------------------------------------------
+     */
 
     const [
         selectedCustomer,
@@ -571,204 +1785,529 @@ export const useBooking = ({
     ] = useState([]);
 
     const [
-        customerTenancyLoading,
-        setCustomerTenancyLoading,
+        customerTenanciesLoading,
+        setCustomerTenanciesLoading,
     ] = useState(false);
 
     const [
-        customerTenancyError,
-        setCustomerTenancyError,
+        customerTenanciesError,
+        setCustomerTenanciesError,
     ] = useState(null);
 
     /*
-    |--------------------------------------------------------------------------
-    | Derived State
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Derived state
+     * ------------------------------------------------------------------
+     */
 
-    const mergedFilters = useMemo(
-        () => ({
-            ...initialFilters,
-            ...reduxFilters,
-        }),
-        [
-            initialFilters,
-            reduxFilters,
-        ]
-    );
-
-    const normalizedBookings =
+    const bookings =
         useMemo(
             () =>
-                Array.isArray(bookings)
-                    ? bookings
-                    : [],
-            [bookings]
+                normalizeBookings(
+                    rawBookings
+                ),
+            [rawBookings]
         );
 
-    const normalizedAvailableUnits =
+    const currentBooking =
+        useMemo(
+            () =>
+                normalizeBooking(
+                    rawCurrentBooking
+                ),
+            [rawCurrentBooking]
+        );
+
+    const availableUnits =
         useMemo(
             () =>
                 Array.isArray(
-                    availableUnits
+                    rawAvailableUnits
                 )
-                    ? availableUnits
-                    : [],
-            [availableUnits]
+                    ? rawAvailableUnits
+                    : extractCollection(
+                        rawAvailableUnits
+                    ),
+            [rawAvailableUnits]
         );
 
-    const normalizedAvailableUsers =
+    const availableUsers =
         useMemo(
             () =>
                 Array.isArray(
-                    availableUsers
+                    rawAvailableUsers
                 )
-                    ? availableUsers
-                    : [],
-            [availableUsers]
+                    ? rawAvailableUsers
+                    : extractCollection(
+                        rawAvailableUsers
+                    ),
+            [rawAvailableUsers]
         );
 
-    const normalizedCustomerTenancies =
+    const tenancies =
         useMemo(
             () =>
                 Array.isArray(
-                    customerTenancies
+                    rawTenancies
                 )
-                    ? customerTenancies
-                    : [],
-            [customerTenancies]
+                    ? rawTenancies
+                    : extractCollection(
+                        rawTenancies
+                    ),
+            [rawTenancies]
+        );
+
+    const statistics =
+        useMemo(
+            () =>
+                rawStatistics ?? {},
+            [rawStatistics]
+        );
+
+    const reports =
+        useMemo(
+            () =>
+                rawReports ?? {},
+            [rawReports]
+        );
+
+    const pagination =
+        useMemo(
+            () => ({
+                ...(isPlainObject(
+                    rawPagination
+                )
+                    ? rawPagination
+                    : {}),
+
+                current_page:
+                    rawPagination?.current_page ??
+                    reduxPage,
+
+                per_page:
+                    rawPagination?.per_page ??
+                    reduxPerPage,
+
+                total:
+                    rawPagination?.total ??
+                    reduxTotal,
+
+                last_page:
+                    rawPagination?.last_page ??
+                    reduxLastPage,
+
+                from:
+                    rawPagination?.from ??
+                    reduxFrom,
+
+                to:
+                    rawPagination?.to ??
+                    reduxTo,
+            }),
+            [
+                rawPagination,
+                reduxPage,
+                reduxPerPage,
+                reduxTotal,
+                reduxLastPage,
+                reduxFrom,
+                reduxTo,
+            ]
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Fetch Bookings
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Loading
+     * ------------------------------------------------------------------
+     */
 
-    const getBookings = useCallback(
-        (params = {}) => {
-            return dispatch(
-                fetchBookings({
-                    ...cleanFilters(
-                        mergedFilters
-                    ),
+    const isAnyLoading =
+        Boolean(
+            loading ||
+            isLoading ||
+            loadingList ||
+            loadingDetails ||
+            loadingCreate ||
+            loadingUpdate ||
+            loadingDelete ||
+            loadingSearch ||
+            loadingStatistics ||
+            loadingReports ||
+            loadingWorkflow ||
+            loadingAvailability ||
+            customerTenanciesLoading
+        );
 
-                    page,
-                    per_page:
-                        perPage,
+    /*
+     * ------------------------------------------------------------------
+     * Fetch bookings
+     * ------------------------------------------------------------------
+     */
 
-                    ...cleanFilters(
+    const getBookings =
+        useCallback(
+            async (
+                params = {}
+            ) => {
+                const cleanedParams =
+                    cleanFilters(
                         params
-                    ),
-                })
-            );
-        },
-        [
-            dispatch,
-            mergedFilters,
-            page,
-            perPage,
-        ]
-    );
+                    );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Fetch Single Booking
-    |--------------------------------------------------------------------------
-    */
+                const requestKey =
+                    createRequestKey(
+                        cleanedParams
+                    );
 
-    const getBooking = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
+                if (
+                    activeBookingsRequestRef
+                        .current
+                        ?.key ===
+                    requestKey
+                ) {
+                    return activeBookingsRequestRef
+                        .current
+                        .promise;
+                }
+
+                const promise =
+                    dispatch(
+                        fetchBookings(
+                            cleanedParams
+                        )
+                    );
+
+                activeBookingsRequestRef.current =
+                {
+                    key: requestKey,
+                    promise,
+                };
+
+                Promise.resolve(
+                    promise
+                ).then(
+                    () => {
+                        if (
+                            activeBookingsRequestRef
+                                .current
+                                ?.promise ===
+                            promise
+                        ) {
+                            activeBookingsRequestRef.current =
+                                null;
+                        }
+                    },
+                    () => {
+                        if (
+                            activeBookingsRequestRef
+                                .current
+                                ?.promise ===
+                            promise
+                        ) {
+                            activeBookingsRequestRef.current =
+                                null;
+                        }
+                    }
                 );
 
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
+                return promise;
+            },
+            [dispatch]
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Get single booking
+     * ------------------------------------------------------------------
+     */
+
+    const getBooking =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (
+                    id === null ||
+                    id === undefined ||
+                    id === ""
+                ) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                console.debug(
+                    "[useBooking] Fetching booking:",
+                    id
+                );
+
+                try {
+                    const dispatched =
+                        dispatch(
+                            fetchBooking(id)
+                        );
+
+                    let result;
+
+                    if (
+                        dispatched &&
+                        typeof dispatched.unwrap ===
+                        "function"
+                    ) {
+                        result =
+                            await dispatched.unwrap();
+                    } else {
+                        result =
+                            await dispatched;
+                    }
+
+                    console.debug(
+                        "[useBooking] fetchBooking result:",
+                        result
+                    );
+
+                    const resolvedBooking =
+                        extractBookingResource(
+                            result
+                        );
+
+                    if (
+                        !resolvedBooking
+                    ) {
+                        console.error(
+                            "[useBooking] Unable to resolve booking resource.",
+                            {
+                                bookingId:
+                                    id,
+                                result,
+                            }
+                        );
+
+                        throw new Error(
+                            "Booking details were not returned by the server."
+                        );
+                    }
+
+                    const normalizedBooking =
+                        normalizeBooking(
+                            resolvedBooking
+                        );
+
+                    console.debug(
+                        "[useBooking] Resolved booking:",
+                        normalizedBooking
+                    );
+
+                    return normalizedBooking;
+                } catch (
+                requestError
+                ) {
+                    console.error(
+                        "[useBooking] Failed to fetch booking:",
+                        {
+                            bookingId:
+                                id,
+                            error:
+                                requestError,
+                        }
+                    );
+
+                    throw requestError;
+                }
+            },
+            [dispatch]
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Create
+     * ------------------------------------------------------------------
+     */
+
+    const addBooking =
+        useCallback(
+            async (data) => {
+                if (!isPlainObject(data)) {
+                    throw new Error(
+                        "Booking data must be a valid object."
+                    );
+                }
+
+                return dispatch(
+                    createBooking(
+                        data
                     )
                 );
-            }
-
-            return dispatch(
-                fetchBooking(id)
-            );
-        },
-        [dispatch]
-    );
+            },
+            [dispatch]
+        );
 
     /*
-    |--------------------------------------------------------------------------
-    | Create
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Update
+     * ------------------------------------------------------------------
+     *
+     * IMPORTANT:
+     *
+     * EditBooking.jsx uses:
+     *
+     *     await updateBooking(id, payload)
+     *
+     * The Redux thunk is imported as updateBookingAction
+     * to avoid a naming collision.
+     *
+     * Protected/generated fields are stripped before dispatching.
+     * ------------------------------------------------------------------
+     */
 
-    const addBooking = useCallback(
-        (payload) => {
-            return dispatch(
-                createBooking(
-                    payload
-                )
-            );
-        },
-        [dispatch]
-    );
+    const updateBooking =
+        useCallback(
+            async (
+                value,
+                data
+            ) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Update
-    |--------------------------------------------------------------------------
-    */
+                if (
+                    id === null ||
+                    id === undefined ||
+                    id === ""
+                ) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
 
-    const editBooking = useCallback(
-        (
-            bookingId,
-            payload
-        ) => {
-            const id =
-                getBookingId(
-                    bookingId
+                if (
+                    !isPlainObject(data)
+                ) {
+                    throw new Error(
+                        "Booking update data must be a valid object."
+                    );
+                }
+
+                const sanitizedPayload =
+                    sanitizeBookingUpdatePayload(
+                        data
+                    );
+
+                console.debug(
+                    "[useBooking] Updating booking:",
+                    {
+                        id,
+                        originalData:
+                            data,
+                        sanitizedPayload,
+                        removedProtectedFields:
+                            PROTECTED_UPDATE_FIELDS.filter(
+                                (field) =>
+                                    Object.prototype.hasOwnProperty.call(
+                                        data,
+                                        field
+                                    )
+                            ),
+                    }
                 );
 
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
+                try {
+                    const dispatched =
+                        dispatch(
+                            updateBookingAction({
+                                id,
+                                data:
+                                    sanitizedPayload,
+                            })
+                        );
 
-            return dispatch(
-                updateBooking({
-                    id,
-                    data: payload,
-                })
-            );
-        },
-        [dispatch]
-    );
+                    if (
+                        dispatched &&
+                        typeof dispatched.unwrap ===
+                        "function"
+                    ) {
+                        const result =
+                            await dispatched.unwrap();
+
+                        console.debug(
+                            "[useBooking] Booking updated successfully:",
+                            result
+                        );
+
+                        return result;
+                    }
+
+                    const result =
+                        await dispatched;
+
+                    console.debug(
+                        "[useBooking] Booking update result:",
+                        result
+                    );
+
+                    return result;
+                } catch (
+                requestError
+                ) {
+                    const normalized =
+                        normalizeError(
+                            requestError
+                        );
+
+                    console.error(
+                        "[useBooking] Failed to update booking:",
+                        {
+                            id,
+                            sanitizedPayload,
+                            message:
+                                normalized?.message,
+                            errors:
+                                normalized?.errors,
+                            status:
+                                normalized?.status,
+                            raw:
+                                requestError,
+                        }
+                    );
+
+                    throw requestError;
+                }
+            },
+            [dispatch]
+        );
 
     /*
-    |--------------------------------------------------------------------------
-    | Delete
-    |--------------------------------------------------------------------------
-    */
+     * Backward-compatible alias.
+     */
+
+    const editBooking =
+        updateBooking;
+
+    /*
+     * ------------------------------------------------------------------
+     * Delete
+     * ------------------------------------------------------------------
+     */
 
     const removeBooking =
         useCallback(
-            (bookingId) => {
+            async (value) => {
                 const id =
                     getBookingId(
-                        bookingId
+                        value
                     );
 
-                if (!id) {
-                    return Promise.reject(
-                        new Error(
-                            "Booking ID is required."
-                        )
+                if (
+                    id === null ||
+                    id === undefined ||
+                    id === ""
+                ) {
+                    throw new Error(
+                        "A valid booking ID is required."
                     );
                 }
 
@@ -780,413 +2319,260 @@ export const useBooking = ({
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Search
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Search
+     * ------------------------------------------------------------------
+     */
 
-    const search = useCallback(
-        (
-            searchTerm,
-            params = {}
-        ) => {
-            return dispatch(
-                searchBookings({
-                    search:
-                        searchTerm,
+    const search =
+        useCallback(
+            async (
+                queryOrParams,
+                perPage =
+                    DEFAULT_PER_PAGE
+            ) => {
+                if (
+                    isPlainObject(
+                        queryOrParams
+                    )
+                ) {
+                    return dispatch(
+                        searchBookings(
+                            cleanSearchParams(
+                                queryOrParams
+                            )
+                        )
+                    );
+                }
 
-                    page,
-
-                    per_page:
-                        perPage,
-
-                    ...cleanFilters(
-                        mergedFilters
-                    ),
-
-                    ...cleanFilters(
-                        params
-                    ),
-                })
-            );
-        },
-        [
-            dispatch,
-            page,
-            perPage,
-            mergedFilters,
-        ]
-    );
+                return dispatch(
+                    searchBookings({
+                        search:
+                            queryOrParams ??
+                            "",
+                        per_page:
+                            perPage,
+                    })
+                );
+            },
+            [dispatch]
+        );
 
     /*
-    |--------------------------------------------------------------------------
-    | Statistics
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Statistics
+     * ------------------------------------------------------------------
+     */
 
     const getStatistics =
         useCallback(
-            (params = {}) => {
-                return dispatch(
-                    fetchBookingStatistics({
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
+            async (
+                filters = {}
+            ) => {
+                const cleaned =
+                    cleanFilters(
+                        filters
+                    );
 
-                        ...cleanFilters(
-                            params
-                        ),
-                    })
+                const requestKey =
+                    createRequestKey(
+                        cleaned
+                    );
+
+                if (
+                    activeStatisticsRequestRef
+                        .current
+                        ?.key ===
+                    requestKey
+                ) {
+                    return activeStatisticsRequestRef
+                        .current
+                        .promise;
+                }
+
+                const promise =
+                    dispatch(
+                        fetchBookingStatistics(
+                            cleaned
+                        )
+                    );
+
+                activeStatisticsRequestRef.current =
+                {
+                    key: requestKey,
+                    promise,
+                };
+
+                Promise.resolve(
+                    promise
+                ).then(
+                    () => {
+                        if (
+                            activeStatisticsRequestRef
+                                .current
+                                ?.promise ===
+                            promise
+                        ) {
+                            activeStatisticsRequestRef.current =
+                                null;
+                        }
+                    },
+                    () => {
+                        if (
+                            activeStatisticsRequestRef
+                                .current
+                                ?.promise ===
+                            promise
+                        ) {
+                            activeStatisticsRequestRef.current =
+                                null;
+                        }
+                    }
                 );
+
+                return promise;
             },
-            [
-                dispatch,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Reports
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Reports
+     * ------------------------------------------------------------------
+     */
 
     const getReports =
         useCallback(
-            (params = {}) => {
+            async (
+                filters = {}
+            ) => {
                 return dispatch(
-                    fetchBookingReports({
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
-                            params
-                        ),
-                    })
+                    fetchBookingReports(
+                        cleanFilters(
+                            filters
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Status Lists
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Status Methods
+     * ------------------------------------------------------------------
+     */
 
     const getPending =
         useCallback(
-            (params = {}) => {
+            async (
+                params = {}
+            ) => {
                 return dispatch(
-                    fetchPendingBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
+                    fetchPendingBookings(
+                        cleanFilters(
                             params
-                        ),
-                    })
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     const getConfirmed =
         useCallback(
-            (params = {}) => {
+            async (
+                params = {}
+            ) => {
                 return dispatch(
-                    fetchConfirmedBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
+                    fetchConfirmedBookings(
+                        cleanFilters(
                             params
-                        ),
-                    })
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     const getActive =
         useCallback(
-            (params = {}) => {
+            async (
+                params = {}
+            ) => {
                 return dispatch(
-                    fetchActiveBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
+                    fetchActiveBookings(
+                        cleanFilters(
                             params
-                        ),
-                    })
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     const getCompleted =
         useCallback(
-            (params = {}) => {
+            async (
+                params = {}
+            ) => {
                 return dispatch(
-                    fetchCompletedBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
+                    fetchCompletedBookings(
+                        cleanFilters(
                             params
-                        ),
-                    })
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     const getCancelled =
         useCallback(
-            (params = {}) => {
+            async (
+                params = {}
+            ) => {
                 return dispatch(
-                    fetchCancelledBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
+                    fetchCancelledBookings(
+                        cleanFilters(
                             params
-                        ),
-                    })
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     const getExpired =
         useCallback(
-            (params = {}) => {
+            async (
+                params = {}
+            ) => {
                 return dispatch(
-                    fetchExpiredBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
+                    fetchExpiredBookings(
+                        cleanFilters(
                             params
-                        ),
-                    })
+                        )
+                    )
                 );
             },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
-        );
-
-    const getRejected =
-        useCallback(
-            (params = {}) => {
-                return dispatch(
-                    fetchRejectedBookings({
-                        page,
-                        per_page:
-                            perPage,
-
-                        ...cleanFilters(
-                            mergedFilters
-                        ),
-
-                        ...cleanFilters(
-                            params
-                        ),
-                    })
-                );
-            },
-            [
-                dispatch,
-                page,
-                perPage,
-                mergedFilters,
-            ]
+            [dispatch]
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Customer → Tenant → Tenancy
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Resolve:
-     *
-     * Customer/User
-     *      ↓
-     * Tenant Profile
-     *      ↓
-     * Embedded Tenancies
-     *
-     * IMPORTANT:
-     *
-     * customerId = USER ID
-     *
-     * tenant.id = TENANT PROFILE ID
-     *
-     * The tenant endpoint already returns:
-     *
-     * tenant.tenancies
-     *
-     * and:
-     *
-     * tenant.active_tenancies
-     *
-     * Therefore those are used first.
+     * ------------------------------------------------------------------
+     * Customer -> Tenant -> Tenancy
+     * ------------------------------------------------------------------
      */
+
     const resolveCustomerTenancies =
         useCallback(
             async (
-                customer,
-                params = {}
+                customer
             ) => {
-                const customerId =
-                    getCustomerUserId(
-                        customer
-                    );
-
-                /*
-                |--------------------------------------------------------------------------
-                | No customer selected
-                |--------------------------------------------------------------------------
-                */
-
-                if (!customerId) {
-                    setSelectedCustomer(
-                        null
-                    );
-
-                    setSelectedTenant(
-                        null
-                    );
-
-                    setCustomerTenancies(
-                        []
-                    );
-
-                    setCustomerTenancyError(
-                        null
-                    );
-
-                    setCustomerTenancyLoading(
-                        false
-                    );
-
-                    return {
-                        customer: null,
-                        customerId: null,
-                        tenant: null,
-                        tenancies: [],
-                        tenantResponse:
-                            null,
-                        tenancyResponse:
-                            null,
-                    };
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | Start relationship loading
-                |--------------------------------------------------------------------------
-                */
-
-                setCustomerTenancyLoading(
-                    true
+                setSelectedCustomer(
+                    customer ?? null
                 );
-
-                setCustomerTenancyError(
-                    null
-                );
-
-                /*
-                |--------------------------------------------------------------------------
-                | Preserve selected customer
-                |--------------------------------------------------------------------------
-                */
-
-                if (
-                    customer &&
-                    typeof customer ===
-                    "object"
-                ) {
-                    setSelectedCustomer(
-                        customer
-                    );
-                } else {
-                    setSelectedCustomer({
-                        id: customerId,
-                    });
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | Clear previous relationship
-                |--------------------------------------------------------------------------
-                */
 
                 setSelectedTenant(
                     null
@@ -1196,214 +2582,143 @@ export const useBooking = ({
                     []
                 );
 
-                try {
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 1
-                    | Resolve tenant profile using USER ID.
-                    |--------------------------------------------------------------------------
-                    */
+                setCustomerTenanciesError(
+                    null
+                );
 
-                    const tenantResponse =
-                        await bookingApi.getTenantByUser(
-                            customerId
-                        );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 2
-                    | Extract tenant profile.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    const tenant =
-                        extractFirstResource(
-                            tenantResponse
-                        );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 3
-                    | No tenant profile.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    if (!tenant?.id) {
-                        setSelectedTenant(
-                            null
-                        );
-
-                        setCustomerTenancies(
-                            []
-                        );
-
-                        return {
-                            customer:
-                                customer ??
-                                {
-                                    id:
-                                        customerId,
-                                },
-
-                            customerId,
-
-                            tenant: null,
-
-                            tenancies: [],
-
-                            tenantResponse,
-
-                            tenancyResponse:
-                                null,
-                        };
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 4
-                    | Store tenant profile.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    setSelectedTenant(
-                        tenant
+                const customerUserId =
+                    getCustomerUserId(
+                        customer
                     );
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 5
-                    | Use embedded tenancies first.
-                    |--------------------------------------------------------------------------
-                    */
+                if (
+                    !customerUserId
+                ) {
+                    return [];
+                }
 
-                    const embeddedTenancies =
+                setCustomerTenanciesLoading(
+                    true
+                );
+
+                try {
+                    let response =
+                        null;
+
+                    if (
+                        typeof bookingApi.resolveCustomerTenancies ===
+                        "function"
+                    ) {
+                        response =
+                            await bookingApi.resolveCustomerTenancies(
+                                customerUserId
+                            );
+                    }
+
+                    let tenant =
+                        extractFirstResource(
+                            response
+                        );
+
+                    if (
+                        !tenant &&
+                        typeof bookingApi.getTenantByUser ===
+                        "function"
+                    ) {
+                        const tenantResponse =
+                            await bookingApi.getTenantByUser(
+                                customerUserId
+                            );
+
+                        tenant =
+                            extractFirstResource(
+                                tenantResponse
+                            );
+                    }
+
+                    if (tenant) {
+                        setSelectedTenant(
+                            tenant
+                        );
+                    }
+
+                    let tenancyList =
                         extractTenantTenancies(
                             tenant
                         );
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 6
-                    | If tenant resource already contains tenancies,
-                    | use them directly.
-                    |--------------------------------------------------------------------------
-                    */
+                    const tenantId =
+                        tenant?.id ??
+                        tenant?.tenant_id ??
+                        null;
 
                     if (
-                        embeddedTenancies.length >
-                        0
+                        tenancyList.length ===
+                        0 &&
+                        tenantId &&
+                        typeof bookingApi.getTenanciesByTenant ===
+                        "function"
                     ) {
-                        setCustomerTenancies(
-                            embeddedTenancies
-                        );
+                        const tenancyResponse =
+                            await bookingApi.getTenanciesByTenant(
+                                tenantId
+                            );
 
-                        return {
-                            customer:
-                                customer ??
-                                {
-                                    id:
-                                        customerId,
-                                },
-
-                            customerId,
-
-                            tenant,
-
-                            tenancies:
-                                embeddedTenancies,
-
-                            tenantResponse,
-
-                            tenancyResponse:
-                                null,
-                        };
+                        tenancyList =
+                            extractCollection(
+                                tenancyResponse
+                            );
                     }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 7
-                    | Fallback:
-                    | Resolve tenancies using TENANT ID.
-                    |--------------------------------------------------------------------------
-                    */
+                    if (
+                        tenancyList.length ===
+                        0 &&
+                        tenantId &&
+                        typeof bookingApi.getActiveTenanciesByTenant ===
+                        "function"
+                    ) {
+                        const activeResponse =
+                            await bookingApi.getActiveTenanciesByTenant(
+                                tenantId
+                            );
 
-                    const tenancyResponse =
-                        await bookingApi.getTenanciesByTenant(
-                            tenant.id,
-                            cleanSearchParams(
-                                params
-                            )
-                        );
+                        tenancyList =
+                            extractCollection(
+                                activeResponse
+                            );
+                    }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 8
-                    | Normalize tenancy collection.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    const tenancies =
-                        extractCollection(
-                            tenancyResponse
-                        );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 9
-                    | Store tenancies.
-                    |--------------------------------------------------------------------------
-                    */
+                    const normalizedTenancies =
+                        Array.isArray(
+                            tenancyList
+                        )
+                            ? tenancyList
+                            : [];
 
                     setCustomerTenancies(
-                        tenancies
+                        normalizedTenancies
                     );
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | STEP 10
-                    | Return complete relationship.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    return {
-                        customer:
-                            customer ??
-                            {
-                                id:
-                                    customerId,
-                            },
-
-                        customerId,
-
-                        tenant,
-
-                        tenancies,
-
-                        tenantResponse,
-
-                        tenancyResponse,
-                    };
-                } catch (error) {
+                    return normalizedTenancies;
+                } catch (
+                requestError
+                ) {
                     const normalized =
                         normalizeError(
-                            error
+                            requestError
                         );
 
-                    setSelectedTenant(
-                        null
+                    setCustomerTenanciesError(
+                        normalized
                     );
 
                     setCustomerTenancies(
                         []
                     );
 
-                    setCustomerTenancyError(
-                        normalized
-                    );
-
-                    throw error;
+                    throw requestError;
                 } finally {
-                    setCustomerTenancyLoading(
+                    setCustomerTenanciesLoading(
                         false
                     );
                 }
@@ -1411,98 +2726,85 @@ export const useBooking = ({
             []
         );
 
-    /**
-     * Fetch tenant profile for a user/customer.
+    /*
+     * ------------------------------------------------------------------
+     * Find tenant by customer/user
+     * ------------------------------------------------------------------
      *
-     * Customer ID = User ID.
+     * Compatibility helper for EditBooking.jsx.
+     * ------------------------------------------------------------------
      */
+
     const getTenantByCustomer =
         useCallback(
             async (
                 customer
             ) => {
-                const customerId =
+                const customerUserId =
                     getCustomerUserId(
                         customer
                     );
 
-                if (!customerId) {
-                    setSelectedTenant(
-                        null
+                if (!customerUserId) {
+                    return null;
+                }
+
+                try {
+                    if (
+                        typeof bookingApi.getTenantByUser ===
+                        "function"
+                    ) {
+                        const response =
+                            await bookingApi.getTenantByUser(
+                                customerUserId
+                            );
+
+                        return extractFirstResource(
+                            response
+                        );
+                    }
+
+                    if (
+                        typeof bookingApi.resolveCustomerTenancies ===
+                        "function"
+                    ) {
+                        const response =
+                            await bookingApi.resolveCustomerTenancies(
+                                customerUserId
+                            );
+
+                        return extractFirstResource(
+                            response
+                        );
+                    }
+
+                    return null;
+                } catch (requestError) {
+                    console.error(
+                        "[useBooking] Failed to resolve tenant by customer:",
+                        {
+                            customerUserId,
+                            error:
+                                requestError,
+                        }
                     );
 
                     return null;
                 }
-
-                setCustomerTenancyError(
-                    null
-                );
-
-                try {
-                    const response =
-                        await bookingApi.getTenantByUser(
-                            customerId
-                        );
-
-                    const tenant =
-                        extractFirstResource(
-                            response
-                        );
-
-                    setSelectedTenant(
-                        tenant
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Also hydrate tenancies from tenant resource.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    const embeddedTenancies =
-                        extractTenantTenancies(
-                            tenant
-                        );
-
-                    setCustomerTenancies(
-                        embeddedTenancies
-                    );
-
-                    return tenant;
-                } catch (error) {
-                    const normalized =
-                        normalizeError(
-                            error
-                        );
-
-                    setCustomerTenancyError(
-                        normalized
-                    );
-
-                    setSelectedTenant(
-                        null
-                    );
-
-                    setCustomerTenancies(
-                        []
-                    );
-
-                    throw error;
-                }
             },
             []
         );
 
-    /**
-     * Fetch all tenancies for a tenant.
-     *
-     * tenant.id is the tenant profile ID.
+    /*
+     * ------------------------------------------------------------------
+     * Direct tenant tenancies
+     * ------------------------------------------------------------------
      */
+
     const getTenanciesByTenant =
         useCallback(
             async (
-                tenant,
-                params = {}
+                tenant
             ) => {
                 const tenantId =
                     getBookingId(
@@ -1510,100 +2812,32 @@ export const useBooking = ({
                     );
 
                 if (!tenantId) {
-                    setCustomerTenancies(
-                        []
-                    );
-
                     return [];
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Use embedded tenancies if already available.
-                |--------------------------------------------------------------------------
-                */
-
                 if (
-                    tenant &&
-                    typeof tenant ===
-                    "object"
+                    typeof bookingApi.getTenanciesByTenant !==
+                    "function"
                 ) {
-                    const embeddedTenancies =
-                        extractTenantTenancies(
-                            tenant
-                        );
-
-                    if (
-                        embeddedTenancies.length >
-                        0
-                    ) {
-                        setCustomerTenancies(
-                            embeddedTenancies
-                        );
-
-                        return embeddedTenancies;
-                    }
+                    return [];
                 }
 
-                setCustomerTenancyLoading(
-                    true
+                const response =
+                    await bookingApi.getTenanciesByTenant(
+                        tenantId
+                    );
+
+                return extractCollection(
+                    response
                 );
-
-                setCustomerTenancyError(
-                    null
-                );
-
-                try {
-                    const response =
-                        await bookingApi.getTenanciesByTenant(
-                            tenantId,
-                            cleanSearchParams(
-                                params
-                            )
-                        );
-
-                    const tenancies =
-                        extractCollection(
-                            response
-                        );
-
-                    setCustomerTenancies(
-                        tenancies
-                    );
-
-                    return tenancies;
-                } catch (error) {
-                    const normalized =
-                        normalizeError(
-                            error
-                        );
-
-                    setCustomerTenancies(
-                        []
-                    );
-
-                    setCustomerTenancyError(
-                        normalized
-                    );
-
-                    throw error;
-                } finally {
-                    setCustomerTenancyLoading(
-                        false
-                    );
-                }
             },
             []
         );
 
-    /**
-     * Fetch active tenancies for a tenant.
-     */
     const getActiveTenanciesByTenant =
         useCallback(
             async (
-                tenant,
-                params = {}
+                tenant
             ) => {
                 const tenantId =
                     getBookingId(
@@ -1611,540 +2845,455 @@ export const useBooking = ({
                     );
 
                 if (!tenantId) {
-                    setCustomerTenancies(
-                        []
+                    return [];
+                }
+
+                if (
+                    typeof bookingApi.getActiveTenanciesByTenant !==
+                    "function"
+                ) {
+                    return [];
+                }
+
+                const response =
+                    await bookingApi.getActiveTenanciesByTenant(
+                        tenantId
+                    );
+
+                return extractCollection(
+                    response
+                );
+            },
+            []
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Workflow
+     * ------------------------------------------------------------------
+     */
+
+    const confirm =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    confirmBooking(id)
+                );
+            },
+            [dispatch]
+        );
+
+    const approve =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    approveBooking(id)
+                );
+            },
+            [dispatch]
+        );
+
+    const checkIn =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    checkInBooking(id)
+                );
+            },
+            [dispatch]
+        );
+
+    const complete =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    completeBooking(id)
+                );
+            },
+            [dispatch]
+        );
+
+    const cancel =
+        useCallback(
+            async (
+                value,
+                reason
+            ) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    cancelBooking({
+                        id,
+                        reason,
+                    })
+                );
+            },
+            [dispatch]
+        );
+
+    const reject =
+        useCallback(
+            async (
+                value,
+                reason
+            ) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    rejectBooking({
+                        id,
+                        reason,
+                    })
+                );
+            },
+            [dispatch]
+        );
+
+    const expire =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    expireBooking(id)
+                );
+            },
+            [dispatch]
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Availability
+     * ------------------------------------------------------------------
+     *
+     * Backend requires:
+     *
+     * property_id
+     * start_date
+     * end_date
+     *
+     * We normalize aliases here and prevent an invalid request from
+     * reaching the API.
+     * ------------------------------------------------------------------
+     */
+
+    const getAvailableUnits =
+        useCallback(
+            async (
+                params = {}
+            ) => {
+                const normalized =
+                    isPlainObject(params)
+                        ? {
+                            ...params,
+                        }
+                        : {};
+
+                const propertyId =
+                    getBookingId(
+                        normalized.property_id
+                    );
+
+                const apartmentId =
+                    getBookingId(
+                        normalized.apartment_id
+                    );
+
+                const startDate =
+                    firstPresent(
+                        normalized.start_date,
+                        normalized.startDate
+                    );
+
+                const endDate =
+                    firstPresent(
+                        normalized.end_date,
+                        normalized.endDate
+                    );
+
+                if (!propertyId) {
+                    console.warn(
+                        "[useBooking] Available units request skipped: property_id is missing."
                     );
 
                     return [];
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Use embedded active tenancies first.
-                |--------------------------------------------------------------------------
-                */
+                if (!startDate) {
+                    console.warn(
+                        "[useBooking] Available units request skipped: start_date is missing."
+                    );
 
-                if (
-                    tenant &&
-                    typeof tenant ===
-                    "object"
-                ) {
-                    const embeddedActiveTenancies =
-                        Array.isArray(
-                            tenant?.active_tenancies
-                        )
-                            ? tenant.active_tenancies
-                            : Array.isArray(
-                                tenant?.activeTenancies
-                            )
-                                ? tenant.activeTenancies
-                                : [];
-
-                    if (
-                        embeddedActiveTenancies.length >
-                        0
-                    ) {
-                        setCustomerTenancies(
-                            embeddedActiveTenancies
-                        );
-
-                        return embeddedActiveTenancies;
-                    }
+                    return [];
                 }
 
-                setCustomerTenancyLoading(
-                    true
-                );
+                if (!endDate) {
+                    console.warn(
+                        "[useBooking] Available units request skipped: end_date is missing."
+                    );
 
-                setCustomerTenancyError(
-                    null
+                    return [];
+                }
+
+                const requestParams =
+                    cleanFilters({
+                        ...normalized,
+
+                        property_id:
+                            propertyId,
+
+                        ...(apartmentId
+                            ? {
+                                apartment_id:
+                                    apartmentId,
+                            }
+                            : {}),
+
+                        start_date:
+                            startDate,
+
+                        end_date:
+                            endDate,
+                    });
+
+                /*
+                 * Remove camelCase aliases so the API receives only
+                 * the Laravel field names.
+                 */
+
+                delete requestParams.startDate;
+                delete requestParams.endDate;
+
+                console.debug(
+                    "[useBooking] Fetching available units:",
+                    requestParams
                 );
 
                 try {
-                    const response =
-                        await bookingApi.getActiveTenanciesByTenant(
-                            tenantId,
-                            cleanSearchParams(
-                                params
+                    const dispatched =
+                        dispatch(
+                            fetchAvailableUnits(
+                                requestParams
                             )
                         );
 
-                    const tenancies =
-                        extractCollection(
-                            response
-                        );
+                    if (
+                        dispatched &&
+                        typeof dispatched.unwrap ===
+                        "function"
+                    ) {
+                        return await dispatched.unwrap();
+                    }
 
-                    setCustomerTenancies(
-                        tenancies
+                    return await dispatched;
+                } catch (requestError) {
+                    console.error(
+                        "[useBooking] Failed to fetch available units:",
+                        {
+                            requestParams,
+                            error:
+                                requestError,
+                        }
                     );
 
-                    return tenancies;
-                } catch (error) {
-                    const normalized =
-                        normalizeError(
-                            error
-                        );
-
-                    setCustomerTenancies(
-                        []
-                    );
-
-                    setCustomerTenancyError(
-                        normalized
-                    );
-
-                    throw error;
-                } finally {
-                    setCustomerTenancyLoading(
-                        false
-                    );
+                    throw requestError;
                 }
-            },
-            []
-        );
-
-    /**
-     * Clear selected customer relationship data.
-     */
-    const clearCustomerRelationship =
-        useCallback(() => {
-            setSelectedCustomer(
-                null
-            );
-
-            setSelectedTenant(
-                null
-            );
-
-            setCustomerTenancies(
-                []
-            );
-
-            setCustomerTenancyError(
-                null
-            );
-
-            setCustomerTenancyLoading(
-                false
-            );
-        }, []);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Booking Workflow
-    |--------------------------------------------------------------------------
-    */
-
-    const confirm = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                confirmBooking(id)
-            );
-        },
-        [dispatch]
-    );
-
-    const approve = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                approveBooking(id)
-            );
-        },
-        [dispatch]
-    );
-
-    const checkIn = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                checkInBooking(id)
-            );
-        },
-        [dispatch]
-    );
-
-    const complete = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                completeBooking(id)
-            );
-        },
-        [dispatch]
-    );
-
-    const cancel = useCallback(
-        (
-            bookingId,
-            payload = {}
-        ) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                cancelBooking({
-                    id,
-                    data: payload,
-                })
-            );
-        },
-        [dispatch]
-    );
-
-    const reject = useCallback(
-        (
-            bookingId,
-            rejectionReason
-        ) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                rejectBooking({
-                    id,
-                    rejection_reason:
-                        rejectionReason,
-                })
-            );
-        },
-        [dispatch]
-    );
-
-    const expire = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                expireBooking(id)
-            );
-        },
-        [dispatch]
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Availability
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Fetch available units.
-     */
-    const getAvailableUnits =
-        useCallback(
-            (params = {}) => {
-                const cleanedParams =
-                    cleanSearchParams(
-                        params
-                    );
-
-                return dispatch(
-                    fetchAvailableUnits(
-                        cleanedParams
-                    )
-                );
             },
             [dispatch]
         );
 
-    /**
-     * Fetch available booking users.
+    /*
+     * ------------------------------------------------------------------
+     * Available Users
+     * ------------------------------------------------------------------
      */
+
     const getAvailableUsers =
         useCallback(
-            (searchTerm = "") => {
-                /*
-                |--------------------------------------------------------------------------
-                | No search
-                |--------------------------------------------------------------------------
-                */
+            async (
+                params = {}
+            ) => {
+                let normalizedParams =
+                    params;
 
                 if (
-                    searchTerm === null ||
-                    searchTerm === undefined
-                ) {
-                    return dispatch(
-                        fetchAvailableUsers()
-                    );
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | String search
-                |--------------------------------------------------------------------------
-                */
-
-                if (
-                    typeof searchTerm ===
+                    typeof params ===
                     "string"
                 ) {
-                    const trimmedSearch =
-                        searchTerm.trim();
-
-                    if (!trimmedSearch) {
-                        return dispatch(
-                            fetchAvailableUsers()
-                        );
-                    }
-
-                    return dispatch(
-                        fetchAvailableUsers(
-                            trimmedSearch
-                        )
-                    );
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | Object search
-                |--------------------------------------------------------------------------
-                */
-
-                if (
-                    typeof searchTerm ===
-                    "object" &&
-                    !Array.isArray(
-                        searchTerm
+                    normalizedParams = {
+                        search: params,
+                    };
+                } else if (
+                    !isPlainObject(
+                        params
                     )
                 ) {
-                    const params = {
-                        ...searchTerm,
-                    };
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | search: ""
-                    |--------------------------------------------------------------------------
-                    */
-
-                    if (
-                        typeof params.search ===
-                        "string"
-                    ) {
-                        const trimmedSearch =
-                            params.search.trim();
-
-                        if (!trimmedSearch) {
-                            delete params.search;
-                        } else {
-                            params.search =
-                                trimmedSearch;
-                        }
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | search: { search: "" }
-                    |--------------------------------------------------------------------------
-                    */
-
-                    if (
-                        params.search &&
-                        typeof params.search ===
-                        "object" &&
-                        !Array.isArray(
-                            params.search
-                        )
-                    ) {
-                        const nestedSearch =
-                            cleanFilters(
-                                params.search
-                            );
-
-                        if (
-                            Object.keys(
-                                nestedSearch
-                            ).length > 0
-                        ) {
-                            params.search =
-                                nestedSearch;
-                        } else {
-                            delete params.search;
-                        }
-                    }
-
-                    const cleanedParams =
-                        cleanSearchParams(
-                            params
-                        );
-
-                    if (
-                        Object.keys(
-                            cleanedParams
-                        ).length === 0
-                    ) {
-                        return dispatch(
-                            fetchAvailableUsers()
-                        );
-                    }
-
-                    return dispatch(
-                        fetchAvailableUsers(
-                            cleanedParams
-                        )
-                    );
+                    normalizedParams = {};
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Fallback
-                |--------------------------------------------------------------------------
-                */
+                try {
+                    const dispatched =
+                        dispatch(
+                            fetchAvailableUsers(
+                                cleanFilters(
+                                    normalizedParams
+                                )
+                            )
+                        );
 
-                return dispatch(
-                    fetchAvailableUsers()
-                );
+                    if (
+                        dispatched &&
+                        typeof dispatched.unwrap ===
+                        "function"
+                    ) {
+                        return await dispatched.unwrap();
+                    }
+
+                    return await dispatched;
+                } catch (requestError) {
+                    console.error(
+                        "[useBooking] Failed to fetch available users:",
+                        requestError
+                    );
+
+                    throw requestError;
+                }
             },
             [dispatch]
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Restore / Force Delete
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Restore / Force Delete
+     * ------------------------------------------------------------------
+     */
 
-    const restore = useCallback(
-        (bookingId) => {
-            const id =
-                getBookingId(
-                    bookingId
-                );
-
-            if (!id) {
-                return Promise.reject(
-                    new Error(
-                        "Booking ID is required."
-                    )
-                );
-            }
-
-            return dispatch(
-                restoreBooking(id)
-            );
-        },
-        [dispatch]
-    );
-
-    const forceDelete =
+    const restore =
         useCallback(
-            (bookingId) => {
+            async (value) => {
                 const id =
                     getBookingId(
-                        bookingId
+                        value
                     );
 
                 if (!id) {
-                    return Promise.reject(
-                        new Error(
-                            "Booking ID is required."
-                        )
+                    throw new Error(
+                        "A valid booking ID is required."
                     );
                 }
 
                 return dispatch(
-                    forceDeleteBooking(
-                        id
-                    )
+                    restoreBooking(id)
+                );
+            },
+            [dispatch]
+        );
+
+    const forceDelete =
+        useCallback(
+            async (value) => {
+                const id =
+                    getBookingId(
+                        value
+                    );
+
+                if (!id) {
+                    throw new Error(
+                        "A valid booking ID is required."
+                    );
+                }
+
+                return dispatch(
+                    forceDeleteBooking(id)
                 );
             },
             [dispatch]
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Filters / Pagination
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Filters
+     * ------------------------------------------------------------------
+     */
 
     const updateFilters =
         useCallback(
-            (newFilters = {}) => {
-                dispatch(
+            (filters = {}) => {
+                return dispatch(
                     setFilters(
                         cleanFilters(
-                            newFilters
+                            filters
                         )
                     )
                 );
@@ -2153,17 +3302,33 @@ export const useBooking = ({
         );
 
     const resetFilters =
-        useCallback(() => {
-            dispatch(
-                clearFilters()
-            );
-        }, [dispatch]);
+        useCallback(
+            () => {
+                return dispatch(
+                    clearFilters()
+                );
+            },
+            [dispatch]
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Pagination
+     * ------------------------------------------------------------------
+     */
 
     const changePage =
         useCallback(
-            (newPage) => {
-                dispatch(
-                    setPage(newPage)
+            (nextPage) => {
+                return dispatch(
+                    setPage(
+                        Math.max(
+                            Number(
+                                nextPage
+                            ) || 1,
+                            1
+                        )
+                    )
                 );
             },
             [dispatch]
@@ -2171,10 +3336,22 @@ export const useBooking = ({
 
     const changePerPage =
         useCallback(
-            (newPerPage) => {
-                dispatch(
+            (nextPerPage) => {
+                const normalized =
+                    Math.min(
+                        Math.max(
+                            Number(
+                                nextPerPage
+                            ) ||
+                            DEFAULT_PER_PAGE,
+                            1
+                        ),
+                        100
+                    );
+
+                return dispatch(
                     setPerPage(
-                        newPerPage
+                        normalized
                     )
                 );
             },
@@ -2182,155 +3359,189 @@ export const useBooking = ({
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | Clear State
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Clear current booking
+     * ------------------------------------------------------------------
+     */
 
     const clearCurrent =
-        useCallback(() => {
-            dispatch(
-                clearCurrentBooking()
-            );
-        }, [dispatch]);
-
-    const clearBookingError =
-        useCallback(() => {
-            dispatch(
-                clearError()
-            );
-        }, [dispatch]);
-
-    const reset =
-        useCallback(() => {
-            dispatch(
-                resetBookingState()
-            );
-
-            clearCustomerRelationship();
-        }, [
-            dispatch,
-            clearCustomerRelationship,
-        ]);
+        useCallback(
+            () => {
+                return dispatch(
+                    clearCurrentBooking()
+                );
+            },
+            [dispatch]
+        );
 
     /*
-    |--------------------------------------------------------------------------
-    | Initial Fetch
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Initial Fetch
+     * ------------------------------------------------------------------
+     */
 
     useEffect(() => {
         if (
             !autoFetch ||
-            initialized
+            initialFetchStartedRef.current
         ) {
             return;
         }
 
-        dispatch(
-            fetchBookings({
-                ...cleanFilters(
-                    initialFilters
-                ),
+        initialFetchStartedRef.current =
+            true;
 
+        const page =
+            initialPage ??
+            reduxPage ??
+            1;
+
+        const perPage =
+            initialPerPage ??
+            reduxPerPage ??
+            DEFAULT_PER_PAGE;
+
+        const params =
+            cleanFilters({
+                ...mergedFilters,
                 page,
-
                 per_page:
                     perPage,
-            })
-        );
+            });
+
+        getBookings(
+            params
+        ).catch(() => {
+            /*
+             * Redux owns the request error state.
+             */
+        });
     }, [
         autoFetch,
-        initialized,
-        dispatch,
-        initialFilters,
-        page,
-        perPage,
+        initialPage,
+        initialPerPage,
+        reduxPage,
+        reduxPerPage,
+        mergedFilters,
+        getBookings,
     ]);
 
     /*
-    |--------------------------------------------------------------------------
-    | Return API
-    |--------------------------------------------------------------------------
-    */
+     * ------------------------------------------------------------------
+     * Compatibility Loading Aliases
+     * ------------------------------------------------------------------
+     *
+     * EditBooking.jsx may use these names.
+     * ------------------------------------------------------------------
+     */
+
+    const loadingGet =
+        Boolean(
+            loadingDetails ||
+            loading
+        );
+
+    const loadingAvailableUnits =
+        Boolean(
+            loadingAvailability
+        );
+
+    const loadingAvailableUsers =
+        Boolean(
+            loadingAvailability
+        );
+
+    /*
+     * ------------------------------------------------------------------
+     * Return
+     * ------------------------------------------------------------------
+     */
 
     return {
         /*
-        |--------------------------------------------------------------------------
-        | Booking Data
-        |--------------------------------------------------------------------------
-        */
+         * Data
+         */
 
-        bookings:
-            normalizedBookings,
+        bookings,
 
         currentBooking,
+
+        availableUnits,
+
+        availableUsers,
+
+        tenancies,
+
+        customerTenancies,
 
         statistics,
 
         reports,
 
-        availableUnits:
-            normalizedAvailableUnits,
-
-        availableUsers:
-            normalizedAvailableUsers,
-
         pagination,
 
-        page,
+        normalizedBookings:
+            bookings,
 
-        perPage,
+        normalizedCurrentBooking:
+            currentBooking,
 
-        total,
+        /*
+         * Customer relationship state
+         */
 
-        lastPage,
+        selectedCustomer,
 
-        from,
+        setSelectedCustomer,
 
-        to,
+        selectedTenant,
+
+        setSelectedTenant,
+
+        customerTenanciesLoading,
+
+        customerTenanciesError,
+
+        /*
+         * Redux state
+         */
 
         filters:
             mergedFilters,
 
-        /*
-        |--------------------------------------------------------------------------
-        | Customer → Tenant → Tenancy
-        |--------------------------------------------------------------------------
-        */
+        page:
+            pagination.current_page,
 
-        selectedCustomer,
+        perPage:
+            pagination.per_page,
 
-        selectedTenant,
+        total:
+            pagination.total,
 
-        customerTenancies:
-            normalizedCustomerTenancies,
+        lastPage:
+            pagination.last_page,
 
-        customerTenancyLoading,
+        from:
+            pagination.from,
 
-        customerTenancyError,
+        to:
+            pagination.to,
 
-        resolveCustomerTenancies,
-
-        getTenantByCustomer,
-
-        getTenanciesByTenant,
-
-        getActiveTenanciesByTenant,
-
-        clearCustomerRelationship,
+        initialized,
 
         /*
-        |--------------------------------------------------------------------------
-        | Loading
-        |--------------------------------------------------------------------------
-        */
+         * Loading
+         */
 
         loading,
 
+        isLoading,
+
+        isAnyLoading,
+
         loadingList,
 
-        loadingSingle,
+        loadingDetails,
 
         loadingCreate,
 
@@ -2344,34 +3555,36 @@ export const useBooking = ({
 
         loadingReports,
 
-        loadingAction,
+        loadingWorkflow,
 
         loadingAvailability,
 
-        loadingUsers,
+        /*
+         * Compatibility loading names
+         */
 
-        loadingRestore,
+        loadingGet,
 
-        loadingForceDelete,
+        loadingAvailableUnits,
+
+        loadingAvailableUsers,
 
         /*
-        |--------------------------------------------------------------------------
-        | Errors
-        |--------------------------------------------------------------------------
-        */
+         * Errors
+         */
 
-        error:
-            normalizeError(
-                error
-            ),
+        error,
 
         errors,
 
+        normalizedError:
+            normalizeError(
+                error ?? errors
+            ),
+
         /*
-        |--------------------------------------------------------------------------
-        | CRUD
-        |--------------------------------------------------------------------------
-        */
+         * CRUD
+         */
 
         getBookings,
 
@@ -2379,33 +3592,29 @@ export const useBooking = ({
 
         addBooking,
 
+        updateBooking,
+
         editBooking,
 
         removeBooking,
 
         /*
-        |--------------------------------------------------------------------------
-        | Search
-        |--------------------------------------------------------------------------
-        */
+         * Search
+         */
 
         search,
 
         /*
-        |--------------------------------------------------------------------------
-        | Statistics / Reports
-        |--------------------------------------------------------------------------
-        */
+         * Statistics / Reports
+         */
 
         getStatistics,
 
         getReports,
 
         /*
-        |--------------------------------------------------------------------------
-        | Status Lists
-        |--------------------------------------------------------------------------
-        */
+         * Status
+         */
 
         getPending,
 
@@ -2419,13 +3628,21 @@ export const useBooking = ({
 
         getExpired,
 
-        getRejected,
+        /*
+         * Customer / Tenant / Tenancy
+         */
+
+        resolveCustomerTenancies,
+
+        getTenantByCustomer,
+
+        getTenanciesByTenant,
+
+        getActiveTenanciesByTenant,
 
         /*
-        |--------------------------------------------------------------------------
-        | Workflow
-        |--------------------------------------------------------------------------
-        */
+         * Workflow
+         */
 
         confirm,
 
@@ -2442,30 +3659,24 @@ export const useBooking = ({
         expire,
 
         /*
-        |--------------------------------------------------------------------------
-        | Availability
-        |--------------------------------------------------------------------------
-        */
+         * Availability
+         */
 
         getAvailableUnits,
 
         getAvailableUsers,
 
         /*
-        |--------------------------------------------------------------------------
-        | Restore / Delete
-        |--------------------------------------------------------------------------
-        */
+         * Delete lifecycle
+         */
 
         restore,
 
         forceDelete,
 
         /*
-        |--------------------------------------------------------------------------
-        | Filters / Pagination
-        |--------------------------------------------------------------------------
-        */
+         * Filters / Pagination
+         */
 
         updateFilters,
 
@@ -2476,16 +3687,34 @@ export const useBooking = ({
         changePerPage,
 
         /*
-        |--------------------------------------------------------------------------
-        | State Controls
-        |--------------------------------------------------------------------------
-        */
+         * Current booking
+         */
 
         clearCurrent,
 
-        clearBookingError,
+        /*
+         * Utility helpers
+         */
 
-        reset,
+        getBookingId,
+
+        getNestedValue,
+
+        normalizeBooking,
+
+        normalizeBookingFinancials,
+
+        normalizeBookingAmount,
+
+        toFiniteNumber,
+
+        extractBookingResource,
+
+        extractCollection,
+
+        extractFirstResource,
+
+        sanitizeBookingUpdatePayload,
     };
 };
 

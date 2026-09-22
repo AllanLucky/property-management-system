@@ -1,19 +1,18 @@
 import {
+  ArrowRight,
   CalendarDays,
-  CheckCircle2,
-  Clock3,
   Eye,
   FileText,
   Home,
   MoreHorizontal,
   Pencil,
   UserRound,
-  Wallet,
 } from "lucide-react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
-import BookingStatusBadge from "./BookingStatusBadge";
 import BookingPaymentBadge from "./BookingPaymentBadge";
+import BookingStatusBadge from "./BookingStatusBadge";
 
 /*
 |--------------------------------------------------------------------------
@@ -33,30 +32,79 @@ const toNumber = (value) => {
     return 0;
   }
 
-  const number = Number(value);
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
 
-  return Number.isFinite(number) ? number : 0;
+  if (typeof value === "object") {
+    if (value.amount !== undefined) {
+      return toNumber(value.amount);
+    }
+
+    if (value.value !== undefined) {
+      return toNumber(value.value);
+    }
+
+    if (value.total !== undefined) {
+      return toNumber(value.total);
+    }
+
+    return 0;
+  }
+
+  const parsed = Number(
+    String(value).replace(/[^0-9.-]/g, ""),
+  );
+
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/**
+ * Safely convert a value to boolean.
+ */
+const toBoolean = (value) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  if (typeof value === "string") {
+    return [
+      "1",
+      "true",
+      "yes",
+      "on",
+    ].includes(value.toLowerCase());
+  }
+
+  return false;
 };
 
 /**
  * Format currency using Kenyan Shillings.
+ *
+ * Financial values are never truncated.
  */
 const formatCurrency = (value) => {
-  const amount = toNumber(value);
-
   return new Intl.NumberFormat("en-KE", {
     style: "currency",
     currency: "KES",
+    currencyDisplay: "symbol",
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+    maximumFractionDigits: 2,
+  }).format(toNumber(value));
 };
 
 /**
- * Format date safely.
+ * Format date.
  */
 const formatDate = (value) => {
-  if (!value) return "—";
+  if (!value) {
+    return "—";
+  }
 
   const date = new Date(value);
 
@@ -73,73 +121,466 @@ const formatDate = (value) => {
 
 /*
 |--------------------------------------------------------------------------
-| Customer Helpers
+| Generic Helpers
 |--------------------------------------------------------------------------
 */
 
 /**
- * Get customer object from all supported booking structures.
+ * Determine whether a value is a plain object.
  */
-const getCustomer = (booking) => {
+const isObject = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value);
+
+/**
+ * Determine whether a value is actually present.
+ */
+const hasValue = (value) =>
+  value !== null &&
+  value !== undefined &&
+  value !== "";
+
+/*
+|--------------------------------------------------------------------------
+| Booking Source
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get the actual booking object.
+ *
+ * Supports:
+ *
+ * booking
+ *
+ * or:
+ *
+ * {
+ *   data: booking
+ * }
+ */
+const getBookingSource = (booking) => {
+  if (!isObject(booking)) {
+    return {};
+  }
+
+  if (
+    !booking.id &&
+    !booking.booking_number &&
+    isObject(booking.data)
+  ) {
+    return booking.data;
+  }
+
+  return booking;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Financial Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Get the financial object.
+ *
+ * Supports:
+ *
+ * financials: {...}
+ *
+ * financials: {
+ *   data: {...}
+ * }
+ *
+ * or financial values directly on booking.
+ */
+const getFinancialObject = (booking) => {
+  const source = getBookingSource(booking);
+
+  const financials = source?.financials;
+
+  if (isObject(financials?.data)) {
+    return financials.data;
+  }
+
+  if (isObject(financials)) {
+    return financials;
+  }
+
+  return source;
+};
+
+/**
+ * Get a financial field.
+ *
+ * Financial object is checked first.
+ * Booking-level fields are used as fallback.
+ */
+const getFinancialValue = (
+  booking,
+  financial,
+  bookingFields = [],
+) => {
+  const source = getBookingSource(booking);
+  const financials = getFinancialObject(source);
+
+  if (hasValue(financials?.[financial])) {
+    return financials[financial];
+  }
+
+  if (hasValue(source?.[financial])) {
+    return source[financial];
+  }
+
+  for (const field of bookingFields) {
+    if (hasValue(financials?.[field])) {
+      return financials[field];
+    }
+
+    if (hasValue(source?.[field])) {
+      return source[field];
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * Get all booking financials.
+ */
+const getBookingFinancials = (booking) => {
+  const source = getBookingSource(booking);
+  const financials = getFinancialObject(source);
+
+  /*
+   * Charges
+   */
+
+  const rentRaw = getFinancialValue(
+    source,
+    "rent_amount",
+    [
+      "rentAmount",
+      "rent",
+    ],
+  );
+
+  const depositRaw = getFinancialValue(
+    source,
+    "deposit_amount",
+    [
+      "depositAmount",
+      "deposit",
+    ],
+  );
+
+  const serviceChargeRaw = getFinancialValue(
+    source,
+    "service_charge",
+    [
+      "serviceCharge",
+      "service_charge_amount",
+      "serviceChargeAmount",
+    ],
+  );
+
+  const bookingFeeRaw = getFinancialValue(
+    source,
+    "booking_fee",
+    [
+      "bookingFee",
+      "booking_fee_amount",
+      "bookingFeeAmount",
+    ],
+  );
+
+  const discountRaw = getFinancialValue(
+    source,
+    "discount_amount",
+    [
+      "discountAmount",
+      "discount",
+    ],
+  );
+
+  /*
+   * Total
+   */
+
+  const totalRaw = getFinancialValue(
+    source,
+    "total_amount",
+    [
+      "totalAmount",
+      "grand_total",
+      "grandTotal",
+      "booking_total",
+      "bookingTotal",
+      "total",
+      "total_due",
+      "totalDue",
+      "total_payable",
+      "totalPayable",
+    ],
+  );
+
+  /*
+   * Paid
+   */
+
+  const paidRaw = getFinancialValue(
+    source,
+    "amount_paid",
+    [
+      "amountPaid",
+      "paid_amount",
+      "paidAmount",
+      "total_paid",
+      "totalPaid",
+      "paid",
+      "payments_total",
+      "paymentsTotal",
+    ],
+  );
+
+  /*
+   * Balance
+   */
+
+  const balanceRaw = getFinancialValue(
+    source,
+    "balance",
+    [
+      "balance_amount",
+      "balanceAmount",
+      "amount_balance",
+      "amountBalance",
+    ],
+  );
+
+  /*
+   * Numeric values
+   */
+
+  const rentAmount = toNumber(rentRaw);
+  const depositAmount = toNumber(depositRaw);
+  const serviceCharge = toNumber(serviceChargeRaw);
+  const bookingFee = toNumber(bookingFeeRaw);
+  const discountAmount = toNumber(discountRaw);
+
+  let total = toNumber(totalRaw);
+  const paid = toNumber(paidRaw);
+
+  /*
+   * If backend total is unavailable, calculate it.
+   *
+   * total =
+   * rent + deposit + service charge + booking fee - discount
+   */
+  if (
+    !hasValue(totalRaw) &&
+    [
+      rentRaw,
+      depositRaw,
+      serviceChargeRaw,
+      bookingFeeRaw,
+      discountRaw,
+    ].some(hasValue)
+  ) {
+    total = Math.max(
+      rentAmount +
+      depositAmount +
+      serviceCharge +
+      bookingFee -
+      discountAmount,
+      0,
+    );
+  }
+
+  /*
+   * Balance
+   */
+
+  const balance = hasValue(balanceRaw)
+    ? Math.max(toNumber(balanceRaw), 0)
+    : Math.max(total - paid, 0);
+
+  /*
+   * Payment flags
+   */
+
+  const isFullyPaidRaw =
+    financials?.is_fully_paid ??
+    source?.is_fully_paid;
+
+  const isPartiallyPaidRaw =
+    financials?.is_partially_paid ??
+    source?.is_partially_paid;
+
+  const hasBalanceRaw =
+    financials?.has_balance ??
+    source?.has_balance;
+
+  const isFullyPaid = hasValue(isFullyPaidRaw)
+    ? toBoolean(isFullyPaidRaw)
+    : total > 0 &&
+    paid >= total &&
+    balance <= 0;
+
+  const isPartiallyPaid = hasValue(
+    isPartiallyPaidRaw,
+  )
+    ? toBoolean(isPartiallyPaidRaw)
+    : paid > 0 &&
+    paid < total &&
+    balance > 0;
+
+  const hasBalance = hasValue(hasBalanceRaw)
+    ? toBoolean(hasBalanceRaw)
+    : balance > 0;
+
+  /*
+   * Financial data detection
+   */
+
+  const hasFinancialData = [
+    rentRaw,
+    depositRaw,
+    serviceChargeRaw,
+    bookingFeeRaw,
+    discountRaw,
+    totalRaw,
+    paidRaw,
+    balanceRaw,
+  ].some(hasValue);
+
+  return {
+    rentAmount,
+    depositAmount,
+    serviceCharge,
+    bookingFee,
+    discountAmount,
+
+    total,
+    paid,
+    balance,
+
+    isFullyPaid,
+    isPartiallyPaid,
+    hasBalance,
+
+    hasFinancialData,
+  };
+};
+
+/**
+ * Format financial value.
+ *
+ * No truncation.
+ * No labels.
+ * No surrounding box.
+ */
+const formatFinancialValue = (
+  value,
+  hasFinancialData = true,
+) => {
+  if (!hasFinancialData) {
+    return "—";
+  }
+
+  return formatCurrency(value);
+};
+
+/*
+|--------------------------------------------------------------------------
+| Customer Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getCustomerName = (booking) => {
+  const source = getBookingSource(booking);
+
+  if (source.customer?.full_name) {
+    return source.customer.full_name;
+  }
+
+  if (source.customer?.name) {
+    return source.customer.name;
+  }
+
+  if (source.customer) {
+    const fullName = [
+      source.customer.first_name,
+      source.customer.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (fullName) {
+      return fullName;
+    }
+  }
+
+  if (source.customer_user?.name) {
+    return source.customer_user.name;
+  }
+
+  if (source.customer_user) {
+    const fullName = [
+      source.customer_user.first_name,
+      source.customer_user.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (fullName) {
+      return fullName;
+    }
+  }
+
+  if (source.user?.name) {
+    return source.user.name;
+  }
+
+  if (source.user) {
+    const fullName = [
+      source.user.first_name,
+      source.user.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (fullName) {
+      return fullName;
+    }
+  }
+
+  return "Unknown Customer";
+};
+
+const getCustomerEmail = (booking) => {
+  const source = getBookingSource(booking);
+
   return (
-    booking?.customer ||
-    booking?.customer_user ||
-    booking?.user ||
-    null
+    source.customer?.email ||
+    source.customer_user?.email ||
+    source.user?.email ||
+    "—"
   );
 };
 
-/**
- * Get customer name.
- */
-const getCustomerName = (booking) => {
-  const customer = getCustomer(booking);
-
-  const directName =
-    customer?.name ||
-    customer?.full_name ||
-    customer?.fullName;
-
-  if (directName) {
-    return directName;
-  }
-
-  const composedName = [
-    customer?.first_name,
-    customer?.last_name,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  if (composedName) {
-    return composedName;
-  }
-
-  return `Customer #${booking?.customer_id ??
-    booking?.user_id ??
-    "—"
-    }`;
-};
-
-/**
- * Get customer email.
- */
-const getCustomerEmail = (booking) => {
-  const customer = getCustomer(booking);
-
-  return customer?.email || "No email";
-};
-
-/**
- * Get customer phone.
- */
 const getCustomerPhone = (booking) => {
-  const customer = getCustomer(booking);
+  const source = getBookingSource(booking);
 
   return (
-    customer?.phone ||
-    customer?.phone_number ||
-    ""
+    source.customer?.phone ||
+    source.customer_user?.phone ||
+    source.user?.phone ||
+    "—"
   );
 };
 
@@ -149,53 +590,41 @@ const getCustomerPhone = (booking) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get property name safely.
- */
 const getPropertyName = (booking) => {
-  const property = booking?.property;
+  const source = getBookingSource(booking);
 
   return (
-    property?.name ||
-    property?.title ||
-    property?.property_name ||
-    property?.slug ||
-    (booking?.property_id
-      ? `Property #${booking.property_id}`
-      : "No property")
+    source.property?.name ||
+    source.property?.title ||
+    source.property?.code ||
+    source.property?.slug ||
+    "Property"
   );
 };
 
-/**
- * Get apartment name safely.
- */
 const getApartmentName = (booking) => {
-  const apartment = booking?.apartment;
+  const source = getBookingSource(booking);
 
   return (
-    apartment?.name ||
-    apartment?.title ||
-    apartment?.apartment_name ||
-    apartment?.slug ||
-    (booking?.apartment_id
-      ? `Apartment #${booking.apartment_id}`
-      : null)
+    source.apartment?.name ||
+    source.apartment?.title ||
+    source.apartment?.code ||
+    source.apartment?.slug ||
+    "Apartment"
   );
 };
 
-/**
- * Get unit name/number safely.
- */
 const getUnitName = (booking) => {
-  const unit = booking?.unit;
+  const source = getBookingSource(booking);
 
   return (
-    unit?.unit_number ||
-    unit?.number ||
-    unit?.name ||
-    unit?.unit_name ||
-    (booking?.unit_id
-      ? `Unit #${booking.unit_id}`
+    source.unit?.unit_number ||
+    source.unit?.name ||
+    source.unit?.code ||
+    source.unit_number ||
+    source.unit_code ||
+    (source.unit_id
+      ? String(source.unit_id)
       : "—")
   );
 };
@@ -206,214 +635,256 @@ const getUnitName = (booking) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get booking type label.
- */
-const getBookingTypeLabel = (type) => {
-  const labels = {
-    viewing: "Viewing",
-    reservation: "Reservation",
-    rental: "Rental",
-  };
+const getBookingType = (booking) => {
+  const source = getBookingSource(booking);
 
-  return labels[type] || type || "—";
+  const type = source.booking_type || "—";
+
+  return String(type)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase(),
+    );
 };
 
-/**
- * Get booking type badge classes.
- */
-const getBookingTypeClasses = (type) => {
-  const classes = {
-    viewing:
-      "bg-blue-50 text-blue-700 ring-blue-600/10",
-
-    reservation:
-      "bg-purple-50 text-purple-700 ring-purple-600/10",
-
-    rental:
-      "bg-emerald-50 text-emerald-700 ring-emerald-600/10",
-  };
-
-  return (
-    classes[type] ||
-    "bg-gray-50 text-gray-700 ring-gray-600/10"
-  );
-};
-
-/**
- * Get booking number.
- */
 const getBookingNumber = (booking) => {
+  const source = getBookingSource(booking);
+
   return (
-    booking?.booking_number ||
-    booking?.reference ||
-    booking?.slug ||
-    `#${booking?.id ?? "—"}`
+    source.booking_number ||
+    source.reference ||
+    `#${source.id || "—"}`
   );
+};
+
+const getBookingSourceLabel = (booking) => {
+  const source = getBookingSource(booking);
+
+  const value = source.source || "—";
+
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase(),
+    );
+};
+
+/**
+ * Get the stable booking identifier.
+ *
+ * IMPORTANT:
+ * Always prefer the numeric/database ID.
+ * Never return the entire booking object.
+ */
+const getBookingId = (booking) => {
+  const source = getBookingSource(booking);
+
+  const id =
+    source?.id ??
+    source?.booking_id ??
+    source?.booking?.id ??
+    null;
+
+  if (
+    id !== null &&
+    id !== undefined &&
+    id !== ""
+  ) {
+    return String(id);
+  }
+
+  /*
+   * Fallback identifiers are only used when an actual
+   * database ID is unavailable.
+   */
+  const fallback =
+    source?.slug ??
+    source?.booking_number ??
+    source?.reference ??
+    null;
+
+  if (
+    fallback !== null &&
+    fallback !== undefined &&
+    fallback !== ""
+  ) {
+    return String(fallback);
+  }
+
+  return null;
 };
 
 /*
 |--------------------------------------------------------------------------
-| Financial Helpers
+| Booking Row Normalization
 |--------------------------------------------------------------------------
 */
 
-/**
- * Get booking financial information.
- *
- * IMPORTANT:
- * The backend returns financial information inside:
- *
- * booking.financials
- *
- * Example:
- *
- * financials: {
- *   rent_amount: "70000.00",
- *   deposit_amount: "70000.00",
- *   service_charge: "6000.00",
- *   booking_fee: "3000.00",
- *   discount_amount: "2000.00",
- *   total_amount: "147000.00",
- *   amount_paid: "147000.00",
- *   balance: "0.00",
- *   is_fully_paid: true,
- *   is_partially_paid: false,
- *   has_balance: false
- * }
- *
- * We intentionally prioritize the nested financials object.
- */
-const getBookingFinancials = (booking) => {
-  const financials = booking?.financials ?? {};
+const normalizeBooking = (booking, index) => {
+  const source = getBookingSource(booking);
 
-  const total = toNumber(
-    financials?.total_amount ??
-    booking?.total_amount ??
-    booking?.total ??
-    booking?.amount
-  );
-
-  /*
-   * Total Paid MUST come from:
-   *
-   * booking.financials.amount_paid
-   */
-  const paid = toNumber(
-    financials?.amount_paid ??
-    booking?.amount_paid ??
-    booking?.paid_amount ??
-    booking?.paid
-  );
-
-  /*
-   * Balance comes directly from the backend.
-   *
-   * Do not calculate this in the frontend because
-   * deposits, service charges, booking fees and discounts
-   * may affect the final balance.
-   */
-  const balance = toNumber(
-    financials?.balance ??
-    booking?.balance ??
-    booking?.balance_amount ??
-    booking?.outstanding_balance
-  );
-
-  const isFullyPaid =
-    financials?.is_fully_paid === true;
-
-  const isPartiallyPaid =
-    financials?.is_partially_paid === true;
-
-  const hasBalance =
-    financials?.has_balance === true ||
-    balance > 0;
+  const bookingId = getBookingId(source);
+  const bookingNumber = getBookingNumber(source);
 
   return {
-    total,
-    paid,
-    balance,
-    isFullyPaid,
-    isPartiallyPaid,
-    hasBalance,
+    key:
+      bookingId ||
+      bookingNumber ||
+      `booking-${index}`,
+
+    source,
+
+    bookingId,
+    bookingNumber,
+
+    bookingType: getBookingType(source),
+    sourceLabel: getBookingSourceLabel(source),
+
+    customerName: getCustomerName(source),
+    customerEmail: getCustomerEmail(source),
+    customerPhone: getCustomerPhone(source),
+
+    propertyName: getPropertyName(source),
+    apartmentName: getApartmentName(source),
+    unitName: getUnitName(source),
+
+    startDate: source.start_date,
+    endDate: source.end_date,
+
+    status: source.status,
+    paymentStatus: source.payment_status,
+
+    financials: getBookingFinancials(source),
   };
 };
 
 /*
 |--------------------------------------------------------------------------
-| Booking Table
+| Date Range
+|--------------------------------------------------------------------------
+*/
+
+const DateRange = ({
+  startDate,
+  endDate,
+  mobile = false,
+}) => {
+  return (
+    <div
+      className={`flex items-center ${mobile ? "gap-2.5" : "gap-2"
+        } whitespace-nowrap`}
+    >
+      <CalendarDays
+        className={`shrink-0 text-gray-400 ${mobile
+          ? "h-4 w-4"
+          : "h-3.5 w-3.5"
+          }`}
+      />
+
+      <span
+        className={`font-medium text-gray-800 ${mobile ? "text-sm" : "text-sm"
+          }`}
+      >
+        {formatDate(startDate)}
+      </span>
+
+      <ArrowRight
+        className={`shrink-0 text-gray-300 ${mobile
+          ? "h-3.5 w-3.5"
+          : "h-3.5 w-3.5"
+          }`}
+      />
+
+      <span
+        className={`font-medium text-gray-800 ${mobile ? "text-sm" : "text-sm"
+          }`}
+      >
+        {formatDate(endDate)}
+      </span>
+    </div>
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Component
 |--------------------------------------------------------------------------
 */
 
 const BookingTable = ({
   bookings = [],
   loading = false,
-  onView,
   onEdit,
-  onAction,
+  onDelete,
+  onView,
 }) => {
   /*
-  |--------------------------------------------------------------------------
-  | Empty State
-  |--------------------------------------------------------------------------
-  */
+   * -----------------------------------------------------------------------
+   * Normalize collection
+   * -----------------------------------------------------------------------
+   */
 
-  if (
-    !loading &&
-    (!Array.isArray(bookings) ||
-      bookings.length === 0)
-  ) {
-    return (
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
-          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-            <FileText
-              className="h-8 w-8 text-gray-400"
-              aria-hidden="true"
-            />
-          </div>
+  const bookingRows = useMemo(() => {
+    if (Array.isArray(bookings)) {
+      return bookings;
+    }
 
-          <h3 className="text-base font-semibold text-gray-900">
-            No bookings found
-          </h3>
+    if (Array.isArray(bookings?.data)) {
+      return bookings.data;
+    }
 
-          <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">
-            There are no bookings matching your current
-            filters. Try adjusting your search or filter
-            criteria.
-          </p>
-        </div>
-      </div>
-    );
-  }
+    return [];
+  }, [bookings]);
 
   /*
-  |--------------------------------------------------------------------------
-  | Loading State
-  |--------------------------------------------------------------------------
-  */
+   * -----------------------------------------------------------------------
+   * Normalize bookings
+   * -----------------------------------------------------------------------
+   */
+
+  const normalizedBookings = useMemo(() => {
+    return bookingRows.map(normalizeBooking);
+  }, [bookingRows]);
+
+  /*
+   * -----------------------------------------------------------------------
+   * Loading State
+   * -----------------------------------------------------------------------
+   */
 
   if (loading) {
     return (
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+        {/* Desktop Skeleton */}
+
         <div className="hidden overflow-x-auto lg:block">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-[1700px] table-auto">
+            <thead className="bg-gray-50/70">
               <tr>
                 {[
                   "Booking",
                   "Customer",
-                  "Property",
-                  "Booking Date",
-                  "Amount",
+                  "Property / Unit",
+                  "Dates",
+                  "Total",
+                  "Paid",
+                  "Balance",
                   "Status",
                   "Payment",
                   "Actions",
                 ].map((heading) => (
                   <th
                     key={heading}
-                    className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
+                    className={`whitespace-nowrap px-5 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-500 ${[
+                      "Total",
+                      "Paid",
+                      "Balance",
+                    ].includes(heading)
+                      ? "text-right"
+                      : heading === "Actions"
+                        ? "text-right"
+                        : "text-left"
+                      }`}
                   >
                     {heading}
                   </th>
@@ -421,413 +892,406 @@ const BookingTable = ({
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-100 bg-white">
-              {Array.from({ length: 6 }).map(
-                (_, index) => (
-                  <tr
-                    key={index}
-                    className="animate-pulse"
-                  >
-                    {Array.from({ length: 8 }).map(
-                      (_, cellIndex) => (
-                        <td
-                          key={cellIndex}
-                          className="px-6 py-5"
-                        >
-                          <div className="h-4 rounded bg-gray-200" />
-                        </td>
-                      )
-                    )}
-                  </tr>
-                )
-              )}
+            <tbody className="divide-y divide-gray-100">
+              {Array.from({
+                length: 6,
+              }).map((_, index) => (
+                <tr
+                  key={index}
+                  className="animate-pulse"
+                >
+                  {Array.from({
+                    length: 10,
+                  }).map((__, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className="px-5 py-5"
+                    >
+                      <div className="h-4 rounded bg-gray-200" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
 
-        {/* Mobile loading */}
-        <div className="space-y-4 p-4 lg:hidden">
-          {Array.from({ length: 5 }).map(
-            (_, index) => (
-              <div
-                key={index}
-                className="animate-pulse rounded-xl border border-gray-200 p-4"
-              >
-                <div className="mb-4 h-4 w-1/3 rounded bg-gray-200" />
-                <div className="mb-3 h-4 w-2/3 rounded bg-gray-200" />
-                <div className="mb-3 h-4 w-1/2 rounded bg-gray-200" />
-                <div className="h-4 w-1/4 rounded bg-gray-200" />
-              </div>
-            )
-          )}
+        {/* Mobile Skeleton */}
+
+        <div className="space-y-3 p-4 lg:hidden">
+          {Array.from({
+            length: 4,
+          }).map((_, index) => (
+            <div
+              key={index}
+              className="animate-pulse rounded-xl bg-gray-50 p-4"
+            >
+              <div className="h-5 w-1/2 rounded bg-gray-200" />
+
+              <div className="mt-3 h-4 w-3/4 rounded bg-gray-200" />
+
+              <div className="mt-3 h-4 w-1/2 rounded bg-gray-200" />
+
+              <div className="mt-4 h-12 rounded-lg bg-gray-100" />
+
+              <div className="mt-4 h-10 rounded-lg bg-gray-200" />
+            </div>
+          ))}
         </div>
       </div>
     );
   }
 
   /*
-  |--------------------------------------------------------------------------
-  | Render
-  |--------------------------------------------------------------------------
-  */
+   * -----------------------------------------------------------------------
+   * Empty State
+   * -----------------------------------------------------------------------
+   */
+
+  if (normalizedBookings.length === 0) {
+    return (
+      <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-sm">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+          <CalendarDays className="h-7 w-7 text-gray-400" />
+        </div>
+
+        <h3 className="mt-4 text-sm font-semibold text-gray-900">
+          No bookings found
+        </h3>
+
+        <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+          There are no bookings matching the
+          current filters.
+        </p>
+      </div>
+    );
+  }
+
+  /*
+   * -----------------------------------------------------------------------
+   * Main Table
+   * -----------------------------------------------------------------------
+   */
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      {/* Desktop / Tablet Table */}
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+      {/* ================================================================
+          DESKTOP
+      ================================================================ */}
+
       <div className="hidden overflow-x-auto lg:block">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50/80">
+        <table className="min-w-[1700px] table-auto">
+          <thead className="bg-gray-50/70">
             <tr>
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
+              <th className="min-w-[170px] whitespace-nowrap px-5 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Booking
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
+              <th className="min-w-[190px] whitespace-nowrap px-5 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Customer
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
-                Property
+              <th className="min-w-[220px] whitespace-nowrap px-5 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Property / Unit
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
-                Date
+              <th className="min-w-[245px] whitespace-nowrap px-5 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Dates
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
-                Amount
+              <th className="min-w-[145px] whitespace-nowrap px-5 py-4 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Total
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
+              <th className="min-w-[145px] whitespace-nowrap px-5 py-4 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Paid
+              </th>
+
+              <th className="min-w-[155px] whitespace-nowrap px-5 py-4 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Balance
+              </th>
+
+              <th className="min-w-[120px] whitespace-nowrap px-5 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Status
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
+              <th className="min-w-[120px] whitespace-nowrap px-5 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Payment
               </th>
 
-              <th
-                scope="col"
-                className="whitespace-nowrap px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-gray-500"
-              >
+              <th className="min-w-[145px] whitespace-nowrap px-5 py-4 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Actions
               </th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-100 bg-white">
-            {bookings.map((booking) => {
-              const bookingId = booking?.id;
+            {normalizedBookings.map((booking) => {
+              const {
+                key,
+                source,
+                bookingId,
+                bookingNumber,
+                bookingType,
+                sourceLabel,
+                customerName,
+                customerEmail,
+                customerPhone,
+                propertyName,
+                apartmentName,
+                unitName,
+                startDate,
+                endDate,
+                status,
+                paymentStatus,
+                financials,
+              } = booking;
 
-              const financials =
-                getBookingFinancials(booking);
-
-              const propertyName =
-                getPropertyName(booking);
-
-              const apartmentName =
-                getApartmentName(booking);
-
-              const unitName =
-                getUnitName(booking);
-
-              const customerName =
-                getCustomerName(booking);
-
-              const customerEmail =
-                getCustomerEmail(booking);
-
-              const customerPhone =
-                getCustomerPhone(booking);
+              const {
+                total,
+                paid,
+                balance,
+                hasBalance,
+                hasFinancialData,
+              } = financials;
 
               return (
                 <tr
-                  key={bookingId}
-                  className="group transition-colors hover:bg-gray-50/70"
+                  key={key}
+                  className="group transition-colors duration-150 hover:bg-gray-50/60"
                 >
                   {/* Booking */}
-                  <td className="px-6 py-5 align-top">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                        <FileText
-                          className="h-5 w-5"
-                          aria-hidden="true"
-                        />
+
+                  <td className="px-5 py-5 align-middle">
+                    <div className="flex min-w-[155px] items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+                        <FileText className="h-4 w-4 text-gray-500" />
                       </div>
 
                       <div className="min-w-0">
-                        <Link
-                          to={`/super-admin/bookings/${bookingId}`}
-                          className="block max-w-[180px] truncate text-sm font-semibold text-gray-900 transition-colors hover:text-indigo-600"
-                          title={getBookingNumber(
-                            booking
-                          )}
+                        <div
+                          className="truncate text-sm font-bold text-gray-900"
+                          title={bookingNumber}
                         >
-                          {getBookingNumber(booking)}
-                        </Link>
+                          {bookingNumber}
+                        </div>
 
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${getBookingTypeClasses(
-                              booking?.booking_type
-                            )}`}
-                          >
-                            {getBookingTypeLabel(
-                              booking?.booking_type
-                            )}
-                          </span>
+                        <div className="mt-0.5 text-[11px] font-medium text-gray-500">
+                          {bookingType}
+                        </div>
 
-                          {booking?.source && (
-                            <span className="text-xs text-gray-400">
-                              {booking.source}
-                            </span>
-                          )}
+                        <div className="mt-0.5 text-[10px] text-gray-400">
+                          {sourceLabel}
                         </div>
                       </div>
                     </div>
                   </td>
 
                   {/* Customer */}
-                  <td className="px-6 py-5 align-top">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
-                        <UserRound
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
-                      </div>
 
-                      <div className="min-w-0">
-                        <div className="max-w-[180px] truncate text-sm font-semibold text-gray-900">
-                          {customerName}
-                        </div>
-
-                        <div className="mt-1 max-w-[190px] truncate text-xs text-gray-500">
-                          {customerEmail}
-                        </div>
-
-                        {customerPhone && (
-                          <div className="mt-0.5 text-xs text-gray-400">
-                            {customerPhone}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Property */}
-                  <td className="px-6 py-5 align-top">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                        <Home
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
+                  <td className="px-5 py-5 align-middle">
+                    <div className="flex min-w-[180px] items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                        <UserRound className="h-3.5 w-3.5 text-blue-600" />
                       </div>
 
                       <div className="min-w-0">
                         <div
-                          className="max-w-[210px] truncate text-sm font-medium text-gray-900"
+                          className="truncate text-sm font-semibold text-gray-900"
+                          title={customerName}
+                        >
+                          {customerName}
+                        </div>
+
+                        {customerEmail !== "—" ? (
+                          <div
+                            className="mt-0.5 max-w-[180px] truncate text-[11px] text-gray-500"
+                            title={customerEmail}
+                          >
+                            {customerEmail}
+                          </div>
+                        ) : customerPhone !== "—" ? (
+                          <div className="mt-0.5 text-[11px] text-gray-500">
+                            {customerPhone}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Property / Unit */}
+
+                  <td className="px-5 py-5 align-middle">
+                    <div className="flex min-w-[200px] items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
+                        <Home className="h-3.5 w-3.5 text-emerald-600" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div
+                          className="max-w-[210px] truncate text-sm font-semibold text-gray-900"
                           title={propertyName}
                         >
                           {propertyName}
                         </div>
 
-                        {apartmentName && (
-                          <div
-                            className="mt-1 max-w-[210px] truncate text-xs text-gray-500"
-                            title={apartmentName}
-                          >
-                            {apartmentName}
-                          </div>
-                        )}
+                        <div
+                          className="mt-0.5 max-w-[210px] truncate text-[11px] text-gray-500"
+                          title={apartmentName}
+                        >
+                          {apartmentName}
+                        </div>
 
-                        <div className="mt-1 text-xs text-gray-400">
+                        <div className="mt-0.5 text-[11px] font-semibold text-gray-700">
                           Unit {unitName}
                         </div>
                       </div>
                     </div>
                   </td>
 
-                  {/* Booking Date */}
-                  <td className="px-6 py-5 align-top">
-                    <div className="flex items-start gap-2">
-                      <CalendarDays
-                        className="mt-0.5 h-4 w-4 shrink-0 text-gray-400"
-                        aria-hidden="true"
-                      />
+                  {/* Dates */}
 
-                      <div>
-                        <div className="whitespace-nowrap text-sm font-medium text-gray-900">
-                          {formatDate(
-                            booking?.booking_date
-                          )}
-                        </div>
-
-                        {booking?.start_date && (
-                          <div className="mt-1 text-xs text-gray-500">
-                            {formatDate(
-                              booking.start_date
-                            )}
-
-                            {booking?.end_date &&
-                              ` – ${formatDate(
-                                booking.end_date
-                              )}`}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                  <td className="px-5 py-5 align-middle">
+                    <DateRange
+                      startDate={startDate}
+                      endDate={endDate}
+                    />
                   </td>
 
-                  {/* Amount */}
-                  <td className="px-6 py-5 text-right align-top">
-                    <div className="flex justify-end">
-                      <div className="text-right">
-                        {/* Total */}
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          Total
-                        </div>
+                  {/* Total */}
 
-                        <div className="mt-0.5 text-sm font-bold text-gray-900">
-                          {formatCurrency(
-                            financials.total
-                          )}
-                        </div>
+                  <td className="px-5 py-5 text-right align-middle">
+                    <span
+                      className="whitespace-nowrap text-sm font-bold text-gray-900"
+                      title={formatFinancialValue(
+                        total,
+                        hasFinancialData,
+                      )}
+                    >
+                      {formatFinancialValue(
+                        total,
+                        hasFinancialData,
+                      )}
+                    </span>
+                  </td>
 
-                        {/* Total Paid */}
-                        <div className="mt-2 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          Total Paid
-                        </div>
+                  {/* Paid */}
 
-                        <div className="mt-0.5 flex items-center justify-end gap-1 text-sm font-semibold text-emerald-600">
-                          <CheckCircle2
-                            className="h-3.5 w-3.5"
-                            aria-hidden="true"
-                          />
+                  <td className="px-5 py-5 text-right align-middle">
+                    <span
+                      className={`whitespace-nowrap text-sm font-semibold ${paid > 0
+                        ? "text-emerald-600"
+                        : "text-gray-500"
+                        }`}
+                      title={formatFinancialValue(
+                        paid,
+                        hasFinancialData,
+                      )}
+                    >
+                      {formatFinancialValue(
+                        paid,
+                        hasFinancialData,
+                      )}
+                    </span>
+                  </td>
 
-                          {formatCurrency(
-                            financials.paid
-                          )}
-                        </div>
+                  {/* Balance */}
 
-                        {/* Balance */}
-                        {financials.hasBalance && (
-                          <div className="mt-1 flex items-center justify-end gap-1 text-xs font-medium text-amber-600">
-                            <Clock3
-                              className="h-3.5 w-3.5"
-                              aria-hidden="true"
-                            />
-
-                            Balance{" "}
-                            {formatCurrency(
-                              financials.balance
-                            )}
-                          </div>
-                        )}
-
-                        {/* Fully Paid */}
-                        {financials.isFullyPaid &&
-                          !financials.hasBalance && (
-                            <div className="mt-0.5 text-[11px] font-medium text-emerald-500">
-                              Fully paid
-                            </div>
-                          )}
-                      </div>
-                    </div>
+                  <td className="px-5 py-5 text-right align-middle">
+                    <span
+                      className={`whitespace-nowrap text-sm font-semibold ${hasBalance
+                        ? "text-amber-600"
+                        : "text-emerald-600"
+                        }`}
+                      title={formatFinancialValue(
+                        balance,
+                        hasFinancialData,
+                      )}
+                    >
+                      {formatFinancialValue(
+                        balance,
+                        hasFinancialData,
+                      )}
+                    </span>
                   </td>
 
                   {/* Status */}
-                  <td className="px-6 py-5 align-top">
+
+                  <td className="px-5 py-5 align-middle">
                     <BookingStatusBadge
-                      status={booking?.status}
+                      status={status}
                     />
                   </td>
 
                   {/* Payment */}
-                  <td className="px-6 py-5 align-top">
+
+                  <td className="px-5 py-5 align-middle">
                     <BookingPaymentBadge
-                      status={booking?.payment_status}
+                      status={paymentStatus}
                     />
                   </td>
 
                   {/* Actions */}
-                  <td className="px-6 py-5 text-right align-top">
-                    <div className="flex items-center justify-end gap-1">
+
+                  <td className="px-5 py-5 align-middle">
+                    <div className="flex items-center justify-end gap-1.5">
                       {/* View */}
-                      <Link
-                        to={`/super-admin/bookings/${bookingId}`}
-                        onClick={() =>
-                          onView?.(booking)
-                        }
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                        title="View booking"
-                        aria-label={`View booking ${getBookingNumber(
-                          booking
-                        )}`}
-                      >
-                        <Eye
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
-                      </Link>
 
-                      {/* Edit */}
-                      <Link
-                        to={`/super-admin/bookings/${bookingId}/edit`}
-                        onClick={() =>
-                          onEdit?.(booking)
-                        }
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
-                        title="Edit booking"
-                        aria-label={`Edit booking ${getBookingNumber(
-                          booking
-                        )}`}
-                      >
-                        <Pencil
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
-                      </Link>
+                      {bookingId && (
+                        <Link
+                          to={`/super-admin/bookings/${encodeURIComponent(
+                            bookingId,
+                          )}`}
+                          onClick={() =>
+                            onView?.(source)
+                          }
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                          title="View booking"
+                          aria-label="View booking"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Link>
+                      )}
 
-                      {/* More */}
-                      {onAction && (
+                      {/* Edit
+                       *
+                       * IMPORTANT:
+                       * Do NOT pass the complete booking object
+                       * into the URL.
+                       *
+                       * bookingId is already normalized to a
+                       * primitive string.
+                       */}
+
+                      {bookingId && (
+                        <Link
+                          to={`/super-admin/bookings/${encodeURIComponent(
+                            bookingId,
+                          )}/edit`}
+                          onClick={() =>
+                            onEdit?.(bookingId, source)
+                          }
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                          title="Edit booking"
+                          aria-label="Edit booking"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Link>
+                      )}
+
+                      {/* More / Delete */}
+
+                      {onDelete && (
                         <button
                           type="button"
                           onClick={() =>
-                            onAction(booking)
+                            onDelete(source)
                           }
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600"
                           title="More actions"
-                          aria-label={`More actions for ${getBookingNumber(
-                            booking
-                          )}`}
+                          aria-label="More actions"
                         >
-                          <MoreHorizontal
-                            className="h-5 w-5"
-                            aria-hidden="true"
-                          />
+                          <MoreHorizontal className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
@@ -839,90 +1303,84 @@ const BookingTable = ({
         </table>
       </div>
 
-      {/* Mobile / Small Tablet Cards */}
+      {/* ================================================================
+          MOBILE
+      ================================================================ */}
+
       <div className="divide-y divide-gray-100 lg:hidden">
-        {bookings.map((booking) => {
-          const bookingId = booking?.id;
+        {normalizedBookings.map((booking) => {
+          const {
+            key,
+            source,
+            bookingId,
+            bookingNumber,
+            bookingType,
+            sourceLabel,
+            customerName,
+            customerEmail,
+            customerPhone,
+            propertyName,
+            apartmentName,
+            unitName,
+            startDate,
+            endDate,
+            status,
+            paymentStatus,
+            financials,
+          } = booking;
 
-          const financials =
-            getBookingFinancials(booking);
-
-          const propertyName =
-            getPropertyName(booking);
-
-          const apartmentName =
-            getApartmentName(booking);
-
-          const unitName =
-            getUnitName(booking);
-
-          const customerName =
-            getCustomerName(booking);
-
-          const customerEmail =
-            getCustomerEmail(booking);
-
-          const customerPhone =
-            getCustomerPhone(booking);
+          const {
+            total,
+            paid,
+            balance,
+            hasBalance,
+            hasFinancialData,
+          } = financials;
 
           return (
             <div
-              key={bookingId}
-              className="p-4 transition-colors hover:bg-gray-50/70 sm:p-5"
+              key={key}
+              className="p-4 transition-colors hover:bg-gray-50/60"
             >
-              {/* Card Header */}
+              {/* Header */}
+
               <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                    <FileText
-                      className="h-5 w-5"
-                      aria-hidden="true"
-                    />
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+                    <FileText className="h-5 w-5 text-gray-500" />
                   </div>
 
                   <div className="min-w-0">
-                    <Link
-                      to={`/super-admin/bookings/${bookingId}`}
-                      className="block truncate text-sm font-bold text-gray-900 hover:text-indigo-600"
+                    <div
+                      className="truncate text-sm font-bold text-gray-900"
+                      title={bookingNumber}
                     >
-                      {getBookingNumber(booking)}
-                    </Link>
+                      {bookingNumber}
+                    </div>
 
-                    <div className="mt-1 flex flex-wrap gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${getBookingTypeClasses(
-                          booking?.booking_type
-                        )}`}
-                      >
-                        {getBookingTypeLabel(
-                          booking?.booking_type
-                        )}
-                      </span>
+                    <div className="mt-0.5 text-xs font-medium text-gray-500">
+                      {bookingType}
+                    </div>
 
-                      {booking?.source && (
-                        <span className="text-xs text-gray-400">
-                          {booking.source}
-                        </span>
-                      )}
+                    <div className="mt-0.5 text-[10px] text-gray-400">
+                      {sourceLabel}
                     </div>
                   </div>
                 </div>
 
                 <div className="shrink-0">
                   <BookingStatusBadge
-                    status={booking?.status}
+                    status={status}
                   />
                 </div>
               </div>
 
               {/* Customer */}
-              <div className="mt-5 rounded-xl bg-gray-50 p-3">
+
+              <div className="mt-4 bg-gray-50/80 p-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-gray-200">
-                    <UserRound
-                      className="h-4 w-4"
-                      aria-hidden="true"
-                    />
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                    <UserRound className="h-4 w-4 text-blue-600" />
                   </div>
 
                   <div className="min-w-0">
@@ -930,237 +1388,214 @@ const BookingTable = ({
                       {customerName}
                     </div>
 
-                    <div className="truncate text-xs text-gray-500">
-                      {customerEmail}
-                    </div>
-
-                    {customerPhone && (
-                      <div className="text-xs text-gray-400">
+                    {customerEmail !== "—" ? (
+                      <div className="mt-0.5 truncate text-xs text-gray-500">
+                        {customerEmail}
+                      </div>
+                    ) : customerPhone !== "—" ? (
+                      <div className="mt-0.5 text-xs text-gray-500">
                         {customerPhone}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
 
               {/* Property */}
-              <div className="mt-4 flex items-start gap-3">
-                <Home
-                  className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
-                  aria-hidden="true"
-                />
 
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-gray-900">
-                    {propertyName}
+              <div className="mt-4 bg-white p-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
+                    <Home className="h-4 w-4 text-emerald-600" />
                   </div>
 
-                  {apartmentName && (
-                    <div className="mt-1 truncate text-xs text-gray-500">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-gray-900">
+                      {propertyName}
+                    </div>
+
+                    <div className="mt-0.5 truncate text-xs text-gray-500">
                       {apartmentName}
                     </div>
-                  )}
 
-                  <div className="mt-1 text-xs text-gray-400">
-                    Unit {unitName}
-                  </div>
-                </div>
-              </div>
-
-              {/* Date */}
-              <div className="mt-4 flex items-start gap-3">
-                <CalendarDays
-                  className="mt-0.5 h-4 w-4 shrink-0 text-gray-400"
-                  aria-hidden="true"
-                />
-
-                <div>
-                  <div className="text-sm font-medium text-gray-900">
-                    {formatDate(
-                      booking?.booking_date
-                    )}
-                  </div>
-
-                  {booking?.start_date && (
-                    <div className="mt-1 text-xs text-gray-500">
-                      {formatDate(
-                        booking.start_date
-                      )}
-
-                      {booking?.end_date &&
-                        ` – ${formatDate(
-                          booking.end_date
-                        )}`}
+                    <div className="mt-0.5 text-xs font-semibold text-gray-700">
+                      Unit {unitName}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
 
-              {/* Financial Summary */}
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {/* Total */}
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Wallet
-                      className="h-3.5 w-3.5"
-                      aria-hidden="true"
-                    />
+              {/* Dates */}
 
+              <div className="mt-4 bg-gray-50/70 p-3">
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  Booking Period
+                </div>
+
+                <DateRange
+                  startDate={startDate}
+                  endDate={endDate}
+                  mobile
+                />
+              </div>
+
+              {/* Amounts */}
+
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {/* Total */}
+
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
                     Total
                   </div>
 
-                  <div className="mt-1 text-sm font-bold text-gray-900">
-                    {formatCurrency(
-                      financials.total
+                  <div
+                    className="mt-1 whitespace-nowrap text-sm font-bold text-gray-900"
+                    title={formatFinancialValue(
+                      total,
+                      hasFinancialData,
+                    )}
+                  >
+                    {formatFinancialValue(
+                      total,
+                      hasFinancialData,
                     )}
                   </div>
                 </div>
 
-                {/* Total Paid */}
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
-                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
-                    <CheckCircle2
-                      className="h-3.5 w-3.5 text-emerald-600"
-                      aria-hidden="true"
-                    />
+                {/* Paid */}
 
-                    Total Paid
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    Paid
                   </div>
 
-                  <div className="mt-1 text-sm font-bold text-emerald-600">
-                    {formatCurrency(
-                      financials.paid
+                  <div
+                    className={`mt-1 whitespace-nowrap text-sm font-semibold ${paid > 0
+                      ? "text-emerald-600"
+                      : "text-gray-500"
+                      }`}
+                    title={formatFinancialValue(
+                      paid,
+                      hasFinancialData,
+                    )}
+                  >
+                    {formatFinancialValue(
+                      paid,
+                      hasFinancialData,
                     )}
                   </div>
                 </div>
 
                 {/* Balance */}
-                {financials.hasBalance && (
-                  <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium text-amber-700">
-                      <Clock3
-                        className="h-3.5 w-3.5"
-                        aria-hidden="true"
-                      />
 
-                      Outstanding Balance
-                    </div>
-
-                    <div className="mt-1 text-sm font-bold text-amber-800">
-                      {formatCurrency(
-                        financials.balance
-                      )}
-                    </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    Balance
                   </div>
-                )}
 
-                {/* Fully Paid */}
-                {financials.isFullyPaid &&
-                  !financials.hasBalance && (
-                    <div className="col-span-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-700">
-                      <CheckCircle2
-                        className="h-4 w-4"
-                        aria-hidden="true"
-                      />
-
-                      Booking fully paid
-                    </div>
-                  )}
+                  <div
+                    className={`mt-1 whitespace-nowrap text-sm font-semibold ${hasBalance
+                      ? "text-amber-600"
+                      : "text-emerald-600"
+                      }`}
+                    title={formatFinancialValue(
+                      balance,
+                      hasFinancialData,
+                    )}
+                  >
+                    {formatFinancialValue(
+                      balance,
+                      hasFinancialData,
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Payment */}
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-3">
-                <span className="text-xs font-medium text-gray-500">
-                  Payment Status
+
+              <div className="mt-4 flex items-center justify-between bg-white px-1 py-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  Payment
                 </span>
 
                 <BookingPaymentBadge
-                  status={booking?.payment_status}
+                  status={paymentStatus}
                 />
               </div>
 
-              {/* Actions */}
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Link
-                  to={`/super-admin/bookings/${bookingId}`}
-                  onClick={() =>
-                    onView?.(booking)
-                  }
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
-                >
-                  <Eye
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
+              {/* Source */}
 
-                  View
-                </Link>
+              <div className="flex items-center justify-between px-1 py-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  Source
+                </span>
 
-                <Link
-                  to={`/super-admin/bookings/${bookingId}/edit`}
-                  onClick={() =>
-                    onEdit?.(booking)
-                  }
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-gray-800"
-                >
-                  <Pencil
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
-
-                  Edit
-                </Link>
+                <span className="text-xs font-semibold text-gray-600">
+                  {sourceLabel}
+                </span>
               </div>
 
-              {onAction && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onAction(booking)
-                  }
-                  className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-                >
-                  <MoreHorizontal
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
+              {/* Actions */}
 
-                  More Actions
-                </button>
-              )}
+              <div className="mt-4 flex items-center gap-2">
+                {/* View */}
+
+                {bookingId && (
+                  <Link
+                    to={`/super-admin/bookings/${encodeURIComponent(
+                      bookingId,
+                    )}`}
+                    onClick={() =>
+                      onView?.(source)
+                    }
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
+                  >
+                    <Eye className="h-4 w-4" />
+                    View
+                  </Link>
+                )}
+
+                {/* Edit */}
+
+                {bookingId && (
+                  <Link
+                    to={`/super-admin/bookings/${encodeURIComponent(
+                      bookingId,
+                    )}/edit`}
+                    onClick={() =>
+                      onEdit?.(bookingId, source)
+                    }
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Link>
+                )}
+
+                {/* More / Delete */}
+
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onDelete(source)
+                    }
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600"
+                    title="More actions"
+                    aria-label="More actions"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
-
-      {/* Table Footer */}
-      {bookings.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50/50 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>
-            Showing{" "}
-            <span className="font-semibold text-gray-700">
-              {bookings.length}
-            </span>{" "}
-            {bookings.length === 1
-              ? "booking"
-              : "bookings"}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <CheckCircle2
-              className="h-3.5 w-3.5 text-emerald-500"
-              aria-hidden="true"
-            />
-
-            <span>
-              Booking information updated from the
-              latest available records.
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 export default BookingTable;
+

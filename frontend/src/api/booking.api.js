@@ -10,18 +10,6 @@ import axios from "./axios";
 | Backend base route:
 | /api/bookings
 |
-| Standard API response:
-|
-| {
-|     status: true,
-|     code: 200,
-|     message: "...",
-|     data: [],
-|     meta: {},
-|     links: {},
-|     errors: {}
-| }
-|
 |--------------------------------------------------------------------------
 */
 
@@ -32,18 +20,14 @@ const USER_BASE_URL = "/users";
 
 /*
 |--------------------------------------------------------------------------
-| Helpers
+| Parameter Helpers
 |--------------------------------------------------------------------------
 */
 
 /**
  * Remove undefined, null and empty-string values.
  *
- * Keeps valid values such as:
- * - 0
- * - false
- * - valid strings
- * - valid dates
+ * Also removes empty arrays and empty objects.
  */
 const cleanParams = (params = {}) => {
     if (
@@ -56,20 +40,38 @@ const cleanParams = (params = {}) => {
 
     return Object.fromEntries(
         Object.entries(params).filter(
-            ([, value]) =>
-                value !== undefined &&
-                value !== null &&
-                value !== ""
+            ([, value]) => {
+                if (
+                    value === undefined ||
+                    value === null ||
+                    value === ""
+                ) {
+                    return false;
+                }
+
+                if (
+                    Array.isArray(value) &&
+                    value.length === 0
+                ) {
+                    return false;
+                }
+
+                if (
+                    typeof value === "object" &&
+                    !Array.isArray(value) &&
+                    Object.keys(value).length === 0
+                ) {
+                    return false;
+                }
+
+                return true;
+            }
         )
     );
 };
 
 /**
  * Clean nested query parameters.
- *
- * Prevents requests such as:
- *
- * ?search[search]=
  */
 const cleanNestedParams = (params = {}) => {
     if (
@@ -84,12 +86,6 @@ const cleanNestedParams = (params = {}) => {
         ...params,
     };
 
-    /*
-    |--------------------------------------------------------------------------
-    | Nested search object
-    |--------------------------------------------------------------------------
-    */
-
     if (
         cleaned.search &&
         typeof cleaned.search === "object" &&
@@ -100,21 +96,13 @@ const cleanNestedParams = (params = {}) => {
         );
 
         if (
-            Object.keys(
-                nestedSearch
-            ).length > 0
+            Object.keys(nestedSearch).length > 0
         ) {
             cleaned.search = nestedSearch;
         } else {
             delete cleaned.search;
         }
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Empty search string
-    |--------------------------------------------------------------------------
-    */
 
     if (
         typeof cleaned.search === "string" &&
@@ -126,17 +114,12 @@ const cleanNestedParams = (params = {}) => {
     return cleanParams(cleaned);
 };
 
-/**
- * Normalize an ID.
- *
- * Supports:
- *
- * 5
- * "5"
- * { id: 5 }
- * { id: "5" }
- * { value: 5 }
- */
+/*
+|--------------------------------------------------------------------------
+| ID Helpers
+|--------------------------------------------------------------------------
+*/
+
 const getId = (value) => {
     if (
         value !== null &&
@@ -145,6 +128,7 @@ const getId = (value) => {
         return (
             value?.id ??
             value?.value ??
+            value?.key ??
             null
         );
     }
@@ -152,9 +136,6 @@ const getId = (value) => {
     return value;
 };
 
-/**
- * Normalize an ID as a comparable string.
- */
 const normalizeId = (value) => {
     const id = getId(value);
 
@@ -166,45 +147,117 @@ const normalizeId = (value) => {
         return null;
     }
 
-    return String(id);
+    if (
+        typeof id === "number" &&
+        !Number.isFinite(id)
+    ) {
+        return null;
+    }
+
+    const normalized = String(id).trim();
+
+    if (!normalized) {
+        return null;
+    }
+
+    return normalized;
 };
 
-/**
- * Build a safe URL using an ID.
- */
+const normalizeIntegerId = (value) => {
+    const normalized = normalizeId(value);
+
+    if (!normalized) {
+        return null;
+    }
+
+    if (!/^\d+$/.test(normalized)) {
+        return null;
+    }
+
+    const numeric = Number(normalized);
+
+    if (
+        !Number.isSafeInteger(numeric) ||
+        numeric <= 0
+    ) {
+        return null;
+    }
+
+    return String(numeric);
+};
+
 const withId = (baseUrl, id) => {
-    const normalizedId = getId(id);
+    const normalizedId = normalizeId(id);
 
-    return `${baseUrl}/${normalizedId}`;
+    if (!normalizedId) {
+        return baseUrl;
+    }
+
+    return `${baseUrl}/${encodeURIComponent(
+        normalizedId
+    )}`;
 };
 
-/**
- * Normalize API collection responses.
- *
- * Supports:
- *
- * data: []
- *
- * data: {
- *     data: []
- * }
- *
- * data: {
- *     id: 1
- * }
- */
+/*
+|--------------------------------------------------------------------------
+| Generic Object Helpers
+|--------------------------------------------------------------------------
+*/
+
+const isObject = (value) => {
+    return (
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+    );
+};
+
+const parseObject = (value) => {
+    if (isObject(value)) {
+        return value;
+    }
+
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value);
+
+            if (isObject(parsed)) {
+                return parsed;
+            }
+        } catch {
+            return {};
+        }
+    }
+
+    return {};
+};
+
+const firstDefined = (...values) => {
+    for (const value of values) {
+        if (
+            value !== undefined &&
+            value !== null &&
+            value !== ""
+        ) {
+            return value;
+        }
+    }
+
+    return undefined;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Response Normalization
+|--------------------------------------------------------------------------
+*/
+
 const normalizeCollection = (response) => {
     let payload =
         response?.data?.data ??
         response?.data ??
         response ??
         [];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Nested data collection
-    |--------------------------------------------------------------------------
-    */
 
     if (
         payload &&
@@ -215,26 +268,15 @@ const normalizeCollection = (response) => {
         payload = payload.data;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Array response
-    |--------------------------------------------------------------------------
-    */
-
     if (Array.isArray(payload)) {
         return payload;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Single resource response
-    |--------------------------------------------------------------------------
-    */
-
     if (
         payload &&
         typeof payload === "object" &&
-        payload.id
+        payload.id !== undefined &&
+        payload.id !== null
     ) {
         return [payload];
     }
@@ -242,54 +284,528 @@ const normalizeCollection = (response) => {
     return [];
 };
 
-/**
- * Normalize tenant response.
- *
- * Supports:
- *
- * GET /tenants?user_id=24
- *
- * returning:
- *
- * data: [...]
- *
- * or:
- *
- * data: {
- *     id: 17,
- *     user_id: 24,
- *     ...
- * }
- */
-const normalizeTenant = (response) => {
-    const tenants =
-        normalizeCollection(
-            response
-        );
+const normalizeResource = (response) => {
+    let payload =
+        response?.data?.data ??
+        response?.data ??
+        response ??
+        null;
 
-    return tenants[0] ?? null;
+    if (
+        payload &&
+        typeof payload === "object" &&
+        !Array.isArray(payload) &&
+        Array.isArray(payload.data)
+    ) {
+        payload = payload.data[0] ?? null;
+    }
+
+    if (Array.isArray(payload)) {
+        return payload[0] ?? null;
+    }
+
+    if (
+        payload &&
+        typeof payload === "object" &&
+        payload.id !== undefined &&
+        payload.id !== null
+    ) {
+        return payload;
+    }
+
+    return null;
 };
 
-/**
- * Normalize tenancy response.
- */
-const normalizeTenancies = (response) => {
-    return normalizeCollection(
+/*
+|--------------------------------------------------------------------------
+| Financial Helpers
+|--------------------------------------------------------------------------
+*/
+
+const normalizeAmount = (value) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return "0.00";
+    }
+
+    if (typeof value === "string") {
+        const cleaned = value
+            .replace(/KES/gi, "")
+            .replace(/Ksh/gi, "")
+            .replace(/,/g, "")
+            .trim();
+
+        const number = Number(cleaned);
+
+        if (!Number.isFinite(number)) {
+            return "0.00";
+        }
+
+        return number.toFixed(2);
+    }
+
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return "0.00";
+    }
+
+    return number.toFixed(2);
+};
+
+const normalizeBoolean = (value) => {
+    return (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "true"
+    );
+};
+
+const resolveFinancialSource = (booking) => {
+    const directFinancials = parseObject(
+        booking?.financials
+    );
+
+    if (
+        Object.keys(directFinancials).length > 0
+    ) {
+        return directFinancials;
+    }
+
+    const nestedFinancials = parseObject(
+        booking?.data?.financials
+    );
+
+    if (
+        Object.keys(nestedFinancials).length > 0
+    ) {
+        return nestedFinancials;
+    }
+
+    return {};
+};
+
+const normalizeBookingFinancials = (
+    financials,
+    booking = null
+) => {
+    const source = parseObject(financials);
+
+    const bookingSource = isObject(booking)
+        ? booking
+        : {};
+
+    const nestedBooking = isObject(
+        bookingSource.data
+    )
+        ? bookingSource.data
+        : {};
+
+    const rentRaw = firstDefined(
+        source.rent_amount,
+        source.rentAmount,
+        source.rent,
+
+        bookingSource.rent_amount,
+        bookingSource.rentAmount,
+        bookingSource.rent,
+
+        nestedBooking.rent_amount,
+        nestedBooking.rentAmount,
+        nestedBooking.rent
+    );
+
+    const depositRaw = firstDefined(
+        source.deposit_amount,
+        source.depositAmount,
+        source.deposit,
+
+        bookingSource.deposit_amount,
+        bookingSource.depositAmount,
+        bookingSource.deposit,
+
+        nestedBooking.deposit_amount,
+        nestedBooking.depositAmount,
+        nestedBooking.deposit
+    );
+
+    const serviceChargeRaw = firstDefined(
+        source.service_charge,
+        source.serviceCharge,
+
+        bookingSource.service_charge,
+        bookingSource.serviceCharge,
+
+        nestedBooking.service_charge,
+        nestedBooking.serviceCharge
+    );
+
+    const bookingFeeRaw = firstDefined(
+        source.booking_fee,
+        source.bookingFee,
+        source.fee,
+
+        bookingSource.booking_fee,
+        bookingSource.bookingFee,
+        bookingSource.fee,
+
+        nestedBooking.booking_fee,
+        nestedBooking.bookingFee,
+        nestedBooking.fee
+    );
+
+    const discountRaw = firstDefined(
+        source.discount_amount,
+        source.discountAmount,
+        source.discount,
+
+        bookingSource.discount_amount,
+        bookingSource.discountAmount,
+        bookingSource.discount,
+
+        nestedBooking.discount_amount,
+        nestedBooking.discountAmount,
+        nestedBooking.discount
+    );
+
+    const totalRaw = firstDefined(
+        source.total_amount,
+        source.total,
+        source.totalAmount,
+
+        bookingSource.total_amount,
+        bookingSource.total,
+        bookingSource.totalAmount,
+
+        nestedBooking.total_amount,
+        nestedBooking.total,
+        nestedBooking.totalAmount
+    );
+
+    const amountPaidRaw = firstDefined(
+        source.amount_paid,
+        source.paid_amount,
+        source.amountPaid,
+        source.paid,
+
+        bookingSource.amount_paid,
+        bookingSource.paid_amount,
+        bookingSource.amountPaid,
+        bookingSource.paid,
+
+        nestedBooking.amount_paid,
+        nestedBooking.paid_amount,
+        nestedBooking.amountPaid,
+        nestedBooking.paid
+    );
+
+    const balanceRaw = firstDefined(
+        source.balance,
+        source.balance_amount,
+        source.balanceAmount,
+
+        bookingSource.balance,
+        bookingSource.balance_amount,
+        bookingSource.balanceAmount,
+
+        nestedBooking.balance,
+        nestedBooking.balance_amount,
+        nestedBooking.balanceAmount
+    );
+
+    const fullyPaidRaw = firstDefined(
+        source.is_fully_paid,
+        source.isFullyPaid,
+        source.fully_paid,
+
+        bookingSource.is_fully_paid,
+        bookingSource.isFullyPaid,
+        bookingSource.fully_paid,
+
+        nestedBooking.is_fully_paid,
+        nestedBooking.isFullyPaid,
+        nestedBooking.fully_paid
+    );
+
+    const partiallyPaidRaw = firstDefined(
+        source.is_partially_paid,
+        source.isPartiallyPaid,
+        source.partially_paid,
+
+        bookingSource.is_partially_paid,
+        bookingSource.isPartiallyPaid,
+        bookingSource.partially_paid,
+
+        nestedBooking.is_partially_paid,
+        nestedBooking.isPartiallyPaid,
+        nestedBooking.partially_paid
+    );
+
+    const balanceNumber = Number(
+        balanceRaw ?? 0
+    );
+
+    const safeBalance = Number.isFinite(
+        balanceNumber
+    )
+        ? balanceNumber
+        : 0;
+
+    const hasFinancialData = [
+        rentRaw,
+        depositRaw,
+        serviceChargeRaw,
+        bookingFeeRaw,
+        discountRaw,
+        totalRaw,
+        amountPaidRaw,
+        balanceRaw,
+    ].some(
+        (value) =>
+            value !== undefined &&
+            value !== null &&
+            value !== ""
+    );
+
+    const explicitHasBalance = firstDefined(
+        source.has_balance,
+        source.hasBalance,
+
+        bookingSource.has_balance,
+        bookingSource.hasBalance,
+
+        nestedBooking.has_balance,
+        nestedBooking.hasBalance
+    );
+
+    return {
+        rent_amount: normalizeAmount(
+            rentRaw
+        ),
+
+        deposit_amount: normalizeAmount(
+            depositRaw
+        ),
+
+        service_charge: normalizeAmount(
+            serviceChargeRaw
+        ),
+
+        booking_fee: normalizeAmount(
+            bookingFeeRaw
+        ),
+
+        discount_amount: normalizeAmount(
+            discountRaw
+        ),
+
+        total_amount: normalizeAmount(
+            totalRaw
+        ),
+
+        amount_paid: normalizeAmount(
+            amountPaidRaw
+        ),
+
+        balance: normalizeAmount(
+            balanceRaw
+        ),
+
+        is_fully_paid: normalizeBoolean(
+            fullyPaidRaw
+        ),
+
+        is_partially_paid: normalizeBoolean(
+            partiallyPaidRaw
+        ),
+
+        has_balance:
+            normalizeBoolean(
+                explicitHasBalance
+            ) || safeBalance > 0,
+
+        has_financial_data:
+            hasFinancialData,
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
+| Booking Normalization
+|--------------------------------------------------------------------------
+*/
+
+const normalizeBooking = (booking) => {
+    if (
+        !booking ||
+        typeof booking !== "object" ||
+        Array.isArray(booking)
+    ) {
+        return booking;
+    }
+
+    const financialSource =
+        resolveFinancialSource(booking);
+
+    return {
+        ...booking,
+
+        financials:
+            normalizeBookingFinancials(
+                financialSource,
+                booking
+            ),
+    };
+};
+
+const normalizeBookingCollection = (
+    response
+) => {
+    const bookings =
+        normalizeCollection(response);
+
+    return bookings.map(
+        normalizeBooking
+    );
+};
+
+const normalizeSingleBooking = (
+    response
+) => {
+    const booking =
+        normalizeResource(response);
+
+    if (!booking) {
+        return null;
+    }
+
+    return normalizeBooking(booking);
+};
+
+/*
+|--------------------------------------------------------------------------
+| Response Wrappers
+|--------------------------------------------------------------------------
+*/
+
+const withNormalizedCollectionResponse = (
+    response
+) => {
+    const bookings =
+        normalizeBookingCollection(response);
+
+    return {
+        ...response,
+
+        data: {
+            ...(response?.data ?? {}),
+
+            data: bookings,
+        },
+    };
+};
+
+const withNormalizedResourceResponse = (
+    response
+) => {
+    const booking =
+        normalizeSingleBooking(response);
+
+    return {
+        ...response,
+
+        data: {
+            ...(response?.data ?? {}),
+
+            data: booking,
+        },
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
+| Booking Collection Request
+|--------------------------------------------------------------------------
+*/
+
+const getBookingCollection = async (
+    url,
+    params = {},
+    config = {}
+) => {
+    const cleanedParams =
+        cleanNestedParams(params);
+
+    const response = await axios.get(
+        url,
+        {
+            ...config,
+
+            params: cleanedParams,
+        }
+    );
+
+    return withNormalizedCollectionResponse(
         response
     );
 };
 
-/**
- * Extract tenancies embedded inside a tenant resource.
- *
- * Your TenantResource already returns:
- *
- * tenancies: [...]
- * active_tenancies: [...]
- *
- * Therefore we can use those directly without depending
- * on another tenancy request.
- */
+/*
+|--------------------------------------------------------------------------
+| Generic Booking Action
+|--------------------------------------------------------------------------
+*/
+
+const postBookingAction = (
+    action,
+    id,
+    payload = {},
+    config = {}
+) => {
+    const normalizedId =
+        normalizeId(id);
+
+    if (!normalizedId) {
+        return Promise.reject(
+            new Error(
+                "A valid booking ID is required."
+            )
+        );
+    }
+
+    const url =
+        `${BOOKING_BASE_URL}/${encodeURIComponent(
+            normalizedId
+        )}/${action}`;
+
+    return axios.post(
+        url,
+        payload,
+        config
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Tenant / Tenancy Helpers
+|--------------------------------------------------------------------------
+*/
+
+const normalizeTenant = (response) => {
+    const tenants =
+        normalizeCollection(response);
+
+    return tenants[0] ?? null;
+};
+
+const normalizeTenancies = (response) => {
+    return normalizeCollection(response);
+};
+
 const getTenantEmbeddedTenancies = (
     tenant
 ) => {
@@ -300,11 +816,12 @@ const getTenantEmbeddedTenancies = (
         return [];
     }
 
-    const tenancies = Array.isArray(
-        tenant.tenancies
-    )
-        ? tenant.tenancies
-        : [];
+    const tenancies =
+        Array.isArray(
+            tenant.tenancies
+        )
+            ? tenant.tenancies
+            : [];
 
     const activeTenancies =
         Array.isArray(
@@ -319,14 +836,6 @@ const getTenantEmbeddedTenancies = (
     ];
 };
 
-/**
- * Remove duplicate tenancy records.
- *
- * A tenancy can exist in both:
- *
- * tenant.tenancies
- * tenant.active_tenancies
- */
 const uniqueTenancies = (
     tenancies = []
 ) => {
@@ -340,20 +849,16 @@ const uniqueTenancies = (
             continue;
         }
 
-        const id =
-            normalizeId(
-                tenancy.id
-            );
+        const id = normalizeId(
+            tenancy.id
+        );
 
         if (!id) {
             continue;
         }
 
         if (!map.has(id)) {
-            map.set(
-                id,
-                tenancy
-            );
+            map.set(id, tenancy);
         }
     }
 
@@ -375,65 +880,148 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch paginated bookings.
-     */
-    getAll: (params = {}) =>
-        axios.get(
-            BOOKING_BASE_URL,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
-        ),
-
-    /**
-     * Fetch a single booking.
-     */
-    getById: (id) =>
-        axios.get(
-            withId(
-                BOOKING_BASE_URL,
-                id
-            )
-        ),
-
-    /**
-     * Create a booking.
-     */
-    create: (payload = {}) =>
-        axios.post(
-            BOOKING_BASE_URL,
-            payload
-        ),
-
-    /**
-     * Update a booking.
-     */
-    update: (
-        id,
-        payload = {}
+    getAll: (
+        params = {},
+        config = {}
     ) =>
-        axios.put(
-            withId(
-                BOOKING_BASE_URL,
-                id
-            ),
-            payload
+        getBookingCollection(
+            BOOKING_BASE_URL,
+            params,
+            config
         ),
 
-    /**
-     * Soft-delete a booking.
-     */
-    delete: (id) =>
-        axios.delete(
-            withId(
+    getById: async (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            throw new Error(
+                "A valid booking ID is required."
+            );
+        }
+
+        const url = withId(
+            BOOKING_BASE_URL,
+            normalizedId
+        );
+
+        const response =
+            await axios.get(
+                url,
+                config
+            );
+
+        return withNormalizedResourceResponse(
+            response
+        );
+    },
+
+    create: async (
+        payload = {},
+        config = {}
+    ) => {
+        const response =
+            await axios.post(
                 BOOKING_BASE_URL,
-                id
-            )
-        ),
+                payload,
+                config
+            );
+
+        return withNormalizedResourceResponse(
+            response
+        );
+    },
+
+    update: async (
+        id,
+        payload = {},
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            throw new Error(
+                "A valid booking ID is required."
+            );
+        }
+
+        const url = withId(
+            BOOKING_BASE_URL,
+            normalizedId
+        );
+
+        const response =
+            await axios.put(
+                url,
+                payload,
+                config
+            );
+
+        return withNormalizedResourceResponse(
+            response
+        );
+    },
+
+    patch: async (
+        id,
+        payload = {},
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            throw new Error(
+                "A valid booking ID is required."
+            );
+        }
+
+        const url = withId(
+            BOOKING_BASE_URL,
+            normalizedId
+        );
+
+        const response =
+            await axios.patch(
+                url,
+                payload,
+                config
+            );
+
+        return withNormalizedResourceResponse(
+            response
+        );
+    },
+
+    delete: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid booking ID is required."
+                )
+            );
+        }
+
+        const url = withId(
+            BOOKING_BASE_URL,
+            normalizedId
+        );
+
+        return axios.delete(
+            url,
+            config
+        );
+    },
 
     /*
     |--------------------------------------------------------------------------
@@ -441,15 +1029,14 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    search: (params = {}) =>
-        axios.get(
+    search: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/search`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
     /*
@@ -458,16 +1045,22 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    statistics: (params = {}) =>
-        axios.get(
+    statistics: (
+        params = {},
+        config = {}
+    ) => {
+        const cleanedParams =
+            cleanNestedParams(params);
+
+        return axios.get(
             `${BOOKING_BASE_URL}/statistics`,
             {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
+                ...config,
+
+                params: cleanedParams,
             }
-        ),
+        );
+    },
 
     /*
     |--------------------------------------------------------------------------
@@ -475,16 +1068,167 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    reports: (params = {}) =>
-        axios.get(
+    reports: (
+        params = {},
+        config = {}
+    ) => {
+        const cleanedParams =
+            cleanNestedParams(params);
+
+        return axios.get(
             `${BOOKING_BASE_URL}/reports`,
             {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
+                ...config,
+
+                params: cleanedParams,
             }
-        ),
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | AVAILABLE UNITS
+    |--------------------------------------------------------------------------
+    */
+
+    availableUnits: (
+        params = {},
+        config = {}
+    ) => {
+        const source =
+            params &&
+                typeof params === "object" &&
+                !Array.isArray(params)
+                ? params
+                : {};
+
+        /*
+        |--------------------------------------------------------------------------
+        | Resolve IDs
+        |--------------------------------------------------------------------------
+        */
+
+        const propertyId =
+            normalizeIntegerId(
+                firstDefined(
+                    source.property_id,
+                    source.propertyId,
+                    source.property
+                )
+            );
+
+        const apartmentId =
+            normalizeIntegerId(
+                firstDefined(
+                    source.apartment_id,
+                    source.apartmentId,
+                    source.apartment
+                )
+            );
+
+        const unitId =
+            normalizeIntegerId(
+                firstDefined(
+                    source.unit_id,
+                    source.unitId,
+                    source.unit
+                )
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Build final parameters
+        |--------------------------------------------------------------------------
+        */
+
+        const finalParams = {
+            ...source,
+        };
+
+        /*
+        |--------------------------------------------------------------------------
+        | Remove alternate frontend parameter names
+        |--------------------------------------------------------------------------
+        */
+
+        delete finalParams.propertyId;
+        delete finalParams.apartmentId;
+        delete finalParams.unitId;
+
+        delete finalParams.property;
+        delete finalParams.apartment;
+        delete finalParams.unit;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Add normalized API parameter names
+        |--------------------------------------------------------------------------
+        */
+
+        if (propertyId) {
+            finalParams.property_id =
+                propertyId;
+        } else {
+            delete finalParams.property_id;
+        }
+
+        if (apartmentId) {
+            finalParams.apartment_id =
+                apartmentId;
+        } else {
+            delete finalParams.apartment_id;
+        }
+
+        if (unitId) {
+            finalParams.unit_id =
+                unitId;
+        } else {
+            delete finalParams.unit_id;
+        }
+
+        const cleanedParams =
+            cleanNestedParams(
+                finalParams
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Request
+        |--------------------------------------------------------------------------
+        */
+
+        return axios.get(
+            `${BOOKING_BASE_URL}/available-units`,
+            {
+                ...config,
+
+                params: cleanedParams,
+            }
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | AVAILABLE USERS
+    |--------------------------------------------------------------------------
+    */
+
+    availableUsers: (
+        params = {},
+        config = {}
+    ) => {
+        const cleanedParams =
+            cleanNestedParams(params);
+
+        return axios.get(
+            `${BOOKING_BASE_URL}/available-users`,
+            {
+                ...config,
+
+                params: cleanedParams,
+            }
+        );
+    },
 
     /*
     |--------------------------------------------------------------------------
@@ -492,81 +1236,74 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    pending: (params = {}) =>
-        axios.get(
+    pending: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/pending`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
-    confirmed: (params = {}) =>
-        axios.get(
+    confirmed: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/confirmed`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
-    active: (params = {}) =>
-        axios.get(
+    active: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/active`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
-    completed: (params = {}) =>
-        axios.get(
+    completed: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/completed`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
-    cancelled: (params = {}) =>
-        axios.get(
+    cancelled: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/cancelled`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
-    rejected: (params = {}) =>
-        axios.get(
+    rejected: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/rejected`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
-    expired: (params = {}) =>
-        axios.get(
+    expired: (
+        params = {},
+        config = {}
+    ) =>
+        getBookingCollection(
             `${BOOKING_BASE_URL}/expired`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
+            params,
+            config
         ),
 
     /*
@@ -575,156 +1312,201 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    confirm: (id) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/confirm`
+    confirm: (
+        id,
+        config = {}
+    ) =>
+        postBookingAction(
+            "confirm",
+            id,
+            {},
+            config
         ),
 
-    approve: (id) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/approve`
+    approve: (
+        id,
+        config = {}
+    ) =>
+        postBookingAction(
+            "approve",
+            id,
+            {},
+            config
         ),
 
-    checkIn: (id) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/check-in`
+    checkIn: (
+        id,
+        config = {}
+    ) =>
+        postBookingAction(
+            "check-in",
+            id,
+            {},
+            config
         ),
 
-    complete: (id) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/complete`
+    complete: (
+        id,
+        config = {}
+    ) =>
+        postBookingAction(
+            "complete",
+            id,
+            {},
+            config
         ),
 
     cancel: (
         id,
-        payload = {}
+        payload = {},
+        config = {}
     ) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/cancel`,
-            payload
+        postBookingAction(
+            "cancel",
+            id,
+            payload,
+            config
         ),
 
     reject: (
         id,
-        rejectionReason
+        rejectionReason,
+        config = {}
     ) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/reject`,
+        postBookingAction(
+            "reject",
+            id,
             {
                 rejection_reason:
                     rejectionReason,
-            }
+            },
+            config
         ),
 
-    expire: (id) =>
-        axios.post(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/expire`
+    expire: (
+        id,
+        config = {}
+    ) =>
+        postBookingAction(
+            "expire",
+            id,
+            {},
+            config
         ),
 
     /*
     |--------------------------------------------------------------------------
-    | AVAILABILITY
+    | RESTORE
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch units available for booking.
-     */
-    availableUnits: (
-        params = {}
-    ) =>
-        axios.get(
-            `${BOOKING_BASE_URL}/available-units`,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
-        ),
-
-    /**
-     * Fetch users eligible to make bookings.
-     *
-     * Empty:
-     *
-     * GET /bookings/available-users
-     *
-     * Search:
-     *
-     * GET /bookings/available-users?search=Allan
-     */
-    availableUsers: (
-        params = {}
+    restore: (
+        id,
+        config = {}
     ) => {
-        const cleanedParams =
-            cleanNestedParams(
-                params
-            );
+        const normalizedId =
+            normalizeId(id);
 
-        if (
-            Object.keys(
-                cleanedParams
-            ).length === 0
-        ) {
-            return axios.get(
-                `${BOOKING_BASE_URL}/available-users`
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid booking ID is required."
+                )
             );
         }
 
-        return axios.get(
-            `${BOOKING_BASE_URL}/available-users`,
-            {
-                params:
-                    cleanedParams,
-            }
+        const url =
+            `${BOOKING_BASE_URL}/${encodeURIComponent(
+                normalizedId
+            )}/restore`;
+
+        return axios.patch(
+            url,
+            {},
+            config
         );
     },
 
     /*
     |--------------------------------------------------------------------------
-    | CUSTOMER / USER INFORMATION
+    | FORCE DELETE
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch users.
-     */
-    users: (params = {}) =>
-        axios.get(
+    forceDelete: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid booking ID is required."
+                )
+            );
+        }
+
+        const url =
+            `${BOOKING_BASE_URL}/${encodeURIComponent(
+                normalizedId
+            )}/force`;
+
+        return axios.delete(
+            url,
+            config
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | USER INFORMATION
+    |--------------------------------------------------------------------------
+    */
+
+    users: (
+        params = {},
+        config = {}
+    ) => {
+        const cleanedParams =
+            cleanNestedParams(params);
+
+        return axios.get(
             USER_BASE_URL,
             {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
-        ),
+                ...config,
 
-    /**
-     * Fetch one user/customer.
-     */
-    getUser: (id) =>
-        axios.get(
-            withId(
-                USER_BASE_URL,
-                id
-            )
-        ),
+                params: cleanedParams,
+            }
+        );
+    },
+
+    getUser: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid user ID is required."
+                )
+            );
+        }
+
+        const url = withId(
+            USER_BASE_URL,
+            normalizedId
+        );
+
+        return axios.get(
+            url,
+            config
+        );
+    },
 
     /*
     |--------------------------------------------------------------------------
@@ -732,90 +1514,90 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch tenant profiles.
-     */
     tenants: (
-        params = {}
-    ) =>
-        axios.get(
-            TENANT_BASE_URL,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
-        ),
-
-    /**
-     * Fetch one tenant profile.
-     */
-    getTenant: (id) =>
-        axios.get(
-            withId(
-                TENANT_BASE_URL,
-                id
-            )
-        ),
-
-    /**
-     * Fetch tenant profile belonging to a user/customer.
-     *
-     * GET /tenants?user_id={userId}
-     *
-     * Example:
-     *
-     * user_id = 24
-     *
-     * returns:
-     *
-     * tenant.id = 17
-     * tenant.user_id = 24
-     */
-    getTenantByUser: (
-        userId
+        params = {},
+        config = {}
     ) => {
-        const normalizedUserId =
-            getId(userId);
-
-        if (
-            !normalizedUserId
-        ) {
-            return Promise.resolve(
-                null
-            );
-        }
+        const cleanedParams =
+            cleanNestedParams(params);
 
         return axios.get(
             TENANT_BASE_URL,
             {
-                params: {
-                    user_id:
-                        normalizedUserId,
-                },
+                ...config,
+
+                params: cleanedParams,
             }
         );
     },
 
-    /**
-     * Fetch available tenant users.
-     *
-     * These are users who can still be linked
-     * to a tenant profile.
-     */
+    getTenant: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid tenant ID is required."
+                )
+            );
+        }
+
+        const url = withId(
+            TENANT_BASE_URL,
+            normalizedId
+        );
+
+        return axios.get(
+            url,
+            config
+        );
+    },
+
+    getTenantByUser: (
+        userId,
+        config = {}
+    ) => {
+        const normalizedUserId =
+            normalizeId(userId);
+
+        if (!normalizedUserId) {
+            return Promise.resolve(null);
+        }
+
+        const params = {
+            user_id: normalizedUserId,
+        };
+
+        return axios.get(
+            TENANT_BASE_URL,
+            {
+                ...config,
+
+                params,
+            }
+        );
+    },
+
     availableTenantUsers: (
-        params = {}
-    ) =>
-        axios.get(
+        params = {},
+        config = {}
+    ) => {
+        const cleanedParams =
+            cleanNestedParams(params);
+
+        return axios.get(
             `${TENANT_BASE_URL}/available-users`,
             {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
+                ...config,
+
+                params: cleanedParams,
             }
-        ),
+        );
+    },
 
     /*
     |--------------------------------------------------------------------------
@@ -823,87 +1605,58 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Fetch tenancies.
-     */
     tenancies: (
-        params = {}
-    ) =>
-        axios.get(
-            TENANCY_BASE_URL,
-            {
-                params:
-                    cleanNestedParams(
-                        params
-                    ),
-            }
-        ),
-
-    /**
-     * Fetch one tenancy.
-     */
-    getTenancy: (id) =>
-        axios.get(
-            withId(
-                TENANCY_BASE_URL,
-                id
-            )
-        ),
-
-    /**
-     * Fetch tenancies belonging to a tenant.
-     *
-     * tenantId = TENANT PROFILE ID.
-     *
-     * Example:
-     *
-     * tenantId = 17
-     *
-     * NOT user ID 24.
-     */
-    getTenanciesByTenant: (
-        tenantId,
-        params = {}
+        params = {},
+        config = {}
     ) => {
-        const normalizedTenantId =
-            getId(tenantId);
-
-        if (
-            !normalizedTenantId
-        ) {
-            return Promise.resolve({
-                data: {
-                    data: [],
-                },
-            });
-        }
+        const cleanedParams =
+            cleanNestedParams(params);
 
         return axios.get(
             TENANCY_BASE_URL,
             {
-                params:
-                    cleanNestedParams({
-                        ...params,
-                        tenant_id:
-                            normalizedTenantId,
-                    }),
+                ...config,
+
+                params: cleanedParams,
             }
         );
     },
 
-    /**
-     * Fetch active tenancies belonging to a tenant.
-     */
-    getActiveTenanciesByTenant: (
+    getTenancy: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid tenancy ID is required."
+                )
+            );
+        }
+
+        const url = withId(
+            TENANCY_BASE_URL,
+            normalizedId
+        );
+
+        return axios.get(
+            url,
+            config
+        );
+    },
+
+    getTenanciesByTenant: (
         tenantId,
-        params = {}
+        params = {},
+        config = {}
     ) => {
         const normalizedTenantId =
-            getId(tenantId);
+            normalizeId(tenantId);
 
-        if (
-            !normalizedTenantId
-        ) {
+        if (!normalizedTenantId) {
             return Promise.resolve({
                 data: {
                     data: [],
@@ -911,16 +1664,56 @@ const bookingApi = {
             });
         }
 
+        const finalParams =
+            cleanNestedParams({
+                ...params,
+
+                tenant_id:
+                    normalizedTenantId,
+            });
+
         return axios.get(
             TENANCY_BASE_URL,
             {
-                params:
-                    cleanNestedParams({
-                        ...params,
-                        tenant_id:
-                            normalizedTenantId,
-                        status: "active",
-                    }),
+                ...config,
+
+                params: finalParams,
+            }
+        );
+    },
+
+    getActiveTenanciesByTenant: (
+        tenantId,
+        params = {},
+        config = {}
+    ) => {
+        const normalizedTenantId =
+            normalizeId(tenantId);
+
+        if (!normalizedTenantId) {
+            return Promise.resolve({
+                data: {
+                    data: [],
+                },
+            });
+        }
+
+        const finalParams =
+            cleanNestedParams({
+                ...params,
+
+                tenant_id:
+                    normalizedTenantId,
+
+                status: "active",
+            });
+
+        return axios.get(
+            TENANCY_BASE_URL,
+            {
+                ...config,
+
+                params: finalParams,
             }
         );
     },
@@ -931,168 +1724,119 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Resolve customer information.
-     *
-     * Customer ID = USER ID.
-     */
     resolveCustomer: async (
-        customerId
+        customerId,
+        config = {}
     ) => {
-        const id =
-            getId(
-                customerId
-            );
+        const normalizedId =
+            normalizeId(customerId);
 
-        if (!id) {
+        if (!normalizedId) {
             return null;
         }
 
+        const url = withId(
+            USER_BASE_URL,
+            normalizedId
+        );
+
         return axios.get(
-            withId(
-                USER_BASE_URL,
-                id
-            )
+            url,
+            config
         );
     },
 
-    /**
-     * Resolve tenant belonging to a customer.
-     *
-     * Customer:
-     *
-     * User ID = 24
-     *
-     * Tenant:
-     *
-     * Tenant ID = 17
-     *
-     * Request:
-     *
-     * GET /tenants?user_id=24
-     */
     resolveTenantFromCustomer:
         async (
-            customerId
+            customerId,
+            config = {}
         ) => {
-            const userId =
-                getId(
-                    customerId
-                );
+            const normalizedUserId =
+                normalizeId(customerId);
 
-            if (!userId) {
+            if (!normalizedUserId) {
                 return null;
             }
+
+            const params = {
+                user_id:
+                    normalizedUserId,
+            };
 
             return axios.get(
                 TENANT_BASE_URL,
                 {
-                    params: {
-                        user_id:
-                            userId,
-                    },
+                    ...config,
+
+                    params,
                 }
             );
         },
 
-    /**
-     * Resolve:
-     *
-     * Customer/User
-     *        ↓
-     * Tenant Profile
-     *        ↓
-     * Tenancies
-     *
-     * IMPORTANT:
-     *
-     * Customer ID = USER ID
-     *
-     * Tenant ID = TENANT PROFILE ID
-     *
-     * Example:
-     *
-     * Customer/User:
-     *     id = 24
-     *
-     * Tenant:
-     *     id = 17
-     *     user_id = 24
-     *
-     * Tenancy:
-     *     tenant_id = 17
-     *
-     * The tenant endpoint already returns:
-     *
-     *     tenancies
-     *     active_tenancies
-     *
-     * Therefore those embedded records are used first.
-     */
     resolveCustomerTenancies:
         async (
             customerId,
-            params = {}
+            params = {},
+            config = {}
         ) => {
-            const userId =
-                getId(
-                    customerId
-                );
+            const normalizedUserId =
+                normalizeId(customerId);
 
-            /*
-            |--------------------------------------------------------------------------
-            | No customer
-            |--------------------------------------------------------------------------
-            */
-
-            if (!userId) {
+            if (!normalizedUserId) {
                 return {
-                    customerId:
-                        null,
-
-                    customer:
-                        null,
-
-                    tenant:
-                        null,
-
-                    tenancies:
-                        [],
-
-                    tenantResponse:
-                        null,
-
-                    tenancyResponse:
-                        null,
+                    customerId: null,
+                    customer: null,
+                    tenant: null,
+                    tenancies: [],
+                    customerResponse: null,
+                    tenantResponse: null,
+                    tenancyResponse: null,
                 };
             }
 
             /*
             |--------------------------------------------------------------------------
-            | STEP 1
-            |--------------------------------------------------------------------------
-            | Resolve tenant using USER ID.
+            | STEP 1 — Resolve customer + tenant
             |--------------------------------------------------------------------------
             */
 
-            const tenantResponse =
-                await axios.get(
+            const customerPromise =
+                axios.get(
+                    withId(
+                        USER_BASE_URL,
+                        normalizedUserId
+                    ),
+                    config
+                );
+
+            const tenantParams = {
+                user_id:
+                    normalizedUserId,
+            };
+
+            const tenantPromise =
+                axios.get(
                     TENANT_BASE_URL,
                     {
-                        params: {
-                            user_id:
-                                userId,
-                        },
+                        ...config,
+
+                        params:
+                            tenantParams,
                     }
                 );
 
-            /*
-            |--------------------------------------------------------------------------
-            | STEP 2
-            |--------------------------------------------------------------------------
-            | Extract tenant.
-            |--------------------------------------------------------------------------
-            */
+            const [
+                customerResponse,
+                tenantResponse,
+            ] = await Promise.all([
+                customerPromise,
+                tenantPromise,
+            ]);
+
+            const customer =
+                normalizeResource(
+                    customerResponse
+                );
 
             const tenant =
                 normalizeTenant(
@@ -1101,39 +1845,32 @@ const bookingApi = {
 
             /*
             |--------------------------------------------------------------------------
-            | STEP 3
-            |--------------------------------------------------------------------------
-            | No tenant profile.
+            | STEP 2 — No tenant profile
             |--------------------------------------------------------------------------
             */
 
             if (!tenant?.id) {
                 return {
                     customerId:
-                        userId,
+                        normalizedUserId,
 
-                    customer:
-                        null,
+                    customer,
 
-                    tenant:
-                        null,
+                    tenant: null,
 
-                    tenancies:
-                        [],
+                    tenancies: [],
+
+                    customerResponse,
 
                     tenantResponse,
 
-                    tenancyResponse:
-                        null,
+                    tenancyResponse: null,
                 };
             }
 
             /*
             |--------------------------------------------------------------------------
-            | STEP 4
-            |--------------------------------------------------------------------------
-            | Read tenancies already embedded
-            | inside the TenantResource.
+            | STEP 3 — Embedded tenancies
             |--------------------------------------------------------------------------
             */
 
@@ -1142,52 +1879,41 @@ const bookingApi = {
                     tenant
                 );
 
-            /*
-            |--------------------------------------------------------------------------
-            | STEP 5
-            |--------------------------------------------------------------------------
-            | If tenant already supplied tenancies,
-            | use them immediately.
-            |--------------------------------------------------------------------------
-            */
-
             let tenancies =
                 uniqueTenancies(
                     embeddedTenancies
                 );
 
-            let tenancyResponse =
-                null;
+            let tenancyResponse = null;
 
             /*
             |--------------------------------------------------------------------------
-            | STEP 6
-            |--------------------------------------------------------------------------
-            | Supplement using /tenancies only when
-            | embedded tenancies are unavailable.
-            |--------------------------------------------------------------------------
-            |
-            | This prevents the frontend from failing simply
-            | because the tenancy endpoint has a different
-            | response shape or filtering behavior.
+            | STEP 4 — Fallback to /tenancies
             |--------------------------------------------------------------------------
             */
 
             if (
                 tenancies.length === 0
             ) {
+                const tenancyUrl =
+                    TENANCY_BASE_URL;
+
+                const finalParams =
+                    cleanNestedParams({
+                        ...params,
+
+                        tenant_id:
+                            tenant.id,
+                    });
+
                 tenancyResponse =
                     await axios.get(
-                        TENANCY_BASE_URL,
+                        tenancyUrl,
                         {
+                            ...config,
+
                             params:
-                                cleanNestedParams(
-                                    {
-                                        ...params,
-                                        tenant_id:
-                                            tenant.id,
-                                    }
-                                ),
+                                finalParams,
                         }
                     );
 
@@ -1201,64 +1927,27 @@ const bookingApi = {
 
             /*
             |--------------------------------------------------------------------------
-            | STEP 7
-            |--------------------------------------------------------------------------
-            | Return complete relationship.
+            | COMPLETE
             |--------------------------------------------------------------------------
             */
 
             return {
                 customerId:
-                    userId,
+                    normalizedUserId,
 
-                customer:
-                    null,
+                customer,
 
                 tenant,
 
                 tenancies,
+
+                customerResponse,
 
                 tenantResponse,
 
                 tenancyResponse,
             };
         },
-
-    /*
-    |--------------------------------------------------------------------------
-    | RESTORE
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Restore a soft-deleted booking.
-     *
-     * PATCH /bookings/{booking}/restore
-     */
-    restore: (id) =>
-        axios.patch(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/restore`
-        ),
-
-    /*
-    |--------------------------------------------------------------------------
-    | FORCE DELETE
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * Permanently delete a booking.
-     *
-     * DELETE /bookings/{booking}/force
-     */
-    forceDelete: (id) =>
-        axios.delete(
-            `${BOOKING_BASE_URL}/${getId(
-                id
-            )}/force`
-        ),
 };
 
 /*
