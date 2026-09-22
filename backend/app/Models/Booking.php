@@ -132,7 +132,6 @@ class Booking extends Model
         'user_id',
         'customer_id',
         'tenant_id',
-
         'property_id',
         'apartment_id',
         'unit_id',
@@ -236,7 +235,6 @@ class Booking extends Model
     protected function casts(): array
     {
         return [
-
             /*
             | Dates
             */
@@ -301,7 +299,6 @@ class Booking extends Model
         */
 
         static::creating(function (Booking $booking): void {
-
             /*
             | Generate booking number
             */
@@ -364,13 +361,15 @@ class Booking extends Model
             /*
             | Calculate financial totals
             |
-            | BookingService remains responsible for validating
-            | financial business rules before persistence.
+            | BookingService remains responsible for the
+            | authoritative business validation.
             */
 
-            $booking->total_amount = $booking->calculateTotalAmount();
+            $booking->total_amount =
+                $booking->calculateTotalAmount();
 
-            $booking->balance = $booking->calculateBalance();
+            $booking->balance =
+                $booking->calculateBalance();
         });
 
         /*
@@ -380,7 +379,6 @@ class Booking extends Model
         */
 
         static::updating(function (Booking $booking): void {
-
             /*
             | Recalculate total when financial components change.
             */
@@ -445,11 +443,34 @@ class Booking extends Model
     }
 
     /**
-     * Alias for compatibility with existing resources/frontend code.
+     * Customer user alias.
      *
-     * This points to the same users.customer relationship.
+     * This supports code that explicitly calls:
+     *
+     *     customerUser
+     *
+     * bookings.customer_id -> users.id
      */
     public function customerUser(): BelongsTo
+    {
+        return $this->belongsTo(
+            User::class,
+            'customer_id'
+        );
+    }
+
+    /**
+     * Customer user compatibility alias.
+     *
+     * This supports Laravel relationship references such as:
+     *
+     *     customer_user
+     *
+     * when used by existing repository/resource/service code.
+     *
+     * bookings.customer_id -> users.id
+     */
+    public function customer_user(): BelongsTo
     {
         return $this->belongsTo(
             User::class,
@@ -476,6 +497,11 @@ class Booking extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Property associated with the booking.
+     *
+     * bookings.property_id -> properties.id
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(
@@ -484,6 +510,11 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Apartment associated with the booking.
+     *
+     * bookings.apartment_id -> apartments.id
+     */
     public function apartment(): BelongsTo
     {
         return $this->belongsTo(
@@ -492,6 +523,11 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Unit associated with the booking.
+     *
+     * bookings.unit_id -> units.id
+     */
     public function unit(): BelongsTo
     {
         return $this->belongsTo(
@@ -506,6 +542,11 @@ class Booking extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Tenancy associated with the booking.
+     *
+     * bookings.tenancy_id -> tenancies.id
+     */
     public function tenancy(): BelongsTo
     {
         return $this->belongsTo(
@@ -520,6 +561,16 @@ class Booking extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Calculate booking total.
+     *
+     * Total =
+     * rent
+     * + deposit
+     * + service charge
+     * + booking fee
+     * - discount
+     */
     public function calculateTotalAmount(): float
     {
         $rent = (float) ($this->rent_amount ?? 0);
@@ -542,6 +593,9 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Calculate outstanding balance.
+     */
     public function calculateBalance(): float
     {
         $total = (float) ($this->total_amount ?? 0);
@@ -742,6 +796,9 @@ class Booking extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Determine whether the booking has ended.
+     */
     public function hasEnded(): bool
     {
         if (!$this->end_date) {
@@ -753,6 +810,9 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Determine whether the booking starts today.
+     */
     public function startsToday(): bool
     {
         if (!$this->start_date) {
@@ -762,6 +822,9 @@ class Booking extends Model
         return $this->start_date->isToday();
     }
 
+    /**
+     * Determine whether today falls within the booking period.
+     */
     public function isWithinBookingPeriod(): bool
     {
         $today = now()->startOfDay();
@@ -777,6 +840,9 @@ class Booking extends Model
             );
     }
 
+    /**
+     * Determine whether this booking overlaps a requested period.
+     */
     public function overlapsDates(
         $startDate,
         $endDate
@@ -809,16 +875,18 @@ class Booking extends Model
      *
      * Priority:
      *
-     * 1. customer relationship
-     * 2. customer snapshot
-     * 3. tenant user
-     * 4. booking creator
+     * 1. Customer relationship
+     * 2. Customer snapshot
+     * 3. Tenant user
+     * 4. Booking creator
      * 5. Guest
      */
     public function getCustomerNameAttribute(): string
     {
         /*
-        | Authoritative customer relationship.
+        |--------------------------------------------------------------------------
+        | Authoritative customer relationship
+        |--------------------------------------------------------------------------
         */
 
         if ($this->customer) {
@@ -838,7 +906,9 @@ class Booking extends Model
         }
 
         /*
-        | Historical customer snapshot.
+        |--------------------------------------------------------------------------
+        | Historical customer snapshot
+        |--------------------------------------------------------------------------
         */
 
         $snapshotName = trim(
@@ -852,7 +922,9 @@ class Booking extends Model
         }
 
         /*
-        | Tenant fallback.
+        |--------------------------------------------------------------------------
+        | Tenant fallback
+        |--------------------------------------------------------------------------
         */
 
         if ($this->tenant?->user) {
@@ -872,7 +944,9 @@ class Booking extends Model
         }
 
         /*
-        | Creator fallback.
+        |--------------------------------------------------------------------------
+        | Creator fallback
+        |--------------------------------------------------------------------------
         */
 
         if ($this->user) {
@@ -894,6 +968,9 @@ class Booking extends Model
         return 'Guest';
     }
 
+    /**
+     * Human-readable booking status.
+     */
     public function getStatusLabelAttribute(): string
     {
         return Str::headline(
@@ -901,6 +978,9 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Human-readable payment status.
+     */
     public function getPaymentStatusLabelAttribute(): string
     {
         return Str::headline(
@@ -908,6 +988,9 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Human-readable booking type.
+     */
     public function getBookingTypeLabelAttribute(): string
     {
         return Str::headline(
@@ -915,6 +998,9 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Human-readable booking source.
+     */
     public function getSourceLabelAttribute(): string
     {
         return Str::headline(
@@ -922,6 +1008,9 @@ class Booking extends Model
         );
     }
 
+    /**
+     * Display booking reference.
+     */
     public function getDisplayReferenceAttribute(): string
     {
         return $this->booking_number
@@ -1216,6 +1305,11 @@ class Booking extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Active bookings.
+     *
+     * Confirmed and approved bookings occupy the unit.
+     */
     public function scopeActive(
         Builder $query
     ): Builder {
