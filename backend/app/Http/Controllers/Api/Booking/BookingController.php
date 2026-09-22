@@ -31,20 +31,30 @@ class BookingController extends Controller
     /**
      * Standard relationships returned with booking responses.
      *
-     * Keeping these relationships centralized ensures that:
+     * Keep this list centralized so index, show, create, update and
+     * workflow endpoints return a consistent booking structure.
      *
-     * - index
-     * - show
-     * - create
-     * - update
-     * - workflow actions
-     * - restore
+     * Relationship meanings:
      *
-     * all return a consistent booking structure.
+     * user
+     *     = authenticated booking creator/owner
+     *
+     * customer
+     *     = customer user account
+     *
+     * customer_user
+     *     = optional compatibility relationship if defined on Booking
+     *
+     * tenant
+     *     = tenant profile
+     *
+     * tenancy
+     *     = actual tenancy record
      */
     protected array $bookingRelations = [
         'user',
         'customer',
+        'customer_user',
         'tenant.user',
         'property',
         'apartment',
@@ -146,7 +156,7 @@ class BookingController extends Controller
                 $e->errors(),
                 'Booking validation failed.'
             );
-        } catch (ModelNotFoundException $e) {
+        } catch (ModelNotFoundException) {
             return ApiResponse::notFound(
                 'Required booking resource was not found.'
             );
@@ -160,11 +170,17 @@ class BookingController extends Controller
 
     /**
      * Display the specified booking.
+     *
+     * GET /api/bookings/{id}
      */
     public function show(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->findOrFail($id);
+            $bookingId = $this->normalizeId($id);
+
+            $booking = $this->bookingService->findOrFail(
+                $bookingId
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -176,6 +192,11 @@ class BookingController extends Controller
             return ApiResponse::notFound(
                 'Booking not found.'
             );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Booking lookup validation failed.'
+            );
         } catch (Throwable $e) {
             return $this->serverError(
                 'Unable to fetch booking.',
@@ -186,15 +207,57 @@ class BookingController extends Controller
 
     /**
      * Update the specified booking.
+     *
+     * IMPORTANT:
+     * The current booking ID is passed into BookingService::update().
+     * BookingService is responsible for excluding this booking from
+     * its own unit/date overlap check.
+     *
+     * PUT/PATCH /api/bookings/{id}
      */
     public function update(
         UpdateBookingRequest $request,
         int|string $id
     ): JsonResponse {
         try {
+            /*
+             * Normalize the route parameter before sending it to the
+             * service. This prevents accidental values such as
+             * "[object Object]" from reaching the business layer.
+             */
+            $bookingId = $this->normalizeId($id);
+
+            /*
+             * Only validated fields are passed to the service.
+             *
+             * UpdateBookingRequest deliberately prohibits:
+             * - user_id
+             * - status
+             * - payment_status
+             * - workflow timestamps
+             * - total_amount
+             * - balance
+             * - generated identifiers
+             * - rejection/cancellation reasons
+             */
+            $validated = $request->validated();
+
+            /*
+             * The service receives the CURRENT booking ID.
+             *
+             * This is critical for availability validation:
+             *
+             * Existing booking:
+             *     ID = $bookingId
+             *     unit_id = 1547
+             *     dates = 2026-09-22 -> 2026-11-30
+             *
+             * When validating the update, the service/repository must
+             * exclude this same booking ID from the overlap query.
+             */
             $booking = $this->bookingService->update(
-                $id,
-                $request->validated()
+                $bookingId,
+                $validated
             );
 
             $this->loadBookingRelations($booking);
@@ -226,7 +289,11 @@ class BookingController extends Controller
     public function destroy(int|string $id): JsonResponse
     {
         try {
-            $this->bookingService->delete($id);
+            $bookingId = $this->normalizeId($id);
+
+            $this->bookingService->delete(
+                $bookingId
+            );
 
             return ApiResponse::deleted(
                 null,
@@ -265,6 +332,9 @@ class BookingController extends Controller
                 (string) $request->input('search', '')
             );
 
+            /*
+             * Empty search behaves exactly like the normal index endpoint.
+             */
             if ($search === '') {
                 return $this->index($request);
             }
@@ -499,7 +569,9 @@ class BookingController extends Controller
     public function confirm(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->confirm($id);
+            $booking = $this->bookingService->confirm(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -530,7 +602,9 @@ class BookingController extends Controller
     public function approve(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->approve($id);
+            $booking = $this->bookingService->approve(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -561,7 +635,9 @@ class BookingController extends Controller
     public function checkIn(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->checkIn($id);
+            $booking = $this->bookingService->checkIn(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -592,7 +668,9 @@ class BookingController extends Controller
     public function complete(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->complete($id);
+            $booking = $this->bookingService->complete(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -626,7 +704,7 @@ class BookingController extends Controller
     ): JsonResponse {
         try {
             $booking = $this->bookingService->cancel(
-                $id,
+                $this->normalizeId($id),
                 $request->validated()
             );
 
@@ -655,6 +733,9 @@ class BookingController extends Controller
 
     /**
      * Reject a booking.
+     *
+     * The rejection workflow is kept separate from the general update
+     * endpoint so rejection reasons remain auditable.
      */
     public function reject(
         Request $request,
@@ -671,7 +752,7 @@ class BookingController extends Controller
             ]);
 
             $booking = $this->bookingService->reject(
-                $id,
+                $this->normalizeId($id),
                 $validated['rejection_reason']
             );
 
@@ -704,7 +785,9 @@ class BookingController extends Controller
     public function expire(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->expire($id);
+            $booking = $this->bookingService->expire(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -747,11 +830,9 @@ class BookingController extends Controller
      * - apartment_id
      * - booking_id
      *
-     * Example:
-     *
-     * GET /api/bookings/available-units
-     *     ?start_date=2026-09-15
-     *     &end_date=2026-09-30
+     * The booking_id parameter is particularly important when editing
+     * an existing booking. It tells the availability query to exclude
+     * the booking currently being edited.
      */
     public function availableUnits(Request $request): JsonResponse
     {
@@ -769,36 +850,45 @@ class BookingController extends Controller
                 ],
 
                 'property_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:properties,id',
                 ],
 
                 'apartment_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:apartments,id',
                 ],
 
                 'booking_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:bookings,id',
                 ],
             ]);
 
+            $bookingId = isset($validated['booking_id'])
+                ? (int) $validated['booking_id']
+                : null;
+
+            $propertyId = isset($validated['property_id'])
+                ? (int) $validated['property_id']
+                : null;
+
+            $apartmentId = isset($validated['apartment_id'])
+                ? (int) $validated['apartment_id']
+                : null;
+
             $units = $this->bookingService->getAvailableUnits(
                 $validated['start_date'],
                 $validated['end_date'],
-                isset($validated['property_id'])
-                    ? (int) $validated['property_id']
-                    : null,
-                isset($validated['apartment_id'])
-                    ? (int) $validated['apartment_id']
-                    : null,
-                isset($validated['booking_id'])
-                    ? (int) $validated['booking_id']
-                    : null
+                $propertyId,
+                $apartmentId,
+                $bookingId
             );
 
             return ApiResponse::collection(
@@ -824,8 +914,12 @@ class BookingController extends Controller
     public function availableUsers(Request $request): JsonResponse
     {
         try {
+            $search = $request->filled('search')
+                ? trim((string) $request->input('search'))
+                : null;
+
             $users = $this->bookingService->getAvailableUsers(
-                $request->input('search')
+                $search
             );
 
             return ApiResponse::collection(
@@ -852,7 +946,9 @@ class BookingController extends Controller
     public function restore(int|string $id): JsonResponse
     {
         try {
-            $booking = $this->bookingService->restore($id);
+            $booking = $this->bookingService->restore(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -883,7 +979,9 @@ class BookingController extends Controller
     public function forceDelete(int|string $id): JsonResponse
     {
         try {
-            $this->bookingService->forceDelete($id);
+            $this->bookingService->forceDelete(
+                $this->normalizeId($id)
+            );
 
             return ApiResponse::deleted(
                 null,
@@ -913,11 +1011,61 @@ class BookingController extends Controller
     */
 
     /**
-     * Load the standard booking relationships.
+     * Normalize a booking route ID.
+     *
+     * Route IDs should always be scalar values.
+     *
+     * This method intentionally rejects objects and arrays instead of
+     * allowing PHP to convert them into values such as "[object Object]".
+     *
+     * @throws ValidationException
+     */
+    protected function normalizeId(int|string $id): int
+    {
+        if (is_int($id)) {
+            if ($id < 1) {
+                throw ValidationException::withMessages([
+                    'booking_id' => [
+                        'The booking ID must be a positive integer.',
+                    ],
+                ]);
+            }
+
+            return $id;
+        }
+
+        $value = trim($id);
+
+        /*
+         * Reject JavaScript object serialization and other invalid
+         * route values before they reach the service layer.
+         */
+        if (
+            $value === '' ||
+            !ctype_digit($value) ||
+            (int) $value < 1
+        ) {
+            throw ValidationException::withMessages([
+                'booking_id' => [
+                    'A valid booking ID is required.',
+                ],
+            ]);
+        }
+
+        return (int) $value;
+    }
+
+    /**
+     * Load all standard booking relationships.
+     *
+     * This ensures that every single-booking response contains the
+     * information required by the frontend edit/view pages.
      */
     protected function loadBookingRelations($booking): void
     {
-        $booking->load($this->bookingRelations);
+        $booking->load(
+            $this->bookingRelations
+        );
     }
 
     /**
@@ -936,14 +1084,20 @@ class BookingController extends Controller
     /**
      * Return the requested pagination size.
      *
-     * The repository remains responsible for applying the final
-     * maximum allowed page size.
+     * The repository/service remains responsible for applying the
+     * final maximum page size.
      */
     protected function perPage(Request $request): int
     {
         return max(
             1,
-            (int) $request->input('per_page', 15)
+            min(
+                100,
+                (int) $request->input(
+                    'per_page',
+                    15
+                )
+            )
         );
     }
 
@@ -961,7 +1115,7 @@ class BookingController extends Controller
      * Return a consistent server-error response.
      *
      * Detailed exception information is exposed only in local
-     * environments. Production receives only the safe public message.
+     * environments.
      */
     protected function serverError(
         string $message,

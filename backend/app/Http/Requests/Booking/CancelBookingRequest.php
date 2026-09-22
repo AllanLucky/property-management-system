@@ -4,12 +4,12 @@ namespace App\Http\Requests\Booking;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class CancelBookingRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Determine if the authenticated user is authorized
+     * to cancel a booking.
      */
     public function authorize(): bool
     {
@@ -21,15 +21,52 @@ class CancelBookingRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'cancellation_reason' => $this->filled('cancellation_reason')
-                ? trim((string) $this->cancellation_reason)
-                : null,
+        $data = [];
 
-            'payment_reference' => $this->filled('payment_reference')
-                ? trim((string) $this->payment_reference)
-                : null,
-        ]);
+        /*
+        |--------------------------------------------------------------------------
+        | CANCELLATION REASON
+        |--------------------------------------------------------------------------
+        |
+        | Normalize whitespace while preserving the reason itself.
+        |
+        */
+
+        if ($this->has('cancellation_reason')) {
+            $reason = $this->input('cancellation_reason');
+
+            $data['cancellation_reason'] = $reason === null
+                ? null
+                : trim((string) $reason);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENT REFERENCE
+        |--------------------------------------------------------------------------
+        |
+        | Optional reference supplied when the cancellation is related to
+        | an existing payment transaction.
+        |
+        */
+
+        if ($this->has('payment_reference')) {
+            $reference = $this->input('payment_reference');
+
+            $data['payment_reference'] = $reference === null
+                ? null
+                : trim((string) $reference);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | MERGE NORMALIZED VALUES
+        |--------------------------------------------------------------------------
+        */
+
+        if (!empty($data)) {
+            $this->merge($data);
+        }
     }
 
     /**
@@ -40,12 +77,13 @@ class CancelBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | CANCELLATION REASON
             |--------------------------------------------------------------------------
             |
-            | A cancellation should always have an audit-friendly reason.
+            | Every cancellation must contain a meaningful audit-friendly reason.
             |
             */
 
@@ -58,15 +96,15 @@ class CancelBookingRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | REFUND / PAYMENT INFORMATION
+            | PAYMENT REFERENCE
             |--------------------------------------------------------------------------
             |
-            | These fields are optional because not every cancelled booking
-            | will have a payment or refund.
+            | Optional because a booking may not have an associated payment.
             |
             */
 
             'payment_reference' => [
+                'sometimes',
                 'nullable',
                 'string',
                 'max:150',
@@ -77,10 +115,10 @@ class CancelBookingRequest extends FormRequest
             | REFUND AMOUNT
             |--------------------------------------------------------------------------
             |
-            | The service should determine the actual refundable amount.
-            | This field is therefore intentionally prohibited from the
-            | cancellation request to prevent client-side financial
-            | manipulation.
+            | The frontend must never determine the refund amount.
+            |
+            | Refund eligibility and amount are calculated by the service/
+            | payment workflow.
             |
             */
 
@@ -93,7 +131,8 @@ class CancelBookingRequest extends FormRequest
             | BOOKING STATUS
             |--------------------------------------------------------------------------
             |
-            | Status must be changed by BookingService.
+            | The service is responsible for changing the booking status
+            | to "cancelled".
             |
             */
 
@@ -110,12 +149,223 @@ class CancelBookingRequest extends FormRequest
             | PAYMENT STATUS
             |--------------------------------------------------------------------------
             |
-            | Payment state should be calculated/updated by the service
-            | according to the cancellation and refund workflow.
+            | Payment status is controlled internally.
             |
             */
 
             'payment_status' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | REFUND WORKFLOW
+            |--------------------------------------------------------------------------
+            |
+            | These values must be generated by the backend.
+            |
+            */
+
+            'refunded_at' => [
+                'prohibited',
+            ],
+
+            'refund_reference' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | PROTECTED BOOKING FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | Cancellation should be a dedicated workflow rather than allowing
+            | the frontend to modify booking data at the same time.
+            |
+            */
+
+            'booking_number' => [
+                'prohibited',
+            ],
+
+            'reference' => [
+                'prohibited',
+            ],
+
+            'slug' => [
+                'prohibited',
+            ],
+
+            'user_id' => [
+                'prohibited',
+            ],
+
+            'customer_id' => [
+                'prohibited',
+            ],
+
+            'tenant_id' => [
+                'prohibited',
+            ],
+
+            'property_id' => [
+                'prohibited',
+            ],
+
+            'apartment_id' => [
+                'prohibited',
+            ],
+
+            'unit_id' => [
+                'prohibited',
+            ],
+
+            'tenancy_id' => [
+                'prohibited',
+            ],
+
+            'booking_type' => [
+                'prohibited',
+            ],
+
+            'source' => [
+                'prohibited',
+            ],
+
+            'booking_date' => [
+                'prohibited',
+            ],
+
+            'start_date' => [
+                'prohibited',
+            ],
+
+            'end_date' => [
+                'prohibited',
+            ],
+
+            'check_in_date' => [
+                'prohibited',
+            ],
+
+            'check_out_date' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | CUSTOMER SNAPSHOT
+            |--------------------------------------------------------------------------
+            |
+            | Customer information must not be changed as part of cancellation.
+            |
+            */
+
+            'first_name' => [
+                'prohibited',
+            ],
+
+            'last_name' => [
+                'prohibited',
+            ],
+
+            'email' => [
+                'prohibited',
+            ],
+
+            'phone' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | FINANCIAL FIELDS
+            |--------------------------------------------------------------------------
+            |
+            | These remain controlled by the booking/payment workflow.
+            |
+            */
+
+            'rent_amount' => [
+                'prohibited',
+            ],
+
+            'deposit_amount' => [
+                'prohibited',
+            ],
+
+            'service_charge' => [
+                'prohibited',
+            ],
+
+            'booking_fee' => [
+                'prohibited',
+            ],
+
+            'discount_amount' => [
+                'prohibited',
+            ],
+
+            'total_amount' => [
+                'prohibited',
+            ],
+
+            'amount_paid' => [
+                'prohibited',
+            ],
+
+            'balance' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | OCCUPANCY
+            |--------------------------------------------------------------------------
+            */
+
+            'number_of_adults' => [
+                'prohibited',
+            ],
+
+            'number_of_children' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | NOTES / REQUESTS
+            |--------------------------------------------------------------------------
+            */
+
+            'special_requests' => [
+                'prohibited',
+            ],
+
+            'notes' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENT METHOD
+            |--------------------------------------------------------------------------
+            */
+
+            'payment_method' => [
+                'prohibited',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | WORKFLOW REASONS
+            |--------------------------------------------------------------------------
+            |
+            | Cancellation has its own reason field.
+            |
+            */
+
+            'rejection_reason' => [
                 'prohibited',
             ],
         ];
@@ -129,8 +379,18 @@ class CancelBookingRequest extends FormRequest
     public function messages(): array
     {
         return [
+
+            /*
+            |--------------------------------------------------------------------------
+            | CANCELLATION
+            |--------------------------------------------------------------------------
+            */
+
             'cancellation_reason.required' =>
                 'Please provide a reason for cancelling this booking.',
+
+            'cancellation_reason.string' =>
+                'The cancellation reason must be valid text.',
 
             'cancellation_reason.min' =>
                 'The cancellation reason must contain at least 3 characters.',
@@ -138,11 +398,38 @@ class CancelBookingRequest extends FormRequest
             'cancellation_reason.max' =>
                 'The cancellation reason may not exceed 5000 characters.',
 
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENT
+            |--------------------------------------------------------------------------
+            */
+
+            'payment_reference.string' =>
+                'The payment reference must be valid text.',
+
             'payment_reference.max' =>
                 'The payment reference may not exceed 150 characters.',
 
+            /*
+            |--------------------------------------------------------------------------
+            | REFUND
+            |--------------------------------------------------------------------------
+            */
+
             'refund_amount.prohibited' =>
                 'Refund amount must be determined by the booking service.',
+
+            'refunded_at.prohibited' =>
+                'Refund date is generated automatically.',
+
+            'refund_reference.prohibited' =>
+                'Refund reference is generated automatically.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | STATUS / WORKFLOW
+            |--------------------------------------------------------------------------
+            */
 
             'status.prohibited' =>
                 'Booking status cannot be changed directly during cancellation.',
@@ -152,6 +439,153 @@ class CancelBookingRequest extends FormRequest
 
             'payment_status.prohibited' =>
                 'Payment status cannot be changed directly during cancellation.',
+
+            'rejection_reason.prohibited' =>
+                'Rejection reason cannot be supplied during cancellation.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | PROTECTED BOOKING DATA
+            |--------------------------------------------------------------------------
+            */
+
+            'booking_number.prohibited' =>
+                'Booking number cannot be changed during cancellation.',
+
+            'reference.prohibited' =>
+                'Booking reference cannot be changed during cancellation.',
+
+            'slug.prohibited' =>
+                'Booking slug cannot be changed during cancellation.',
+
+            'user_id.prohibited' =>
+                'Booking user cannot be changed during cancellation.',
+
+            'customer_id.prohibited' =>
+                'Booking customer cannot be changed during cancellation.',
+
+            'tenant_id.prohibited' =>
+                'Booking tenant cannot be changed during cancellation.',
+
+            'property_id.prohibited' =>
+                'Booking property cannot be changed during cancellation.',
+
+            'apartment_id.prohibited' =>
+                'Booking apartment cannot be changed during cancellation.',
+
+            'unit_id.prohibited' =>
+                'Booking unit cannot be changed during cancellation.',
+
+            'tenancy_id.prohibited' =>
+                'Booking tenancy cannot be changed during cancellation.',
+
+            'booking_type.prohibited' =>
+                'Booking type cannot be changed during cancellation.',
+
+            'source.prohibited' =>
+                'Booking source cannot be changed during cancellation.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | DATES
+            |--------------------------------------------------------------------------
+            */
+
+            'booking_date.prohibited' =>
+                'Booking date cannot be changed during cancellation.',
+
+            'start_date.prohibited' =>
+                'Booking start date cannot be changed during cancellation.',
+
+            'end_date.prohibited' =>
+                'Booking end date cannot be changed during cancellation.',
+
+            'check_in_date.prohibited' =>
+                'Check-in date cannot be changed during cancellation.',
+
+            'check_out_date.prohibited' =>
+                'Check-out date cannot be changed during cancellation.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | CUSTOMER
+            |--------------------------------------------------------------------------
+            */
+
+            'first_name.prohibited' =>
+                'Customer information cannot be changed during cancellation.',
+
+            'last_name.prohibited' =>
+                'Customer information cannot be changed during cancellation.',
+
+            'email.prohibited' =>
+                'Customer information cannot be changed during cancellation.',
+
+            'phone.prohibited' =>
+                'Customer information cannot be changed during cancellation.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | FINANCIAL
+            |--------------------------------------------------------------------------
+            */
+
+            'rent_amount.prohibited' =>
+                'Booking financial details cannot be changed during cancellation.',
+
+            'deposit_amount.prohibited' =>
+                'Booking financial details cannot be changed during cancellation.',
+
+            'service_charge.prohibited' =>
+                'Booking financial details cannot be changed during cancellation.',
+
+            'booking_fee.prohibited' =>
+                'Booking financial details cannot be changed during cancellation.',
+
+            'discount_amount.prohibited' =>
+                'Booking financial details cannot be changed during cancellation.',
+
+            'total_amount.prohibited' =>
+                'Total amount is controlled by the booking service.',
+
+            'amount_paid.prohibited' =>
+                'Paid amount is controlled by the payment workflow.',
+
+            'balance.prohibited' =>
+                'Booking balance is controlled by the booking service.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | OCCUPANCY
+            |--------------------------------------------------------------------------
+            */
+
+            'number_of_adults.prohibited' =>
+                'Guest information cannot be changed during cancellation.',
+
+            'number_of_children.prohibited' =>
+                'Guest information cannot be changed during cancellation.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | NOTES / REQUESTS
+            |--------------------------------------------------------------------------
+            */
+
+            'special_requests.prohibited' =>
+                'Special requests cannot be changed during cancellation.',
+
+            'notes.prohibited' =>
+                'Booking notes cannot be changed during cancellation.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENT METHOD
+            |--------------------------------------------------------------------------
+            */
+
+            'payment_method.prohibited' =>
+                'Payment method cannot be changed during cancellation.',
         ];
     }
 
@@ -168,6 +602,12 @@ class CancelBookingRequest extends FormRequest
      */
     public function paymentReference(): ?string
     {
-        return $this->validated('payment_reference');
+        $reference = $this->validated('payment_reference');
+
+        if ($reference === null || $reference === '') {
+            return null;
+        }
+
+        return (string) $reference;
     }
 }
