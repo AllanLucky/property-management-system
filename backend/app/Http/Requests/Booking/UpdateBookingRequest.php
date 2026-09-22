@@ -31,13 +31,13 @@ class UpdateBookingRequest extends FormRequest
 
         if ($this->has('booking_type')) {
             $data['booking_type'] = $this->filled('booking_type')
-                ? strtolower(trim((string) $this->booking_type))
+                ? strtolower(trim((string) $this->input('booking_type')))
                 : null;
         }
 
         if ($this->has('source')) {
             $data['source'] = $this->filled('source')
-                ? strtolower(trim((string) $this->source))
+                ? strtolower(trim((string) $this->input('source')))
                 : null;
         }
 
@@ -49,25 +49,25 @@ class UpdateBookingRequest extends FormRequest
 
         if ($this->has('first_name')) {
             $data['first_name'] = $this->filled('first_name')
-                ? trim((string) $this->first_name)
+                ? trim((string) $this->input('first_name'))
                 : null;
         }
 
         if ($this->has('last_name')) {
             $data['last_name'] = $this->filled('last_name')
-                ? trim((string) $this->last_name)
+                ? trim((string) $this->input('last_name'))
                 : null;
         }
 
         if ($this->has('email')) {
             $data['email'] = $this->filled('email')
-                ? strtolower(trim((string) $this->email))
+                ? strtolower(trim((string) $this->input('email')))
                 : null;
         }
 
         if ($this->has('phone')) {
             $data['phone'] = $this->filled('phone')
-                ? trim((string) $this->phone)
+                ? trim((string) $this->input('phone'))
                 : null;
         }
 
@@ -84,8 +84,12 @@ class UpdateBookingRequest extends FormRequest
             'check_in_date',
             'check_out_date',
         ] as $field) {
-            if ($this->has($field) && $this->filled($field)) {
-                $data[$field] = trim((string) $this->{$field});
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                $data[$field] = $value !== null && $value !== ''
+                    ? trim((string) $value)
+                    : null;
             }
         }
 
@@ -97,13 +101,13 @@ class UpdateBookingRequest extends FormRequest
 
         if ($this->has('special_requests')) {
             $data['special_requests'] = $this->filled('special_requests')
-                ? trim((string) $this->special_requests)
+                ? trim((string) $this->input('special_requests'))
                 : null;
         }
 
         if ($this->has('notes')) {
             $data['notes'] = $this->filled('notes')
-                ? trim((string) $this->notes)
+                ? trim((string) $this->input('notes'))
                 : null;
         }
 
@@ -115,14 +119,108 @@ class UpdateBookingRequest extends FormRequest
 
         if ($this->has('payment_method')) {
             $data['payment_method'] = $this->filled('payment_method')
-                ? strtolower(trim((string) $this->payment_method))
+                ? strtolower(trim((string) $this->input('payment_method')))
                 : null;
         }
 
         if ($this->has('payment_reference')) {
             $data['payment_reference'] = $this->filled('payment_reference')
-                ? trim((string) $this->payment_reference)
+                ? trim((string) $this->input('payment_reference'))
                 : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | NUMERIC OCCUPANCY VALUES
+        |--------------------------------------------------------------------------
+        |
+        | These are COUNTS, not foreign keys / IDs.
+        |
+        | Example:
+        | number_of_adults   = 2
+        | number_of_children = 0
+        |
+        */
+
+        foreach ([
+            'number_of_adults',
+            'number_of_children',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                /*
+                 * Preserve null if explicitly supplied.
+                 * Otherwise normalize numeric strings to integers.
+                 */
+                if ($value === null || $value === '') {
+                    $data[$field] = null;
+                } elseif (is_numeric($value)) {
+                    $data[$field] = (int) $value;
+                }
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | INTEGER RELATIONSHIP IDS
+        |--------------------------------------------------------------------------
+        |
+        | Normalize IDs only for actual relationship fields.
+        |
+        | IMPORTANT:
+        | number_of_adults and number_of_children are NOT IDs.
+        |
+        */
+
+        foreach ([
+            'customer_id',
+            'tenant_id',
+            'property_id',
+            'apartment_id',
+            'unit_id',
+            'tenancy_id',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                if ($value === null || $value === '') {
+                    $data[$field] = null;
+                } elseif (is_numeric($value)) {
+                    $data[$field] = (int) $value;
+                }
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | FINANCIAL VALUES
+        |--------------------------------------------------------------------------
+        |
+        | Normalize supplied component amounts.
+        |
+        | total_amount and balance are intentionally NOT normalized because
+        | they are server-calculated and prohibited below.
+        |
+        */
+
+        foreach ([
+            'rent_amount',
+            'deposit_amount',
+            'service_charge',
+            'booking_fee',
+            'discount_amount',
+            'amount_paid',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                if ($value === null || $value === '') {
+                    $data[$field] = null;
+                } elseif (is_numeric($value)) {
+                    $data[$field] = round((float) $value, 2);
+                }
+            }
         }
 
         /*
@@ -149,13 +247,6 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | USER / CUSTOMER / TENANT
             |--------------------------------------------------------------------------
-            |
-            | user_id identifies the authenticated creator/owner of the booking.
-            | It must never be changed through a normal update.
-            |
-            | customer_id identifies the customer user account.
-            | tenant_id identifies the tenant profile.
-            |
             */
 
             'user_id' => [
@@ -166,6 +257,7 @@ class UpdateBookingRequest extends FormRequest
                 'sometimes',
                 'nullable',
                 'integer',
+                'min:1',
                 'exists:users,id',
             ],
 
@@ -173,6 +265,7 @@ class UpdateBookingRequest extends FormRequest
                 'sometimes',
                 'nullable',
                 'integer',
+                'min:1',
                 'exists:tenants,id',
             ],
 
@@ -185,6 +278,7 @@ class UpdateBookingRequest extends FormRequest
             'property_id' => [
                 'sometimes',
                 'integer',
+                'min:1',
                 'exists:properties,id',
             ],
 
@@ -192,12 +286,14 @@ class UpdateBookingRequest extends FormRequest
                 'sometimes',
                 'nullable',
                 'integer',
+                'min:1',
                 'exists:apartments,id',
             ],
 
             'unit_id' => [
                 'sometimes',
                 'integer',
+                'min:1',
                 'exists:units,id',
             ],
 
@@ -205,16 +301,13 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | TENANCY
             |--------------------------------------------------------------------------
-            |
-            | A tenancy can be attached or detached when permitted by the
-            | BookingService/business workflow.
-            |
             */
 
             'tenancy_id' => [
                 'sometimes',
                 'nullable',
                 'integer',
+                'min:1',
                 'exists:tenancies,id',
             ],
 
@@ -252,8 +345,7 @@ class UpdateBookingRequest extends FormRequest
             | STATUS / WORKFLOW
             |--------------------------------------------------------------------------
             |
-            | Booking status must be changed through dedicated workflow
-            | actions such as confirm, approve, reject, cancel, complete, etc.
+            | These values must be changed through dedicated workflow endpoints.
             |
             */
 
@@ -285,10 +377,6 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | PAYMENT STATUS
             |--------------------------------------------------------------------------
-            |
-            | Payment status belongs to the payment workflow and should not be
-            | manually changed through the general booking update endpoint.
-            |
             */
 
             'payment_status' => [
@@ -337,13 +425,6 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
-            |
-            | These fields are useful for walk-in/unregistered customers and
-            | historical booking snapshots.
-            |
-            | When customer_id is supplied, BookingService should normally
-            | synchronize these values from the selected User.
-            |
             */
 
             'first_name' => [
@@ -378,15 +459,11 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | FINANCIAL INFORMATION
             |--------------------------------------------------------------------------
-            |
-            | Component amounts may be changed.
-            |
-            | total_amount and balance are ALWAYS calculated by BookingService.
-            |
             */
 
             'rent_amount' => [
                 'sometimes',
+                'nullable',
                 'numeric',
                 'min:0',
                 'max:999999999999.99',
@@ -394,6 +471,7 @@ class UpdateBookingRequest extends FormRequest
 
             'deposit_amount' => [
                 'sometimes',
+                'nullable',
                 'numeric',
                 'min:0',
                 'max:999999999999.99',
@@ -401,6 +479,7 @@ class UpdateBookingRequest extends FormRequest
 
             'service_charge' => [
                 'sometimes',
+                'nullable',
                 'numeric',
                 'min:0',
                 'max:999999999999.99',
@@ -408,6 +487,7 @@ class UpdateBookingRequest extends FormRequest
 
             'booking_fee' => [
                 'sometimes',
+                'nullable',
                 'numeric',
                 'min:0',
                 'max:999999999999.99',
@@ -415,6 +495,7 @@ class UpdateBookingRequest extends FormRequest
 
             'discount_amount' => [
                 'sometimes',
+                'nullable',
                 'numeric',
                 'min:0',
                 'max:999999999999.99',
@@ -422,6 +503,7 @@ class UpdateBookingRequest extends FormRequest
 
             'amount_paid' => [
                 'sometimes',
+                'nullable',
                 'numeric',
                 'min:0',
                 'max:999999999999.99',
@@ -445,10 +527,23 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | OCCUPANCY
             |--------------------------------------------------------------------------
+            |
+            | IMPORTANT:
+            | These are integer COUNTS.
+            |
+            | number_of_adults:
+            |   1 - 100
+            |
+            | number_of_children:
+            |   0 - 100
+            |
+            | There is intentionally NO exists rule here.
+            |
             */
 
             'number_of_adults' => [
                 'sometimes',
+                'nullable',
                 'integer',
                 'min:1',
                 'max:100',
@@ -456,6 +551,7 @@ class UpdateBookingRequest extends FormRequest
 
             'number_of_children' => [
                 'sometimes',
+                'nullable',
                 'integer',
                 'min:0',
                 'max:100',
@@ -485,9 +581,6 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | REJECTION / CANCELLATION
             |--------------------------------------------------------------------------
-            |
-            | These fields are controlled by dedicated workflow actions.
-            |
             */
 
             'rejection_reason' => [
@@ -526,9 +619,6 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | GENERATED IDENTIFIERS
             |--------------------------------------------------------------------------
-            |
-            | These identifiers are immutable.
-            |
             */
 
             'booking_number' => [
@@ -586,20 +676,38 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
 
+            'customer_id.integer' =>
+                'The selected customer ID must be a valid integer.',
+
             'customer_id.exists' =>
                 'The selected customer does not exist.',
+
+            'tenant_id.integer' =>
+                'The selected tenant ID must be a valid integer.',
 
             'tenant_id.exists' =>
                 'The selected tenant does not exist.',
 
+            'property_id.integer' =>
+                'The selected property ID must be a valid integer.',
+
             'property_id.exists' =>
                 'The selected property does not exist.',
+
+            'apartment_id.integer' =>
+                'The selected apartment ID must be a valid integer.',
 
             'apartment_id.exists' =>
                 'The selected apartment does not exist.',
 
+            'unit_id.integer' =>
+                'The selected unit ID must be a valid integer.',
+
             'unit_id.exists' =>
                 'The selected unit does not exist.',
+
+            'tenancy_id.integer' =>
+                'The selected tenancy ID must be a valid integer.',
 
             'tenancy_id.exists' =>
                 'The selected tenancy does not exist.',
@@ -622,8 +730,23 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
 
+            'booking_date.date' =>
+                'The booking date must be a valid date.',
+
+            'start_date.date' =>
+                'The booking start date must be a valid date.',
+
+            'end_date.date' =>
+                'The booking end date must be a valid date.',
+
             'end_date.after_or_equal' =>
                 'The booking end date must be on or after the start date.',
+
+            'check_in_date.date' =>
+                'The check-in date must be a valid date.',
+
+            'check_out_date.date' =>
+                'The check-out date must be a valid date.',
 
             'check_out_date.after_or_equal' =>
                 'The check-out date must be on or after the check-in date.',
@@ -634,14 +757,56 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
 
+            'rent_amount.numeric' =>
+                'Rent amount must be a valid number.',
+
+            'deposit_amount.numeric' =>
+                'Deposit amount must be a valid number.',
+
+            'service_charge.numeric' =>
+                'Service charge must be a valid number.',
+
+            'booking_fee.numeric' =>
+                'Booking fee must be a valid number.',
+
+            'discount_amount.numeric' =>
+                'Discount amount must be a valid number.',
+
+            'amount_paid.numeric' =>
+                'Amount paid must be a valid number.',
+
+            'amount_paid.max' =>
+                'The amount paid exceeds the maximum allowed value.',
+
             'total_amount.prohibited' =>
                 'Total amount is calculated automatically and cannot be changed directly.',
 
             'balance.prohibited' =>
                 'Balance is calculated automatically and cannot be changed directly.',
 
-            'amount_paid.max' =>
-                'The amount paid exceeds the maximum allowed value.',
+            /*
+            |--------------------------------------------------------------------------
+            | OCCUPANCY
+            |--------------------------------------------------------------------------
+            */
+
+            'number_of_adults.integer' =>
+                'Number of adults must be a valid whole number.',
+
+            'number_of_adults.min' =>
+                'Number of adults must be at least 1.',
+
+            'number_of_adults.max' =>
+                'Number of adults cannot exceed 100.',
+
+            'number_of_children.integer' =>
+                'Number of children must be a valid whole number.',
+
+            'number_of_children.min' =>
+                'Number of children cannot be less than 0.',
+
+            'number_of_children.max' =>
+                'Number of children cannot exceed 100.',
 
             /*
             |--------------------------------------------------------------------------
