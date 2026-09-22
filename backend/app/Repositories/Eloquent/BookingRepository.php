@@ -29,16 +29,9 @@ class BookingRepository implements BookingRepositoryInterface
     protected const DEFAULT_PER_PAGE = 15;
 
     /**
-     * Booking statuses that do not block unit availability.
-     */
-    protected const NON_BLOCKING_STATUSES = [
-        Booking::STATUS_CANCELLED,
-        Booking::STATUS_REJECTED,
-        Booking::STATUS_EXPIRED,
-    ];
-
-    /**
-     * Booking statuses considered active/occupying a booking period.
+     * Booking statuses that actively block unit availability.
+     *
+     * Only these statuses should reserve a unit for a booking period.
      */
     protected const ACTIVE_STATUSES = [
         Booking::STATUS_PENDING,
@@ -148,7 +141,10 @@ class BookingRepository implements BookingRepositoryInterface
 
         $query = $this->query();
 
-        $this->applyFilters($query, $filters);
+        $this->applyFilters(
+            $query,
+            $filters
+        );
 
         return $query
             ->latest('id')
@@ -728,6 +724,13 @@ class BookingRepository implements BookingRepositoryInterface
 
     /**
      * Determine whether a unit has an overlapping booking.
+     *
+     * IMPORTANT:
+     *
+     * During an update, the current booking ID is passed through
+     * $exceptBookingId so the booking does not conflict with itself.
+     *
+     * Only pending, confirmed and approved bookings block availability.
      */
     public function hasOverlappingBooking(
         int $unitId,
@@ -737,13 +740,37 @@ class BookingRepository implements BookingRepositoryInterface
     ): bool {
         $query = Booking::query()
             ->where('unit_id', $unitId)
-            ->whereNotIn(
+
+            /*
+             * Only active booking statuses block availability.
+             */
+            ->whereIn(
                 'status',
-                self::NON_BLOCKING_STATUSES
+                self::ACTIVE_STATUSES
             )
+
+            /*
+             * Ignore soft-deleted bookings.
+             *
+             * Booking::query() already excludes them, but keeping this
+             * explicit makes the availability rule obvious.
+             */
             ->whereNull('deleted_at')
+
+            /*
+             * A booking must have both dates to participate in
+             * overlap validation.
+             */
             ->whereNotNull('start_date')
             ->whereNotNull('end_date')
+
+            /*
+             * Standard date-range overlap:
+             *
+             * Existing start <= requested end
+             * AND
+             * Existing end >= requested start
+             */
             ->whereDate(
                 'start_date',
                 '<=',
@@ -755,6 +782,12 @@ class BookingRepository implements BookingRepositoryInterface
                 $startDate
             );
 
+        /*
+         * CRITICAL:
+         *
+         * When editing booking #5, for example, do not allow booking #5
+         * itself to be detected as an overlapping booking.
+         */
         if ($exceptBookingId !== null) {
             $query->where(
                 'id',
@@ -768,6 +801,8 @@ class BookingRepository implements BookingRepositoryInterface
 
     /**
      * Get units available for the requested period.
+     *
+     * The current booking is excluded when $exceptBookingId is supplied.
      */
     public function getAvailableUnits(
         string $startDate,
@@ -812,6 +847,8 @@ class BookingRepository implements BookingRepositoryInterface
 
         /*
          * Exclude units with overlapping active bookings.
+         *
+         * The current booking is excluded during edit operations.
          */
         $query->whereDoesntHave(
             'bookings',
@@ -821,9 +858,9 @@ class BookingRepository implements BookingRepositoryInterface
                 $exceptBookingId
             ) {
                 $booking
-                    ->whereNotIn(
+                    ->whereIn(
                         'status',
-                        self::NON_BLOCKING_STATUSES
+                        self::ACTIVE_STATUSES
                     )
                     ->whereNotNull('start_date')
                     ->whereNotNull('end_date')
@@ -838,6 +875,12 @@ class BookingRepository implements BookingRepositoryInterface
                         $startDate
                     );
 
+                /*
+                 * CRITICAL:
+                 *
+                 * Do not let the current booking make its own unit
+                 * appear unavailable while editing.
+                 */
                 if ($exceptBookingId !== null) {
                     $booking->where(
                         'id',
@@ -1065,8 +1108,6 @@ class BookingRepository implements BookingRepositoryInterface
 
         /*
          * Booking type breakdown.
-         *
-         * Booking::TYPES is the canonical model constant.
          */
         $typeBreakdown = [];
 
