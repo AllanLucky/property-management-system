@@ -63,29 +63,11 @@ const safeArray = (value) => {
 
 /**
  * Extract the actual API payload.
- *
- * EstateKenya responses commonly use:
- *
- * {
- *   status,
- *   code,
- *   message,
- *   data,
- *   meta,
- *   links,
- *   errors
- * }
  */
 const extractResponseData = (response) => {
   if (!response) {
     return {};
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Axios response
-  |--------------------------------------------------------------------------
-  */
 
   const axiosData = response?.data;
 
@@ -94,12 +76,6 @@ const extractResponseData = (response) => {
     typeof axiosData === "object" &&
     !Array.isArray(axiosData)
   ) {
-    /*
-    |----------------------------------------------------------------------
-    | Laravel API envelope
-    |----------------------------------------------------------------------
-    */
-
     if (
       Object.prototype.hasOwnProperty.call(
         axiosData,
@@ -111,12 +87,6 @@ const extractResponseData = (response) => {
 
     return axiosData;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Already-normalized response
-  |--------------------------------------------------------------------------
-  */
 
   if (
     response &&
@@ -181,11 +151,13 @@ const extractValidationErrors = (error) => {
 };
 
 /**
- * Normalize an ID from:
+ * Normalize an ID.
  *
- * - primitive
- * - option object
- * - nested option object
+ * Supports:
+ * - primitive IDs
+ * - select option objects
+ * - Laravel relationship objects
+ * - nested relationship IDs
  */
 const getId = (value) => {
   if (
@@ -246,8 +218,12 @@ const normalizeOptions = (value) => {
 /**
  * Find an item by ID.
  */
-const findById = (collection, id) => {
-  const normalizedId = getId(id);
+const findById = (
+  collection,
+  id
+) => {
+  const normalizedId =
+    getId(id);
 
   if (!normalizedId) {
     return null;
@@ -256,16 +232,14 @@ const findById = (collection, id) => {
   return (
     collection.find(
       (item) =>
-        getId(item) === normalizedId
+        getId(item) ===
+        normalizedId
     ) || null
   );
 };
 
 /**
- * Convert an amount into a clean API value.
- *
- * Keeps empty values empty and converts numeric strings
- * to numbers.
+ * Convert numeric amounts to clean API values.
  */
 const normalizeAmount = (value) => {
   if (
@@ -276,11 +250,37 @@ const normalizeAmount = (value) => {
     return undefined;
   }
 
-  const number = Number(value);
+  const number =
+    Number(value);
 
   return Number.isFinite(number)
     ? number
     : value;
+};
+
+/**
+ * Convert guest count to an integer.
+ */
+const normalizeGuestCount = (
+  value,
+  fallback = undefined
+) => {
+  if (
+    value === "" ||
+    value === null ||
+    value === undefined
+  ) {
+    return fallback;
+  }
+
+  const number =
+    Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.trunc(number);
 };
 
 /*
@@ -322,6 +322,10 @@ const INITIAL_VALUES = {
   |--------------------------------------------------------------------------
   | Financials
   |--------------------------------------------------------------------------
+  |
+  | total_amount is displayed by BookingForm but is NOT submitted.
+  | Laravel calculates it automatically.
+  |--------------------------------------------------------------------------
   */
 
   rent_amount: "",
@@ -334,6 +338,10 @@ const INITIAL_VALUES = {
   /*
   |--------------------------------------------------------------------------
   | Payment
+  |--------------------------------------------------------------------------
+  |
+  | payment_status is displayed by BookingForm but is NOT submitted.
+  | Laravel calculates/manages it through the payment workflow.
   |--------------------------------------------------------------------------
   */
 
@@ -348,17 +356,17 @@ const INITIAL_VALUES = {
   |--------------------------------------------------------------------------
   */
 
-  adults: "1",
-  children: "0",
+  number_of_adults: "1",
+  number_of_children: "0",
 
   /*
   |--------------------------------------------------------------------------
-  | Check-in / Check-out
+  | Dates
   |--------------------------------------------------------------------------
   */
 
-  check_in_at: "",
-  check_out_at: "",
+  check_in_date: "",
+  check_out_date: "",
 
   /*
   |--------------------------------------------------------------------------
@@ -366,7 +374,7 @@ const INITIAL_VALUES = {
   |--------------------------------------------------------------------------
   */
 
-  special_request: "",
+  special_requests: "",
   notes: "",
 };
 
@@ -457,21 +465,23 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const hookAvailableUnits = useMemo(
-    () =>
-      normalizeOptions(
-        availableUnits
-      ),
-    [availableUnits]
-  );
+  const hookAvailableUnits =
+    useMemo(
+      () =>
+        normalizeOptions(
+          availableUnits
+        ),
+      [availableUnits]
+    );
 
-  const hookAvailableUsers = useMemo(
-    () =>
-      normalizeOptions(
-        availableUsers
-      ),
-    [availableUsers]
-  );
+  const hookAvailableUsers =
+    useMemo(
+      () =>
+        normalizeOptions(
+          availableUsers
+        ),
+      [availableUsers]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -479,27 +489,29 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const effectiveUnits = useMemo(
-    () =>
-      hookAvailableUnits.length > 0
-        ? hookAvailableUnits
-        : units,
-    [
-      hookAvailableUnits,
-      units,
-    ]
-  );
+  const effectiveUnits =
+    useMemo(
+      () =>
+        hookAvailableUnits.length > 0
+          ? hookAvailableUnits
+          : units,
+      [
+        hookAvailableUnits,
+        units,
+      ]
+    );
 
-  const effectiveCustomers = useMemo(
-    () =>
-      hookAvailableUsers.length > 0
-        ? hookAvailableUsers
-        : customers,
-    [
-      hookAvailableUsers,
-      customers,
-    ]
-  );
+  const effectiveCustomers =
+    useMemo(
+      () =>
+        hookAvailableUsers.length > 0
+          ? hookAvailableUsers
+          : customers,
+      [
+        hookAvailableUsers,
+        customers,
+      ]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -517,7 +529,9 @@ const CreateBooking = () => {
           await getAvailableUsers();
 
         const data =
-          extractResponseData(response);
+          extractResponseData(
+            response
+          );
 
         /*
         |--------------------------------------------------------------------------
@@ -528,8 +542,8 @@ const CreateBooking = () => {
         const users =
           normalizeOptions(
             data?.users ??
-              data?.customers ??
-              data
+            data?.customers ??
+            data
           );
 
         setCustomers(users);
@@ -622,10 +636,14 @@ const CreateBooking = () => {
 
     setForm((current) => ({
       ...current,
-      property_id: propertyId,
+
+      property_id:
+        propertyId,
+
       apartment_id: "",
       unit_id: "",
       tenancy_id: "",
+
       rent_amount: "",
       total_amount: "",
     }));
@@ -642,8 +660,7 @@ const CreateBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | If the selected property already contains apartments,
-    | use them immediately.
+    | Use nested property apartments immediately
     |--------------------------------------------------------------------------
     */
 
@@ -702,9 +719,13 @@ const CreateBooking = () => {
 
     setForm((current) => ({
       ...current,
-      apartment_id: apartmentId,
+
+      apartment_id:
+        apartmentId,
+
       unit_id: "",
       tenancy_id: "",
+
       rent_amount: "",
       total_amount: "",
     }));
@@ -713,8 +734,7 @@ const CreateBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | If the selected apartment already contains units,
-    | use them immediately.
+    | Use nested apartment units immediately
     |--------------------------------------------------------------------------
     */
 
@@ -732,7 +752,9 @@ const CreateBooking = () => {
     if (
       apartmentUnits.length > 0
     ) {
-      setUnits(apartmentUnits);
+      setUnits(
+        apartmentUnits
+      );
     }
 
     /*
@@ -777,12 +799,14 @@ const CreateBooking = () => {
     setForm((current) => {
       const next = {
         ...current,
-        unit_id: unitId,
+
+        unit_id:
+          unitId,
       };
 
       /*
       |--------------------------------------------------------------------------
-      | Automatically use unit price when rent is empty.
+      | Automatically use unit price when rent is empty
       |--------------------------------------------------------------------------
       */
 
@@ -813,14 +837,14 @@ const CreateBooking = () => {
 
       /*
       |--------------------------------------------------------------------------
-      | Automatically use tenancy if supplied by unit
+      | Automatically use tenancy supplied by unit
       |--------------------------------------------------------------------------
       */
 
       const tenancyId =
         getId(
           selectedUnit?.tenancy_id ??
-            selectedUnit?.active_tenancy_id
+          selectedUnit?.active_tenancy_id
         );
 
       if (
@@ -874,8 +898,11 @@ const CreateBooking = () => {
       typeof eventOrField ===
       "string"
     ) {
-      name = eventOrField;
-      value = maybeValue;
+      name =
+        eventOrField;
+
+      value =
+        maybeValue;
     } else {
       name =
         eventOrField?.target?.name;
@@ -894,24 +921,39 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     */
 
-    if (name === "property_id") {
-      handlePropertyChange(value);
+    if (
+      name === "property_id"
+    ) {
+      handlePropertyChange(
+        value
+      );
+
       return;
     }
 
-    if (name === "apartment_id") {
-      handleApartmentChange(value);
+    if (
+      name === "apartment_id"
+    ) {
+      handleApartmentChange(
+        value
+      );
+
       return;
     }
 
-    if (name === "unit_id") {
-      handleUnitChange(value);
+    if (
+      name === "unit_id"
+    ) {
+      handleUnitChange(
+        value
+      );
+
       return;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Normalize relationship IDs
+    | Relationship IDs
     |--------------------------------------------------------------------------
     */
 
@@ -923,13 +965,16 @@ const CreateBooking = () => {
     ];
 
     const normalizedValue =
-      relationshipFields.includes(name)
+      relationshipFields.includes(
+        name
+      )
         ? getId(value)
         : value;
 
     setForm((current) => ({
       ...current,
-      [name]: normalizedValue,
+      [name]:
+        normalizedValue,
     }));
 
     setFieldErrors((current) => {
@@ -953,13 +998,18 @@ const CreateBooking = () => {
 
   useEffect(() => {
     const propertyId =
-      getId(form.property_id);
+      getId(
+        form.property_id
+      );
 
     const apartmentId =
-      getId(form.apartment_id);
+      getId(
+        form.apartment_id
+      );
 
     if (!propertyId) {
       setUnits([]);
+
       return undefined;
     }
 
@@ -974,9 +1024,9 @@ const CreateBooking = () => {
 
             ...(apartmentId
               ? {
-                  apartment_id:
-                    apartmentId,
-                }
+                apartment_id:
+                  apartmentId,
+              }
               : {}),
           });
 
@@ -1041,9 +1091,15 @@ const CreateBooking = () => {
     */
 
     if (
-      !getId(values.customer_id) &&
-      !getId(values.user_id) &&
-      !getId(values.tenant_id)
+      !getId(
+        values.customer_id
+      ) &&
+      !getId(
+        values.user_id
+      ) &&
+      !getId(
+        values.tenant_id
+      )
     ) {
       nextErrors.customer_id =
         "Please select a customer, tenant or user.";
@@ -1055,7 +1111,11 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     */
 
-    if (!getId(values.property_id)) {
+    if (
+      !getId(
+        values.property_id
+      )
+    ) {
       nextErrors.property_id =
         "Please select a property.";
     }
@@ -1066,7 +1126,11 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     */
 
-    if (!getId(values.unit_id)) {
+    if (
+      !getId(
+        values.unit_id
+      )
+    ) {
       nextErrors.unit_id =
         "Please select a unit.";
     }
@@ -1077,7 +1141,9 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     */
 
-    if (!values.booking_type) {
+    if (
+      !values.booking_type
+    ) {
       nextErrors.booking_type =
         "Please select a booking type.";
     }
@@ -1088,7 +1154,9 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     */
 
-    if (!values.booking_date) {
+    if (
+      !values.booking_date
+    ) {
       nextErrors.booking_date =
         "Please select the booking date.";
     }
@@ -1099,7 +1167,9 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     */
 
-    if (!values.start_date) {
+    if (
+      !values.start_date
+    ) {
       nextErrors.start_date =
         "Please select the start date.";
     }
@@ -1140,7 +1210,7 @@ const CreateBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Payment Amount
+    | Amount Paid
     |--------------------------------------------------------------------------
     */
 
@@ -1150,7 +1220,9 @@ const CreateBooking = () => {
       values.amount_paid !== undefined
     ) {
       const amountPaid =
-        Number(values.amount_paid);
+        Number(
+          values.amount_paid
+        );
 
       if (
         !Number.isFinite(
@@ -1167,6 +1239,10 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     | Financial Amounts
     |--------------------------------------------------------------------------
+    |
+    | total_amount is intentionally NOT validated because it is
+    | calculated by Laravel.
+    |--------------------------------------------------------------------------
     */
 
     const financialFields = [
@@ -1175,7 +1251,6 @@ const CreateBooking = () => {
       "service_charge",
       "booking_fee",
       "discount_amount",
-      "total_amount",
     ];
 
     financialFields.forEach(
@@ -1208,45 +1283,73 @@ const CreateBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | Guests
+    | Adults
     |--------------------------------------------------------------------------
     */
 
     const adults =
-      Number(values.adults);
-
-    const children =
-      Number(values.children);
+      Number(
+        values.number_of_adults
+      );
 
     if (
-      values.adults !== "" &&
-      (!Number.isFinite(adults) ||
-        adults < 1)
+      values.number_of_adults !== "" &&
+      (
+        !Number.isFinite(adults) ||
+        adults < 1
+      )
     ) {
-      nextErrors.adults =
+      nextErrors.number_of_adults =
         "At least one adult is required.";
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Children
+    |--------------------------------------------------------------------------
+    */
+
+    const children =
+      Number(
+        values.number_of_children
+      );
+
     if (
-      values.children !== "" &&
-      (!Number.isFinite(children) ||
-        children < 0)
+      values.number_of_children !== "" &&
+      (
+        !Number.isFinite(children) ||
+        children < 0
+      )
     ) {
-      nextErrors.children =
+      nextErrors.number_of_children =
         "Children cannot be negative.";
     }
 
-    setFieldErrors(nextErrors);
+    setFieldErrors(
+      nextErrors
+    );
 
     return (
-      Object.keys(nextErrors)
-        .length === 0
+      Object.keys(
+        nextErrors
+      ).length === 0
     );
   };
 
   /*
   |--------------------------------------------------------------------------
   | Build Payload
+  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  |
+  | The backend manages:
+  | - status
+  | - payment_status
+  | - total_amount
+  | - balance
+  |
+  | Therefore these are intentionally excluded.
   |--------------------------------------------------------------------------
   */
 
@@ -1264,7 +1367,8 @@ const CreateBooking = () => {
         value !== null &&
         value !== ""
       ) {
-        payload[key] = value;
+        payload[key] =
+          value;
       }
     };
 
@@ -1276,37 +1380,51 @@ const CreateBooking = () => {
 
     appendIfValue(
       "user_id",
-      getId(values.user_id)
+      getId(
+        values.user_id
+      )
     );
 
     appendIfValue(
       "customer_id",
-      getId(values.customer_id)
+      getId(
+        values.customer_id
+      )
     );
 
     appendIfValue(
       "tenant_id",
-      getId(values.tenant_id)
+      getId(
+        values.tenant_id
+      )
     );
 
     appendIfValue(
       "tenancy_id",
-      getId(values.tenancy_id)
+      getId(
+        values.tenancy_id
+      )
     );
 
     appendIfValue(
       "property_id",
-      getId(values.property_id)
+      getId(
+        values.property_id
+      )
     );
 
     appendIfValue(
       "apartment_id",
-      getId(values.apartment_id)
+      getId(
+        values.apartment_id
+      )
     );
 
     appendIfValue(
       "unit_id",
-      getId(values.unit_id)
+      getId(
+        values.unit_id
+      )
     );
 
     /*
@@ -1342,7 +1460,29 @@ const CreateBooking = () => {
 
     /*
     |--------------------------------------------------------------------------
+    | Check-in / Check-out Dates
+    |--------------------------------------------------------------------------
+    */
+
+    appendIfValue(
+      "check_in_date",
+      values.check_in_date ||
+      values.start_date
+    );
+
+    appendIfValue(
+      "check_out_date",
+      values.check_out_date ||
+      values.end_date
+    );
+
+    /*
+    |--------------------------------------------------------------------------
     | Financials
+    |--------------------------------------------------------------------------
+    |
+    | total_amount is NOT included.
+    | Laravel calculates it automatically.
     |--------------------------------------------------------------------------
     */
 
@@ -1381,16 +1521,13 @@ const CreateBooking = () => {
       )
     );
 
-    appendIfValue(
-      "total_amount",
-      normalizeAmount(
-        values.total_amount
-      )
-    );
-
     /*
     |--------------------------------------------------------------------------
     | Payment
+    |--------------------------------------------------------------------------
+    |
+    | payment_status is NOT included.
+    | Laravel calculates/manages it.
     |--------------------------------------------------------------------------
     */
 
@@ -1399,11 +1536,6 @@ const CreateBooking = () => {
       normalizeAmount(
         values.amount_paid
       )
-    );
-
-    appendIfValue(
-      "payment_status",
-      values.payment_status
     );
 
     appendIfValue(
@@ -1420,36 +1552,28 @@ const CreateBooking = () => {
     |--------------------------------------------------------------------------
     | Guests
     |--------------------------------------------------------------------------
-    */
-
-    appendIfValue(
-      "adults",
-      values.adults === ""
-        ? ""
-        : Number(values.adults)
-    );
-
-    appendIfValue(
-      "children",
-      values.children === ""
-        ? ""
-        : Number(values.children)
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Check-in / Check-out
+    |
+    | IMPORTANT:
+    | Backend expects:
+    |
+    | number_of_adults
+    | number_of_children
     |--------------------------------------------------------------------------
     */
 
     appendIfValue(
-      "check_in_at",
-      values.check_in_at
+      "number_of_adults",
+      normalizeGuestCount(
+        values.number_of_adults
+      )
     );
 
     appendIfValue(
-      "check_out_at",
-      values.check_out_at
+      "number_of_children",
+      normalizeGuestCount(
+        values.number_of_children,
+        0
+      )
     );
 
     /*
@@ -1459,8 +1583,8 @@ const CreateBooking = () => {
     */
 
     appendIfValue(
-      "special_request",
-      values.special_request
+      "special_requests",
+      values.special_requests
     );
 
     appendIfValue(
@@ -1496,53 +1620,60 @@ const CreateBooking = () => {
 
     const submittedValues =
       eventOrValues &&
-      !eventOrValues?.target &&
-      typeof eventOrValues ===
+        !eventOrValues?.target &&
+        typeof eventOrValues ===
         "object"
         ? {
-            ...form,
-            ...eventOrValues,
-          }
+          ...form,
+          ...eventOrValues,
+        }
         : {
-            ...form,
-          };
+          ...form,
+        };
 
     /*
     |--------------------------------------------------------------------------
-    | Normalize relationship objects before validation.
+    | Normalize Relationship IDs
     |--------------------------------------------------------------------------
     */
 
     const normalizedValues = {
       ...submittedValues,
 
-      user_id: getId(
-        submittedValues.user_id
-      ),
+      user_id:
+        getId(
+          submittedValues.user_id
+        ),
 
-      customer_id: getId(
-        submittedValues.customer_id
-      ),
+      customer_id:
+        getId(
+          submittedValues.customer_id
+        ),
 
-      tenant_id: getId(
-        submittedValues.tenant_id
-      ),
+      tenant_id:
+        getId(
+          submittedValues.tenant_id
+        ),
 
-      tenancy_id: getId(
-        submittedValues.tenancy_id
-      ),
+      tenancy_id:
+        getId(
+          submittedValues.tenancy_id
+        ),
 
-      property_id: getId(
-        submittedValues.property_id
-      ),
+      property_id:
+        getId(
+          submittedValues.property_id
+        ),
 
-      apartment_id: getId(
-        submittedValues.apartment_id
-      ),
+      apartment_id:
+        getId(
+          submittedValues.apartment_id
+        ),
 
-      unit_id: getId(
-        submittedValues.unit_id
-      ),
+      unit_id:
+        getId(
+          submittedValues.unit_id
+        ),
     };
 
     /*
@@ -1577,6 +1708,44 @@ const CreateBooking = () => {
 
       /*
       |--------------------------------------------------------------------------
+      | Debug Payload
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        import.meta.env.DEV
+      ) {
+        console.group(
+          "[CreateBooking] Create booking"
+        );
+
+        console.log(
+          "Form values:",
+          normalizedValues
+        );
+
+        console.log(
+          "API payload:",
+          payload
+        );
+
+        console.log(
+          "Calculated fields intentionally excluded:",
+          {
+            total_amount:
+              "Laravel calculates this automatically.",
+            payment_status:
+              "Laravel manages this through the payment workflow.",
+            status:
+              "Laravel assigns the initial booking status.",
+          }
+        );
+
+        console.groupEnd();
+      }
+
+      /*
+      |--------------------------------------------------------------------------
       | Create Booking
       |--------------------------------------------------------------------------
       */
@@ -1588,7 +1757,7 @@ const CreateBooking = () => {
 
       /*
       |--------------------------------------------------------------------------
-      | Extract success message
+      | Extract Success Message
       |--------------------------------------------------------------------------
       */
 
@@ -1637,11 +1806,44 @@ const CreateBooking = () => {
           err
         );
 
-      setServerError(message);
+      setServerError(
+        message
+      );
 
       setFieldErrors(
         validationErrors
       );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Debug Error
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        import.meta.env.DEV
+      ) {
+        console.group(
+          "[CreateBooking] Create failed"
+        );
+
+        console.error(
+          "Error:",
+          err
+        );
+
+        console.error(
+          "Message:",
+          message
+        );
+
+        console.error(
+          "Validation errors:",
+          validationErrors
+        );
+
+        console.groupEnd();
+      }
 
       /*
       |--------------------------------------------------------------------------
@@ -1815,9 +2017,15 @@ const CreateBooking = () => {
         loadingUsers={
           isLoadingUsers
         }
-        onChange={handleChange}
-        onSubmit={handleSubmit}
-        onCancel={handleCancel}
+        onChange={
+          handleChange
+        }
+        onSubmit={
+          handleSubmit
+        }
+        onCancel={
+          handleCancel
+        }
         onPropertyChange={
           handlePropertyChange
         }
@@ -1833,4 +2041,3 @@ const CreateBooking = () => {
 };
 
 export default CreateBooking;
-

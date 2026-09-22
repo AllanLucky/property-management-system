@@ -53,6 +53,7 @@ const parseFinancialObject = (value) => {
     if (isPlainObject(value)) {
         /*
          * Handle:
+         *
          * {
          *   data: {
          *      total_amount: ...
@@ -611,6 +612,242 @@ const normalizeBoolean = (
     }
 
     return fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Booking Update Payload Sanitization
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Fields that are controlled by the backend booking workflow.
+ *
+ * These must NOT be sent through the normal:
+ *
+ * PUT /bookings/{id}
+ *
+ * endpoint.
+ *
+ * The backend calculates financial totals and manages workflow
+ * status/timestamps itself.
+ */
+const BOOKING_UPDATE_SERVER_MANAGED_FIELDS = [
+    /*
+     * Payment workflow.
+     */
+    "payment_status",
+    "paymentStatus",
+
+    /*
+     * Calculated financial values.
+     */
+    "total_amount",
+    "totalAmount",
+    "grand_total",
+    "grandTotal",
+    "booking_total",
+    "bookingTotal",
+    "total_due",
+    "totalDue",
+    "amount_due",
+    "amountDue",
+    "total_payable",
+    "totalPayable",
+
+    "balance",
+    "balance_amount",
+    "balanceAmount",
+    "outstanding_balance",
+    "outstandingBalance",
+    "amount_balance",
+    "amountBalance",
+    "amount_outstanding",
+    "amountOutstanding",
+
+    "is_fully_paid",
+    "isFullyPaid",
+    "is_partially_paid",
+    "isPartiallyPaid",
+    "has_balance",
+    "hasBalance",
+
+    /*
+     * Financial aliases.
+     *
+     * The backend should calculate these from the authoritative
+     * financial fields.
+     */
+    "total",
+    "paid",
+    "total_paid",
+    "totalPaid",
+    "paid_amount",
+    "paidAmount",
+
+    /*
+     * Workflow status.
+     */
+    "status",
+
+    /*
+     * Workflow timestamps.
+     */
+    "confirmed_at",
+    "confirmedAt",
+
+    "approved_at",
+    "approvedAt",
+
+    "rejected_at",
+    "rejectedAt",
+
+    "cancelled_at",
+    "canceled_at",
+    "cancelledAt",
+    "canceledAt",
+
+    "completed_at",
+    "completedAt",
+
+    "expired_at",
+    "expiredAt",
+
+    "paid_at",
+    "paidAt",
+
+    "refunded_at",
+    "refundedAt",
+
+    /*
+     * Workflow reasons are handled by dedicated
+     * approve/reject/cancel endpoints.
+     */
+    "rejection_reason",
+    "rejectionReason",
+
+    "cancellation_reason",
+    "cancellationReason",
+
+    /*
+     * Refund workflow.
+     */
+    "refund_amount",
+    "refundAmount",
+
+    "refund_reference",
+    "refundReference",
+
+    /*
+     * Resource/system fields.
+     */
+    "id",
+    "booking_number",
+    "bookingNumber",
+    "reference",
+    "slug",
+
+    "created_at",
+    "createdAt",
+
+    "updated_at",
+    "updatedAt",
+
+    "deleted_at",
+    "deletedAt",
+];
+
+/**
+ * Sanitize a normal booking update payload.
+ *
+ * Important:
+ *
+ * amount_paid IS intentionally preserved because the current
+ * booking update endpoint accepts it as an editable financial
+ * input and the backend recalculates:
+ *
+ * total_amount
+ * balance
+ * payment_status
+ *
+ * from the authoritative financial values.
+ *
+ * This function does not mutate the original payload.
+ */
+const sanitizeBookingUpdatePayload = (
+    payload = {}
+) => {
+    if (
+        !isPlainObject(payload)
+    ) {
+        return {};
+    }
+
+    const sanitized = {
+        ...payload,
+    };
+
+    const removedFields = [];
+
+    BOOKING_UPDATE_SERVER_MANAGED_FIELDS.forEach(
+        (field) => {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    sanitized,
+                    field
+                )
+            ) {
+                removedFields.push(
+                    field
+                );
+
+                delete sanitized[field];
+            }
+        }
+    );
+
+    if (
+        DEBUG_BOOKING_SERVICE
+    ) {
+        console.debug(
+            "[BookingService] Booking update payload sanitized",
+            {
+                removedFields,
+
+                originalKeys:
+                    Object.keys(
+                        payload
+                    ),
+
+                sanitizedKeys:
+                    Object.keys(
+                        sanitized
+                    ),
+
+                preservedAmountPaid:
+                    Object.prototype.hasOwnProperty.call(
+                        sanitized,
+                        "amount_paid"
+                    )
+                        ? sanitized.amount_paid
+                        : undefined,
+
+                removedPaymentStatus:
+                    Object.prototype.hasOwnProperty.call(
+                        payload,
+                        "payment_status"
+                    ),
+
+                removedTotalAmount:
+                    Object.prototype.hasOwnProperty.call(
+                        payload,
+                        "total_amount"
+                    ),
+            }
+        );
+    }
+
+    return sanitized;
 };
 
 /*
@@ -1675,15 +1912,6 @@ const normalizeBookingResource = (
          * -----------------------------------------------------------
          * TOP-LEVEL FINANCIAL ALIASES
          * -----------------------------------------------------------
-         *
-         * This is important because BookingTable and other UI
-         * components may read either:
-         *
-         * booking.total_amount
-         *
-         * or:
-         *
-         * booking.financials.total_amount
          */
 
         total_amount:
@@ -2288,6 +2516,20 @@ const bookingService = {
         };
     },
 
+    /**
+     * Update an existing booking.
+     *
+     * The backend owns:
+     *
+     * - payment_status
+     * - total_amount
+     * - balance
+     * - financial flags
+     * - workflow status
+     * - workflow timestamps
+     *
+     * Therefore those fields are removed before the request.
+     */
     async update(
         id,
         payload = {}
@@ -2301,11 +2543,49 @@ const bookingService = {
             );
         }
 
+        const sanitizedPayload =
+            sanitizeBookingUpdatePayload(
+                payload
+            );
+
+        if (
+            DEBUG_BOOKING_SERVICE
+        ) {
+            console.debug(
+                `[BookingService] PUT /bookings/${normalizedId} → PAYLOAD`,
+                {
+                    bookingId:
+                        normalizedId,
+
+                    payload:
+                        sanitizedPayload,
+
+                    paymentStatusSent:
+                        Object.prototype.hasOwnProperty.call(
+                            sanitizedPayload,
+                            "payment_status"
+                        ),
+
+                    totalAmountSent:
+                        Object.prototype.hasOwnProperty.call(
+                            sanitizedPayload,
+                            "total_amount"
+                        ),
+
+                    amountPaidSent:
+                        Object.prototype.hasOwnProperty.call(
+                            sanitizedPayload,
+                            "amount_paid"
+                        ),
+                }
+            );
+        }
+
         const result =
             await handleRequest(
                 bookingApi.update(
                     normalizedId,
-                    payload
+                    sanitizedPayload
                 ),
                 {
                     label:
@@ -3714,6 +3994,8 @@ export {
     normalizeBookingFinancials,
     normalizeBookingResource,
     normalizeBookingCollection,
+
+    sanitizeBookingUpdatePayload,
 
     extractResource,
     extractCollection,
