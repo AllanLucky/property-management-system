@@ -3,34 +3,32 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarDays,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock3,
-  Eye,
-  FileEdit,
   Filter,
   Loader2,
   Plus,
   RefreshCw,
   RotateCcw,
   Search,
-  Wallet,
   X,
 } from "lucide-react";
 
 import { useBooking } from "../../../hooks/useBooking";
 
+import BookingTable from "./BookingTable";
+import BookingStatistics from "./BookingStatistics";
+
 /*
 |--------------------------------------------------------------------------
-| CONSTANTS
+| Constants
 |--------------------------------------------------------------------------
 */
 
 const DEFAULT_PER_PAGE = 15;
 
 const STATUS_OPTIONS = [
-  { value: "", label: "All statuses" },
+  { value: "", label: "All Statuses" },
   { value: "pending", label: "Pending" },
   { value: "confirmed", label: "Confirmed" },
   { value: "approved", label: "Approved" },
@@ -41,7 +39,7 @@ const STATUS_OPTIONS = [
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
-  { value: "", label: "All payments" },
+  { value: "", label: "All Payment Statuses" },
   { value: "pending", label: "Pending" },
   { value: "partial", label: "Partial" },
   { value: "paid", label: "Paid" },
@@ -50,143 +48,28 @@ const PAYMENT_STATUS_OPTIONS = [
 ];
 
 const BOOKING_TYPE_OPTIONS = [
-  { value: "", label: "All types" },
+  { value: "", label: "All Booking Types" },
   { value: "viewing", label: "Viewing" },
   { value: "reservation", label: "Reservation" },
   { value: "rental", label: "Rental" },
 ];
 
 const SOURCE_OPTIONS = [
-  { value: "", label: "All sources" },
+  { value: "", label: "All Sources" },
   { value: "website", label: "Website" },
+  { value: "admin", label: "Admin" },
   { value: "agent", label: "Agent" },
+  { value: "mobile", label: "Mobile" },
+  { value: "walk_in", label: "Walk In" },
   { value: "phone", label: "Phone" },
-  { value: "referral", label: "Referral" },
-  { value: "walk_in", label: "Walk-in" },
-  { value: "offline", label: "Offline" },
+  { value: "other", label: "Other" },
 ];
 
-const STATUS_STYLES = {
-  pending:
-    "bg-amber-50 text-amber-700 ring-amber-600/20",
-  confirmed:
-    "bg-blue-50 text-blue-700 ring-blue-600/20",
-  approved:
-    "bg-indigo-50 text-indigo-700 ring-indigo-600/20",
-  rejected:
-    "bg-red-50 text-red-700 ring-red-600/20",
-  cancelled:
-    "bg-slate-100 text-slate-600 ring-slate-500/20",
-  completed:
-    "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  expired:
-    "bg-orange-50 text-orange-700 ring-orange-600/20",
-};
-
-const PAYMENT_STYLES = {
-  pending:
-    "bg-amber-50 text-amber-700 ring-amber-600/20",
-  partial:
-    "bg-blue-50 text-blue-700 ring-blue-600/20",
-  paid:
-    "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  failed:
-    "bg-red-50 text-red-700 ring-red-600/20",
-  refunded:
-    "bg-purple-50 text-purple-700 ring-purple-600/20",
-};
-
 /*
 |--------------------------------------------------------------------------
-| FORMATTERS
+| Helpers
 |--------------------------------------------------------------------------
 */
-
-const formatCurrency = (value) => {
-  const amount = Number(value ?? 0);
-
-  if (!Number.isFinite(amount)) {
-    return "KES 0";
-  }
-
-  return new Intl.NumberFormat("en-KE", {
-    style: "currency",
-    currency: "KES",
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
-
-const formatDate = (value) => {
-  if (!value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat("en-KE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
-};
-
-const formatDateTime = (value) => {
-  if (!value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat("en-KE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-};
-
-const formatLabel = (value) => {
-  if (!value) {
-    return "—";
-  }
-
-  return String(value)
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase()
-    );
-};
-
-/*
-|--------------------------------------------------------------------------
-| DATA HELPERS
-|--------------------------------------------------------------------------
-*/
-
-const getNumericValue = (...values) => {
-  for (const value of values) {
-    if (
-      value !== undefined &&
-      value !== null &&
-      value !== "" &&
-      Number.isFinite(Number(value))
-    ) {
-      return Number(value);
-    }
-  }
-
-  return 0;
-};
 
 const getArray = (value) => {
   if (Array.isArray(value)) {
@@ -197,308 +80,143 @@ const getArray = (value) => {
     return value.data;
   }
 
+  if (Array.isArray(value?.data?.data)) {
+    return value.data.data;
+  }
+
   return [];
 };
 
-const getCustomerName = (booking) => {
-  const customer =
-    booking?.customer ||
-    booking?.customer_user ||
-    booking?.user;
-
-  const directName =
-    customer?.name ||
-    customer?.full_name ||
-    customer?.fullName;
-
-  if (directName) {
-    return directName;
+const getNumericValue = (...values) => {
+  for (const value of values) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      Number.isFinite(Number(value))
+    ) {
+      return Number(value);
+    }
   }
 
-  const composedName = [
-    customer?.first_name,
-    customer?.last_name,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  if (composedName) {
-    return composedName;
-  }
-
-  return `Customer #${booking?.customer_id ??
-    booking?.user_id ??
-    "—"
-    }`;
+  return 0;
 };
 
-const getCustomerEmail = (booking) => {
-  return (
-    booking?.customer?.email ||
-    booking?.customer_user?.email ||
-    booking?.user?.email ||
-    ""
+/*
+|--------------------------------------------------------------------------
+| Pagination Helper
+|--------------------------------------------------------------------------
+*/
+
+const normalizePagination = (
+  pagination,
+  bookingCount
+) => {
+  const source =
+    pagination?.data ||
+    pagination ||
+    {};
+
+  const perPage = getNumericValue(
+    source?.per_page,
+    source?.perPage,
+    source?.limit,
+    DEFAULT_PER_PAGE
   );
-};
 
-const getTenantName = (booking) => {
-  const tenantUser = booking?.tenant?.user;
-
-  return (
-    tenantUser?.name ||
-    tenantUser?.full_name ||
-    [
-      tenantUser?.first_name,
-      tenantUser?.last_name,
-    ]
-      .filter(Boolean)
-      .join(" ") ||
-    booking?.tenant?.name ||
-    booking?.tenant?.full_name ||
-    (booking?.tenant_id
-      ? `Tenant #${booking.tenant_id}`
-      : "Not assigned")
+  const total = getNumericValue(
+    source?.total,
+    source?.total_items,
+    source?.count,
+    bookingCount
   );
-};
 
-const getPropertyName = (booking) => {
-  return (
-    booking?.property?.name ||
-    booking?.property?.title ||
-    booking?.property?.slug ||
-    (booking?.property_id
-      ? `Property #${booking.property_id}`
-      : "Property not assigned")
+  const currentPage = getNumericValue(
+    source?.current_page,
+    source?.currentPage,
+    source?.page,
+    1
   );
-};
 
-const getApartmentName = (booking) => {
-  return (
-    booking?.apartment?.name ||
-    booking?.apartment?.title ||
-    booking?.apartment?.slug ||
-    (booking?.apartment_id
-      ? `Apartment #${booking.apartment_id}`
-      : "—")
+  const lastPage = getNumericValue(
+    source?.last_page,
+    source?.lastPage,
+    source?.total_pages,
+    Math.max(
+      Math.ceil(total / Math.max(perPage, 1)),
+      1
+    )
   );
+
+  const from =
+    total > 0
+      ? (currentPage - 1) * perPage + 1
+      : 0;
+
+  const to =
+    total > 0
+      ? Math.min(currentPage * perPage, total)
+      : 0;
+
+  return {
+    currentPage,
+    perPage,
+    total,
+    lastPage,
+    from,
+    to,
+  };
 };
 
-const getUnitName = (booking) => {
-  return (
-    booking?.unit?.unit_number ||
-    booking?.unit?.name ||
-    booking?.unit?.code ||
-    (booking?.unit_id
-      ? `Unit #${booking.unit_id}`
-      : "—")
-  );
-};
+/*
+|--------------------------------------------------------------------------
+| Pagination Pages
+|--------------------------------------------------------------------------
+*/
 
-const getTotalAmount = (booking) => {
-  return getNumericValue(
-    booking?.financials?.total,
-    booking?.total,
-    booking?.total_amount
-  );
-};
-
-const getPaidAmount = (booking) => {
-  return getNumericValue(
-    booking?.financials?.paid,
-    booking?.paid,
-    booking?.paid_amount
-  );
-};
-
-const getBalanceAmount = (booking) => {
-  const explicitBalance =
-    booking?.financials?.balance ??
-    booking?.balance ??
-    booking?.balance_amount;
-
-  if (
-    explicitBalance !== undefined &&
-    explicitBalance !== null &&
-    explicitBalance !== ""
-  ) {
-    return Math.max(
-      getNumericValue(explicitBalance),
-      0
+const buildPaginationPages = (
+  currentPage,
+  lastPage
+) => {
+  if (lastPage <= 7) {
+    return Array.from(
+      { length: lastPage },
+      (_, index) => index + 1
     );
   }
 
-  return Math.max(
-    getTotalAmount(booking) -
-    getPaidAmount(booking),
-    0
-  );
-};
+  const pages = [1];
 
-const getBookingPeriod = (booking) => {
-  const start =
-    booking?.start_date ||
-    booking?.check_in_date;
-
-  const end =
-    booking?.end_date ||
-    booking?.check_out_date;
-
-  if (!start && !end) {
-    return "—";
+  if (currentPage > 4) {
+    pages.push("...");
   }
 
-  if (start && end) {
-    return `${formatDate(start)} – ${formatDate(
-      end
-    )}`;
+  const start = Math.max(
+    2,
+    currentPage - 1
+  );
+
+  const end = Math.min(
+    lastPage - 1,
+    currentPage + 1
+  );
+
+  for (let page = start; page <= end; page += 1) {
+    pages.push(page);
   }
 
-  return formatDate(start || end);
+  if (currentPage < lastPage - 3) {
+    pages.push("...");
+  }
+
+  pages.push(lastPage);
+
+  return pages;
 };
 
 /*
 |--------------------------------------------------------------------------
-| STATUS BADGES
-|--------------------------------------------------------------------------
-*/
-
-const BookingStatusBadge = ({ status }) => {
-  const normalized = String(
-    status || "pending"
-  ).toLowerCase();
-
-  return (
-    <span
-      className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset ${STATUS_STYLES[normalized] ||
-        "bg-slate-100 text-slate-600 ring-slate-500/20"
-        }`}
-    >
-      <span className="truncate">
-        {formatLabel(normalized)}
-      </span>
-    </span>
-  );
-};
-
-const BookingPaymentBadge = ({ status }) => {
-  const normalized = String(
-    status || "pending"
-  ).toLowerCase();
-
-  return (
-    <span
-      className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset ${PAYMENT_STYLES[normalized] ||
-        "bg-slate-100 text-slate-600 ring-slate-500/20"
-        }`}
-    >
-      <span className="truncate">
-        {formatLabel(normalized)}
-      </span>
-    </span>
-  );
-};
-
-/*
-|--------------------------------------------------------------------------
-| STAT CARD
-|--------------------------------------------------------------------------
-*/
-
-const StatCard = ({
-  title,
-  value,
-  icon: Icon,
-  description,
-  loading,
-  iconClassName = "bg-slate-100 text-slate-700",
-  valueClassName = "text-slate-900",
-}) => {
-  return (
-    <div
-      className="
-        group
-        flex
-        min-w-0
-        min-h-[132px]
-        flex-col
-        justify-between
-        overflow-hidden
-        rounded-2xl
-        border
-        border-slate-200
-        bg-white
-        p-4
-        shadow-sm
-        transition
-        duration-200
-        hover:-translate-y-0.5
-        hover:border-slate-300
-        hover:shadow-md
-        sm:p-5
-      "
-    >
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500 sm:text-sm sm:normal-case sm:tracking-normal">
-            {title}
-          </p>
-
-          {loading ? (
-            <div className="mt-3 h-8 w-24 max-w-full animate-pulse rounded-lg bg-slate-200" />
-          ) : (
-            <p
-              className={`
-                mt-2
-                min-w-0
-                max-w-full
-                break-words
-                text-xl
-                font-bold
-                leading-tight
-                tracking-tight
-                sm:text-2xl
-                ${valueClassName}
-              `}
-              title={String(value ?? "")}
-            >
-              {value}
-            </p>
-          )}
-        </div>
-
-        <div
-          className={`
-            flex
-            h-10
-            w-10
-            shrink-0
-            items-center
-            justify-center
-            rounded-xl
-            transition
-            group-hover:scale-105
-            ${iconClassName}
-          `}
-        >
-          <Icon
-            className="h-5 w-5"
-            aria-hidden="true"
-          />
-        </div>
-      </div>
-
-      {description && (
-        <p className="mt-3 truncate text-xs text-slate-500">
-          {description}
-        </p>
-      )}
-    </div>
-  );
-};
-
-/*
-|--------------------------------------------------------------------------
-| MAIN COMPONENT
+| Component
 |--------------------------------------------------------------------------
 */
 
@@ -512,11 +230,9 @@ const BookingList = () => {
     loading,
     error,
     statistics,
-
     getBookings,
-    search,
     getStatistics,
-
+    search,
     setFilters,
     clearFilters,
     setPage,
@@ -526,7 +242,7 @@ const BookingList = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | LOCAL UI STATE
+  | Local State
   |--------------------------------------------------------------------------
   */
 
@@ -537,12 +253,9 @@ const BookingList = () => {
   const [showFilters, setShowFilters] =
     useState(false);
 
-  const [refreshing, setRefreshing] =
-    useState(false);
-
   /*
   |--------------------------------------------------------------------------
-  | NORMALIZED DATA
+  | Booking List
   |--------------------------------------------------------------------------
   */
 
@@ -551,443 +264,217 @@ const BookingList = () => {
     [bookings]
   );
 
-  const safeFilters = filters || {};
-
   /*
   |--------------------------------------------------------------------------
-  | PAGINATION
+  | Pagination
   |--------------------------------------------------------------------------
   */
 
-  const currentPage =
-    Number(
-      pagination?.current_page ??
-      pagination?.currentPage ??
-      pagination?.page ??
-      1
-    ) || 1;
+  const paginationData = useMemo(
+    () =>
+      normalizePagination(
+        pagination,
+        bookingList.length
+      ),
+    [pagination, bookingList.length]
+  );
 
-  const lastPage =
-    Number(
-      pagination?.last_page ??
-      pagination?.lastPage ??
-      1
-    ) || 1;
-
-  const perPage =
-    Number(
-      pagination?.per_page ??
-      pagination?.perPage ??
-      DEFAULT_PER_PAGE
-    ) || DEFAULT_PER_PAGE;
+  const {
+    currentPage,
+    perPage,
+    total,
+    lastPage,
+    from,
+    to,
+  } = paginationData;
 
   /*
   |--------------------------------------------------------------------------
-  | STATISTICS
+  | Filters
   |--------------------------------------------------------------------------
   */
 
-  const statisticData = useMemo(() => {
-    const stats = statistics || {};
+  const currentFilters = useMemo(
+    () => ({
+      search: filters?.search || "",
+      status: filters?.status || "",
+      payment_status:
+        filters?.payment_status ||
+        filters?.paymentStatus ||
+        "",
+      booking_type:
+        filters?.booking_type ||
+        filters?.bookingType ||
+        "",
+      source: filters?.source || "",
+    }),
+    [filters]
+  );
 
-    const total = getNumericValue(
-      stats?.total,
-      stats?.total_bookings,
-      stats?.bookings_count,
-      pagination?.total,
-      bookingList.length
-    );
-
-    const pending = getNumericValue(
-      stats?.pending,
-      stats?.pending_bookings
-    );
-
-    const confirmed = getNumericValue(
-      stats?.confirmed,
-      stats?.confirmed_bookings
-    );
-
-    const completed = getNumericValue(
-      stats?.completed,
-      stats?.completed_bookings
-    );
-
-    const cancelled = getNumericValue(
-      stats?.cancelled,
-      stats?.cancelled_bookings
-    );
-
-    const paid = getNumericValue(
-      stats?.paid,
-      stats?.paid_bookings,
-      stats?.fully_paid,
-      stats?.payment_paid
-    );
-
-    const revenue = getNumericValue(
-      stats?.revenue,
-      stats?.total_revenue,
-      stats?.total_booking_value,
-      stats?.booking_value,
-      stats?.total_amount,
-      stats?.paid_amount,
-      stats?.total_paid,
-      stats?.amount_paid
-    );
-
-    return {
-      total,
-      pending,
-      confirmed,
-      completed,
-      cancelled,
-      paid,
-      revenue,
-    };
-  }, [
-    statistics,
-    pagination?.total,
-    bookingList.length,
-  ]);
+  const activeFilterCount = useMemo(() => {
+    return [
+      currentFilters.status,
+      currentFilters.payment_status,
+      currentFilters.booking_type,
+      currentFilters.source,
+    ].filter(Boolean).length;
+  }, [currentFilters]);
 
   /*
   |--------------------------------------------------------------------------
-  | TOTAL / RANGE
-  |--------------------------------------------------------------------------
-  */
-
-  const total =
-    Number(
-      pagination?.total ??
-      statisticData.total ??
-      bookingList.length
-    ) || 0;
-
-  const from =
-    Number(
-      pagination?.from ??
-      (total > 0
-        ? (currentPage - 1) * perPage + 1
-        : 0)
-    ) || 0;
-
-  const to =
-    Number(
-      pagination?.to ??
-      Math.min(
-        currentPage * perPage,
-        total
-      )
-    ) || 0;
-
-  /*
-  |--------------------------------------------------------------------------
-  | INITIAL LOAD
+  | Initial Fetch
   |--------------------------------------------------------------------------
   */
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        await getBookings({
-          ...safeFilters,
-          page: 1,
-          per_page: perPage,
-        });
-
-        await getStatistics?.(safeFilters);
-      } catch {
-        // Hook/service handles the error.
-      }
-    };
-
-    load();
-  }, []);
+    getBookings?.();
+    getStatistics?.();
+  }, [getBookings, getStatistics]);
 
   /*
   |--------------------------------------------------------------------------
-  | SEARCH
+  | Search
   |--------------------------------------------------------------------------
   */
 
-  const handleSearch = async (event) => {
-    event?.preventDefault?.();
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
 
     const value = searchValue.trim();
 
-    const nextFilters = {
-      ...safeFilters,
-      search: value,
-    };
+    if (typeof search === "function") {
+      search(value);
+      return;
+    }
 
-    setFilters({
+    setFilters?.({
+      ...currentFilters,
       search: value,
     });
+  };
 
-    try {
-      if (value) {
-        await search({
-          ...nextFilters,
-          search: value,
-          page: 1,
-          per_page: perPage,
-        });
-      } else {
-        await getBookings({
-          ...nextFilters,
-          page: 1,
-          per_page: perPage,
-        });
-      }
-
-      await getStatistics?.(nextFilters);
-    } catch {
-      // Hook handles the error.
-    }
+  const handleSearchChange = (event) => {
+    setSearchValue(event.target.value);
   };
 
   /*
   |--------------------------------------------------------------------------
-  | FILTER CHANGE
+  | Filters
   |--------------------------------------------------------------------------
   */
 
-  const handleFilterChange = async (
-    name,
+  const handleFilterChange = (
+    field,
     value
   ) => {
-    const nextFilters = {
-      ...safeFilters,
-      [name]: value,
-    };
-
-    setFilters({
-      [name]: value,
+    setFilters?.({
+      ...currentFilters,
+      [field]: value,
     });
-
-    try {
-      await getBookings({
-        ...nextFilters,
-        page: 1,
-        per_page: perPage,
-      });
-
-      await getStatistics?.(nextFilters);
-    } catch {
-      // Hook handles the error.
-    }
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | CLEAR FILTERS
-  |--------------------------------------------------------------------------
-  */
-
-  const handleClearFilters = async () => {
+  const handleClearFilters = () => {
     setSearchValue("");
 
-    clearFilters();
+    clearFilters?.();
 
-    try {
-      await getBookings({
-        page: 1,
-        per_page: perPage,
-      });
-
-      await getStatistics?.({});
-    } catch {
-      // Hook handles the error.
-    }
+    setShowFilters(false);
   };
 
   /*
   |--------------------------------------------------------------------------
-  | REFRESH
+  | Refresh
   |--------------------------------------------------------------------------
   */
 
   const handleRefresh = async () => {
-    setRefreshing(true);
+    clearError?.();
 
-    try {
-      await getBookings({
-        ...safeFilters,
-        page: currentPage,
-        per_page: perPage,
-      });
-
-      await getStatistics?.(safeFilters);
-    } finally {
-      setRefreshing(false);
-    }
+    await Promise.all([
+      getBookings?.(),
+      getStatistics?.(),
+    ]);
   };
 
   /*
   |--------------------------------------------------------------------------
-  | PAGINATION
+  | Pagination
   |--------------------------------------------------------------------------
   */
 
-  const handlePageChange = async (page) => {
+  const handlePageChange = (page) => {
     if (
       page < 1 ||
       page > lastPage ||
-      page === currentPage
+      loading
     ) {
       return;
     }
 
-    setPage(page);
-
-    try {
-      await getBookings({
-        ...safeFilters,
-        page,
-        per_page: perPage,
-      });
-    } catch {
-      // Hook handles the error.
-    }
+    setPage?.(page);
   };
 
-  const handlePerPageChange = async (event) => {
-    const value =
-      Number(event.target.value) ||
-      DEFAULT_PER_PAGE;
-
-    setPerPage(value);
-
-    try {
-      await getBookings({
-        ...safeFilters,
-        page: 1,
-        per_page: value,
-      });
-    } catch {
-      // Hook handles the error.
-    }
+  const handlePreviousPage = () => {
+    handlePageChange(currentPage - 1);
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | PAGINATION RANGE
-  |--------------------------------------------------------------------------
-  */
+  const handleNextPage = () => {
+    handlePageChange(currentPage + 1);
+  };
 
-  const pageNumbers = useMemo(() => {
-    if (lastPage <= 1) {
-      return [1];
-    }
-
-    const pages = [];
-
-    const start = Math.max(
-      1,
-      currentPage - 2
+  const handlePerPageChange = (event) => {
+    const value = Number(
+      event.target.value
     );
 
-    const end = Math.min(
-      lastPage,
-      currentPage + 2
-    );
-
-    if (start > 1) {
-      pages.push(1);
-
-      if (start > 2) {
-        pages.push("...");
-      }
-    }
-
-    for (
-      let page = start;
-      page <= end;
-      page += 1
+    if (
+      !Number.isFinite(value) ||
+      value <= 0
     ) {
-      pages.push(page);
+      return;
     }
 
-    if (end < lastPage) {
-      if (end < lastPage - 1) {
-        pages.push("...");
-      }
+    setPerPage?.(value);
+  };
 
-      pages.push(lastPage);
-    }
-
-    return pages;
-  }, [currentPage, lastPage]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | ACTIVE FILTER COUNT
-  |--------------------------------------------------------------------------
-  */
-
-  const activeFilterCount = useMemo(() => {
-    return [
-      safeFilters.status,
-      safeFilters.payment_status,
-      safeFilters.booking_type,
-      safeFilters.source,
-      safeFilters.property_id,
-      safeFilters.apartment_id,
-      safeFilters.unit_id,
-    ].filter(Boolean).length;
-  }, [
-    safeFilters.status,
-    safeFilters.payment_status,
-    safeFilters.booking_type,
-    safeFilters.source,
-    safeFilters.property_id,
-    safeFilters.apartment_id,
-    safeFilters.unit_id,
-  ]);
+  const paginationPages = useMemo(
+    () =>
+      buildPaginationPages(
+        currentPage,
+        lastPage
+      ),
+    [currentPage, lastPage]
+  );
 
   /*
   |--------------------------------------------------------------------------
-  | ERROR
-  |--------------------------------------------------------------------------
-  */
-
-  const errorMessage =
-    typeof error === "string"
-      ? error
-      : error?.message ||
-      error?.error ||
-      "Unable to load bookings.";
-
-  /*
-  |--------------------------------------------------------------------------
-  | RENDER
+  | Render
   |--------------------------------------------------------------------------
   */
 
   return (
-    <div className="min-h-full min-w-0 space-y-6 overflow-x-hidden p-4 sm:p-6 lg:p-8">
-      {/* PAGE HEADER */}
+    <div className="min-w-0 space-y-6">
+      {/* ================================================================
+          HEADER
+      ================================================================ */}
 
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span>Super Admin</span>
-            <span>/</span>
-            <span className="text-slate-700">
-              Bookings
-            </span>
-          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <CalendarDays className="h-5 w-5" />
+            </div>
 
-          <div className="mt-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Booking Management
-            </h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                Bookings
+              </h1>
 
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-              Manage property bookings, reservations,
-              viewings, payments and booking workflows.
-            </p>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Manage property bookings,
+                reservations and payments.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -995,10 +482,10 @@ const BookingList = () => {
           <button
             type="button"
             onClick={handleRefresh}
-            disabled={refreshing || loading}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {refreshing ? (
+            {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
@@ -1009,18 +496,20 @@ const BookingList = () => {
 
           <Link
             to="/super-admin/bookings/create"
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
           >
             <Plus className="h-4 w-4" />
-            New Booking
+            Create Booking
           </Link>
         </div>
       </div>
 
-      {/* ERROR */}
+      {/* ================================================================
+          ERROR
+      ================================================================ */}
 
       {error && (
-        <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+        <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
 
           <div className="min-w-0 flex-1">
@@ -1028,15 +517,18 @@ const BookingList = () => {
               Unable to load bookings
             </p>
 
-            <p className="mt-1 break-words text-sm text-red-600">
-              {errorMessage}
+            <p className="mt-0.5 text-sm text-red-700">
+              {typeof error === "string"
+                ? error
+                : error?.message ||
+                "Something went wrong while loading bookings."}
             </p>
           </div>
 
           <button
             type="button"
-            onClick={clearError}
-            className="shrink-0 rounded-lg p-1 text-red-500 transition hover:bg-red-100"
+            onClick={() => clearError?.()}
+            className="rounded-lg p-1 text-red-500 transition hover:bg-red-100 hover:text-red-700"
             aria-label="Dismiss error"
           >
             <X className="h-4 w-4" />
@@ -1044,143 +536,59 @@ const BookingList = () => {
         </div>
       )}
 
-      {/* STATISTICS */}
+      {/* ================================================================
+          BOOKING STATISTICS
+      ================================================================ */}
 
-      <section className="min-w-0">
-        <div
-          className="
-            grid
-            min-w-0
-            grid-cols-1
-            gap-4
-            sm:grid-cols-2
-            lg:grid-cols-3
-            2xl:grid-cols-6
-          "
-        >
-          {/* 1. TOTAL */}
+      <BookingStatistics
+        statistics={
+          statistics?.data ||
+          statistics ||
+          {}
+        }
+        loading={loading && !statistics}
+      />
 
-          <StatCard
-            title="Total Bookings"
-            value={statisticData.total}
-            icon={CalendarDays}
-            description="All booking records"
-            loading={loading}
-            iconClassName="bg-slate-100 text-slate-700"
-            valueClassName="text-slate-900"
-          />
+      {/* ================================================================
+          SEARCH + FILTERS
+      ================================================================ */}
 
-          {/* 2. PENDING */}
-
-          <StatCard
-            title="Pending"
-            value={statisticData.pending}
-            icon={Clock3}
-            description="Awaiting action"
-            loading={loading}
-            iconClassName="bg-amber-50 text-amber-600"
-            valueClassName="text-amber-700"
-          />
-
-          {/* 3. CONFIRMED */}
-
-          <StatCard
-            title="Confirmed"
-            value={statisticData.confirmed}
-            icon={CheckCircle2}
-            description="Confirmed bookings"
-            loading={loading}
-            iconClassName="bg-blue-50 text-blue-600"
-            valueClassName="text-blue-700"
-          />
-
-          {/* 4. COMPLETED */}
-
-          <StatCard
-            title="Completed"
-            value={statisticData.completed}
-            icon={CheckCircle2}
-            description="Successfully completed"
-            loading={loading}
-            iconClassName="bg-emerald-50 text-emerald-600"
-            valueClassName="text-emerald-700"
-          />
-
-          {/* 5. REVENUE */}
-
-          <StatCard
-            title="Revenue"
-            value={formatCurrency(
-              statisticData.revenue
-            )}
-            icon={Wallet}
-            description="Recorded booking revenue"
-            loading={loading}
-            iconClassName="bg-indigo-50 text-indigo-600"
-            valueClassName="text-indigo-700"
-          />
-
-          {/* 6. PAID */}
-
-          <StatCard
-            title="Paid"
-            value={statisticData.paid}
-            icon={Wallet}
-            description="Fully paid bookings"
-            loading={loading}
-            iconClassName="bg-emerald-50 text-emerald-600"
-            valueClassName="text-emerald-700"
-          />
-        </div>
-      </section>
-
-      {/* SEARCH & FILTER BAR */}
-
-      <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center">
           <form
-            onSubmit={handleSearch}
-            className="min-w-0 flex-1"
+            onSubmit={handleSearchSubmit}
+            className="flex min-w-0 flex-1 gap-2"
           >
-            <div className="relative w-full">
+            <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 
               <input
-                type="search"
+                type="text"
                 value={searchValue}
-                onChange={(event) =>
-                  setSearchValue(
-                    event.target.value
-                  )
-                }
-                placeholder="Search booking number, customer, tenant..."
-                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-24 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
+                onChange={handleSearchChange}
+                placeholder="Search booking number, customer, tenant, property..."
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               />
+            </div>
 
-              {searchValue && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchValue("")
-                  }
-                  className="absolute right-20 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
               )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+              <span className="hidden sm:inline">
                 Search
-              </button>
-            </div>
+              </span>
+            </button>
           </form>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() =>
@@ -1190,7 +598,7 @@ const BookingList = () => {
               }
               className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition ${showFilters ||
                 activeFilterCount > 0
-                ? "border-slate-900 bg-slate-900 text-white"
+                ? "border-slate-300 bg-slate-100 text-slate-900"
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
             >
@@ -1199,7 +607,7 @@ const BookingList = () => {
               Filters
 
               {activeFilterCount > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-slate-900">
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-[10px] font-bold text-white">
                   {activeFilterCount}
                 </span>
               )}
@@ -1209,159 +617,185 @@ const BookingList = () => {
               searchValue) && (
                 <button
                   type="button"
-                  onClick={handleClearFilters}
+                  onClick={
+                    handleClearFilters
+                  }
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                 >
                   <RotateCcw className="h-4 w-4" />
-                  Clear
+
+                  <span className="hidden sm:inline">
+                    Clear
+                  </span>
                 </button>
               )}
           </div>
         </div>
 
-        {/* FILTERS */}
-
         {showFilters && (
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <label
-                  htmlFor="booking-status"
-                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Status
-                </label>
+          <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 xl:grid-cols-4">
+            {/* STATUS */}
 
-                <select
-                  id="booking-status"
-                  value={safeFilters.status || ""}
-                  onChange={(event) =>
-                    handleFilterChange(
-                      "status",
-                      event.target.value
-                    )
-                  }
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                >
-                  {STATUS_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                      >
-                        {option.label}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
+            <div>
+              <label
+                htmlFor="booking-status"
+                className="mb-1.5 block text-xs font-semibold text-slate-600"
+              >
+                Booking Status
+              </label>
 
-              <div>
-                <label
-                  htmlFor="booking-payment-status"
-                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Payment
-                </label>
+              <select
+                id="booking-status"
+                value={
+                  currentFilters.status
+                }
+                onChange={(event) =>
+                  handleFilterChange(
+                    "status",
+                    event.target.value
+                  )
+                }
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              >
+                {STATUS_OPTIONS.map(
+                  (option) => (
+                    <option
+                      key={
+                        option.value ||
+                        "all"
+                      }
+                      value={option.value}
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
 
-                <select
-                  id="booking-payment-status"
-                  value={
-                    safeFilters.payment_status ||
-                    ""
-                  }
-                  onChange={(event) =>
-                    handleFilterChange(
-                      "payment_status",
-                      event.target.value
-                    )
-                  }
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                >
-                  {PAYMENT_STATUS_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                      >
-                        {option.label}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
+            {/* PAYMENT STATUS */}
 
-              <div>
-                <label
-                  htmlFor="booking-type"
-                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Booking Type
-                </label>
+            <div>
+              <label
+                htmlFor="booking-payment-status"
+                className="mb-1.5 block text-xs font-semibold text-slate-600"
+              >
+                Payment Status
+              </label>
 
-                <select
-                  id="booking-type"
-                  value={
-                    safeFilters.booking_type || ""
-                  }
-                  onChange={(event) =>
-                    handleFilterChange(
-                      "booking_type",
-                      event.target.value
-                    )
-                  }
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                >
-                  {BOOKING_TYPE_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                      >
-                        {option.label}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
+              <select
+                id="booking-payment-status"
+                value={
+                  currentFilters.payment_status
+                }
+                onChange={(event) =>
+                  handleFilterChange(
+                    "payment_status",
+                    event.target.value
+                  )
+                }
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              >
+                {PAYMENT_STATUS_OPTIONS.map(
+                  (option) => (
+                    <option
+                      key={
+                        option.value ||
+                        "all"
+                      }
+                      value={option.value}
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
 
-              <div>
-                <label
-                  htmlFor="booking-source"
-                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Source
-                </label>
+            {/* BOOKING TYPE */}
 
-                <select
-                  id="booking-source"
-                  value={safeFilters.source || ""}
-                  onChange={(event) =>
-                    handleFilterChange(
-                      "source",
-                      event.target.value
-                    )
-                  }
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                >
-                  {SOURCE_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                      >
-                        {option.label}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
+            <div>
+              <label
+                htmlFor="booking-type"
+                className="mb-1.5 block text-xs font-semibold text-slate-600"
+              >
+                Booking Type
+              </label>
+
+              <select
+                id="booking-type"
+                value={
+                  currentFilters.booking_type
+                }
+                onChange={(event) =>
+                  handleFilterChange(
+                    "booking_type",
+                    event.target.value
+                  )
+                }
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              >
+                {BOOKING_TYPE_OPTIONS.map(
+                  (option) => (
+                    <option
+                      key={
+                        option.value ||
+                        "all"
+                      }
+                      value={option.value}
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            {/* SOURCE */}
+
+            <div>
+              <label
+                htmlFor="booking-source"
+                className="mb-1.5 block text-xs font-semibold text-slate-600"
+              >
+                Source
+              </label>
+
+              <select
+                id="booking-source"
+                value={
+                  currentFilters.source
+                }
+                onChange={(event) =>
+                  handleFilterChange(
+                    "source",
+                    event.target.value
+                  )
+                }
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              >
+                {SOURCE_OPTIONS.map(
+                  (option) => (
+                    <option
+                      key={
+                        option.value ||
+                        "all"
+                      }
+                      value={option.value}
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
             </div>
           </div>
         )}
       </div>
 
-      {/* TABLE */}
+      {/* ================================================================
+          BOOKING TABLE
+      ================================================================ */}
 
       <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex min-w-0 flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
@@ -1388,21 +822,36 @@ const BookingList = () => {
             <select
               id="booking-per-page"
               value={perPage}
-              onChange={handlePerPageChange}
+              onChange={
+                handlePerPageChange
+              }
               className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             >
-              <option value="10">10</option>
-              <option value="15">15</option>
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
+              <option value="10">
+                10
+              </option>
+
+              <option value="15">
+                15
+              </option>
+
+              <option value="25">
+                25
+              </option>
+
+              <option value="50">
+                50
+              </option>
+
+              <option value="100">
+                100
+              </option>
             </select>
           </div>
         </div>
 
-        {/* LOADING */}
-
-        {loading && bookingList.length === 0 ? (
+        {loading &&
+          bookingList.length === 0 ? (
           <div className="p-4 sm:p-6">
             <div className="space-y-3">
               {Array.from({
@@ -1432,16 +881,20 @@ const BookingList = () => {
             </h3>
 
             <p className="mt-1 max-w-md text-sm text-slate-500">
-              There are no bookings matching
-              your current search or filters.
+              There are no bookings
+              matching your current
+              search or filters.
             </p>
 
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              {(activeFilterCount > 0 ||
+              {(activeFilterCount >
+                0 ||
                 searchValue) && (
                   <button
                     type="button"
-                    onClick={handleClearFilters}
+                    onClick={
+                      handleClearFilters
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
                     <RotateCcw className="h-4 w-4" />
@@ -1459,443 +912,133 @@ const BookingList = () => {
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-[1450px] w-full text-left">
-              <thead className="bg-slate-50">
-                <tr className="border-b border-slate-200">
-                  {[
-                    "Booking",
-                    "Customer",
-                    "Tenant",
-                    "Property",
-                    "Apartment / Unit",
-                    "Type",
-                    "Booking Date",
-                    "Period",
-                    "Total",
-                    "Paid",
-                    "Balance",
-                    "Status",
-                    "Payment",
-                  ].map((heading) => (
-                    <th
-                      key={heading}
-                      className="whitespace-nowrap px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500"
-                    >
-                      {heading}
-                    </th>
-                  ))}
+          <BookingTable
+            bookings={bookingList}
+            loading={loading}
+            onView={(bookingId) =>
+              navigate(
+                `/super-admin/bookings/${bookingId}`
+              )
+            }
+            onEdit={(bookingId) =>
+              navigate(
+                `/super-admin/bookings/${bookingId}/edit`
+              )
+            }
+          />
+        )}
 
-                  <th className="whitespace-nowrap px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-500">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
+        {/* ==============================================================
+            PAGINATION
+        ============================================================== */}
 
-              <tbody className="divide-y divide-slate-100">
-                {bookingList.map((booking) => {
-                  const bookingId =
-                    booking?.id ??
-                    booking?.booking_id;
+        {bookingList.length > 0 &&
+          lastPage > 1 && (
+            <div className="flex flex-col gap-4 border-t border-slate-100 px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
+              <div className="text-sm text-slate-500">
+                Showing{" "}
+                <span className="font-semibold text-slate-700">
+                  {from}
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-slate-700">
+                  {to}
+                </span>{" "}
+                of{" "}
+                <span className="font-semibold text-slate-700">
+                  {total}
+                </span>{" "}
+                bookings
+              </div>
 
-                  const bookingNumber =
-                    booking?.booking_number ||
-                    booking?.reference ||
-                    `BK-${bookingId ?? "—"}`;
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <button
+                  type="button"
+                  onClick={
+                    handlePreviousPage
+                  }
+                  disabled={
+                    currentPage <= 1 ||
+                    loading
+                  }
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
 
-                  const customerName =
-                    getCustomerName(booking);
+                  <span className="hidden sm:inline">
+                    Previous
+                  </span>
+                </button>
 
-                  const customerEmail =
-                    getCustomerEmail(booking);
-
-                  const tenantName =
-                    getTenantName(booking);
-
-                  const propertyName =
-                    getPropertyName(booking);
-
-                  const apartmentName =
-                    getApartmentName(booking);
-
-                  const unitName =
-                    getUnitName(booking);
-
-                  const totalAmount =
-                    getTotalAmount(booking);
-
-                  const paidAmount =
-                    getPaidAmount(booking);
-
-                  const balanceAmount =
-                    getBalanceAmount(booking);
-
-                  return (
-                    <tr
-                      key={
-                        bookingId ||
-                        bookingNumber
+                <div className="flex items-center gap-1">
+                  {paginationPages.map(
+                    (page, index) => {
+                      if (
+                        page === "..."
+                      ) {
+                        return (
+                          <span
+                            key={`ellipsis-${index}`}
+                            className="hidden h-9 w-9 items-center justify-center text-sm text-slate-400 sm:flex"
+                          >
+                            ...
+                          </span>
+                        );
                       }
-                      className="group transition hover:bg-slate-50/80"
-                    >
-                      <td className="px-5 py-4 align-top">
-                        <div>
-                          <Link
-                            to={`/super-admin/bookings/${bookingId}`}
-                            className="font-semibold text-slate-900 transition hover:text-slate-600"
-                          >
-                            {bookingNumber}
-                          </Link>
 
-                          {booking?.reference && (
-                            <p className="mt-1 text-xs text-slate-400">
-                              Ref:{" "}
-                              {booking.reference}
-                            </p>
-                          )}
+                      const isCurrent =
+                        page ===
+                        currentPage;
 
-                          {booking?.source && (
-                            <span className="mt-2 inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium capitalize text-slate-500">
-                              {formatLabel(
-                                booking.source
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <div className="min-w-[180px]">
-                          <p className="font-semibold text-slate-800">
-                            {customerName}
-                          </p>
-
-                          {customerEmail && (
-                            <p className="mt-1 max-w-[220px] truncate text-xs text-slate-500">
-                              {customerEmail}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <div className="min-w-[150px]">
-                          <p
-                            className={`font-medium ${booking?.tenant_id
-                              ? "text-slate-700"
-                              : "text-slate-400"
-                              }`}
-                          >
-                            {tenantName}
-                          </p>
-
-                          {booking?.tenant
-                            ?.tenant_number && (
-                              <p className="mt-1 text-xs text-slate-400">
-                                {
-                                  booking.tenant
-                                    .tenant_number
-                                }
-                              </p>
-                            )}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <div className="min-w-[180px]">
-                          <p className="font-medium text-slate-800">
-                            {propertyName}
-                          </p>
-
-                          {booking?.property
-                            ?.code && (
-                              <p className="mt-1 text-xs text-slate-400">
-                                {
-                                  booking.property
-                                    .code
-                                }
-                              </p>
-                            )}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <div className="min-w-[160px]">
-                          <p className="font-medium text-slate-700">
-                            {apartmentName}
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-500">
-                            Unit: {unitName}
-                          </p>
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <span className="inline-flex rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold capitalize text-slate-600">
-                          {formatLabel(
-                            booking?.booking_type
-                          )}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <div className="min-w-[120px]">
-                          <p className="text-sm font-medium text-slate-700">
-                            {formatDate(
-                              booking?.booking_date
-                            )}
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            {formatDateTime(
-                              booking?.booking_date
-                            )}
-                          </p>
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <div className="min-w-[160px]">
-                          <p className="text-sm font-medium text-slate-700">
-                            {getBookingPeriod(
-                              booking
-                            )}
-                          </p>
-
-                          {booking?.check_in_date && (
-                            <p className="mt-1 text-xs text-slate-400">
-                              Check-in:{" "}
-                              {formatDate(
-                                booking.check_in_date
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <p className="whitespace-nowrap text-sm font-bold text-slate-800">
-                          {formatCurrency(
-                            totalAmount
-                          )}
-                        </p>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <p className="whitespace-nowrap text-sm font-semibold text-emerald-600">
-                          {formatCurrency(
-                            paidAmount
-                          )}
-                        </p>
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <p
-                          className={`whitespace-nowrap text-sm font-semibold ${balanceAmount > 0
-                            ? "text-amber-600"
-                            : "text-slate-500"
+                      return (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() =>
+                            handlePageChange(
+                              page
+                            )
+                          }
+                          disabled={loading}
+                          className={`hidden h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold transition sm:flex ${isCurrent
+                            ? "bg-slate-900 text-white"
+                            : "text-slate-600 hover:bg-slate-100"
                             }`}
                         >
-                          {formatCurrency(
-                            balanceAmount
-                          )}
-                        </p>
-                      </td>
+                          {page}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
 
-                      <td className="px-5 py-4 align-top">
-                        <BookingStatusBadge
-                          status={
-                            booking?.status
-                          }
-                        />
-                      </td>
-
-                      <td className="px-5 py-4 align-top">
-                        <BookingPaymentBadge
-                          status={
-                            booking?.payment_status
-                          }
-                        />
-                      </td>
-
-                      <td className="px-5 py-4 align-top text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            title="View booking"
-                            onClick={() =>
-                              navigate(
-                                `/super-admin/bookings/${bookingId}`
-                              )
-                            }
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            title="Edit booking"
-                            onClick={() =>
-                              navigate(
-                                `/super-admin/bookings/${bookingId}/edit`
-                              )
-                            }
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                          >
-                            <FileEdit className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* PAGINATION */}
-
-        {bookingList.length > 0 && (
-          <div className="flex min-w-0 flex-col gap-4 border-t border-slate-100 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-            <p className="text-sm text-slate-500">
-              Showing{" "}
-              <span className="font-semibold text-slate-700">
-                {from}
-              </span>{" "}
-              to{" "}
-              <span className="font-semibold text-slate-700">
-                {to}
-              </span>{" "}
-              of{" "}
-              <span className="font-semibold text-slate-700">
-                {total}
-              </span>{" "}
-              bookings
-            </p>
-
-            <div className="flex min-w-0 items-center justify-between gap-2 sm:justify-end">
-              <button
-                type="button"
-                disabled={
-                  currentPage <= 1 ||
-                  loading
-                }
-                onClick={() =>
-                  handlePageChange(
-                    currentPage - 1
-                  )
-                }
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-
-                <span className="hidden sm:inline">
-                  Previous
-                </span>
-              </button>
-
-              <div className="hidden items-center gap-1 sm:flex">
-                {pageNumbers.map(
-                  (page, index) =>
-                    page === "..." ? (
-                      <span
-                        key={`ellipsis-${index}`}
-                        className="px-2 text-sm text-slate-400"
-                      >
-                        ...
-                      </span>
-                    ) : (
-                      <button
-                        key={page}
-                        type="button"
-                        disabled={loading}
-                        onClick={() =>
-                          handlePageChange(
-                            page
-                          )
-                        }
-                        className={`h-9 min-w-9 rounded-lg px-2 text-sm font-semibold transition ${page === currentPage
-                          ? "bg-slate-900 text-white"
-                          : "text-slate-600 hover:bg-slate-100"
-                          }`}
-                      >
-                        {page}
-                      </button>
-                    )
-                )}
-              </div>
-
-              <div className="flex items-center gap-1 sm:hidden">
-                <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
-                  Page {currentPage} of{" "}
+                <div className="flex h-9 min-w-16 items-center justify-center rounded-lg bg-slate-100 px-2 text-xs font-semibold text-slate-600 sm:hidden">
+                  {currentPage} /{" "}
                   {lastPage}
-                </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    handleNextPage
+                  }
+                  disabled={
+                    currentPage >=
+                    lastPage ||
+                    loading
+                  }
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="hidden sm:inline">
+                    Next
+                  </span>
+
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-
-              <button
-                type="button"
-                disabled={
-                  currentPage >= lastPage ||
-                  loading
-                }
-                onClick={() =>
-                  handlePageChange(
-                    currentPage + 1
-                  )
-                }
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <span className="hidden sm:inline">
-                  Next
-                </span>
-
-                <ChevronRight className="h-4 w-4" />
-              </button>
             </div>
-          </div>
-        )}
+          )}
       </div>
-
-      {/* MOBILE SUMMARY */}
-
-      {bookingList.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:hidden">
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-medium text-slate-500">
-              Completed
-            </p>
-
-            <p className="mt-1 text-lg font-bold text-slate-900">
-              {statisticData.completed}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-medium text-slate-500">
-              Cancelled
-            </p>
-
-            <p className="mt-1 text-lg font-bold text-slate-900">
-              {statisticData.cancelled}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* LOADING INDICATOR */}
-
-      {loading &&
-        bookingList.length > 0 && (
-          <div className="pointer-events-none fixed bottom-5 right-5 z-50">
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-lg">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Updating bookings...
-            </div>
-          </div>
-        )}
     </div>
   );
 };

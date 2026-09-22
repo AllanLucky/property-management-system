@@ -975,6 +975,9 @@ const BookingForm = ({
   */
 
   const form = {
+    booking_type: "reservation",
+    source: "other",
+    payment_status: "pending",
     ...initialValues,
     ...values,
   };
@@ -2317,33 +2320,21 @@ const BookingForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | AUTO-CALCULATE TOTAL
+  | CALCULATED FINANCIALS
   |--------------------------------------------------------------------------
+  |
+  | total_amount and balance are calculated values.
+  | They must not be written back into the form state because the
+  | StoreBookingRequest explicitly prohibits clients from submitting
+  | total_amount and balance.
   */
 
-  useEffect(() => {
-    const rent =
-      Number(form.rent_amount) || 0;
-
-    const deposit =
-      Number(
-        form.deposit_amount,
-      ) || 0;
-
-    const service =
-      Number(
-        form.service_charge,
-      ) || 0;
-
-    const bookingFee =
-      Number(
-        form.booking_fee,
-      ) || 0;
-
-    const discount =
-      Number(
-        form.discount_amount,
-      ) || 0;
+  const calculatedTotal = useMemo(() => {
+    const rent = Number(form.rent_amount) || 0;
+    const deposit = Number(form.deposit_amount) || 0;
+    const service = Number(form.service_charge) || 0;
+    const bookingFee = Number(form.booking_fee) || 0;
+    const discount = Number(form.discount_amount) || 0;
 
     const total =
       rent +
@@ -2352,40 +2343,15 @@ const BookingForm = ({
       bookingFee -
       discount;
 
-    if (!Number.isFinite(total)) {
-      return;
-    }
-
-    const currentTotal =
-      Number(
-        form.total_amount,
-      ) || 0;
-
-    if (
-      Math.abs(
-        currentTotal - total,
-      ) < 0.01
-    ) {
-      return;
-    }
-
-    onChange?.({
-      target: {
-        name: "total_amount",
-        value:
-          total > 0
-            ? String(total)
-            : "",
-      },
-    });
+    return Number.isFinite(total)
+      ? Math.max(total, 0)
+      : 0;
   }, [
     form.rent_amount,
     form.deposit_amount,
     form.service_charge,
     form.booking_fee,
     form.discount_amount,
-    form.total_amount,
-    onChange,
   ]);
 
   /*
@@ -2397,9 +2363,7 @@ const BookingForm = ({
   const calculatedBalance =
     Math.max(
       0,
-      (Number(
-        form.total_amount,
-      ) || 0) -
+      calculatedTotal -
       (Number(
         form.amount_paid ??
         form.paid_amount,
@@ -3215,6 +3179,7 @@ const BookingForm = ({
               errors,
               "source",
             )}
+            required
             disabled={formDisabled}
             placeholder="Select source"
           />
@@ -3417,7 +3382,10 @@ const BookingForm = ({
             name="total_amount_display"
             type="number"
             value={
-              form.total_amount
+              calculatedTotal > 0
+                ? calculatedTotal
+                : form.total_amount ??
+                ""
             }
             error={getFieldError(
               errors,
@@ -3438,8 +3406,9 @@ const BookingForm = ({
             <p className="mt-1 text-lg font-bold text-gray-900">
               KES{" "}
               {formatNumber(
-                form.total_amount ||
-                0,
+                calculatedTotal > 0
+                  ? calculatedTotal
+                  : form.total_amount || 0,
               ) || "0"}
             </p>
           </div>
