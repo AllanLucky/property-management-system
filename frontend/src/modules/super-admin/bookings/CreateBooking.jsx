@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertCircle,
   Loader2,
@@ -17,18 +23,6 @@ import { useBooking } from "../../../hooks/useBooking";
 |--------------------------------------------------------------------------
 */
 
-/**
- * Safely normalize API collections.
- *
- * Supports:
- * - []
- * - { data: [] }
- * - { items: [] }
- * - { results: [] }
- * - { data: { data: [] } }
- * - { data: { items: [] } }
- * - { data: { results: [] } }
- */
 const safeArray = (value) => {
   if (Array.isArray(value)) {
     return value;
@@ -61,31 +55,10 @@ const safeArray = (value) => {
   return [];
 };
 
-/**
- * Extract the actual API payload.
- *
- * EstateKenya responses commonly use:
- *
- * {
- *   status,
- *   code,
- *   message,
- *   data,
- *   meta,
- *   links,
- *   errors
- * }
- */
 const extractResponseData = (response) => {
   if (!response) {
     return {};
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Axios response
-  |--------------------------------------------------------------------------
-  */
 
   const axiosData = response?.data;
 
@@ -94,12 +67,6 @@ const extractResponseData = (response) => {
     typeof axiosData === "object" &&
     !Array.isArray(axiosData)
   ) {
-    /*
-    |----------------------------------------------------------------------
-    | Laravel API envelope
-    |----------------------------------------------------------------------
-    */
-
     if (
       Object.prototype.hasOwnProperty.call(
         axiosData,
@@ -111,12 +78,6 @@ const extractResponseData = (response) => {
 
     return axiosData;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Already-normalized response
-  |--------------------------------------------------------------------------
-  */
 
   if (
     response &&
@@ -138,9 +99,6 @@ const extractResponseData = (response) => {
   return response;
 };
 
-/**
- * Extract a readable API error message.
- */
 const extractErrorMessage = (error) => {
   if (!error) {
     return "Unable to create booking.";
@@ -162,9 +120,6 @@ const extractErrorMessage = (error) => {
   );
 };
 
-/**
- * Extract Laravel validation errors.
- */
 const extractValidationErrors = (error) => {
   const validationErrors =
     error?.response?.data?.errors ||
@@ -180,13 +135,6 @@ const extractValidationErrors = (error) => {
     : {};
 };
 
-/**
- * Normalize an ID from:
- *
- * - primitive
- * - option object
- * - nested option object
- */
 const getId = (value) => {
   if (
     value === null ||
@@ -229,25 +177,21 @@ const getId = (value) => {
     ) {
       return String(id);
     }
-
-    return "";
   }
 
   return "";
 };
 
-/**
- * Normalize collection options.
- */
 const normalizeOptions = (value) => {
   return safeArray(value).filter(Boolean);
 };
 
-/**
- * Find an item by ID.
- */
-const findById = (collection, id) => {
-  const normalizedId = getId(id);
+const findById = (
+  collection,
+  id
+) => {
+  const normalizedId =
+    getId(id);
 
   if (!normalizedId) {
     return null;
@@ -256,17 +200,65 @@ const findById = (collection, id) => {
   return (
     collection.find(
       (item) =>
-        getId(item) === normalizedId
+        getId(item) ===
+        normalizedId
     ) || null
   );
 };
 
-/**
- * Convert an amount into a clean API value.
- *
- * Keeps empty values empty and converts numeric strings
- * to numbers.
- */
+const sameCollectionById = (
+  first,
+  second
+) => {
+  if (first === second) {
+    return true;
+  }
+
+  if (
+    !Array.isArray(first) ||
+    !Array.isArray(second)
+  ) {
+    return false;
+  }
+
+  if (
+    first.length !==
+    second.length
+  ) {
+    return false;
+  }
+
+  return first.every(
+    (item, index) =>
+      getId(item) ===
+      getId(second[index])
+  );
+};
+
+const uniqueById = (items) => {
+  const seen = new Set();
+
+  return items.filter((item) => {
+    if (!item) {
+      return false;
+    }
+
+    const id = getId(item);
+
+    if (!id) {
+      return true;
+    }
+
+    if (seen.has(id)) {
+      return false;
+    }
+
+    seen.add(id);
+
+    return true;
+  });
+};
+
 const normalizeAmount = (value) => {
   if (
     value === "" ||
@@ -276,11 +268,173 @@ const normalizeAmount = (value) => {
     return undefined;
   }
 
-  const number = Number(value);
+  const number =
+    Number(value);
 
   return Number.isFinite(number)
     ? number
     : value;
+};
+
+const normalizeGuestCount = (
+  value,
+  fallback = undefined
+) => {
+  if (
+    value === "" ||
+    value === null ||
+    value === undefined
+  ) {
+    return fallback;
+  }
+
+  const number =
+    Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.trunc(number);
+};
+
+/*
+|--------------------------------------------------------------------------
+| Relationship Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getTenantId = (tenant) => {
+  if (!tenant) {
+    return "";
+  }
+
+  return getId(
+    tenant?.tenant_id ??
+    tenant?.id
+  );
+};
+
+const getTenancyTenantId = (tenancy) => {
+  if (!tenancy) {
+    return "";
+  }
+
+  return getId(
+    tenancy?.tenant_id ??
+    tenancy?.tenant?.id ??
+    tenancy?.tenant?.tenant_id
+  );
+};
+
+const getTenancyPropertyId = (tenancy) => {
+  if (!tenancy) {
+    return "";
+  }
+
+  return getId(
+    tenancy?.property_id ??
+    tenancy?.property?.id ??
+    tenancy?.property?.property_id
+  );
+};
+
+const getTenancyApartmentId = (tenancy) => {
+  if (!tenancy) {
+    return "";
+  }
+
+  return getId(
+    tenancy?.apartment_id ??
+    tenancy?.apartment?.id ??
+    tenancy?.apartment?.apartment_id
+  );
+};
+
+const getTenancyUnitId = (tenancy) => {
+  if (!tenancy) {
+    return "";
+  }
+
+  return getId(
+    tenancy?.unit_id ??
+    tenancy?.unit?.id ??
+    tenancy?.unit?.unit_id
+  );
+};
+
+const getCustomerUserId = (customer) => {
+  if (!customer) {
+    return "";
+  }
+
+  return getId(
+    customer?.user_id ??
+    customer?.user?.id ??
+    customer?.customer_id ??
+    customer?.id
+  );
+};
+
+const getNestedTenancies = (tenant) => {
+  if (!tenant) {
+    return [];
+  }
+
+  return normalizeOptions(
+    tenant?.tenancies ??
+    tenant?.active_tenancies ??
+    tenant?.activeTenancies
+  );
+};
+
+const getNestedApartments = (property) => {
+  if (!property) {
+    return [];
+  }
+
+  return normalizeOptions(
+    property?.apartments ??
+    property?.apartment_list
+  );
+};
+
+const getNestedUnits = (apartment) => {
+  if (!apartment) {
+    return [];
+  }
+
+  return normalizeOptions(
+    apartment?.units ??
+    apartment?.unit_list
+  );
+};
+
+const mergeIntoState = (
+  setter,
+  incoming
+) => {
+  const list =
+    normalizeOptions(incoming);
+
+  if (!list.length) {
+    return;
+  }
+
+  setter((current) => {
+    const merged =
+      uniqueById([
+        ...current,
+        ...list,
+      ]);
+
+    return sameCollectionById(
+      current,
+      merged
+    )
+      ? current
+      : merged;
+  });
 };
 
 /*
@@ -290,12 +444,6 @@ const normalizeAmount = (value) => {
 */
 
 const INITIAL_VALUES = {
-  /*
-  |--------------------------------------------------------------------------
-  | Relationships
-  |--------------------------------------------------------------------------
-  */
-
   user_id: "",
   customer_id: "",
   tenant_id: "",
@@ -305,24 +453,12 @@ const INITIAL_VALUES = {
   apartment_id: "",
   unit_id: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | Booking
-  |--------------------------------------------------------------------------
-  */
-
   booking_type: "rental",
   source: "website",
 
   booking_date: "",
   start_date: "",
   end_date: "",
-
-  /*
-  |--------------------------------------------------------------------------
-  | Financials
-  |--------------------------------------------------------------------------
-  */
 
   rent_amount: "",
   deposit_amount: "",
@@ -331,42 +467,18 @@ const INITIAL_VALUES = {
   discount_amount: "",
   total_amount: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | Payment
-  |--------------------------------------------------------------------------
-  */
-
   amount_paid: "",
   payment_status: "pending",
   payment_method: "",
   payment_reference: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | Guests
-  |--------------------------------------------------------------------------
-  */
+  number_of_adults: "1",
+  number_of_children: "0",
 
-  adults: "1",
-  children: "0",
+  check_in_date: "",
+  check_out_date: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | Check-in / Check-out
-  |--------------------------------------------------------------------------
-  */
-
-  check_in_at: "",
-  check_out_at: "",
-
-  /*
-  |--------------------------------------------------------------------------
-  | Additional Information
-  |--------------------------------------------------------------------------
-  */
-
-  special_request: "",
+  special_requests: "",
   notes: "",
 };
 
@@ -380,12 +492,22 @@ const CreateBooking = () => {
   const navigate = useNavigate();
 
   const {
-    createBooking,
+    addBooking,
+
     getAvailableUnits,
     getAvailableUsers,
 
     availableUnits,
     availableUsers,
+
+    selectedTenant,
+    customerTenancies,
+
+    customerTenanciesLoading,
+    customerTenanciesError,
+
+    resolveCustomerTenancies,
+    getTenantByCustomer,
 
     loading,
     loadingCreate,
@@ -437,6 +559,69 @@ const CreateBooking = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | Stable Function Refs
+  |--------------------------------------------------------------------------
+  |
+  | These refs allow the initial-data effect and async relationship
+  | handlers to use the latest hook functions without putting unstable
+  | hook functions into effect dependencies.
+  |--------------------------------------------------------------------------
+  */
+
+  const getAvailableUsersRef =
+    useRef(getAvailableUsers);
+
+  const getAvailableUnitsRef =
+    useRef(getAvailableUnits);
+
+  const resolveCustomerTenanciesRef =
+    useRef(resolveCustomerTenancies);
+
+  const getTenantByCustomerRef =
+    useRef(getTenantByCustomer);
+
+  const addBookingRef =
+    useRef(addBooking);
+
+  useEffect(() => {
+    getAvailableUsersRef.current =
+      getAvailableUsers;
+  }, [getAvailableUsers]);
+
+  useEffect(() => {
+    getAvailableUnitsRef.current =
+      getAvailableUnits;
+  }, [getAvailableUnits]);
+
+  useEffect(() => {
+    resolveCustomerTenanciesRef.current =
+      resolveCustomerTenancies;
+  }, [resolveCustomerTenancies]);
+
+  useEffect(() => {
+    getTenantByCustomerRef.current =
+      getTenantByCustomer;
+  }, [getTenantByCustomer]);
+
+  useEffect(() => {
+    addBookingRef.current =
+      addBooking;
+  }, [addBooking]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Request Guards
+  |--------------------------------------------------------------------------
+  */
+
+  const initialLoadStartedRef =
+    useRef(false);
+
+  const relationshipRequestRef =
+    useRef(0);
+
+  /*
+  |--------------------------------------------------------------------------
   | Loading State
   |--------------------------------------------------------------------------
   */
@@ -451,162 +636,935 @@ const CreateBooking = () => {
   const isLoadingUsers =
     Boolean(loadingAvailableUsers);
 
+  const isLoadingRelationship =
+    Boolean(customerTenanciesLoading);
+
   /*
   |--------------------------------------------------------------------------
   | Hook Collections
   |--------------------------------------------------------------------------
   */
 
-  const hookAvailableUnits = useMemo(
-    () =>
-      normalizeOptions(
-        availableUnits
-      ),
-    [availableUnits]
-  );
+  const hookAvailableUnits =
+    useMemo(
+      () =>
+        normalizeOptions(
+          availableUnits
+        ),
+      [availableUnits]
+    );
 
-  const hookAvailableUsers = useMemo(
-    () =>
-      normalizeOptions(
-        availableUsers
-      ),
-    [availableUsers]
-  );
+  const hookAvailableUsers =
+    useMemo(
+      () =>
+        normalizeOptions(
+          availableUsers
+        ),
+      [availableUsers]
+    );
 
   /*
   |--------------------------------------------------------------------------
-  | Effective Collections
+  | Effective Units
   |--------------------------------------------------------------------------
   */
 
-  const effectiveUnits = useMemo(
-    () =>
-      hookAvailableUnits.length > 0
-        ? hookAvailableUnits
-        : units,
-    [
-      hookAvailableUnits,
+  const effectiveUnits =
+    useMemo(() => {
+      return uniqueById([
+        ...units,
+        ...hookAvailableUnits,
+      ]);
+    }, [
       units,
-    ]
-  );
-
-  const effectiveCustomers = useMemo(
-    () =>
-      hookAvailableUsers.length > 0
-        ? hookAvailableUsers
-        : customers,
-    [
-      hookAvailableUsers,
-      customers,
-    ]
-  );
+      hookAvailableUnits,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
-  | Load Initial Booking Data
+  | Effective Customers
+  |--------------------------------------------------------------------------
+  */
+
+  const effectiveCustomers =
+    useMemo(() => {
+      return uniqueById([
+        ...customers,
+        ...hookAvailableUsers,
+      ]);
+    }, [
+      customers,
+      hookAvailableUsers,
+    ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Effective Tenants
+  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | Do not synchronize selectedTenant into local state from an effect.
+  | selectedTenant may be recreated by useBooking() and doing setState from
+  | an effect watching it can cause a Maximum Update Depth loop.
+  |--------------------------------------------------------------------------
+  */
+
+  const effectiveTenants =
+    useMemo(() => {
+      const selected =
+        selectedTenant
+          ? [selectedTenant]
+          : [];
+
+      return uniqueById([
+        ...tenants,
+        ...selected,
+      ]);
+    }, [
+      tenants,
+      selectedTenant,
+    ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Effective Tenancies
+  |--------------------------------------------------------------------------
+  */
+
+  const effectiveTenancies =
+    useMemo(() => {
+      const relationshipList =
+        normalizeOptions(
+          customerTenancies
+        );
+
+      const localList =
+        normalizeOptions(
+          tenancies
+        );
+
+      const nestedList =
+        effectiveTenants.flatMap(
+          getNestedTenancies
+        );
+
+      return uniqueById([
+        ...relationshipList,
+        ...localList,
+        ...nestedList,
+      ]);
+    }, [
+      customerTenancies,
+      tenancies,
+      effectiveTenants,
+    ]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Initial Booking Data
   |--------------------------------------------------------------------------
   */
 
   const loadBookingData =
-    useCallback(async () => {
-      try {
-        setLoadingData(true);
-        setServerError("");
+    useCallback(
+      async () => {
+        try {
+          setLoadingData(true);
+          setServerError("");
 
-        const response =
-          await getAvailableUsers();
+          const response =
+            await getAvailableUsersRef.current();
 
-        const data =
-          extractResponseData(response);
+          const data =
+            extractResponseData(
+              response
+            );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Customers / Users
-        |--------------------------------------------------------------------------
-        */
+          /*
+          |----------------------------------------------------------------------
+          | Customers / Users
+          |----------------------------------------------------------------------
+          */
 
-        const users =
-          normalizeOptions(
-            data?.users ??
+          const users =
+            normalizeOptions(
+              data?.users ??
               data?.customers ??
               data
+            );
+
+          mergeIntoState(
+            setCustomers,
+            users
           );
 
-        setCustomers(users);
+          /*
+          |----------------------------------------------------------------------
+          | Properties
+          |----------------------------------------------------------------------
+          */
 
-        /*
-        |--------------------------------------------------------------------------
-        | Properties
-        |--------------------------------------------------------------------------
-        */
+          const suppliedProperties =
+            normalizeOptions(
+              data?.properties ??
+              data?.property_list
+            );
 
-        setProperties(
-          normalizeOptions(
-            data?.properties
-          )
-        );
+          /*
+          |----------------------------------------------------------------------
+          | Apartments
+          |----------------------------------------------------------------------
+          */
 
-        /*
-        |--------------------------------------------------------------------------
-        | Apartments
-        |--------------------------------------------------------------------------
-        */
+          const suppliedApartments =
+            normalizeOptions(
+              data?.apartments ??
+              data?.apartment_list
+            );
 
-        setApartments(
-          normalizeOptions(
-            data?.apartments
-          )
-        );
+          /*
+          |----------------------------------------------------------------------
+          | Units
+          |----------------------------------------------------------------------
+          */
 
-        /*
-        |--------------------------------------------------------------------------
-        | Tenants
-        |--------------------------------------------------------------------------
-        */
+          const suppliedUnits =
+            normalizeOptions(
+              data?.units ??
+              data?.available_units ??
+              data?.unit_list
+            );
 
-        setTenants(
-          normalizeOptions(
-            data?.tenants
-          )
-        );
+          /*
+          |----------------------------------------------------------------------
+          | Tenants
+          |----------------------------------------------------------------------
+          */
 
-        /*
-        |--------------------------------------------------------------------------
-        | Tenancies
-        |--------------------------------------------------------------------------
-        */
+          const suppliedTenants =
+            normalizeOptions(
+              data?.tenants ??
+              data?.tenant_list
+            );
 
-        setTenancies(
-          normalizeOptions(
-            data?.tenancies
-          )
-        );
-      } catch (err) {
-        setServerError(
-          extractErrorMessage(err)
-        );
-      } finally {
-        setLoadingData(false);
-      }
-    }, [getAvailableUsers]);
+          /*
+          |----------------------------------------------------------------------
+          | Tenancies
+          |----------------------------------------------------------------------
+          */
+
+          const suppliedTenancies =
+            normalizeOptions(
+              data?.tenancies ??
+              data?.active_tenancies ??
+              data?.activeTenancies
+            );
+
+          mergeIntoState(
+            setProperties,
+            suppliedProperties
+          );
+
+          mergeIntoState(
+            setApartments,
+            suppliedApartments
+          );
+
+          mergeIntoState(
+            setUnits,
+            suppliedUnits
+          );
+
+          mergeIntoState(
+            setTenants,
+            suppliedTenants
+          );
+
+          mergeIntoState(
+            setTenancies,
+            suppliedTenancies
+          );
+
+          /*
+          |----------------------------------------------------------------------
+          | Extract apartments and units nested inside properties
+          |----------------------------------------------------------------------
+          */
+
+          const nestedApartments =
+            suppliedProperties.flatMap(
+              getNestedApartments
+            );
+
+          const nestedUnits =
+            nestedApartments.flatMap(
+              getNestedUnits
+            );
+
+          mergeIntoState(
+            setApartments,
+            nestedApartments
+          );
+
+          mergeIntoState(
+            setUnits,
+            nestedUnits
+          );
+
+          /*
+          |----------------------------------------------------------------------
+          | Extract tenancies nested inside tenants
+          |----------------------------------------------------------------------
+          */
+
+          const nestedTenancies =
+            suppliedTenants.flatMap(
+              getNestedTenancies
+            );
+
+          mergeIntoState(
+            setTenancies,
+            nestedTenancies
+          );
+        } catch (err) {
+          if (
+            import.meta.env.DEV
+          ) {
+            console.error(
+              "[CreateBooking] Initial booking data failed:",
+              err
+            );
+          }
+
+          setServerError(
+            extractErrorMessage(err)
+          );
+        } finally {
+          setLoadingData(false);
+        }
+      },
+      []
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Initial Data Effect
+  |--------------------------------------------------------------------------
+  */
 
   useEffect(() => {
-    let mounted = true;
+    if (
+      initialLoadStartedRef.current
+    ) {
+      return;
+    }
 
-    const run = async () => {
-      if (!mounted) {
-        return;
-      }
+    initialLoadStartedRef.current =
+      true;
 
-      await loadBookingData();
-    };
+    loadBookingData();
+  }, [
+    loadBookingData,
+  ]);
 
-    run();
+  /*
+  |--------------------------------------------------------------------------
+  | Customer Change
+  |--------------------------------------------------------------------------
+  |
+  | Customer
+  |   ↓
+  | Tenant
+  |   ↓
+  | Tenancy
+  |   ↓
+  | Property / Apartment / Unit
+  |--------------------------------------------------------------------------
+  */
 
-    return () => {
-      mounted = false;
-    };
-  }, [loadBookingData]);
+  const handleCustomerChange =
+    useCallback(
+      async (customerValue) => {
+        const customer =
+          typeof customerValue ===
+            "object"
+            ? customerValue
+            : findById(
+              effectiveCustomers,
+              customerValue
+            );
+
+        const customerId =
+          getId(customer);
+
+        const userId =
+          getCustomerUserId(
+            customer
+          );
+
+        const requestId =
+          ++relationshipRequestRef.current;
+
+        /*
+        |----------------------------------------------------------------------
+        | Reset relationship selections.
+        |
+        | IMPORTANT:
+        | Do not clear the global collections. They may contain the records
+        | required to populate the next relationship select.
+        |----------------------------------------------------------------------
+        */
+
+        setForm((current) => {
+          const next = {
+            ...current,
+
+            customer_id:
+              customerId,
+
+            user_id:
+              userId,
+
+            tenant_id: "",
+            tenancy_id: "",
+
+            property_id: "",
+            apartment_id: "",
+            unit_id: "",
+
+            rent_amount: "",
+            deposit_amount: "",
+            service_charge: "",
+            total_amount: "",
+          };
+
+          const changed =
+            Object.keys(next).some(
+              (key) =>
+                next[key] !==
+                current[key]
+            );
+
+          return changed
+            ? next
+            : current;
+        });
+
+        setFieldErrors((current) => {
+          const next = {
+            ...current,
+          };
+
+          delete next.customer_id;
+          delete next.user_id;
+          delete next.tenant_id;
+          delete next.tenancy_id;
+          delete next.property_id;
+          delete next.apartment_id;
+          delete next.unit_id;
+
+          return next;
+        });
+
+        setServerError("");
+
+        if (!customer) {
+          return;
+        }
+
+        try {
+          /*
+          |--------------------------------------------------------------------
+          | Resolve customer → tenant → tenancy
+          |--------------------------------------------------------------------
+          */
+
+          const result =
+            await resolveCustomerTenanciesRef.current(
+              customer
+            );
+
+          if (
+            requestId !==
+            relationshipRequestRef.current
+          ) {
+            return;
+          }
+
+          const resolvedTenant =
+            result?.tenant ??
+            result?.selectedTenant ??
+            result?.data?.tenant ??
+            null;
+
+          const resolvedTenancies =
+            normalizeOptions(
+              result?.tenancies ??
+              result?.customerTenancies ??
+              result?.data?.tenancies ??
+              result?.data?.customerTenancies
+            );
+
+          /*
+          |--------------------------------------------------------------------
+          | Tenant
+          |--------------------------------------------------------------------
+          */
+
+          if (resolvedTenant) {
+            mergeIntoState(
+              setTenants,
+              [resolvedTenant]
+            );
+
+            const tenantId =
+              getTenantId(
+                resolvedTenant
+              );
+
+            /*
+            |------------------------------------------------------------------
+            | Guard the state update.
+            |------------------------------------------------------------------
+            */
+
+            if (tenantId) {
+              setForm((current) => {
+                if (
+                  current.tenant_id ===
+                  tenantId
+                ) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  tenant_id:
+                    tenantId,
+                };
+              });
+            }
+
+            /*
+            |------------------------------------------------------------------
+            | Load tenant's nested tenancies.
+            |------------------------------------------------------------------
+            */
+
+            mergeIntoState(
+              setTenancies,
+              getNestedTenancies(
+                resolvedTenant
+              )
+            );
+          }
+
+          /*
+          |--------------------------------------------------------------------
+          | Customer relationship tenancies
+          |--------------------------------------------------------------------
+          */
+
+          mergeIntoState(
+            setTenancies,
+            resolvedTenancies
+          );
+
+          /*
+          |--------------------------------------------------------------------
+          | Preload related property/apartment/unit records.
+          |--------------------------------------------------------------------
+          */
+
+          resolvedTenancies.forEach(
+            (tenancy) => {
+              if (tenancy?.property) {
+                mergeIntoState(
+                  setProperties,
+                  [tenancy.property]
+                );
+
+                mergeIntoState(
+                  setApartments,
+                  getNestedApartments(
+                    tenancy.property
+                  )
+                );
+              }
+
+              if (tenancy?.apartment) {
+                mergeIntoState(
+                  setApartments,
+                  [tenancy.apartment]
+                );
+
+                mergeIntoState(
+                  setUnits,
+                  getNestedUnits(
+                    tenancy.apartment
+                  )
+                );
+              }
+
+              if (tenancy?.unit) {
+                mergeIntoState(
+                  setUnits,
+                  [tenancy.unit]
+                );
+              }
+            }
+          );
+
+          /*
+          |--------------------------------------------------------------------
+          | Fallback tenant lookup
+          |--------------------------------------------------------------------
+          */
+
+          if (
+            !resolvedTenant &&
+            getTenantByCustomerRef.current
+          ) {
+            const tenant =
+              await getTenantByCustomerRef.current(
+                customer
+              );
+
+            if (
+              requestId !==
+              relationshipRequestRef.current
+            ) {
+              return;
+            }
+
+            if (tenant) {
+              mergeIntoState(
+                setTenants,
+                [tenant]
+              );
+
+              const tenantId =
+                getTenantId(
+                  tenant
+                );
+
+              if (tenantId) {
+                setForm((current) => {
+                  if (
+                    current.tenant_id ===
+                    tenantId
+                  ) {
+                    return current;
+                  }
+
+                  return {
+                    ...current,
+                    tenant_id:
+                      tenantId,
+                  };
+                });
+              }
+
+              mergeIntoState(
+                setTenancies,
+                getNestedTenancies(
+                  tenant
+                )
+              );
+            }
+          }
+        } catch (err) {
+          if (
+            import.meta.env.DEV
+          ) {
+            console.error(
+              "[CreateBooking] Customer relationship resolution failed:",
+              err
+            );
+          }
+
+          if (
+            requestId ===
+            relationshipRequestRef.current
+          ) {
+            setServerError(
+              extractErrorMessage(err)
+            );
+          }
+        }
+      },
+      [
+        effectiveCustomers,
+      ]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Tenant Change
+  |--------------------------------------------------------------------------
+  */
+
+  const handleTenantChange =
+    useCallback(
+      (tenantValue) => {
+        const tenant =
+          typeof tenantValue ===
+            "object"
+            ? tenantValue
+            : findById(
+              effectiveTenants,
+              tenantValue
+            );
+
+        const tenantId =
+          getTenantId(
+            tenant
+          );
+
+        const tenantTenancies =
+          getNestedTenancies(
+            tenant
+          );
+
+        /*
+        |----------------------------------------------------------------------
+        | Invalidate an older async customer relationship request.
+        |----------------------------------------------------------------------
+        */
+
+        relationshipRequestRef.current += 1;
+
+        setForm((current) => ({
+          ...current,
+
+          tenant_id:
+            tenantId,
+
+          tenancy_id: "",
+          property_id: "",
+          apartment_id: "",
+          unit_id: "",
+
+          rent_amount: "",
+          deposit_amount: "",
+          service_charge: "",
+          total_amount: "",
+        }));
+
+        mergeIntoState(
+          setTenancies,
+          tenantTenancies
+        );
+
+        setFieldErrors((current) => {
+          const next = {
+            ...current,
+          };
+
+          delete next.tenant_id;
+          delete next.tenancy_id;
+          delete next.property_id;
+          delete next.apartment_id;
+          delete next.unit_id;
+
+          return next;
+        });
+
+        setServerError("");
+      },
+      [
+        effectiveTenants,
+      ]
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Tenancy Change
+  |--------------------------------------------------------------------------
+  */
+
+  const handleTenancyChange =
+    useCallback(
+      (tenancyValue) => {
+        const tenancy =
+          typeof tenancyValue ===
+            "object"
+            ? tenancyValue
+            : findById(
+              effectiveTenancies,
+              tenancyValue
+            );
+
+        if (!tenancy) {
+          return;
+        }
+
+        const tenancyId =
+          getId(tenancy);
+
+        if (!tenancyId) {
+          return;
+        }
+
+        const tenantId =
+          getTenancyTenantId(
+            tenancy
+          );
+
+        const propertyId =
+          getTenancyPropertyId(
+            tenancy
+          );
+
+        const apartmentId =
+          getTenancyApartmentId(
+            tenancy
+          );
+
+        const unitId =
+          getTenancyUnitId(
+            tenancy
+          );
+
+        const rentAmount =
+          tenancy?.rent_amount ??
+          tenancy?.rent ??
+          tenancy?.monthly_rent ??
+          "";
+
+        const depositAmount =
+          tenancy?.deposit_amount ??
+          tenancy?.deposit ??
+          "";
+
+        const serviceCharge =
+          tenancy?.service_charge ??
+          "";
+
+        setForm((current) => ({
+          ...current,
+
+          tenancy_id:
+            tenancyId,
+
+          tenant_id:
+            tenantId ||
+            current.tenant_id,
+
+          property_id:
+            propertyId ||
+            current.property_id,
+
+          apartment_id:
+            apartmentId ||
+            current.apartment_id,
+
+          unit_id:
+            unitId ||
+            current.unit_id,
+
+          rent_amount:
+            rentAmount !== ""
+              ? String(rentAmount)
+              : current.rent_amount,
+
+          deposit_amount:
+            depositAmount !== ""
+              ? String(depositAmount)
+              : current.deposit_amount,
+
+          service_charge:
+            serviceCharge !== ""
+              ? String(serviceCharge)
+              : current.service_charge,
+        }));
+
+        /*
+        |----------------------------------------------------------------------
+        | Tenant
+        |----------------------------------------------------------------------
+        */
+
+        if (tenancy?.tenant) {
+          mergeIntoState(
+            setTenants,
+            [tenancy.tenant]
+          );
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | Property
+        |----------------------------------------------------------------------
+        */
+
+        if (tenancy?.property) {
+          mergeIntoState(
+            setProperties,
+            [tenancy.property]
+          );
+
+          mergeIntoState(
+            setApartments,
+            getNestedApartments(
+              tenancy.property
+            )
+          );
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | Apartment
+        |----------------------------------------------------------------------
+        */
+
+        if (tenancy?.apartment) {
+          mergeIntoState(
+            setApartments,
+            [tenancy.apartment]
+          );
+
+          mergeIntoState(
+            setUnits,
+            getNestedUnits(
+              tenancy.apartment
+            )
+          );
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | Unit
+        |----------------------------------------------------------------------
+        */
+
+        if (tenancy?.unit) {
+          mergeIntoState(
+            setUnits,
+            [tenancy.unit]
+          );
+        }
+
+        setFieldErrors((current) => {
+          const next = {
+            ...current,
+          };
+
+          delete next.tenancy_id;
+          delete next.tenant_id;
+          delete next.property_id;
+          delete next.apartment_id;
+          delete next.unit_id;
+
+          return next;
+        });
+
+        setServerError("");
+      },
+      [
+        effectiveTenancies,
+      ]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -614,79 +1572,78 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handlePropertyChange = (
-    propertyValue
-  ) => {
-    const propertyId =
-      getId(propertyValue);
+  const handlePropertyChange =
+    useCallback(
+      (propertyValue) => {
+        const propertyId =
+          getId(propertyValue);
 
-    setForm((current) => ({
-      ...current,
-      property_id: propertyId,
-      apartment_id: "",
-      unit_id: "",
-      tenancy_id: "",
-      rent_amount: "",
-      total_amount: "",
-    }));
+        const selectedProperty =
+          findById(
+            properties,
+            propertyId
+          );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Reset dependent collections
-    |--------------------------------------------------------------------------
-    */
+        const propertyApartments =
+          getNestedApartments(
+            selectedProperty
+          );
 
-    setApartments([]);
-    setUnits([]);
-    setTenancies([]);
+        setForm((current) => ({
+          ...current,
 
-    /*
-    |--------------------------------------------------------------------------
-    | If the selected property already contains apartments,
-    | use them immediately.
-    |--------------------------------------------------------------------------
-    */
+          property_id:
+            propertyId,
 
-    const selectedProperty =
-      findById(
+          apartment_id: "",
+          unit_id: "",
+          tenancy_id: "",
+
+          rent_amount: "",
+          deposit_amount: "",
+          service_charge: "",
+          total_amount: "",
+        }));
+
+        /*
+        |----------------------------------------------------------------------
+        | Only replace apartment/unit collections when the selected property
+        | is actually known. Otherwise retain records loaded from tenancy
+        | resolution.
+        |----------------------------------------------------------------------
+        */
+
+        if (
+          propertyApartments.length
+        ) {
+          setApartments(
+            propertyApartments
+          );
+        } else {
+          setApartments([]);
+        }
+
+        setUnits([]);
+
+        setFieldErrors((current) => {
+          const next = {
+            ...current,
+          };
+
+          delete next.property_id;
+          delete next.apartment_id;
+          delete next.unit_id;
+          delete next.tenancy_id;
+
+          return next;
+        });
+
+        setServerError("");
+      },
+      [
         properties,
-        propertyId
-      );
-
-    const propertyApartments =
-      normalizeOptions(
-        selectedProperty?.apartments
-      );
-
-    if (
-      propertyApartments.length > 0
-    ) {
-      setApartments(
-        propertyApartments
-      );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Clear validation errors
-    |--------------------------------------------------------------------------
-    */
-
-    setFieldErrors((current) => {
-      const next = {
-        ...current,
-      };
-
-      delete next.property_id;
-      delete next.apartment_id;
-      delete next.unit_id;
-      delete next.tenancy_id;
-
-      return next;
-    });
-
-    setServerError("");
-  };
+      ]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -694,67 +1651,60 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleApartmentChange = (
-    apartmentValue
-  ) => {
-    const apartmentId =
-      getId(apartmentValue);
+  const handleApartmentChange =
+    useCallback(
+      (apartmentValue) => {
+        const apartmentId =
+          getId(apartmentValue);
 
-    setForm((current) => ({
-      ...current,
-      apartment_id: apartmentId,
-      unit_id: "",
-      tenancy_id: "",
-      rent_amount: "",
-      total_amount: "",
-    }));
+        const selectedApartment =
+          findById(
+            apartments,
+            apartmentId
+          );
 
-    setUnits([]);
+        const apartmentUnits =
+          getNestedUnits(
+            selectedApartment
+          );
 
-    /*
-    |--------------------------------------------------------------------------
-    | If the selected apartment already contains units,
-    | use them immediately.
-    |--------------------------------------------------------------------------
-    */
+        setForm((current) => ({
+          ...current,
 
-    const selectedApartment =
-      findById(
+          apartment_id:
+            apartmentId,
+
+          unit_id: "",
+          tenancy_id: "",
+
+          rent_amount: "",
+          deposit_amount: "",
+          service_charge: "",
+          total_amount: "",
+        }));
+
+        setUnits(
+          apartmentUnits
+        );
+
+        setFieldErrors((current) => {
+          const next = {
+            ...current,
+          };
+
+          delete next.apartment_id;
+          delete next.unit_id;
+          delete next.tenancy_id;
+
+          return next;
+        });
+
+        setServerError("");
+      },
+      [
         apartments,
-        apartmentId
-      );
-
-    const apartmentUnits =
-      normalizeOptions(
-        selectedApartment?.units
-      );
-
-    if (
-      apartmentUnits.length > 0
-    ) {
-      setUnits(apartmentUnits);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Clear validation errors
-    |--------------------------------------------------------------------------
-    */
-
-    setFieldErrors((current) => {
-      const next = {
-        ...current,
-      };
-
-      delete next.apartment_id;
-      delete next.unit_id;
-      delete next.tenancy_id;
-
-      return next;
-    });
-
-    setServerError("");
-  };
+      ]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -762,90 +1712,124 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleUnitChange = (
-    unitValue
-  ) => {
-    const unitId =
-      getId(unitValue);
+  const handleUnitChange =
+    useCallback(
+      (unitValue) => {
+        const unitId =
+          getId(unitValue);
 
-    const selectedUnit =
-      findById(
+        const selectedUnit =
+          findById(
+            effectiveUnits,
+            unitId
+          );
+
+        setForm((current) => {
+          const next = {
+            ...current,
+            unit_id:
+              unitId,
+          };
+
+          const unitApartmentId =
+            getId(
+              selectedUnit?.apartment_id ??
+              selectedUnit?.apartment?.id
+            );
+
+          if (unitApartmentId) {
+            next.apartment_id =
+              unitApartmentId;
+          }
+
+          const unitPropertyId =
+            getId(
+              selectedUnit?.property_id ??
+              selectedUnit?.property?.id
+            );
+
+          if (unitPropertyId) {
+            next.property_id =
+              unitPropertyId;
+          }
+
+          const hasRent =
+            current.rent_amount !== "" &&
+            current.rent_amount !== null &&
+            current.rent_amount !== undefined;
+
+          if (
+            selectedUnit &&
+            !hasRent
+          ) {
+            const unitPrice =
+              selectedUnit?.price ??
+              selectedUnit?.rent ??
+              selectedUnit?.rent_amount ??
+              selectedUnit?.monthly_rent;
+
+            if (
+              unitPrice !== undefined &&
+              unitPrice !== null &&
+              unitPrice !== ""
+            ) {
+              next.rent_amount =
+                String(unitPrice);
+            }
+          }
+
+          const tenancyId =
+            getId(
+              selectedUnit?.tenancy_id ??
+              selectedUnit?.active_tenancy_id ??
+              selectedUnit?.activeTenancy?.id
+            );
+
+          if (
+            tenancyId &&
+            !current.tenancy_id
+          ) {
+            next.tenancy_id =
+              tenancyId;
+          }
+
+          const changed =
+            Object.keys(next).some(
+              (key) =>
+                next[key] !==
+                current[key]
+            );
+
+          return changed
+            ? next
+            : current;
+        });
+
+        setFieldErrors((current) => {
+          if (
+            !Object.prototype.hasOwnProperty.call(
+              current,
+              "unit_id"
+            )
+          ) {
+            return current;
+          }
+
+          const next = {
+            ...current,
+          };
+
+          delete next.unit_id;
+
+          return next;
+        });
+
+        setServerError("");
+      },
+      [
         effectiveUnits,
-        unitId
-      );
-
-    setForm((current) => {
-      const next = {
-        ...current,
-        unit_id: unitId,
-      };
-
-      /*
-      |--------------------------------------------------------------------------
-      | Automatically use unit price when rent is empty.
-      |--------------------------------------------------------------------------
-      */
-
-      const hasRent =
-        current.rent_amount !== "" &&
-        current.rent_amount !== null &&
-        current.rent_amount !== undefined;
-
-      if (
-        selectedUnit &&
-        !hasRent
-      ) {
-        const unitPrice =
-          selectedUnit?.price ??
-          selectedUnit?.rent ??
-          selectedUnit?.rent_amount ??
-          selectedUnit?.monthly_rent;
-
-        if (
-          unitPrice !== undefined &&
-          unitPrice !== null &&
-          unitPrice !== ""
-        ) {
-          next.rent_amount =
-            String(unitPrice);
-        }
-      }
-
-      /*
-      |--------------------------------------------------------------------------
-      | Automatically use tenancy if supplied by unit
-      |--------------------------------------------------------------------------
-      */
-
-      const tenancyId =
-        getId(
-          selectedUnit?.tenancy_id ??
-            selectedUnit?.active_tenancy_id
-        );
-
-      if (
-        tenancyId &&
-        !current.tenancy_id
-      ) {
-        next.tenancy_id =
-          tenancyId;
-      }
-
-      return next;
-    });
-
-    setFieldErrors((current) => {
-      const next = {
-        ...current,
-      };
-
-      delete next.unit_id;
-
-      return next;
-    });
-
-    setServerError("");
-  };
+      ]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -853,97 +1837,155 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleChange = (
-    eventOrField,
-    maybeValue
-  ) => {
-    let name;
-    let value;
+  const handleChange =
+    useCallback(
+      (eventOrField, maybeValue) => {
+        let name;
+        let value;
 
-    /*
-    |--------------------------------------------------------------------------
-    | Support:
-    |
-    | onChange(event)
-    |
-    | onChange("field", value)
-    |--------------------------------------------------------------------------
-    */
+        if (
+          typeof eventOrField ===
+          "string"
+        ) {
+          name =
+            eventOrField;
 
-    if (
-      typeof eventOrField ===
-      "string"
-    ) {
-      name = eventOrField;
-      value = maybeValue;
-    } else {
-      name =
-        eventOrField?.target?.name;
+          value =
+            maybeValue;
+        } else {
+          name =
+            eventOrField?.target?.name;
 
-      value =
-        eventOrField?.target?.value;
-    }
+          value =
+            eventOrField?.target?.value;
+        }
 
-    if (!name) {
-      return;
-    }
+        if (!name) {
+          return;
+        }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Dependent fields
-    |--------------------------------------------------------------------------
-    */
+        if (
+          name ===
+          "customer_id"
+        ) {
+          handleCustomerChange(
+            value
+          );
 
-    if (name === "property_id") {
-      handlePropertyChange(value);
-      return;
-    }
+          return;
+        }
 
-    if (name === "apartment_id") {
-      handleApartmentChange(value);
-      return;
-    }
+        if (
+          name ===
+          "tenant_id"
+        ) {
+          handleTenantChange(
+            value
+          );
 
-    if (name === "unit_id") {
-      handleUnitChange(value);
-      return;
-    }
+          return;
+        }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Normalize relationship IDs
-    |--------------------------------------------------------------------------
-    */
+        if (
+          name ===
+          "tenancy_id"
+        ) {
+          handleTenancyChange(
+            value
+          );
 
-    const relationshipFields = [
-      "user_id",
-      "customer_id",
-      "tenant_id",
-      "tenancy_id",
-    ];
+          return;
+        }
 
-    const normalizedValue =
-      relationshipFields.includes(name)
-        ? getId(value)
-        : value;
+        if (
+          name ===
+          "property_id"
+        ) {
+          handlePropertyChange(
+            value
+          );
 
-    setForm((current) => ({
-      ...current,
-      [name]: normalizedValue,
-    }));
+          return;
+        }
 
-    setFieldErrors((current) => {
-      const next = {
-        ...current,
-      };
+        if (
+          name ===
+          "apartment_id"
+        ) {
+          handleApartmentChange(
+            value
+          );
 
-      delete next[name];
+          return;
+        }
 
-      return next;
-    });
+        if (
+          name ===
+          "unit_id"
+        ) {
+          handleUnitChange(
+            value
+          );
 
-    setServerError("");
-  };
+          return;
+        }
+
+        const relationshipFields = [
+          "user_id",
+        ];
+
+        const normalizedValue =
+          relationshipFields.includes(
+            name
+          )
+            ? getId(value)
+            : value;
+
+        setForm((current) => {
+          if (
+            current[name] ===
+            normalizedValue
+          ) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [name]:
+              normalizedValue,
+          };
+        });
+
+        setFieldErrors((current) => {
+          if (
+            !Object.prototype.hasOwnProperty.call(
+              current,
+              name
+            )
+          ) {
+            return current;
+          }
+
+          const next = {
+            ...current,
+          };
+
+          delete next[name];
+
+          return next;
+        });
+
+        setServerError("");
+      },
+      [
+        handleCustomerChange,
+        handleTenantChange,
+        handleTenancyChange,
+        handlePropertyChange,
+        handleApartmentChange,
+        handleUnitChange,
+      ]
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -953,64 +1995,93 @@ const CreateBooking = () => {
 
   useEffect(() => {
     const propertyId =
-      getId(form.property_id);
+      getId(
+        form.property_id
+      );
 
     const apartmentId =
-      getId(form.apartment_id);
+      getId(
+        form.apartment_id
+      );
 
-    if (!propertyId) {
-      setUnits([]);
+    const startDate =
+      form.start_date;
+
+    const endDate =
+      form.end_date;
+
+    if (
+      !propertyId ||
+      !startDate ||
+      !endDate
+    ) {
       return undefined;
     }
 
     let mounted = true;
 
-    const loadUnits = async () => {
-      try {
-        const response =
-          await getAvailableUnits({
-            property_id:
-              propertyId,
+    const loadUnits =
+      async () => {
+        try {
+          const response =
+            await getAvailableUnitsRef.current({
+              property_id:
+                propertyId,
 
-            ...(apartmentId
-              ? {
+              start_date:
+                startDate,
+
+              end_date:
+                endDate,
+
+              ...(apartmentId
+                ? {
                   apartment_id:
                     apartmentId,
                 }
-              : {}),
-          });
+                : {}),
+            });
 
-        if (!mounted) {
-          return;
-        }
+          if (!mounted) {
+            return;
+          }
 
-        const data =
-          extractResponseData(
-            response
+          const data =
+            extractResponseData(
+              response
+            );
+
+          const list =
+            data?.units ??
+            data?.available_units ??
+            data?.items ??
+            data?.results ??
+            data;
+
+          const normalizedUnits =
+            normalizeOptions(
+              list
+            );
+
+          mergeIntoState(
+            setUnits,
+            normalizedUnits
           );
+        } catch (err) {
+          if (!mounted) {
+            return;
+          }
 
-        const list =
-          data?.units ??
-          data?.available_units ??
-          data?.items ??
-          data?.results ??
-          data;
-
-        setUnits(
-          normalizeOptions(list)
-        );
-      } catch (err) {
-        if (!mounted) {
-          return;
+          if (
+            import.meta.env.DEV
+          ) {
+            console.error(
+              "[CreateBooking] Failed to load available units:",
+              err
+            );
+          }
         }
-
-        setUnits([]);
-
-        setServerError(
-          extractErrorMessage(err)
-        );
-      }
-    };
+      };
 
     loadUnits();
 
@@ -1020,7 +2091,8 @@ const CreateBooking = () => {
   }, [
     form.property_id,
     form.apartment_id,
-    getAvailableUnits,
+    form.start_date,
+    form.end_date,
   ]);
 
   /*
@@ -1034,81 +2106,77 @@ const CreateBooking = () => {
   ) => {
     const nextErrors = {};
 
-    /*
-    |--------------------------------------------------------------------------
-    | Customer / User / Tenant
-    |--------------------------------------------------------------------------
-    */
-
     if (
-      !getId(values.customer_id) &&
-      !getId(values.user_id) &&
-      !getId(values.tenant_id)
+      !getId(
+        values.customer_id
+      ) &&
+      !getId(
+        values.user_id
+      ) &&
+      !getId(
+        values.tenant_id
+      )
     ) {
       nextErrors.customer_id =
         "Please select a customer, tenant or user.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Property
-    |--------------------------------------------------------------------------
-    */
+    if (
+      !getId(
+        values.tenant_id
+      )
+    ) {
+      nextErrors.tenant_id =
+        "Please select a tenant.";
+    }
 
-    if (!getId(values.property_id)) {
+    if (
+      !getId(
+        values.tenancy_id
+      )
+    ) {
+      nextErrors.tenancy_id =
+        "Please select a tenancy.";
+    }
+
+    if (
+      !getId(
+        values.property_id
+      )
+    ) {
       nextErrors.property_id =
         "Please select a property.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Unit
-    |--------------------------------------------------------------------------
-    */
-
-    if (!getId(values.unit_id)) {
+    if (
+      !getId(
+        values.unit_id
+      )
+    ) {
       nextErrors.unit_id =
         "Please select a unit.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Booking Type
-    |--------------------------------------------------------------------------
-    */
-
-    if (!values.booking_type) {
+    if (
+      !values.booking_type
+    ) {
       nextErrors.booking_type =
         "Please select a booking type.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Booking Date
-    |--------------------------------------------------------------------------
-    */
-
-    if (!values.booking_date) {
+    if (
+      !values.booking_date
+    ) {
       nextErrors.booking_date =
         "Please select the booking date.";
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Start Date
-    |--------------------------------------------------------------------------
-    */
-
-    if (!values.start_date) {
+    if (
+      !values.start_date
+    ) {
       nextErrors.start_date =
         "Please select the start date.";
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | End Date
-    |--------------------------------------------------------------------------
-    */
 
     if (
       values.start_date &&
@@ -1138,19 +2206,15 @@ const CreateBooking = () => {
       }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Payment Amount
-    |--------------------------------------------------------------------------
-    */
-
     if (
       values.amount_paid !== "" &&
       values.amount_paid !== null &&
       values.amount_paid !== undefined
     ) {
       const amountPaid =
-        Number(values.amount_paid);
+        Number(
+          values.amount_paid
+        );
 
       if (
         !Number.isFinite(
@@ -1163,19 +2227,12 @@ const CreateBooking = () => {
       }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Financial Amounts
-    |--------------------------------------------------------------------------
-    */
-
     const financialFields = [
       "rent_amount",
       "deposit_amount",
       "service_charge",
       "booking_fee",
       "discount_amount",
-      "total_amount",
     ];
 
     financialFields.forEach(
@@ -1206,41 +2263,46 @@ const CreateBooking = () => {
       }
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Guests
-    |--------------------------------------------------------------------------
-    */
-
     const adults =
-      Number(values.adults);
-
-    const children =
-      Number(values.children);
+      Number(
+        values.number_of_adults
+      );
 
     if (
-      values.adults !== "" &&
-      (!Number.isFinite(adults) ||
-        adults < 1)
+      values.number_of_adults !== "" &&
+      (
+        !Number.isFinite(adults) ||
+        adults < 1
+      )
     ) {
-      nextErrors.adults =
+      nextErrors.number_of_adults =
         "At least one adult is required.";
     }
 
+    const children =
+      Number(
+        values.number_of_children
+      );
+
     if (
-      values.children !== "" &&
-      (!Number.isFinite(children) ||
-        children < 0)
+      values.number_of_children !== "" &&
+      (
+        !Number.isFinite(children) ||
+        children < 0
+      )
     ) {
-      nextErrors.children =
+      nextErrors.number_of_children =
         "Children cannot be negative.";
     }
 
-    setFieldErrors(nextErrors);
+    setFieldErrors(
+      nextErrors
+    );
 
     return (
-      Object.keys(nextErrors)
-        .length === 0
+      Object.keys(
+        nextErrors
+      ).length === 0
     );
   };
 
@@ -1264,56 +2326,59 @@ const CreateBooking = () => {
         value !== null &&
         value !== ""
       ) {
-        payload[key] = value;
+        payload[key] =
+          value;
       }
     };
 
-    /*
-    |--------------------------------------------------------------------------
-    | Relationships
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
       "user_id",
-      getId(values.user_id)
+      getId(
+        values.user_id
+      )
     );
 
     appendIfValue(
       "customer_id",
-      getId(values.customer_id)
+      getId(
+        values.customer_id
+      )
     );
 
     appendIfValue(
       "tenant_id",
-      getId(values.tenant_id)
+      getId(
+        values.tenant_id
+      )
     );
 
     appendIfValue(
       "tenancy_id",
-      getId(values.tenancy_id)
+      getId(
+        values.tenancy_id
+      )
     );
 
     appendIfValue(
       "property_id",
-      getId(values.property_id)
+      getId(
+        values.property_id
+      )
     );
 
     appendIfValue(
       "apartment_id",
-      getId(values.apartment_id)
+      getId(
+        values.apartment_id
+      )
     );
 
     appendIfValue(
       "unit_id",
-      getId(values.unit_id)
+      getId(
+        values.unit_id
+      )
     );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Booking
-    |--------------------------------------------------------------------------
-    */
 
     appendIfValue(
       "booking_type",
@@ -1340,11 +2405,17 @@ const CreateBooking = () => {
       values.end_date
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Financials
-    |--------------------------------------------------------------------------
-    */
+    appendIfValue(
+      "check_in_date",
+      values.check_in_date ||
+      values.start_date
+    );
+
+    appendIfValue(
+      "check_out_date",
+      values.check_out_date ||
+      values.end_date
+    );
 
     appendIfValue(
       "rent_amount",
@@ -1382,19 +2453,6 @@ const CreateBooking = () => {
     );
 
     appendIfValue(
-      "total_amount",
-      normalizeAmount(
-        values.total_amount
-      )
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Payment
-    |--------------------------------------------------------------------------
-    */
-
-    appendIfValue(
       "amount_paid",
       normalizeAmount(
         values.amount_paid
@@ -1416,51 +2474,32 @@ const CreateBooking = () => {
       values.payment_reference
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Guests
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
-      "adults",
-      values.adults === ""
-        ? ""
-        : Number(values.adults)
-    );
-
-    appendIfValue(
-      "children",
-      values.children === ""
-        ? ""
-        : Number(values.children)
+      "number_of_adults",
+      normalizeGuestCount(
+        values.number_of_adults,
+        1
+      )
     );
 
     /*
     |--------------------------------------------------------------------------
-    | Check-in / Check-out
+    | IMPORTANT:
+    | Laravel expects number_of_children to be an integer count.
     |--------------------------------------------------------------------------
     */
 
     appendIfValue(
-      "check_in_at",
-      values.check_in_at
+      "number_of_children",
+      normalizeGuestCount(
+        values.number_of_children,
+        0
+      )
     );
 
     appendIfValue(
-      "check_out_at",
-      values.check_out_at
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Additional Information
-    |--------------------------------------------------------------------------
-    */
-
-    appendIfValue(
-      "special_request",
-      values.special_request
+      "special_requests",
+      values.special_requests
     );
 
     appendIfValue(
@@ -1477,192 +2516,186 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleSubmit = async (
-    eventOrValues
-  ) => {
-    eventOrValues?.preventDefault?.();
+  const handleSubmit =
+    async (eventOrValues) => {
+      eventOrValues?.preventDefault?.();
 
-    /*
-    |--------------------------------------------------------------------------
-    | Support:
-    |
-    | onSubmit(event)
-    |
-    | and:
-    |
-    | onSubmit(values)
-    |--------------------------------------------------------------------------
-    */
-
-    const submittedValues =
-      eventOrValues &&
-      !eventOrValues?.target &&
-      typeof eventOrValues ===
-        "object"
-        ? {
+      const submittedValues =
+        eventOrValues &&
+          !eventOrValues?.target &&
+          typeof eventOrValues ===
+          "object"
+          ? {
             ...form,
             ...eventOrValues,
           }
-        : {
+          : {
             ...form,
           };
 
-    /*
-    |--------------------------------------------------------------------------
-    | Normalize relationship objects before validation.
-    |--------------------------------------------------------------------------
-    */
+      const normalizedValues = {
+        ...submittedValues,
 
-    const normalizedValues = {
-      ...submittedValues,
+        user_id:
+          getId(
+            submittedValues.user_id
+          ),
 
-      user_id: getId(
-        submittedValues.user_id
-      ),
+        customer_id:
+          getId(
+            submittedValues.customer_id
+          ),
 
-      customer_id: getId(
-        submittedValues.customer_id
-      ),
+        tenant_id:
+          getId(
+            submittedValues.tenant_id
+          ),
 
-      tenant_id: getId(
-        submittedValues.tenant_id
-      ),
+        tenancy_id:
+          getId(
+            submittedValues.tenancy_id
+          ),
 
-      tenancy_id: getId(
-        submittedValues.tenancy_id
-      ),
+        property_id:
+          getId(
+            submittedValues.property_id
+          ),
 
-      property_id: getId(
-        submittedValues.property_id
-      ),
+        apartment_id:
+          getId(
+            submittedValues.apartment_id
+          ),
 
-      apartment_id: getId(
-        submittedValues.apartment_id
-      ),
+        unit_id:
+          getId(
+            submittedValues.unit_id
+          ),
+      };
 
-      unit_id: getId(
-        submittedValues.unit_id
-      ),
-    };
-
-    /*
-    |--------------------------------------------------------------------------
-    | Validate
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-      !validate(
-        normalizedValues
-      )
-    ) {
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setServerError("");
-      setFieldErrors({});
-
-      /*
-      |--------------------------------------------------------------------------
-      | Build API Payload
-      |--------------------------------------------------------------------------
-      */
-
-      const payload =
-        buildPayload(
+      if (
+        !validate(
           normalizedValues
-        );
+        )
+      ) {
+        return;
+      }
 
-      /*
-      |--------------------------------------------------------------------------
-      | Create Booking
-      |--------------------------------------------------------------------------
-      */
+      try {
+        setSubmitting(true);
+        setServerError("");
+        setFieldErrors({});
 
-      const response =
-        await createBooking(
-          payload
-        );
+        const payload =
+          buildPayload(
+            normalizedValues
+          );
 
-      /*
-      |--------------------------------------------------------------------------
-      | Extract success message
-      |--------------------------------------------------------------------------
-      */
+        if (
+          import.meta.env.DEV
+        ) {
+          console.group(
+            "[CreateBooking] Create booking"
+          );
 
-      const responseData =
-        response?.data;
+          console.log(
+            "Form values:",
+            normalizedValues
+          );
 
-      const message =
-        response?.message ||
-        responseData?.message ||
-        "Booking created successfully.";
+          console.log(
+            "API payload:",
+            payload
+          );
 
-      /*
-      |--------------------------------------------------------------------------
-      | Success
-      |--------------------------------------------------------------------------
-      */
-
-      await Swal.fire({
-        icon: "success",
-        title: "Booking Created",
-        text: message,
-        confirmButtonText:
-          "View Bookings",
-        confirmButtonColor:
-          "#4f46e5",
-      });
-
-      /*
-      |--------------------------------------------------------------------------
-      | Navigate
-      |--------------------------------------------------------------------------
-      */
-
-      navigate(
-        "/super-admin/bookings",
-        {
-          replace: true,
+          console.groupEnd();
         }
-      );
-    } catch (err) {
-      const message =
-        extractErrorMessage(err);
 
-      const validationErrors =
-        extractValidationErrors(
-          err
+        const response =
+          await addBookingRef.current(
+            payload
+          );
+
+        const responseData =
+          response?.data;
+
+        const message =
+          response?.message ||
+          responseData?.message ||
+          "Booking created successfully.";
+
+        await Swal.fire({
+          icon: "success",
+          title:
+            "Booking Created",
+          text: message,
+          confirmButtonText:
+            "View Bookings",
+          confirmButtonColor:
+            "#4f46e5",
+        });
+
+        navigate(
+          "/super-admin/bookings",
+          {
+            replace: true,
+          }
+        );
+      } catch (err) {
+        const message =
+          extractErrorMessage(err);
+
+        const validationErrors =
+          extractValidationErrors(
+            err
+          );
+
+        setServerError(
+          message
         );
 
-      setServerError(message);
+        setFieldErrors(
+          validationErrors
+        );
 
-      setFieldErrors(
-        validationErrors
-      );
+        if (
+          import.meta.env.DEV
+        ) {
+          console.group(
+            "[CreateBooking] Create failed"
+          );
 
-      /*
-      |--------------------------------------------------------------------------
-      | Error Alert
-      |--------------------------------------------------------------------------
-      */
+          console.error(
+            "Error:",
+            err
+          );
 
-      await Swal.fire({
-        icon: "error",
-        title:
-          "Unable to Create Booking",
-        text: message,
-        confirmButtonText:
-          "Close",
-        confirmButtonColor:
-          "#dc2626",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
+          console.error(
+            "Message:",
+            message
+          );
+
+          console.error(
+            "Validation errors:",
+            validationErrors
+          );
+
+          console.groupEnd();
+        }
+
+        await Swal.fire({
+          icon: "error",
+          title:
+            "Unable to Create Booking",
+          text: message,
+          confirmButtonText:
+            "Close",
+          confirmButtonColor:
+            "#dc2626",
+        });
+      } finally {
+        setSubmitting(false);
+      }
+    };
 
   /*
   |--------------------------------------------------------------------------
@@ -1670,15 +2703,19 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleCancel = () => {
-    if (isCreating) {
-      return;
-    }
+  const handleCancel =
+    useCallback(() => {
+      if (isCreating) {
+        return;
+      }
 
-    navigate(
-      "/super-admin/bookings"
-    );
-  };
+      navigate(
+        "/super-admin/bookings"
+      );
+    }, [
+      isCreating,
+      navigate,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1686,13 +2723,14 @@ const CreateBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleRetry = async () => {
-    if (isCreating) {
-      return;
-    }
+  const handleRetry =
+    async () => {
+      if (isCreating) {
+        return;
+      }
 
-    await loadBookingData();
-  };
+      await loadBookingData();
+    };
 
   /*
   |--------------------------------------------------------------------------
@@ -1734,17 +2772,9 @@ const CreateBooking = () => {
 
   return (
     <div className="space-y-6">
-      {/* ==================================================================
-          HEADER
-      ================================================================== */}
-
       <BookingHeader
         loading={isCreating}
       />
-
-      {/* ==================================================================
-          PAGE ERROR
-      ================================================================== */}
 
       {(serverError || error) && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 sm:p-5">
@@ -1770,7 +2800,9 @@ const CreateBooking = () => {
                 onClick={
                   handleRetry
                 }
-                disabled={isCreating}
+                disabled={
+                  isCreating
+                }
                 className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -1782,24 +2814,45 @@ const CreateBooking = () => {
         </div>
       )}
 
-      {/* ==================================================================
-          BOOKING FORM
-      ================================================================== */}
-
       <BookingForm
         mode="create"
         initialValues={
           INITIAL_VALUES
         }
         values={form}
-        properties={properties}
-        apartments={apartments}
-        units={effectiveUnits}
+        properties={
+          properties
+        }
+        apartments={
+          apartments
+        }
+        units={
+          effectiveUnits
+        }
         customers={
           effectiveCustomers
         }
-        tenants={tenants}
-        tenancies={tenancies}
+        tenants={
+          effectiveTenants
+        }
+        tenancies={
+          effectiveTenancies
+        }
+        selectedTenant={
+          selectedTenant
+        }
+        customerTenancies={
+          customerTenancies
+        }
+        loadingCustomerRelationship={
+          isLoadingRelationship
+        }
+        loadingCustomerTenancies={
+          isLoadingRelationship
+        }
+        customerRelationshipError={
+          customerTenanciesError
+        }
         errors={{
           ...(errors || {}),
           ...(fieldErrors || {}),
@@ -1808,16 +2861,33 @@ const CreateBooking = () => {
           Boolean(loading) ||
           loadingData
         }
-        submitting={isCreating}
+        submitting={
+          isCreating
+        }
         loadingUnits={
           isLoadingUnits
         }
         loadingUsers={
           isLoadingUsers
         }
-        onChange={handleChange}
-        onSubmit={handleSubmit}
-        onCancel={handleCancel}
+        onChange={
+          handleChange
+        }
+        onSubmit={
+          handleSubmit
+        }
+        onCancel={
+          handleCancel
+        }
+        onCustomerChange={
+          handleCustomerChange
+        }
+        onTenantChange={
+          handleTenantChange
+        }
+        onTenancyChange={
+          handleTenancyChange
+        }
         onPropertyChange={
           handlePropertyChange
         }
@@ -1833,4 +2903,3 @@ const CreateBooking = () => {
 };
 
 export default CreateBooking;
-

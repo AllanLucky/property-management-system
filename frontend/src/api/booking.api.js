@@ -18,6 +18,10 @@ const TENANT_BASE_URL = "/tenants";
 const TENANCY_BASE_URL = "/tenancies";
 const USER_BASE_URL = "/users";
 
+const PROPERTY_BASE_URL = "/properties";
+const APARTMENT_BASE_URL = "/apartments";
+const UNIT_BASE_URL = "/units";
+
 /*
 |--------------------------------------------------------------------------
 | Parameter Helpers
@@ -252,12 +256,22 @@ const firstDefined = (...values) => {
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Normalize a Laravel collection/resource response into
+ * a predictable array.
+ */
 const normalizeCollection = (response) => {
     let payload =
         response?.data?.data ??
         response?.data ??
         response ??
         [];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handle nested data envelopes
+    |--------------------------------------------------------------------------
+    */
 
     if (
         payload &&
@@ -268,9 +282,21 @@ const normalizeCollection = (response) => {
         payload = payload.data;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Handle arrays
+    |--------------------------------------------------------------------------
+    */
+
     if (Array.isArray(payload)) {
         return payload;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handle single object returned where collection expected
+    |--------------------------------------------------------------------------
+    */
 
     if (
         payload &&
@@ -284,6 +310,9 @@ const normalizeCollection = (response) => {
     return [];
 };
 
+/**
+ * Normalize a single Laravel resource response.
+ */
 const normalizeResource = (response) => {
     let payload =
         response?.data?.data ??
@@ -314,6 +343,56 @@ const normalizeResource = (response) => {
     }
 
     return null;
+};
+
+/**
+ * Get a normalized collection response without booking-specific
+ * financial normalization.
+ */
+const getResourceCollection = async (
+    url,
+    params = {},
+    config = {}
+) => {
+    const cleanedParams =
+        cleanNestedParams(params);
+
+    const response = await axios.get(
+        url,
+        {
+            ...config,
+            params: cleanedParams,
+        }
+    );
+
+    return {
+        ...response,
+        data: {
+            ...(response?.data ?? {}),
+            data: normalizeCollection(response),
+        },
+    };
+};
+
+/**
+ * Get a normalized single resource response.
+ */
+const getResource = async (
+    url,
+    config = {}
+) => {
+    const response = await axios.get(
+        url,
+        config
+    );
+
+    return {
+        ...response,
+        data: {
+            ...(response?.data ?? {}),
+            data: normalizeResource(response),
+        },
+    };
 };
 
 /*
@@ -1227,6 +1306,129 @@ const bookingApi = {
 
                 params: cleanedParams,
             }
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROPERTY INFORMATION
+    |--------------------------------------------------------------------------
+    */
+
+    properties: (
+        params = {},
+        config = {}
+    ) => {
+        return getResourceCollection(
+            PROPERTY_BASE_URL,
+            params,
+            config
+        );
+    },
+
+    getProperty: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid property ID is required."
+                )
+            );
+        }
+
+        return getResource(
+            withId(
+                PROPERTY_BASE_URL,
+                normalizedId
+            ),
+            config
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | APARTMENT INFORMATION
+    |--------------------------------------------------------------------------
+    */
+
+    apartments: (
+        params = {},
+        config = {}
+    ) => {
+        return getResourceCollection(
+            APARTMENT_BASE_URL,
+            params,
+            config
+        );
+    },
+
+    getApartment: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid apartment ID is required."
+                )
+            );
+        }
+
+        return getResource(
+            withId(
+                APARTMENT_BASE_URL,
+                normalizedId
+            ),
+            config
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | UNIT INFORMATION
+    |--------------------------------------------------------------------------
+    */
+
+    units: (
+        params = {},
+        config = {}
+    ) => {
+        return getResourceCollection(
+            UNIT_BASE_URL,
+            params,
+            config
+        );
+    },
+
+    getUnit: (
+        id,
+        config = {}
+    ) => {
+        const normalizedId =
+            normalizeId(id);
+
+        if (!normalizedId) {
+            return Promise.reject(
+                new Error(
+                    "A valid unit ID is required."
+                )
+            );
+        }
+
+        return getResource(
+            withId(
+                UNIT_BASE_URL,
+                normalizedId
+            ),
+            config
         );
     },
 
