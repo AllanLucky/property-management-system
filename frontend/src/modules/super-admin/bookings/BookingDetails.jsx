@@ -344,6 +344,19 @@ const getCustomerName = (booking) => {
     return name;
   }
 
+  const snapshotName = [
+    booking?.first_name,
+    booking?.middle_name,
+    booking?.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (snapshotName) {
+    return snapshotName;
+  }
+
   const customerId =
     booking?.customer_id ??
     booking?.user_id;
@@ -358,6 +371,7 @@ const getCustomerEmail = (booking) => {
 
   return (
     customer?.email ||
+    booking?.email ||
     booking?.customer_email ||
     "—"
   );
@@ -369,6 +383,7 @@ const getCustomerPhone = (booking) => {
   return (
     customer?.phone ||
     customer?.phone_number ||
+    booking?.phone ||
     booking?.customer_phone ||
     "—"
   );
@@ -419,7 +434,10 @@ const getTenantName = (booking) => {
 */
 
 const getPropertyName = (booking) => {
-  const property = booking?.property;
+  const property =
+    booking?.property ||
+    booking?.unit?.property ||
+    booking?.apartment?.property;
 
   return (
     property?.name ||
@@ -434,7 +452,9 @@ const getPropertyName = (booking) => {
 };
 
 const getApartmentName = (booking) => {
-  const apartment = booking?.apartment;
+  const apartment =
+    booking?.apartment ||
+    booking?.unit?.apartment;
 
   return (
     apartment?.name ||
@@ -569,20 +589,14 @@ const getTotal = (booking) => {
       getFinancialValue(
         booking,
         "rent_amount",
-        [
-          "rentAmount",
-          "rent",
-        ]
+        ["rentAmount", "rent"]
       )
     ) +
     toNumber(
       getFinancialValue(
         booking,
         "deposit_amount",
-        [
-          "depositAmount",
-          "deposit",
-        ]
+        ["depositAmount", "deposit"]
       )
     ) +
     toNumber(
@@ -625,9 +639,9 @@ const getPaid = (booking) =>
   toNumber(
     getFinancialValue(
       booking,
-      "paid_amount",
+      "amount_paid",
       [
-        "amount_paid",
+        "paid_amount",
         "amountPaid",
         "paidAmount",
         "total_paid",
@@ -891,22 +905,20 @@ const RawDataNode = ({
     return (
       <div
         className={`group ${level === 0
-          ? "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-          : "border-b border-slate-100 py-3 last:border-b-0"
+            ? "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            : "border-b border-slate-100 py-3 last:border-b-0"
           }`}
       >
         <div
           className={`flex flex-col gap-2 ${level === 0
-            ? ""
-            : "sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+              ? ""
+              : "sm:flex-row sm:items-start sm:justify-between sm:gap-6"
             }`}
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-bold text-slate-800">
-                {formatFieldLabel(
-                  label
-                )}
+                {formatFieldLabel(label)}
               </span>
 
               <span
@@ -925,8 +937,8 @@ const RawDataNode = ({
 
           <div
             className={`min-w-0 ${level === 0
-              ? "mt-2 rounded-lg bg-slate-50 px-3 py-2.5"
-              : "sm:max-w-[65%] sm:text-right"
+                ? "mt-2 rounded-lg bg-slate-50 px-3 py-2.5"
+                : "sm:max-w-[65%] sm:text-right"
               }`}
           >
             {renderPrimitiveValue(
@@ -965,8 +977,8 @@ const RawDataNode = ({
           onToggle(fieldPath)
         }
         className={`group flex w-full items-center gap-3 text-left transition ${level === 0
-          ? "px-4 py-4 hover:bg-slate-50"
-          : "py-3 hover:bg-slate-50/80"
+            ? "px-4 py-4 hover:bg-slate-50"
+            : "py-3 hover:bg-slate-50/80"
           } ${isLoading
             ? "cursor-wait"
             : "cursor-pointer"
@@ -974,8 +986,8 @@ const RawDataNode = ({
       >
         <div
           className={`flex shrink-0 items-center justify-center rounded-lg ${level === 0
-            ? "h-9 w-9 bg-slate-900 text-white"
-            : "h-7 w-7 bg-slate-100 text-slate-500"
+              ? "h-9 w-9 bg-slate-900 text-white"
+              : "h-7 w-7 bg-slate-100 text-slate-500"
             }`}
         >
           {isLoading ? (
@@ -990,14 +1002,13 @@ const RawDataNode = ({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`${level === 0
-                ? "text-sm font-bold text-slate-900"
-                : "text-xs font-bold text-slate-700"
-                }`}
+              className={
+                level === 0
+                  ? "text-sm font-bold text-slate-900"
+                  : "text-xs font-bold text-slate-700"
+              }
             >
-              {formatFieldLabel(
-                label
-              )}
+              {formatFieldLabel(label)}
             </span>
 
             <span
@@ -1050,13 +1061,14 @@ const RawDataNode = ({
       {isExpanded && !isLoading ? (
         <div
           className={`${level === 0
-            ? "border-t border-slate-200 bg-slate-50/50 p-3 sm:p-4"
-            : "pb-2 pt-1"
+              ? "border-t border-slate-200 bg-slate-50/50 p-3 sm:p-4"
+              : "pb-2 pt-1"
             }`}
         >
           {entries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-xs italic text-slate-400">
-              Empty {isArray ? "array" : "object"}
+              Empty{" "}
+              {isArray ? "array" : "object"}
             </div>
           ) : (
             <div className="space-y-2">
@@ -1070,18 +1082,13 @@ const RawDataNode = ({
                       key={childPath}
                       label={
                         isArray
-                          ? `Item ${Number(
-                            childKey
-                          ) + 1
+                          ? `Item ${Number(childKey) +
+                          1
                           }`
                           : childKey
                       }
-                      value={
-                        childValue
-                      }
-                      level={
-                        level + 1
-                      }
+                      value={childValue}
+                      level={level + 1}
                       expandedFields={
                         expandedFields
                       }
@@ -1091,9 +1098,7 @@ const RawDataNode = ({
                       loadingField={
                         loadingField
                       }
-                      path={
-                        childPath
-                      }
+                      path={childPath}
                     />
                   );
                 }
@@ -1230,8 +1235,7 @@ const StatCard = ({
         </div>
 
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 transition group-hover:scale-105 ${tones[tone] ||
-            tones.slate
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 transition group-hover:scale-105 ${tones[tone] || tones.slate
             }`}
         >
           <Icon className="h-5 w-5" />
@@ -1271,8 +1275,7 @@ const FinancialCard = ({
 
   return (
     <div
-      className={`rounded-xl border p-4 ${tones[tone] ||
-        tones.slate
+      className={`rounded-xl border p-4 ${tones[tone] || tones.slate
         }`}
     >
       <p className="text-[11px] font-bold uppercase tracking-wider opacity-70">
@@ -1323,6 +1326,9 @@ const BookingDetails = () => {
 
   const [actionLoading, setActionLoading] =
     useState(false);
+
+  const [activeAction, setActiveAction] =
+    useState("");
 
   const [pageError, setPageError] =
     useState("");
@@ -1421,9 +1427,7 @@ const BookingDetails = () => {
         );
 
         setExpandedFields({});
-        setCompleteDataExpanded(
-          false
-        );
+        setCompleteDataExpanded(false);
         setLoadingField("");
       } catch (requestError) {
         console.error(
@@ -1488,9 +1492,8 @@ const BookingDetails = () => {
           source,
           path
         ) => {
-          const parts = path.split(
-            "."
-          );
+          const parts =
+            path.split(".");
 
           let current = source;
 
@@ -1543,9 +1546,7 @@ const BookingDetails = () => {
 
         const currentlyOpen =
           Boolean(
-            expandedFields[
-            fieldPath
-            ]
+            expandedFields[fieldPath]
           );
 
         if (currentlyOpen) {
@@ -1581,7 +1582,7 @@ const BookingDetails = () => {
             setLoadingField("");
             loadingTimerRef.current =
               null;
-          }, 300);
+          }, 250);
       },
       [booking, expandedFields]
     );
@@ -1614,9 +1615,7 @@ const BookingDetails = () => {
       setExpandedFields(
         getExpandableFields()
       );
-    }, [
-      getExpandableFields,
-    ]);
+    }, [getExpandableFields]);
 
   const collapseAllCompleteFields =
     useCallback(() => {
@@ -1739,6 +1738,17 @@ const BookingDetails = () => {
       inputRequired = false,
     }) => {
       if (!bookingId) {
+        await Swal.fire({
+          icon: "error",
+          title: "Invalid Booking",
+          text:
+            "A valid booking ID is required.",
+        });
+
+        return;
+      }
+
+      if (actionLoading) {
         return;
       }
 
@@ -1802,13 +1812,30 @@ const BookingDetails = () => {
       }
 
       setActionLoading(true);
+      setActiveAction(action);
       setPageError("");
 
       try {
         let response;
 
+        /*
+        |--------------------------------------------------------------------------
+        | IMPORTANT
+        |--------------------------------------------------------------------------
+        | Keep the action method calls compatible with useBooking().
+        */
+
         switch (action) {
           case "confirm":
+            if (
+              typeof confirmBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Confirm booking action is not available."
+              );
+            }
+
             response =
               await confirmBooking(
                 bookingId
@@ -1816,6 +1843,15 @@ const BookingDetails = () => {
             break;
 
           case "approve":
+            if (
+              typeof approveBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Approve booking action is not available."
+              );
+            }
+
             response =
               await approveBooking(
                 bookingId
@@ -1823,6 +1859,15 @@ const BookingDetails = () => {
             break;
 
           case "check-in":
+            if (
+              typeof checkInBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Check-in booking action is not available."
+              );
+            }
+
             response =
               await checkInBooking(
                 bookingId
@@ -1830,6 +1875,15 @@ const BookingDetails = () => {
             break;
 
           case "complete":
+            if (
+              typeof completeBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Complete booking action is not available."
+              );
+            }
+
             response =
               await completeBooking(
                 bookingId
@@ -1837,6 +1891,15 @@ const BookingDetails = () => {
             break;
 
           case "cancel":
+            if (
+              typeof cancelBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Cancel booking action is not available."
+              );
+            }
+
             response =
               await cancelBooking(
                 bookingId
@@ -1844,6 +1907,15 @@ const BookingDetails = () => {
             break;
 
           case "reject":
+            if (
+              typeof rejectBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Reject booking action is not available."
+              );
+            }
+
             response =
               await rejectBooking(
                 bookingId,
@@ -1852,6 +1924,15 @@ const BookingDetails = () => {
             break;
 
           case "expire":
+            if (
+              typeof expireBooking !==
+              "function"
+            ) {
+              throw new Error(
+                "Expire booking action is not available."
+              );
+            }
+
             response =
               await expireBooking(
                 bookingId
@@ -1882,12 +1963,16 @@ const BookingDetails = () => {
             response?.message ||
             successMessage ||
             "Booking updated successfully.",
-          confirmButtonText:
-            "OK",
+          confirmButtonText: "OK",
         });
 
         await loadBooking();
       } catch (requestError) {
+        console.error(
+          `[BookingDetails] ${action} action failed:`,
+          requestError
+        );
+
         const message =
           extractErrorMessage(
             requestError,
@@ -1900,14 +1985,15 @@ const BookingDetails = () => {
           icon: "error",
           title: "Action Failed",
           text: message,
-          confirmButtonText:
-            "OK",
+          confirmButtonText: "OK",
         });
       } finally {
         setActionLoading(false);
+        setActiveAction("");
       }
     },
     [
+      actionLoading,
       approveBooking,
       bookingId,
       cancelBooking,
@@ -1966,6 +2052,7 @@ const BookingDetails = () => {
     booking?.occupancy
       ?.number_of_adults ??
     booking?.occupancy?.adults ??
+    booking?.number_of_adults ??
     booking?.adults
   );
 
@@ -1973,6 +2060,7 @@ const BookingDetails = () => {
     booking?.occupancy
       ?.number_of_children ??
     booking?.occupancy?.children ??
+    booking?.number_of_children ??
     booking?.children
   );
 
@@ -2028,172 +2116,202 @@ const BookingDetails = () => {
   |--------------------------------------------------------------------------
   | Workflow Actions
   |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | Store the actual imported Lucide component in `icon`.
+  | Do not store SVG strings or rendered SVG markup.
+  |
   */
 
-  const workflowActions = [];
+  const workflowActions =
+    useMemo(() => {
+      if (!booking) {
+        return [];
+      }
 
-  if (booking) {
-    if (bookingStatus === "pending") {
-      workflowActions.push({
-        key: "confirm",
-        label: "Confirm Booking",
-        icon: CheckCircle2,
-        className:
-          "bg-blue-600 text-white hover:bg-blue-700",
-        onClick: () =>
-          runAction({
-            action: "confirm",
-            title:
-              "Confirm this booking?",
-            successMessage:
-              "Booking confirmed successfully.",
-          }),
-      });
-    }
+      const actions = [];
 
-    if (
-      bookingStatus === "pending" ||
-      bookingStatus === "confirmed"
-    ) {
-      workflowActions.push({
-        key: "approve",
-        label: "Approve",
-        icon: CheckCircle2,
-        className:
-          "bg-emerald-600 text-white hover:bg-emerald-700",
-        onClick: () =>
-          runAction({
-            action: "approve",
-            title:
-              "Approve this booking?",
-            successMessage:
-              "Booking approved successfully.",
-          }),
-      });
-    }
+      if (bookingStatus === "pending") {
+        actions.push({
+          key: "confirm",
+          label: "Confirm Booking",
+          icon: CheckCircle2,
+          className:
+            "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500",
+          run: () =>
+            runAction({
+              action: "confirm",
+              title:
+                "Confirm this booking?",
+              successMessage:
+                "Booking confirmed successfully.",
+              confirmText:
+                "Yes, confirm booking",
+            }),
+        });
+      }
 
-    if (
-      bookingStatus === "confirmed" ||
-      bookingStatus === "approved"
-    ) {
-      workflowActions.push({
-        key: "check-in",
-        label: "Check In",
-        icon: Clock3,
-        className:
-          "bg-indigo-600 text-white hover:bg-indigo-700",
-        onClick: () =>
-          runAction({
-            action: "check-in",
-            title:
-              "Check in this booking?",
-            successMessage:
-              "Booking checked in successfully.",
-          }),
-      });
-    }
+      if (
+        bookingStatus === "pending" ||
+        bookingStatus === "confirmed"
+      ) {
+        actions.push({
+          key: "approve",
+          label: "Approve",
+          icon: CheckCircle2,
+          className:
+            "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500",
+          run: () =>
+            runAction({
+              action: "approve",
+              title:
+                "Approve this booking?",
+              successMessage:
+                "Booking approved successfully.",
+              confirmText:
+                "Yes, approve",
+            }),
+        });
+      }
 
-    if (
-      bookingStatus === "approved" ||
-      bookingStatus === "confirmed"
-    ) {
-      workflowActions.push({
-        key: "complete",
-        label: "Complete",
-        icon: CheckCircle2,
-        className:
-          "bg-slate-900 text-white hover:bg-slate-800",
-        onClick: () =>
-          runAction({
-            action: "complete",
-            title:
-              "Complete this booking?",
-            successMessage:
-              "Booking completed successfully.",
-          }),
-      });
-    }
+      if (
+        bookingStatus === "confirmed" ||
+        bookingStatus === "approved"
+      ) {
+        actions.push({
+          key: "check-in",
+          label: "Check In",
+          icon: Clock3,
+          className:
+            "bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500",
+          run: () =>
+            runAction({
+              action: "check-in",
+              title:
+                "Check in this booking?",
+              successMessage:
+                "Booking checked in successfully.",
+              confirmText:
+                "Yes, check in",
+            }),
+        });
+      }
 
-    if (
-      ![
-        "cancelled",
-        "completed",
-        "expired",
-        "rejected",
-      ].includes(bookingStatus)
-    ) {
-      workflowActions.push({
-        key: "cancel",
-        label: "Cancel",
-        icon: XCircle,
-        className:
-          "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50",
-        onClick: () =>
-          runAction({
-            action: "cancel",
-            title:
-              "Cancel this booking?",
-            successMessage:
-              "Booking cancelled successfully.",
-          }),
-      });
-    }
+      if (
+        bookingStatus === "approved" ||
+        bookingStatus === "confirmed"
+      ) {
+        actions.push({
+          key: "complete",
+          label: "Complete",
+          icon: CheckCircle2,
+          className:
+            "bg-slate-900 text-white hover:bg-slate-800 focus:ring-slate-500",
+          run: () =>
+            runAction({
+              action: "complete",
+              title:
+                "Complete this booking?",
+              successMessage:
+                "Booking completed successfully.",
+              confirmText:
+                "Yes, complete",
+            }),
+        });
+      }
 
-    if (
-      ![
-        "completed",
-        "cancelled",
-        "expired",
-        "rejected",
-      ].includes(bookingStatus)
-    ) {
-      workflowActions.push({
-        key: "reject",
-        label: "Reject",
-        icon: XCircle,
-        className:
-          "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50",
-        onClick: () =>
-          runAction({
-            action: "reject",
-            title:
-              "Reject this booking?",
-            input: true,
-            inputLabel:
-              "Rejection reason",
-            inputPlaceholder:
-              "Enter the reason for rejecting this booking...",
-            inputRequired: true,
-            successMessage:
-              "Booking rejected successfully.",
-          }),
-      });
-    }
+      if (
+        ![
+          "cancelled",
+          "completed",
+          "expired",
+          "rejected",
+        ].includes(bookingStatus)
+      ) {
+        actions.push({
+          key: "cancel",
+          label: "Cancel",
+          icon: XCircle,
+          className:
+            "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 focus:ring-rose-500",
+          run: () =>
+            runAction({
+              action: "cancel",
+              title:
+                "Cancel this booking?",
+              successMessage:
+                "Booking cancelled successfully.",
+              confirmText:
+                "Yes, cancel",
+            }),
+        });
+      }
 
-    if (
-      ![
-        "completed",
-        "cancelled",
-        "expired",
-      ].includes(bookingStatus)
-    ) {
-      workflowActions.push({
-        key: "expire",
-        label: "Mark Expired",
-        icon: Clock3,
-        className:
-          "border border-amber-200 bg-white text-amber-700 hover:bg-amber-50",
-        onClick: () =>
-          runAction({
-            action: "expire",
-            title:
-              "Mark this booking as expired?",
-            successMessage:
-              "Booking marked as expired successfully.",
-          }),
-      });
-    }
-  }
+      if (
+        ![
+          "completed",
+          "cancelled",
+          "expired",
+          "rejected",
+        ].includes(bookingStatus)
+      ) {
+        actions.push({
+          key: "reject",
+          label: "Reject",
+          icon: XCircle,
+          className:
+            "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 focus:ring-rose-500",
+          run: () =>
+            runAction({
+              action: "reject",
+              title:
+                "Reject this booking?",
+              input: true,
+              inputLabel:
+                "Rejection reason",
+              inputPlaceholder:
+                "Enter the reason for rejecting this booking...",
+              inputRequired: true,
+              successMessage:
+                "Booking rejected successfully.",
+              confirmText:
+                "Yes, reject",
+            }),
+        });
+      }
+
+      if (
+        ![
+          "completed",
+          "cancelled",
+          "expired",
+        ].includes(bookingStatus)
+      ) {
+        actions.push({
+          key: "expire",
+          label: "Mark Expired",
+          icon: Clock3,
+          className:
+            "border border-amber-200 bg-white text-amber-700 hover:bg-amber-50 focus:ring-amber-500",
+          run: () =>
+            runAction({
+              action: "expire",
+              title:
+                "Mark this booking as expired?",
+              successMessage:
+                "Booking marked as expired successfully.",
+              confirmText:
+                "Yes, mark expired",
+            }),
+        });
+      }
+
+      return actions;
+    }, [
+      booking,
+      bookingStatus,
+      runAction,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -2314,8 +2432,6 @@ const BookingDetails = () => {
   return (
     <div className="min-h-full bg-slate-50">
       <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
-        {/* Page Header */}
-
         <BookingHeader
           title={getBookingNumber(
             booking
@@ -2328,8 +2444,6 @@ const BookingDetails = () => {
             actionLoading
           }
         />
-
-        {/* Error */}
 
         {pageError ? (
           <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
@@ -2482,11 +2596,13 @@ const BookingDetails = () => {
           </div>
         </section>
 
-        {/* Workflow Actions */}
+        {/* ================================================================
+            WORKFLOW ACTIONS
+        ================================================================= */}
 
         {workflowActions.length > 0 ? (
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                   <Clock3 className="h-5 w-5" />
@@ -2498,8 +2614,7 @@ const BookingDetails = () => {
                   </h2>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Manage the booking workflow from
-                    confirmation through completion.
+                    Manage the booking workflow from confirmation through completion.
                   </p>
                 </div>
               </div>
@@ -2507,8 +2622,13 @@ const BookingDetails = () => {
               <div className="flex flex-wrap gap-2">
                 {workflowActions.map(
                   (item) => {
-                    const Icon =
+                    const ActionIcon =
                       item.icon;
+
+                    const isThisActionLoading =
+                      actionLoading &&
+                      activeAction ===
+                      item.key;
 
                     return (
                       <button
@@ -2519,18 +2639,31 @@ const BookingDetails = () => {
                         disabled={
                           actionLoading
                         }
-                        onClick={
-                          item.onClick
+                        onClick={() =>
+                          item.run()
                         }
-                        className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${item.className}`}
+                        aria-label={
+                          item.label
+                        }
+                        title={
+                          item.label
+                        }
+                        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm outline-none transition hover:-translate-y-0.5 focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${item.className}`}
                       >
-                        {actionLoading ? (
+                        {isThisActionLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          <Icon className="h-4 w-4" />
+                          <ActionIcon
+                            aria-hidden="true"
+                            className="h-4 w-4 shrink-0"
+                          />
                         )}
 
-                        {item.label}
+                        <span>
+                          {isThisActionLoading
+                            ? "Processing..."
+                            : item.label}
+                        </span>
                       </button>
                     );
                   }
@@ -2538,7 +2671,25 @@ const BookingDetails = () => {
               </div>
             </div>
           </section>
-        ) : null}
+        ) : (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  No Workflow Actions Available
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  This booking is already in a final workflow state.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Customer + Property */}
 
@@ -3202,7 +3353,7 @@ const BookingDetails = () => {
                   {item.label}
                 </p>
 
-                <div className="mt-2 min-h-20 text-sm leading-6 text-slate-700">
+                <div className="mt-2 min-h-20 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                   {item.value || (
                     <span className="italic text-slate-400">
                       {item.empty}
@@ -3285,13 +3436,9 @@ const BookingDetails = () => {
           </div>
         </Section>
 
-        {/* -----------------------------------------------------------------
-            Complete Booking Data
-        ------------------------------------------------------------------ */}
+        {/* Complete Booking Data */}
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {/* Complete Data Header */}
-
           <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <button
@@ -3303,8 +3450,8 @@ const BookingDetails = () => {
               >
                 <div
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${completeDataExpanded
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-900 text-white"
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-900 text-white"
                     }`}
                 >
                   <Database className="h-5 w-5" />
@@ -3323,9 +3470,7 @@ const BookingDetails = () => {
                   </div>
 
                   <p className="mt-1 text-sm leading-5 text-slate-500">
-                    Inspect every field returned by
-                    the booking API, including nested
-                    objects and arrays.
+                    Inspect every field returned by the booking API, including nested objects and arrays.
                   </p>
                 </div>
 
@@ -3375,8 +3520,6 @@ const BookingDetails = () => {
             </div>
           </div>
 
-          {/* Collapsed State */}
-
           {!completeDataExpanded ? (
             <div className="p-4 sm:p-6">
               <button
@@ -3398,8 +3541,7 @@ const BookingDetails = () => {
                   <p className="mt-1 text-xs leading-5 text-slate-500">
                     The complete response contains{" "}
                     {rawBookingEntries.length}{" "}
-                    top-level fields. Objects and arrays
-                    can be expanded individually.
+                    top-level fields. Objects and arrays can be expanded individually.
                   </p>
                 </div>
 
@@ -3410,8 +3552,6 @@ const BookingDetails = () => {
             </div>
           ) : (
             <div className="p-4 sm:p-6">
-              {/* Data Toolbar */}
-
               <div className="mb-5 flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-900">
@@ -3419,9 +3559,7 @@ const BookingDetails = () => {
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Each field is displayed in a clean
-                    column. Click an object or array to
-                    load its nested data.
+                    Each field is displayed in a clean column. Click an object or array to load its nested data.
                   </p>
                 </div>
 
@@ -3449,8 +3587,6 @@ const BookingDetails = () => {
                   </button>
                 </div>
               </div>
-
-              {/* Fields */}
 
               {rawBookingEntries.length ===
                 0 ? (
@@ -3486,8 +3622,6 @@ const BookingDetails = () => {
                 </div>
               )}
 
-              {/* Bottom Summary */}
-
               <div className="mt-5 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs font-bold text-slate-700">
@@ -3495,10 +3629,10 @@ const BookingDetails = () => {
                   </p>
 
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {rawBookingEntries.length} top-level
-                    fields •{" "}
-                    {expandableFieldCount} expandable
-                    fields
+                    {rawBookingEntries.length}{" "}
+                    top-level fields •{" "}
+                    {expandableFieldCount}{" "}
+                    expandable fields
                   </p>
                 </div>
 
