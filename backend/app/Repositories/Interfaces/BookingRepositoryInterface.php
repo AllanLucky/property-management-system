@@ -55,6 +55,9 @@ interface BookingRepositoryInterface
     /**
      * Update an existing booking.
      *
+     * The repository receives the actual Booking model rather
+     * than a raw ID.
+     *
      * @param Booking $booking
      * @param array   $data
      * @return Booking
@@ -123,7 +126,8 @@ interface BookingRepositoryInterface
     /**
      * Search bookings.
      *
-     * Additional filters may include:
+     * Supported filters may include:
+     *
      * - status
      * - payment_status
      * - booking_type
@@ -133,8 +137,11 @@ interface BookingRepositoryInterface
      * - unit_id
      * - customer_id
      * - tenant_id
+     * - tenancy_id
      * - start_date
      * - end_date
+     * - booking_date
+     * - paid_date
      *
      * @param string $query
      * @param int    $perPage
@@ -208,8 +215,8 @@ interface BookingRepositoryInterface
     /**
      * Get active bookings.
      *
-     * Active bookings are normally confirmed/approved bookings
-     * within their booking period.
+     * Active bookings are normally confirmed/approved
+     * bookings within their booking period.
      *
      * @param int   $perPage
      * @param array $filters
@@ -361,19 +368,17 @@ interface BookingRepositoryInterface
     /**
      * Check whether a unit has an overlapping booking.
      *
-     * Overlapping logic:
+     * Cancelled, rejected, and expired bookings should
+     * not normally block availability.
      *
-     * existing_start <= requested_end
-     * AND
-     * existing_end >= requested_start
+     * The optional exception ID is used when editing an
+     * existing booking so the booking does not conflict
+     * with itself.
      *
-     * Cancelled, rejected and expired bookings should not
-     * normally block availability.
-     *
-     * @param int         $unitId
-     * @param string      $startDate
-     * @param string      $endDate
-     * @param int|null    $exceptBookingId
+     * @param int      $unitId
+     * @param string   $startDate
+     * @param string   $endDate
+     * @param int|null $exceptBookingId
      * @return bool
      */
     public function hasOverlappingBooking(
@@ -384,7 +389,7 @@ interface BookingRepositoryInterface
     ): bool;
 
     /**
-     * Get units available for a booking period.
+     * Get units available for the requested booking period.
      *
      * @param string   $startDate
      * @param string   $endDate
@@ -408,7 +413,7 @@ interface BookingRepositoryInterface
     */
 
     /**
-     * Get active users eligible to make bookings.
+     * Get users eligible to be selected as booking customers.
      *
      * @param string|null $search
      * @return Collection
