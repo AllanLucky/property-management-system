@@ -96,10 +96,7 @@ const parseObject = (value) => {
     }
 };
 
-const getNestedValue = (
-    object,
-    path
-) => {
+const getNestedValue = (object, path) => {
     if (
         object === null ||
         object === undefined ||
@@ -116,25 +113,17 @@ const getNestedValue = (
             .split(".")
             .filter(Boolean);
 
-    return parts.reduce(
-        (current, key) => {
-            if (
-                current === null ||
-                current === undefined
-            ) {
-                return undefined;
-            }
+    return parts.reduce((current, key) => {
+        if (
+            current === null ||
+            current === undefined ||
+            typeof current !== "object"
+        ) {
+            return undefined;
+        }
 
-            if (
-                typeof current !== "object"
-            ) {
-                return undefined;
-            }
-
-            return current[key];
-        },
-        object
-    );
+        return current[key];
+    }, object);
 };
 
 const firstDefinedNested = (
@@ -143,11 +132,7 @@ const firstDefinedNested = (
     fallback = undefined
 ) => {
     for (const path of paths) {
-        const value =
-            getNestedValue(
-                object,
-                path
-            );
+        const value = getNestedValue(object, path);
 
         if (
             value !== undefined &&
@@ -160,9 +145,7 @@ const firstDefinedNested = (
     return fallback;
 };
 
-const firstPresent = (
-    ...values
-) => {
+const firstPresent = (...values) => {
     for (const value of values) {
         if (
             value !== undefined &&
@@ -178,13 +161,312 @@ const firstPresent = (
 
 /*
 |--------------------------------------------------------------------------
+| ID Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Extract a clean scalar ID.
+ *
+ * IMPORTANT:
+ * This helper intentionally does not guess unrelated IDs such as
+ * tenant_id or tenancy_id when the supplied object itself represents
+ * another resource.
+ */
+const normalizeId = (value) => {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return null;
+    }
+
+    if (typeof value === "number") {
+        return Number.isFinite(value)
+            ? value
+            : null;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+
+        if (
+            !trimmed ||
+            trimmed === "[object Object]"
+        ) {
+            return null;
+        }
+
+        return trimmed;
+    }
+
+    if (!isPlainObject(value)) {
+        return null;
+    }
+
+    const directCandidates = [
+        value.id,
+        value.value,
+    ];
+
+    for (const candidate of directCandidates) {
+        const id = normalizeId(candidate);
+
+        if (id !== null) {
+            return id;
+        }
+    }
+
+    return null;
+};
+
+/**
+ * Booking ID resolver.
+ */
+const getBookingId = (value) => {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return null;
+    }
+
+    const direct = normalizeId(value);
+
+    if (direct !== null) {
+        return direct;
+    }
+
+    if (!isPlainObject(value)) {
+        return null;
+    }
+
+    const candidates = [
+        value.booking_id,
+        value.booking?.id,
+        value.data?.id,
+        value.data?.booking_id,
+        value.data?.booking?.id,
+    ];
+
+    for (const candidate of candidates) {
+        const resolved = normalizeId(candidate);
+
+        if (resolved !== null) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/**
+ * Tenant ID resolver.
+ */
+const getTenantId = (tenant) => {
+    if (
+        tenant === null ||
+        tenant === undefined
+    ) {
+        return null;
+    }
+
+    const direct = normalizeId(tenant);
+
+    if (direct !== null) {
+        return direct;
+    }
+
+    if (!isPlainObject(tenant)) {
+        return null;
+    }
+
+    const candidates = [
+        tenant.tenant_id,
+        tenant.tenant?.id,
+        tenant.data?.id,
+        tenant.data?.tenant_id,
+        tenant.data?.tenant?.id,
+    ];
+
+    for (const candidate of candidates) {
+        const resolved = normalizeId(candidate);
+
+        if (resolved !== null) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/**
+ * Tenancy ID resolver.
+ */
+const getTenancyId = (tenancy) => {
+    if (
+        tenancy === null ||
+        tenancy === undefined
+    ) {
+        return null;
+    }
+
+    const direct = normalizeId(tenancy);
+
+    if (direct !== null) {
+        return direct;
+    }
+
+    if (!isPlainObject(tenancy)) {
+        return null;
+    }
+
+    const candidates = [
+        tenancy.tenancy_id,
+        tenancy.tenancy?.id,
+        tenancy.data?.id,
+        tenancy.data?.tenancy_id,
+        tenancy.data?.tenancy?.id,
+    ];
+
+    for (const candidate of candidates) {
+        const resolved = normalizeId(candidate);
+
+        if (resolved !== null) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/**
+ * Property ID resolver.
+ */
+const getPropertyId = (property) => {
+    if (
+        property === null ||
+        property === undefined
+    ) {
+        return null;
+    }
+
+    const direct = normalizeId(property);
+
+    if (direct !== null) {
+        return direct;
+    }
+
+    if (!isPlainObject(property)) {
+        return null;
+    }
+
+    const candidates = [
+        property.property_id,
+        property.property?.id,
+        property.data?.id,
+        property.data?.property_id,
+        property.data?.property?.id,
+    ];
+
+    for (const candidate of candidates) {
+        const resolved = normalizeId(candidate);
+
+        if (resolved !== null) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/**
+ * Apartment ID resolver.
+ */
+const getApartmentId = (apartment) => {
+    if (
+        apartment === null ||
+        apartment === undefined
+    ) {
+        return null;
+    }
+
+    const direct = normalizeId(apartment);
+
+    if (direct !== null) {
+        return direct;
+    }
+
+    if (!isPlainObject(apartment)) {
+        return null;
+    }
+
+    const candidates = [
+        apartment.apartment_id,
+        apartment.apartment?.id,
+        apartment.data?.id,
+        apartment.data?.apartment_id,
+        apartment.data?.apartment?.id,
+    ];
+
+    for (const candidate of candidates) {
+        const resolved = normalizeId(candidate);
+
+        if (resolved !== null) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/**
+ * Unit ID resolver.
+ */
+const getUnitId = (unit) => {
+    if (
+        unit === null ||
+        unit === undefined
+    ) {
+        return null;
+    }
+
+    const direct = normalizeId(unit);
+
+    if (direct !== null) {
+        return direct;
+    }
+
+    if (!isPlainObject(unit)) {
+        return null;
+    }
+
+    const candidates = [
+        unit.unit_id,
+        unit.unit?.id,
+        unit.data?.id,
+        unit.data?.unit_id,
+        unit.data?.unit?.id,
+    ];
+
+    for (const candidate of candidates) {
+        const resolved = normalizeId(candidate);
+
+        if (resolved !== null) {
+            return resolved;
+        }
+    }
+
+    return null;
+};
+
+/*
+|--------------------------------------------------------------------------
 | Booking Resource Detection
 |--------------------------------------------------------------------------
 */
 
-const isBookingResource = (
-    value
-) => {
+const isBookingResource = (value) => {
     if (!isPlainObject(value)) {
         return false;
     }
@@ -215,9 +497,7 @@ const extractBookingResource = (
         return null;
     }
 
-    if (
-        typeof response === "object"
-    ) {
+    if (typeof response === "object") {
         if (visited.has(response)) {
             return null;
         }
@@ -225,9 +505,7 @@ const extractBookingResource = (
         visited.add(response);
     }
 
-    if (
-        isBookingResource(response)
-    ) {
+    if (isBookingResource(response)) {
         return response;
     }
 
@@ -288,9 +566,7 @@ const extractBookingResource = (
         }
     }
 
-    for (
-        const value of Object.values(response)
-    ) {
+    for (const value of Object.values(response)) {
         if (
             value === null ||
             value === undefined ||
@@ -315,82 +591,11 @@ const extractBookingResource = (
 
 /*
 |--------------------------------------------------------------------------
-| ID Helpers
-|--------------------------------------------------------------------------
-*/
-
-const getBookingId = (
-    value
-) => {
-    if (
-        value === null ||
-        value === undefined
-    ) {
-        return null;
-    }
-
-    if (
-        typeof value === "number"
-    ) {
-        return Number.isFinite(value)
-            ? value
-            : null;
-    }
-
-    if (
-        typeof value === "string"
-    ) {
-        const trimmed =
-            value.trim();
-
-        if (
-            !trimmed ||
-            trimmed === "[object Object]"
-        ) {
-            return null;
-        }
-
-        return trimmed;
-    }
-
-    if (!isPlainObject(value)) {
-        return null;
-    }
-
-    const candidates = [
-        value.id,
-        value.booking_id,
-        value.value,
-        value?.booking?.id,
-        value?.data?.id,
-        value?.data?.booking_id,
-    ];
-
-    for (const candidate of candidates) {
-        const resolved =
-            getBookingId(candidate);
-
-        if (
-            resolved !== null &&
-            resolved !== undefined &&
-            resolved !== ""
-        ) {
-            return resolved;
-        }
-    }
-
-    return null;
-};
-
-/*
-|--------------------------------------------------------------------------
 | Error Helpers
 |--------------------------------------------------------------------------
 */
 
-const normalizeError = (
-    error
-) => {
+const normalizeError = (error) => {
     if (!error) {
         return null;
     }
@@ -432,9 +637,7 @@ const normalizeError = (
 |--------------------------------------------------------------------------
 */
 
-const cleanFilters = (
-    filters = {}
-) => {
+const cleanFilters = (filters = {}) => {
     if (!isPlainObject(filters)) {
         return {};
     }
@@ -455,21 +658,14 @@ const cleanFilters = (
     );
 };
 
-const cleanSearchParams = (
-    params = {}
-) => {
+const cleanSearchParams = (params = {}) => {
     if (!isPlainObject(params)) {
         return {};
     }
 
-    const cleaned =
-        cleanFilters(params);
+    const cleaned = cleanFilters(params);
 
-    if (
-        isPlainObject(
-            cleaned.search
-        )
-    ) {
+    if (isPlainObject(cleaned.search)) {
         cleaned.search =
             cleanFilters(
                 cleaned.search
@@ -482,15 +678,6 @@ const cleanSearchParams = (
 /*
 |--------------------------------------------------------------------------
 | Update Payload Helpers
-|--------------------------------------------------------------------------
-|
-| These fields are generated / protected by the backend.
-|
-| In particular, user_id must NOT be submitted during booking edits.
-| Laravel currently reports user_id as prohibited.
-|
-| booking_number / reference / slug are also treated as generated
-| identifiers and are never sent during an update.
 |--------------------------------------------------------------------------
 */
 
@@ -506,9 +693,7 @@ const PROTECTED_UPDATE_FIELDS = [
     "deleted_at",
 ];
 
-const sanitizeBookingUpdatePayload = (
-    data
-) => {
+const sanitizeBookingUpdatePayload = (data) => {
     if (!isPlainObject(data)) {
         return {};
     }
@@ -532,9 +717,7 @@ const sanitizeBookingUpdatePayload = (
 |--------------------------------------------------------------------------
 */
 
-const createRequestKey = (
-    value
-) => {
+const createRequestKey = (value) => {
     if (
         value === null ||
         value === undefined
@@ -542,12 +725,8 @@ const createRequestKey = (
         return String(value);
     }
 
-    if (
-        typeof value !== "object"
-    ) {
-        return JSON.stringify(
-            value
-        );
+    if (typeof value !== "object") {
+        return JSON.stringify(value);
     }
 
     if (Array.isArray(value)) {
@@ -587,22 +766,17 @@ const toFiniteNumber = (
         return fallback;
     }
 
-    if (
-        typeof value === "number"
-    ) {
+    if (typeof value === "number") {
         return Number.isFinite(value)
             ? Number(value)
             : fallback;
     }
 
-    if (
-        typeof value !== "string"
-    ) {
+    if (typeof value !== "string") {
         return fallback;
     }
 
-    let normalized =
-        value.trim();
+    let normalized = value.trim();
 
     if (!normalized) {
         return fallback;
@@ -620,12 +794,9 @@ const toFiniteNumber = (
         return fallback;
     }
 
-    const number =
-        Number(normalized);
+    const number = Number(normalized);
 
-    if (
-        !Number.isFinite(number)
-    ) {
+    if (!Number.isFinite(number)) {
         return fallback;
     }
 
@@ -656,9 +827,7 @@ const normalizeBookingAmount = (
     );
 };
 
-const roundMoney = (
-    value
-) => {
+const roundMoney = (value) => {
     const number =
         toFiniteNumber(
             value,
@@ -687,15 +856,11 @@ const normalizeBoolean = (
         return value;
     }
 
-    if (
-        typeof value === "number"
-    ) {
+    if (typeof value === "number") {
         return value !== 0;
     }
 
-    if (
-        typeof value === "string"
-    ) {
+    if (typeof value === "string") {
         const normalized =
             value
                 .trim()
@@ -733,9 +898,7 @@ const normalizeBoolean = (
 |--------------------------------------------------------------------------
 */
 
-const isPaymentCountable = (
-    payment
-) => {
+const isPaymentCountable = (payment) => {
     if (!isPlainObject(payment)) {
         return false;
     }
@@ -768,9 +931,7 @@ const isPaymentCountable = (
     ].includes(status);
 };
 
-const sumPaymentCollection = (
-    payments
-) => {
+const sumPaymentCollection = (payments) => {
     if (!Array.isArray(payments)) {
         return null;
     }
@@ -805,9 +966,7 @@ const sumPaymentCollection = (
         if (
             numericAmount !== null
         ) {
-            total +=
-                numericAmount;
-
+            total += numericAmount;
             foundAmount = true;
         }
     }
@@ -833,9 +992,7 @@ const normalizeBookingFinancials = (
             : {};
 
     const primaryFinancials =
-        parseObject(
-            financials
-        );
+        parseObject(financials);
 
     const financialContainers = [
         parseObject(
@@ -963,20 +1120,17 @@ const normalizeBookingFinancials = (
             null
         );
 
-    if (
-        totalAmount === null
-    ) {
-        const hasCharge =
-            [
-                rentAmount,
-                depositAmount,
-                serviceCharge,
-                bookingFee,
-                discountAmount,
-            ].some(
-                (value) =>
-                    value !== null
-            );
+    if (totalAmount === null) {
+        const hasCharge = [
+            rentAmount,
+            depositAmount,
+            serviceCharge,
+            bookingFee,
+            discountAmount,
+        ].some(
+            (value) =>
+                value !== null
+        );
 
         if (hasCharge) {
             const charges =
@@ -1025,9 +1179,7 @@ const normalizeBookingFinancials = (
             null
         );
 
-    if (
-        amountPaid === null
-    ) {
+    if (amountPaid === null) {
         const paymentCollections = [
             source?.payments,
             root?.payments,
@@ -1035,10 +1187,7 @@ const normalizeBookingFinancials = (
             root?.payment_records,
         ];
 
-        for (
-            const payments of
-            paymentCollections
-        ) {
+        for (const payments of paymentCollections) {
             const calculatedPaid =
                 sumPaymentCollection(
                     payments
@@ -1138,15 +1287,12 @@ const normalizeBookingFinancials = (
         totalAmount !== null &&
         amountPaid !== null
     ) {
-        if (
-            amountPaid <= 0
-        ) {
+        if (amountPaid <= 0) {
             paymentStatus =
                 "pending";
         } else if (
             totalAmount <= 0 ||
-            amountPaid >=
-            totalAmount
+            amountPaid >= totalAmount
         ) {
             paymentStatus =
                 "paid";
@@ -1324,12 +1470,8 @@ const normalizeBookingFinancials = (
 |--------------------------------------------------------------------------
 */
 
-const normalizeBooking = (
-    booking
-) => {
-    if (
-        !isPlainObject(booking)
-    ) {
+const normalizeBooking = (booking) => {
+    if (!isPlainObject(booking)) {
         return booking;
     }
 
@@ -1409,12 +1551,8 @@ const normalizeBooking = (
     };
 };
 
-const normalizeBookings = (
-    bookings
-) => {
-    if (
-        !Array.isArray(bookings)
-    ) {
+const normalizeBookings = (bookings) => {
+    if (!Array.isArray(bookings)) {
         return [];
     }
 
@@ -1440,15 +1578,11 @@ const extractCollection = (
         return [];
     }
 
-    if (
-        Array.isArray(response)
-    ) {
+    if (Array.isArray(response)) {
         return response;
     }
 
-    if (
-        typeof response === "object"
-    ) {
+    if (typeof response === "object") {
         if (visited.has(response)) {
             return [];
         }
@@ -1464,22 +1598,28 @@ const extractCollection = (
         response?.data?.data,
         response?.data?.items,
         response?.data?.bookings,
+        response?.data?.tenancies,
+        response?.data?.tenants,
+        response?.data?.users,
         response?.data,
         response?.payload?.data?.data,
         response?.payload?.data?.items,
         response?.payload?.data?.bookings,
+        response?.payload?.data?.tenancies,
+        response?.payload?.data?.tenants,
         response?.payload?.data,
         response?.payload,
         response?.bookings,
+        response?.tenancies,
+        response?.tenants,
+        response?.users,
         response?.items,
         response?.result?.data,
         response?.result,
     ];
 
     for (const candidate of candidates) {
-        if (
-            Array.isArray(candidate)
-        ) {
+        if (Array.isArray(candidate)) {
             return candidate;
         }
     }
@@ -1498,17 +1638,11 @@ const extractFirstResource = (
         return null;
     }
 
-    if (
-        Array.isArray(response)
-    ) {
-        return (
-            response[0] ?? null
-        );
+    if (Array.isArray(response)) {
+        return response[0] ?? null;
     }
 
-    if (
-        typeof response === "object"
-    ) {
+    if (typeof response === "object") {
         if (visited.has(response)) {
             return null;
         }
@@ -1521,8 +1655,7 @@ const extractFirstResource = (
     }
 
     if (
-        response.id !==
-        undefined &&
+        response.id !== undefined &&
         response.id !== null
     ) {
         return response;
@@ -1531,13 +1664,17 @@ const extractFirstResource = (
     const candidates = [
         response?.data?.data,
         response?.data?.tenant,
+        response?.data?.tenancy,
         response?.data,
         response?.payload?.data?.data,
         response?.payload?.data?.tenant,
+        response?.payload?.data?.tenancy,
         response?.payload?.data,
         response?.payload?.tenant,
+        response?.payload?.tenancy,
         response?.payload,
         response?.tenant,
+        response?.tenancy,
         response?.result?.data,
         response?.result,
     ];
@@ -1570,9 +1707,7 @@ const extractFirstResource = (
 |--------------------------------------------------------------------------
 */
 
-const extractTenantTenancies = (
-    tenant
-) => {
+const extractTenantTenancies = (tenant) => {
     if (!tenant) {
         return [];
     }
@@ -1583,32 +1718,190 @@ const extractTenantTenancies = (
         tenant.data?.data?.tenancies,
         tenant.activeTenancies,
         tenant.active_tenancies,
+        tenant.tenancy,
+        tenant.data?.tenancy,
     ];
 
     for (const candidate of candidates) {
-        if (
-            Array.isArray(candidate)
-        ) {
+        if (Array.isArray(candidate)) {
             return candidate;
+        }
+
+        if (
+            isPlainObject(candidate) &&
+            getTenancyId(candidate)
+        ) {
+            return [candidate];
         }
     }
 
     return [];
 };
 
-const getCustomerUserId = (
-    customer
-) => {
+const getCustomerUserId = (customer) => {
     if (!customer) {
         return null;
     }
 
-    return (
-        customer.user_id ??
-        customer.user?.id ??
-        customer.id ??
-        null
+    return normalizeId(
+        firstPresent(
+            customer.user_id,
+            customer.user?.id,
+            customer.customer_id,
+            customer.id
+        )
     );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Tenancy Relationship Normalization
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Normalize tenancy relationships without changing the original
+ * backend resource.
+ */
+const normalizeTenancy = (tenancy) => {
+    if (!isPlainObject(tenancy)) {
+        return tenancy;
+    }
+
+    const tenant =
+        tenancy.tenant ??
+        tenancy.tenantProfile ??
+        tenancy.tenant_profile ??
+        null;
+
+    const property =
+        tenancy.property ??
+        null;
+
+    const apartment =
+        tenancy.apartment ??
+        null;
+
+    const unit =
+        tenancy.unit ??
+        null;
+
+    const tenantId =
+        normalizeId(
+            firstPresent(
+                tenancy.tenant_id,
+                tenant?.id,
+                tenant?.tenant_id
+            )
+        );
+
+    const propertyId =
+        normalizeId(
+            firstPresent(
+                tenancy.property_id,
+                property?.id,
+                property?.property_id
+            )
+        );
+
+    const apartmentId =
+        normalizeId(
+            firstPresent(
+                tenancy.apartment_id,
+                apartment?.id,
+                apartment?.apartment_id
+            )
+        );
+
+    const unitId =
+        normalizeId(
+            firstPresent(
+                tenancy.unit_id,
+                unit?.id,
+                unit?.unit_id
+            )
+        );
+
+    return {
+        ...tenancy,
+
+        tenant_id:
+            tenantId,
+
+        property_id:
+            propertyId,
+
+        apartment_id:
+            apartmentId,
+
+        unit_id:
+            unitId,
+
+        tenant:
+            tenant,
+
+        property:
+            property,
+
+        apartment:
+            apartment,
+
+        unit:
+            unit,
+    };
+};
+
+const normalizeTenancies = (items) => {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+
+    return items
+        .filter(
+            (item) =>
+                isPlainObject(item)
+        )
+        .map(
+            normalizeTenancy
+        );
+};
+
+const dedupeById = (
+    items,
+    getId
+) => {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+
+    const seen = new Set();
+    const result = [];
+
+    for (const item of items) {
+        const id =
+            getId(item);
+
+        const key =
+            id !== null &&
+                id !== undefined
+                ? String(id)
+                : null;
+
+        if (
+            key !== null &&
+            seen.has(key)
+        ) {
+            continue;
+        }
+
+        if (key !== null) {
+            seen.add(key);
+        }
+
+        result.push(item);
+    }
+
+    return result;
 };
 
 /*
@@ -1632,10 +1925,10 @@ export const useBooking = (
     } = options;
 
     /*
-     * ------------------------------------------------------------------
-     * Redux state
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Redux state
+    |--------------------------------------------------------------------------
+    */
 
     const bookingState =
         useSelector(
@@ -1713,10 +2006,10 @@ export const useBooking = (
     } = bookingState;
 
     /*
-     * ------------------------------------------------------------------
-     * Stable filters
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Stable filters
+    |--------------------------------------------------------------------------
+    */
 
     const safeInitialFilters =
         useMemo(
@@ -1749,10 +2042,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Request refs
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Request refs
+    |--------------------------------------------------------------------------
+    */
 
     const initialFetchStartedRef =
         useRef(false);
@@ -1764,10 +2057,10 @@ export const useBooking = (
         useRef(null);
 
     /*
-     * ------------------------------------------------------------------
-     * Customer -> Tenant -> Tenancy
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Customer -> Tenant -> Tenancy
+    |--------------------------------------------------------------------------
+    */
 
     const [
         selectedCustomer,
@@ -1795,10 +2088,10 @@ export const useBooking = (
     ] = useState(null);
 
     /*
-     * ------------------------------------------------------------------
-     * Derived state
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Derived state
+    |--------------------------------------------------------------------------
+    */
 
     const bookings =
         useMemo(
@@ -1820,41 +2113,70 @@ export const useBooking = (
 
     const availableUnits =
         useMemo(
-            () =>
-                Array.isArray(
-                    rawAvailableUnits
-                )
-                    ? rawAvailableUnits
-                    : extractCollection(
+            () => {
+                const collection =
+                    Array.isArray(
                         rawAvailableUnits
-                    ),
+                    )
+                        ? rawAvailableUnits
+                        : extractCollection(
+                            rawAvailableUnits
+                        );
+
+                return collection;
+            },
             [rawAvailableUnits]
         );
 
     const availableUsers =
         useMemo(
-            () =>
-                Array.isArray(
-                    rawAvailableUsers
-                )
-                    ? rawAvailableUsers
-                    : extractCollection(
+            () => {
+                const collection =
+                    Array.isArray(
                         rawAvailableUsers
-                    ),
+                    )
+                        ? rawAvailableUsers
+                        : extractCollection(
+                            rawAvailableUsers
+                        );
+
+                return collection;
+            },
             [rawAvailableUsers]
         );
 
     const tenancies =
         useMemo(
-            () =>
-                Array.isArray(
-                    rawTenancies
-                )
-                    ? rawTenancies
-                    : extractCollection(
+            () => {
+                const collection =
+                    Array.isArray(
                         rawTenancies
+                    )
+                        ? rawTenancies
+                        : extractCollection(
+                            rawTenancies
+                        );
+
+                return dedupeById(
+                    normalizeTenancies(
+                        collection
                     ),
+                    getTenancyId
+                );
+            },
             [rawTenancies]
+        );
+
+    const normalizedCustomerTenancies =
+        useMemo(
+            () =>
+                dedupeById(
+                    normalizeTenancies(
+                        customerTenancies
+                    ),
+                    getTenancyId
+                ),
+            [customerTenancies]
         );
 
     const statistics =
@@ -1916,10 +2238,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Loading
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Loading
+    |--------------------------------------------------------------------------
+    */
 
     const isAnyLoading =
         Boolean(
@@ -1939,16 +2261,14 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Fetch bookings
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Fetch bookings
+    |--------------------------------------------------------------------------
+    */
 
     const getBookings =
         useCallback(
-            async (
-                params = {}
-            ) => {
+            async (params = {}) => {
                 const cleanedParams =
                     cleanFilters(
                         params
@@ -1979,7 +2299,8 @@ export const useBooking = (
 
                 activeBookingsRequestRef.current =
                 {
-                    key: requestKey,
+                    key:
+                        requestKey,
                     promise,
                 };
 
@@ -2016,10 +2337,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Get single booking
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Get single booking
+    |--------------------------------------------------------------------------
+    */
 
     const getBooking =
         useCallback(
@@ -2038,11 +2359,6 @@ export const useBooking = (
                         "A valid booking ID is required."
                     );
                 }
-
-                console.debug(
-                    "[useBooking] Fetching booking:",
-                    id
-                );
 
                 try {
                     const dispatched =
@@ -2064,11 +2380,6 @@ export const useBooking = (
                             await dispatched;
                     }
 
-                    console.debug(
-                        "[useBooking] fetchBooking result:",
-                        result
-                    );
-
                     const resolvedBooking =
                         extractBookingResource(
                             result
@@ -2077,31 +2388,14 @@ export const useBooking = (
                     if (
                         !resolvedBooking
                     ) {
-                        console.error(
-                            "[useBooking] Unable to resolve booking resource.",
-                            {
-                                bookingId:
-                                    id,
-                                result,
-                            }
-                        );
-
                         throw new Error(
                             "Booking details were not returned by the server."
                         );
                     }
 
-                    const normalizedBooking =
-                        normalizeBooking(
-                            resolvedBooking
-                        );
-
-                    console.debug(
-                        "[useBooking] Resolved booking:",
-                        normalizedBooking
+                    return normalizeBooking(
+                        resolvedBooking
                     );
-
-                    return normalizedBooking;
                 } catch (
                 requestError
                 ) {
@@ -2122,10 +2416,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Create
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Create
+    |--------------------------------------------------------------------------
+    */
 
     const addBooking =
         useCallback(
@@ -2146,22 +2440,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Update
-     * ------------------------------------------------------------------
-     *
-     * IMPORTANT:
-     *
-     * EditBooking.jsx uses:
-     *
-     *     await updateBooking(id, payload)
-     *
-     * The Redux thunk is imported as updateBookingAction
-     * to avoid a naming collision.
-     *
-     * Protected/generated fields are stripped before dispatching.
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Update
+    |--------------------------------------------------------------------------
+    */
 
     const updateBooking =
         useCallback(
@@ -2197,24 +2479,6 @@ export const useBooking = (
                         data
                     );
 
-                console.debug(
-                    "[useBooking] Updating booking:",
-                    {
-                        id,
-                        originalData:
-                            data,
-                        sanitizedPayload,
-                        removedProtectedFields:
-                            PROTECTED_UPDATE_FIELDS.filter(
-                                (field) =>
-                                    Object.prototype.hasOwnProperty.call(
-                                        data,
-                                        field
-                                    )
-                            ),
-                    }
-                );
-
                 try {
                     const dispatched =
                         dispatch(
@@ -2230,26 +2494,10 @@ export const useBooking = (
                         typeof dispatched.unwrap ===
                         "function"
                     ) {
-                        const result =
-                            await dispatched.unwrap();
-
-                        console.debug(
-                            "[useBooking] Booking updated successfully:",
-                            result
-                        );
-
-                        return result;
+                        return await dispatched.unwrap();
                     }
 
-                    const result =
-                        await dispatched;
-
-                    console.debug(
-                        "[useBooking] Booking update result:",
-                        result
-                    );
-
-                    return result;
+                    return await dispatched;
                 } catch (
                 requestError
                 ) {
@@ -2280,18 +2528,14 @@ export const useBooking = (
             [dispatch]
         );
 
-    /*
-     * Backward-compatible alias.
-     */
-
     const editBooking =
         updateBooking;
 
     /*
-     * ------------------------------------------------------------------
-     * Delete
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Delete
+    |--------------------------------------------------------------------------
+    */
 
     const removeBooking =
         useCallback(
@@ -2319,10 +2563,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Search
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    */
 
     const search =
         useCallback(
@@ -2359,10 +2603,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Statistics
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Statistics
+    |--------------------------------------------------------------------------
+    */
 
     const getStatistics =
         useCallback(
@@ -2399,7 +2643,8 @@ export const useBooking = (
 
                 activeStatisticsRequestRef.current =
                 {
-                    key: requestKey,
+                    key:
+                        requestKey,
                     promise,
                 };
 
@@ -2436,10 +2681,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Reports
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Reports
+    |--------------------------------------------------------------------------
+    */
 
     const getReports =
         useCallback(
@@ -2458,10 +2703,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Status Methods
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Status Methods
+    |--------------------------------------------------------------------------
+    */
 
     const getPending =
         useCallback(
@@ -2560,16 +2805,14 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Customer -> Tenant -> Tenancy
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Customer -> Tenant -> Tenancy
+    |--------------------------------------------------------------------------
+    */
 
     const resolveCustomerTenancies =
         useCallback(
-            async (
-                customer
-            ) => {
+            async (customer) => {
                 setSelectedCustomer(
                     customer ?? null
                 );
@@ -2605,6 +2848,10 @@ export const useBooking = (
                     let response =
                         null;
 
+                    /*
+                     * First attempt:
+                     * dedicated customer relationship endpoint.
+                     */
                     if (
                         typeof bookingApi.resolveCustomerTenancies ===
                         "function"
@@ -2620,6 +2867,10 @@ export const useBooking = (
                             response
                         );
 
+                    /*
+                     * Second attempt:
+                     * tenant by user.
+                     */
                     if (
                         !tenant &&
                         typeof bookingApi.getTenantByUser ===
@@ -2642,16 +2893,45 @@ export const useBooking = (
                         );
                     }
 
+                    /*
+                     * Try nested tenancy data first.
+                     */
                     let tenancyList =
                         extractTenantTenancies(
                             tenant
                         );
 
-                    const tenantId =
-                        tenant?.id ??
-                        tenant?.tenant_id ??
-                        null;
+                    /*
+                     * If the API response itself contains a
+                     * tenancy collection, use it.
+                     */
+                    if (
+                        tenancyList.length ===
+                        0 &&
+                        response
+                    ) {
+                        const responseTenancies =
+                            extractCollection(
+                                response
+                            );
 
+                        if (
+                            responseTenancies.length >
+                            0
+                        ) {
+                            tenancyList =
+                                responseTenancies;
+                        }
+                    }
+
+                    const tenantId =
+                        getTenantId(
+                            tenant
+                        );
+
+                    /*
+                     * Fetch all tenant tenancies.
+                     */
                     if (
                         tenancyList.length ===
                         0 &&
@@ -2670,6 +2950,9 @@ export const useBooking = (
                             );
                     }
 
+                    /*
+                     * Fallback to active tenant tenancies.
+                     */
                     if (
                         tenancyList.length ===
                         0 &&
@@ -2689,11 +2972,12 @@ export const useBooking = (
                     }
 
                     const normalizedTenancies =
-                        Array.isArray(
-                            tenancyList
-                        )
-                            ? tenancyList
-                            : [];
+                        dedupeById(
+                            normalizeTenancies(
+                                tenancyList
+                            ),
+                            getTenancyId
+                        );
 
                     setCustomerTenancies(
                         normalizedTenancies
@@ -2716,6 +3000,11 @@ export const useBooking = (
                         []
                     );
 
+                    console.error(
+                        "[useBooking] Failed to resolve customer tenancies:",
+                        requestError
+                    );
+
                     throw requestError;
                 } finally {
                     setCustomerTenanciesLoading(
@@ -2727,19 +3016,14 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Find tenant by customer/user
-     * ------------------------------------------------------------------
-     *
-     * Compatibility helper for EditBooking.jsx.
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Find tenant by customer/user
+    |--------------------------------------------------------------------------
+    */
 
     const getTenantByCustomer =
         useCallback(
-            async (
-                customer
-            ) => {
+            async (customer) => {
                 const customerUserId =
                     getCustomerUserId(
                         customer
@@ -2779,7 +3063,9 @@ export const useBooking = (
                     }
 
                     return null;
-                } catch (requestError) {
+                } catch (
+                requestError
+                ) {
                     console.error(
                         "[useBooking] Failed to resolve tenant by customer:",
                         {
@@ -2796,18 +3082,16 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Direct tenant tenancies
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Direct tenant tenancies
+    |--------------------------------------------------------------------------
+    */
 
     const getTenanciesByTenant =
         useCallback(
-            async (
-                tenant
-            ) => {
+            async (tenant) => {
                 const tenantId =
-                    getBookingId(
+                    getTenantId(
                         tenant
                     );
 
@@ -2827,8 +3111,13 @@ export const useBooking = (
                         tenantId
                     );
 
-                return extractCollection(
-                    response
+                return dedupeById(
+                    normalizeTenancies(
+                        extractCollection(
+                            response
+                        )
+                    ),
+                    getTenancyId
                 );
             },
             []
@@ -2836,11 +3125,9 @@ export const useBooking = (
 
     const getActiveTenanciesByTenant =
         useCallback(
-            async (
-                tenant
-            ) => {
+            async (tenant) => {
                 const tenantId =
-                    getBookingId(
+                    getTenantId(
                         tenant
                     );
 
@@ -2860,18 +3147,109 @@ export const useBooking = (
                         tenantId
                     );
 
-                return extractCollection(
-                    response
+                return dedupeById(
+                    normalizeTenancies(
+                        extractCollection(
+                            response
+                        )
+                    ),
+                    getTenancyId
                 );
             },
             []
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Workflow
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Resolve tenancy relationships
+    |--------------------------------------------------------------------------
+    */
+
+    const resolveTenancyRelationships =
+        useCallback(
+            (tenancy) => {
+                const normalized =
+                    normalizeTenancy(
+                        tenancy
+                    );
+
+                if (
+                    !isPlainObject(
+                        normalized
+                    )
+                ) {
+                    return {
+                        tenancy: null,
+                        tenancyId: null,
+                        tenantId: null,
+                        propertyId: null,
+                        apartmentId: null,
+                        unitId: null,
+                        tenant: null,
+                        property: null,
+                        apartment: null,
+                        unit: null,
+                    };
+                }
+
+                return {
+                    tenancy:
+                        normalized,
+
+                    tenancyId:
+                        getTenancyId(
+                            normalized
+                        ),
+
+                    tenantId:
+                        normalized.tenant_id ??
+                        getTenantId(
+                            normalized.tenant
+                        ),
+
+                    propertyId:
+                        normalized.property_id ??
+                        getPropertyId(
+                            normalized.property
+                        ),
+
+                    apartmentId:
+                        normalized.apartment_id ??
+                        getApartmentId(
+                            normalized.apartment
+                        ),
+
+                    unitId:
+                        normalized.unit_id ??
+                        getUnitId(
+                            normalized.unit
+                        ),
+
+                    tenant:
+                        normalized.tenant ??
+                        null,
+
+                    property:
+                        normalized.property ??
+                        null,
+
+                    apartment:
+                        normalized.apartment ??
+                        null,
+
+                    unit:
+                        normalized.unit ??
+                        null,
+                };
+            },
+            []
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Workflow
+    |--------------------------------------------------------------------------
+    */
 
     const confirm =
         useCallback(
@@ -3033,26 +3411,28 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Availability
-     * ------------------------------------------------------------------
-     *
-     * Backend requires:
-     *
-     * property_id
-     * start_date
-     * end_date
-     *
-     * We normalize aliases here and prevent an invalid request from
-     * reaching the API.
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Availability
+    |--------------------------------------------------------------------------
+    |
+    | GET /bookings/available-units
+    |
+    | Required:
+    | start_date
+    | end_date
+    |
+    | Optional:
+    | property_id
+    | apartment_id
+    | booking_id
+    |
+    | unit_id is deliberately NOT sent.
+    |--------------------------------------------------------------------------
+    */
 
     const getAvailableUnits =
         useCallback(
-            async (
-                params = {}
-            ) => {
+            async (params = {}) => {
                 const normalized =
                     isPlainObject(params)
                         ? {
@@ -3061,13 +3441,30 @@ export const useBooking = (
                         : {};
 
                 const propertyId =
-                    getBookingId(
-                        normalized.property_id
+                    getPropertyId(
+                        firstPresent(
+                            normalized.property_id,
+                            normalized.propertyId,
+                            normalized.property
+                        )
                     );
 
                 const apartmentId =
+                    getApartmentId(
+                        firstPresent(
+                            normalized.apartment_id,
+                            normalized.apartmentId,
+                            normalized.apartment
+                        )
+                    );
+
+                const bookingId =
                     getBookingId(
-                        normalized.apartment_id
+                        firstPresent(
+                            normalized.booking_id,
+                            normalized.bookingId,
+                            normalized.booking
+                        )
                     );
 
                 const startDate =
@@ -3081,14 +3478,6 @@ export const useBooking = (
                         normalized.end_date,
                         normalized.endDate
                     );
-
-                if (!propertyId) {
-                    console.warn(
-                        "[useBooking] Available units request skipped: property_id is missing."
-                    );
-
-                    return [];
-                }
 
                 if (!startDate) {
                     console.warn(
@@ -3106,34 +3495,34 @@ export const useBooking = (
                     return [];
                 }
 
-                const requestParams =
-                    cleanFilters({
-                        ...normalized,
+                const requestParams = {
+                    start_date:
+                        startDate,
 
-                        property_id:
-                            propertyId,
+                    end_date:
+                        endDate,
 
-                        ...(apartmentId
-                            ? {
-                                apartment_id:
-                                    apartmentId,
-                            }
-                            : {}),
+                    ...(propertyId
+                        ? {
+                            property_id:
+                                propertyId,
+                        }
+                        : {}),
 
-                        start_date:
-                            startDate,
+                    ...(apartmentId
+                        ? {
+                            apartment_id:
+                                apartmentId,
+                        }
+                        : {}),
 
-                        end_date:
-                            endDate,
-                    });
-
-                /*
-                 * Remove camelCase aliases so the API receives only
-                 * the Laravel field names.
-                 */
-
-                delete requestParams.startDate;
-                delete requestParams.endDate;
+                    ...(bookingId
+                        ? {
+                            booking_id:
+                                bookingId,
+                        }
+                        : {}),
+                };
 
                 console.debug(
                     "[useBooking] Fetching available units:",
@@ -3157,7 +3546,9 @@ export const useBooking = (
                     }
 
                     return await dispatched;
-                } catch (requestError) {
+                } catch (
+                requestError
+                ) {
                     console.error(
                         "[useBooking] Failed to fetch available units:",
                         {
@@ -3174,16 +3565,14 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Available Users
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Available Users
+    |--------------------------------------------------------------------------
+    */
 
     const getAvailableUsers =
         useCallback(
-            async (
-                params = {}
-            ) => {
+            async (params = {}) => {
                 let normalizedParams =
                     params;
 
@@ -3221,7 +3610,9 @@ export const useBooking = (
                     }
 
                     return await dispatched;
-                } catch (requestError) {
+                } catch (
+                requestError
+                ) {
                     console.error(
                         "[useBooking] Failed to fetch available users:",
                         requestError
@@ -3234,10 +3625,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Restore / Force Delete
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Restore / Force Delete
+    |--------------------------------------------------------------------------
+    */
 
     const restore =
         useCallback(
@@ -3282,10 +3673,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Filters
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Filters
+    |--------------------------------------------------------------------------
+    */
 
     const updateFilters =
         useCallback(
@@ -3312,10 +3703,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Pagination
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Pagination
+    |--------------------------------------------------------------------------
+    */
 
     const changePage =
         useCallback(
@@ -3359,10 +3750,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Clear current booking
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Clear current booking
+    |--------------------------------------------------------------------------
+    */
 
     const clearCurrent =
         useCallback(
@@ -3375,10 +3766,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Initial Fetch
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Initial Fetch
+    |--------------------------------------------------------------------------
+    */
 
     useEffect(() => {
         if (
@@ -3427,13 +3818,10 @@ export const useBooking = (
     ]);
 
     /*
-     * ------------------------------------------------------------------
-     * Compatibility Loading Aliases
-     * ------------------------------------------------------------------
-     *
-     * EditBooking.jsx may use these names.
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Compatibility Loading Aliases
+    |--------------------------------------------------------------------------
+    */
 
     const loadingGet =
         Boolean(
@@ -3452,10 +3840,10 @@ export const useBooking = (
         );
 
     /*
-     * ------------------------------------------------------------------
-     * Return
-     * ------------------------------------------------------------------
-     */
+    |--------------------------------------------------------------------------
+    | Return
+    |--------------------------------------------------------------------------
+    */
 
     return {
         /*
@@ -3472,7 +3860,8 @@ export const useBooking = (
 
         tenancies,
 
-        customerTenancies,
+        customerTenancies:
+            normalizedCustomerTenancies,
 
         statistics,
 
@@ -3559,10 +3948,6 @@ export const useBooking = (
 
         loadingAvailability,
 
-        /*
-         * Compatibility loading names
-         */
-
         loadingGet,
 
         loadingAvailableUnits,
@@ -3640,6 +4025,8 @@ export const useBooking = (
 
         getActiveTenanciesByTenant,
 
+        resolveTenancyRelationships,
+
         /*
          * Workflow
          */
@@ -3696,7 +4083,19 @@ export const useBooking = (
          * Utility helpers
          */
 
+        normalizeId,
+
         getBookingId,
+
+        getTenantId,
+
+        getTenancyId,
+
+        getPropertyId,
+
+        getApartmentId,
+
+        getUnitId,
 
         getNestedValue,
 
@@ -3705,6 +4104,10 @@ export const useBooking = (
         normalizeBookingFinancials,
 
         normalizeBookingAmount,
+
+        normalizeTenancy,
+
+        normalizeTenancies,
 
         toFiniteNumber,
 
