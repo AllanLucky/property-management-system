@@ -59,6 +59,8 @@ class BookingService
         'notes',
         'payment_method',
         'payment_reference',
+        'meta_title',
+        'meta_description',
     ];
 
     /**
@@ -180,15 +182,6 @@ class BookingService
 
     /**
      * Create a booking.
-     *
-     * user_id:
-     * - authenticated application user
-     *
-     * customer_id:
-     * - selected customer account
-     *
-     * tenant_id:
-     * - selected tenant profile
      */
     public function create(array $data): Booking
     {
@@ -227,7 +220,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Resolve authoritative customer account
+            | Resolve authoritative customer
             |--------------------------------------------------------------------------
             */
 
@@ -235,7 +228,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Resolve tenant relationship
+            | Resolve tenant
             |--------------------------------------------------------------------------
             */
 
@@ -243,7 +236,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Validate booking dates and relationships
+            | Validate dates and relationships
             |--------------------------------------------------------------------------
             */
 
@@ -253,7 +246,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Calculate all financial values server-side
+            | Calculate financial values server-side
             |--------------------------------------------------------------------------
             */
 
@@ -274,7 +267,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Payment status is derived from financial data
+            | Payment status is derived from financial values
             |--------------------------------------------------------------------------
             */
 
@@ -285,7 +278,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Keep identifier generation in the Booking model
+            | Identifier generation remains in Booking model
             |--------------------------------------------------------------------------
             */
 
@@ -300,37 +293,45 @@ class BookingService
     }
 
     /**
-     * Update an existing booking.
+     * Update an existing booking by ID.
      *
-     * The current booking ID is always passed to the availability
-     * check as the exception ID.
+     * IMPORTANT:
+     * The controller passes a booking ID.
+     * The service resolves the Booking model internally.
      */
     public function update(
         int|string $id,
         array $data
     ): Booking {
-        $bookingId = $this->normalizeId($id);
-
-        $booking = $this->findOrFail($bookingId);
-
         return DB::transaction(function () use (
-            $booking,
-            $data,
-            $bookingId
+            $id,
+            $data
         ) {
             /*
             |--------------------------------------------------------------------------
-            | Refresh booking inside transaction
+            | Resolve booking
             |--------------------------------------------------------------------------
             */
 
+            $bookingId = $this->normalizeId($id);
+
+            $booking = $this->bookingRepository->findOrFail(
+                $bookingId
+            );
+
             $booking->refresh();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Ensure booking is editable
+            |--------------------------------------------------------------------------
+            */
 
             $this->ensureBookingCanBeUpdated($booking);
 
             /*
             |--------------------------------------------------------------------------
-            | Merge persisted values with submitted values
+            | Merge persisted state with submitted state
             |--------------------------------------------------------------------------
             */
 
@@ -338,12 +339,6 @@ class BookingService
                 $booking->only(self::MERGE_FIELDS),
                 $data
             );
-
-            /*
-            |--------------------------------------------------------------------------
-            | Always preserve current booking identity
-            |--------------------------------------------------------------------------
-            */
 
             $mergedData['id'] = $bookingId;
 
@@ -360,7 +355,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Resolve customer relationship
+            | Resolve customer
             |--------------------------------------------------------------------------
             */
 
@@ -371,7 +366,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Resolve tenant relationship
+            | Resolve tenant
             |--------------------------------------------------------------------------
             */
 
@@ -382,19 +377,17 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Validate complete booking state
+            | Validate complete state
             |--------------------------------------------------------------------------
             */
 
             $this->validateBookingDates($mergedData);
+
             $this->validateBookingReferences($mergedData);
 
             /*
             |--------------------------------------------------------------------------
-            | IMPORTANT:
-            |
-            | Exclude the booking currently being edited from
-            | the overlap check.
+            | Exclude current booking from availability check
             |--------------------------------------------------------------------------
             */
 
@@ -416,7 +409,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Only legitimate client-editable fields are allowed
+            | Only legitimate editable fields are accepted
             |--------------------------------------------------------------------------
             */
 
@@ -424,7 +417,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Never allow workflow state through normal update
+            | Remove workflow-controlled fields
             |--------------------------------------------------------------------------
             */
 
@@ -444,7 +437,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Apply server-calculated financial values
+            | Apply calculated financial values
             |--------------------------------------------------------------------------
             */
 
@@ -506,6 +499,8 @@ class BookingService
                 'notes',
                 'payment_method',
                 'payment_reference',
+                'meta_title',
+                'meta_description',
             ] as $field) {
                 if (array_key_exists($field, $mergedData)) {
                     $updateData[$field] = $mergedData[$field];
@@ -514,7 +509,7 @@ class BookingService
 
             /*
             |--------------------------------------------------------------------------
-            | Booking creator and identifiers cannot be changed
+            | Booking creator and identifiers cannot change
             |--------------------------------------------------------------------------
             */
 
@@ -526,17 +521,11 @@ class BookingService
                 $updateData['slug']
             );
 
-            /*
-            |--------------------------------------------------------------------------
-            | Never permit workflow changes through update()
-            |--------------------------------------------------------------------------
-            */
-
             $this->removeWorkflowFields($updateData);
 
             /*
             |--------------------------------------------------------------------------
-            | Persist only after every validation succeeds
+            | Persist
             |--------------------------------------------------------------------------
             */
 
@@ -552,7 +541,7 @@ class BookingService
     }
 
     /**
-     * Soft delete booking.
+     * Soft delete booking by ID.
      */
     public function delete(int|string $id): bool
     {
@@ -576,7 +565,7 @@ class BookingService
     }
 
     /**
-     * Restore a soft-deleted booking.
+     * Restore a soft-deleted booking by ID.
      */
     public function restore(int|string $id): Booking
     {
@@ -590,7 +579,7 @@ class BookingService
     }
 
     /**
-     * Permanently delete a booking.
+     * Permanently delete a booking by ID.
      */
     public function forceDelete(int|string $id): bool
     {
@@ -663,7 +652,8 @@ class BookingService
 
     public function getByPaymentStatus(
         string $paymentStatus,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         $paymentStatus = strtolower(trim($paymentStatus));
 
@@ -671,23 +661,28 @@ class BookingService
 
         return $this->bookingRepository->getByPaymentStatus(
             $paymentStatus,
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getPending(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getPending(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getConfirmed(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getConfirmed(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
@@ -702,26 +697,42 @@ class BookingService
     }
 
     public function getCompleted(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getCompleted(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getCancelled(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getCancelled(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
+        );
+    }
+
+    public function getRejected(
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
+    ): LengthAwarePaginator {
+        return $this->bookingRepository->getRejected(
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getExpired(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getExpired(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
@@ -862,7 +873,10 @@ class BookingService
             ]);
         }
 
-        return DB::transaction(function () use ($booking, $reason) {
+        return DB::transaction(function () use (
+            $booking,
+            $reason
+        ) {
             return $this->bookingRepository->update(
                 $booking,
                 [
@@ -1048,51 +1062,61 @@ class BookingService
 
     public function getByUnit(
         int $unitId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByUnit(
-            $unitId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($unitId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getByCustomer(
         int $customerId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByCustomer(
-            $customerId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($customerId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getByTenant(
         int $tenantId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByTenant(
-            $tenantId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($tenantId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getByProperty(
         int $propertyId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByProperty(
-            $propertyId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($propertyId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
     public function getByApartment(
         int $apartmentId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByApartment(
-            $apartmentId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($apartmentId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
@@ -1104,9 +1128,6 @@ class BookingService
 
     /**
      * Check whether a unit has an overlapping active booking.
-     *
-     * $exceptBookingId is used during editing so that the booking
-     * currently being edited does not conflict with itself.
      */
     public function hasOverlappingBooking(
         int $unitId,
@@ -1120,7 +1141,7 @@ class BookingService
         );
 
         return $this->bookingRepository->hasOverlappingBooking(
-            (int) $unitId,
+            $this->normalizeId($unitId),
             $startDate,
             $endDate,
             $exceptBookingId !== null
@@ -1147,8 +1168,12 @@ class BookingService
         return $this->bookingRepository->getAvailableUnits(
             $startDate,
             $endDate,
-            $propertyId,
-            $apartmentId,
+            $propertyId !== null
+                ? $this->normalizeId($propertyId)
+                : null,
+            $apartmentId !== null
+                ? $this->normalizeId($apartmentId)
+                : null,
             $exceptBookingId !== null
                 ? $this->normalizeId($exceptBookingId)
                 : null
@@ -1371,13 +1396,6 @@ class BookingService
 
     /**
      * Normalize booking data before validation/persistence.
-     *
-     * IMPORTANT:
-     *
-     * Relationship IDs and guest counts are intentionally handled
-     * separately.
-     *
-     * number_of_children may legitimately be 0.
      */
     protected function prepareBookingData(
         array $data,
@@ -1385,7 +1403,7 @@ class BookingService
     ): array {
         /*
         |--------------------------------------------------------------------------
-        | Normalize string fields
+        | Normalize strings
         |--------------------------------------------------------------------------
         */
 
@@ -1431,9 +1449,6 @@ class BookingService
         |--------------------------------------------------------------------------
         | Normalize relationship IDs
         |--------------------------------------------------------------------------
-        |
-        | These fields must be positive database IDs.
-        |--------------------------------------------------------------------------
         */
 
         foreach ([
@@ -1466,10 +1481,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Normalize number of adults
-        |--------------------------------------------------------------------------
-        |
-        | Adults must be at least 1.
+        | Normalize adults
         |--------------------------------------------------------------------------
         */
 
@@ -1494,12 +1506,12 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Normalize number of children
+        | Normalize children
         |--------------------------------------------------------------------------
         |
-        | ZERO IS VALID.
-        |
-        | This is a count, not a relationship ID.
+        | IMPORTANT:
+        | number_of_children is a COUNT, not a relationship ID.
+        | Zero is valid.
         |--------------------------------------------------------------------------
         */
 
@@ -1550,7 +1562,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Financial values are always calculated by the service.
+        | Server-side financial values
         |--------------------------------------------------------------------------
         */
 
@@ -1562,7 +1574,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Normalize booking type
+        | Booking type
         |--------------------------------------------------------------------------
         */
 
@@ -1577,7 +1589,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Normalize source
+        | Source
         |--------------------------------------------------------------------------
         */
 
@@ -1592,7 +1604,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Normal create/update requests cannot control workflow state.
+        | Workflow fields are service-controlled
         |--------------------------------------------------------------------------
         */
 
@@ -1615,14 +1627,6 @@ class BookingService
             ? $data['customer_id']
             : $booking?->customer_id;
 
-        /*
-        |--------------------------------------------------------------------------
-        | No registered customer.
-        |
-        | Valid for guest/walk-in bookings.
-        |--------------------------------------------------------------------------
-        */
-
         if (
             $customerId === null ||
             $customerId === ''
@@ -1644,31 +1648,13 @@ class BookingService
             ]);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Users record is authoritative.
-        |--------------------------------------------------------------------------
-        */
-
         $data['customer_id'] = $customer->id;
-
-        /*
-        |--------------------------------------------------------------------------
-        | Synchronize customer snapshot.
-        |--------------------------------------------------------------------------
-        */
 
         $data['first_name'] = $customer->first_name
             ?? '';
 
         $data['last_name'] = $customer->last_name
             ?? '';
-
-        /*
-        |--------------------------------------------------------------------------
-        | Fall back to name when first/last names are not populated.
-        |--------------------------------------------------------------------------
-        */
 
         if (
             $data['first_name'] === '' &&
@@ -1715,12 +1701,6 @@ class BookingService
             ? $data['tenant_id']
             : $booking?->tenant_id;
 
-        /*
-        |--------------------------------------------------------------------------
-        | No tenant selected.
-        |--------------------------------------------------------------------------
-        */
-
         if (
             $tenantId === null ||
             $tenantId === ''
@@ -1744,7 +1724,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | Customer and tenant must represent the same user.
+        | Customer and tenant must represent the same user
         |--------------------------------------------------------------------------
         */
 
@@ -1765,7 +1745,7 @@ class BookingService
 
         /*
         |--------------------------------------------------------------------------
-        | If tenant is selected without customer, use linked user.
+        | Tenant can resolve customer automatically
         |--------------------------------------------------------------------------
         */
 
@@ -1783,7 +1763,7 @@ class BookingService
     }
 
     /**
-     * Keep identifier generation inside the Booking model.
+     * Keep identifier generation inside Booking model.
      */
     protected function generateBookingIdentifiers(
         array $data
@@ -1890,7 +1870,6 @@ class BookingService
         float $amountPaid
     ): string {
         $totalAmount = round($totalAmount, 2);
-
         $amountPaid = round($amountPaid, 2);
 
         if ($amountPaid <= 0) {
@@ -2207,9 +2186,6 @@ class BookingService
 
     /**
      * Validate unit availability.
-     *
-     * During update, $exceptBookingId MUST contain the ID of the
-     * booking currently being edited.
      */
     protected function validateUnitAvailability(
         array $data,
@@ -2421,7 +2397,7 @@ class BookingService
      *
      * Prevents accidental values such as:
      *
-     *     [object Object]
+     * [object Object]
      *
      * from reaching the repository.
      */
@@ -2512,3 +2488,4 @@ class BookingService
         );
     }
 }
+

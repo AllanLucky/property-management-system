@@ -25,6 +25,39 @@ class UpdateBookingRequest extends FormRequest
 
         /*
         |--------------------------------------------------------------------------
+        | RELATIONSHIP IDS
+        |--------------------------------------------------------------------------
+        |
+        | React select fields normally submit IDs as strings.
+        |
+        | Normalize actual foreign-key fields to integers.
+        |
+        | IMPORTANT:
+        | number_of_adults and number_of_children are NOT relationship IDs.
+        |
+        */
+
+        foreach ([
+            'customer_id',
+            'tenant_id',
+            'property_id',
+            'apartment_id',
+            'unit_id',
+            'tenancy_id',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                if ($value === null || $value === '') {
+                    $data[$field] = null;
+                } elseif (is_numeric($value)) {
+                    $data[$field] = (int) $value;
+                }
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
         | BOOKING CLASSIFICATION
         |--------------------------------------------------------------------------
         */
@@ -43,7 +76,7 @@ class UpdateBookingRequest extends FormRequest
 
         /*
         |--------------------------------------------------------------------------
-        | CUSTOMER INFORMATION
+        | CUSTOMER SNAPSHOT
         |--------------------------------------------------------------------------
         */
 
@@ -75,6 +108,10 @@ class UpdateBookingRequest extends FormRequest
         |--------------------------------------------------------------------------
         | DATES
         |--------------------------------------------------------------------------
+        |
+        | Keep dates as strings here. Laravel's date validation and the model/
+        | service are responsible for parsing them.
+        |
         */
 
         foreach ([
@@ -90,6 +127,65 @@ class UpdateBookingRequest extends FormRequest
                 $data[$field] = $value !== null && $value !== ''
                     ? trim((string) $value)
                     : null;
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | NUMERIC OCCUPANCY VALUES
+        |--------------------------------------------------------------------------
+        |
+        | These are COUNTS, not foreign keys.
+        |
+        | Example:
+        |
+        | number_of_adults   = 2
+        | number_of_children = 0
+        |
+        */
+
+        foreach ([
+            'number_of_adults',
+            'number_of_children',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                if ($value === null || $value === '') {
+                    $data[$field] = null;
+                } elseif (is_numeric($value)) {
+                    $data[$field] = (int) $value;
+                }
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | FINANCIAL VALUES
+        |--------------------------------------------------------------------------
+        |
+        | Only financial components may be supplied.
+        |
+        | total_amount and balance are server calculated.
+        |
+        */
+
+        foreach ([
+            'rent_amount',
+            'deposit_amount',
+            'service_charge',
+            'booking_fee',
+            'discount_amount',
+            'amount_paid',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                if ($value === null || $value === '') {
+                    $data[$field] = null;
+                } elseif (is_numeric($value)) {
+                    $data[$field] = round((float) $value, 2);
+                }
             }
         }
 
@@ -131,96 +227,20 @@ class UpdateBookingRequest extends FormRequest
 
         /*
         |--------------------------------------------------------------------------
-        | NUMERIC OCCUPANCY VALUES
+        | SEO / METADATA
         |--------------------------------------------------------------------------
-        |
-        | These are COUNTS, not foreign keys / IDs.
-        |
-        | Example:
-        | number_of_adults   = 2
-        | number_of_children = 0
-        |
         */
 
-        foreach ([
-            'number_of_adults',
-            'number_of_children',
-        ] as $field) {
-            if ($this->has($field)) {
-                $value = $this->input($field);
-
-                /*
-                 * Preserve null if explicitly supplied.
-                 * Otherwise normalize numeric strings to integers.
-                 */
-                if ($value === null || $value === '') {
-                    $data[$field] = null;
-                } elseif (is_numeric($value)) {
-                    $data[$field] = (int) $value;
-                }
-            }
+        if ($this->has('meta_title')) {
+            $data['meta_title'] = $this->filled('meta_title')
+                ? trim((string) $this->input('meta_title'))
+                : null;
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | INTEGER RELATIONSHIP IDS
-        |--------------------------------------------------------------------------
-        |
-        | Normalize IDs only for actual relationship fields.
-        |
-        | IMPORTANT:
-        | number_of_adults and number_of_children are NOT IDs.
-        |
-        */
-
-        foreach ([
-            'customer_id',
-            'tenant_id',
-            'property_id',
-            'apartment_id',
-            'unit_id',
-            'tenancy_id',
-        ] as $field) {
-            if ($this->has($field)) {
-                $value = $this->input($field);
-
-                if ($value === null || $value === '') {
-                    $data[$field] = null;
-                } elseif (is_numeric($value)) {
-                    $data[$field] = (int) $value;
-                }
-            }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | FINANCIAL VALUES
-        |--------------------------------------------------------------------------
-        |
-        | Normalize supplied component amounts.
-        |
-        | total_amount and balance are intentionally NOT normalized because
-        | they are server-calculated and prohibited below.
-        |
-        */
-
-        foreach ([
-            'rent_amount',
-            'deposit_amount',
-            'service_charge',
-            'booking_fee',
-            'discount_amount',
-            'amount_paid',
-        ] as $field) {
-            if ($this->has($field)) {
-                $value = $this->input($field);
-
-                if ($value === null || $value === '') {
-                    $data[$field] = null;
-                } elseif (is_numeric($value)) {
-                    $data[$field] = round((float) $value, 2);
-                }
-            }
+        if ($this->has('meta_description')) {
+            $data['meta_description'] = $this->filled('meta_description')
+                ? trim((string) $this->input('meta_description'))
+                : null;
         }
 
         /*
@@ -249,10 +269,16 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             */
 
+            /*
+             * Booking owner is controlled by the backend.
+             */
             'user_id' => [
                 'prohibited',
             ],
 
+            /*
+             * customer_id references users.id.
+             */
             'customer_id' => [
                 'sometimes',
                 'nullable',
@@ -261,6 +287,9 @@ class UpdateBookingRequest extends FormRequest
                 'exists:users,id',
             ],
 
+            /*
+             * tenant_id references tenants.id.
+             */
             'tenant_id' => [
                 'sometimes',
                 'nullable',
@@ -288,6 +317,14 @@ class UpdateBookingRequest extends FormRequest
                 'integer',
                 'min:1',
                 'exists:apartments,id',
+                Rule::exists('apartments', 'id')
+                    ->where(function ($query) {
+                        $propertyId = $this->input('property_id');
+
+                        if ($propertyId !== null) {
+                            $query->where('property_id', $propertyId);
+                        }
+                    }),
             ],
 
             'unit_id' => [
@@ -319,7 +356,7 @@ class UpdateBookingRequest extends FormRequest
 
             'booking_type' => [
                 'sometimes',
-                'required',
+                'nullable',
                 Rule::in([
                     'viewing',
                     'reservation',
@@ -329,7 +366,7 @@ class UpdateBookingRequest extends FormRequest
 
             'source' => [
                 'sometimes',
-                'required',
+                'nullable',
                 Rule::in([
                     'website',
                     'walk_in',
@@ -345,7 +382,7 @@ class UpdateBookingRequest extends FormRequest
             | STATUS / WORKFLOW
             |--------------------------------------------------------------------------
             |
-            | These values must be changed through dedicated workflow endpoints.
+            | Status changes must go through dedicated service actions.
             |
             */
 
@@ -377,6 +414,9 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | PAYMENT STATUS
             |--------------------------------------------------------------------------
+            |
+            | Payment state should be controlled by the payment workflow.
+            |
             */
 
             'payment_status' => [
@@ -528,14 +568,13 @@ class UpdateBookingRequest extends FormRequest
             | OCCUPANCY
             |--------------------------------------------------------------------------
             |
-            | IMPORTANT:
             | These are integer COUNTS.
             |
             | number_of_adults:
-            |   1 - 100
+            |     1 - 100
             |
             | number_of_children:
-            |   0 - 100
+            |     0 - 100
             |
             | There is intentionally NO exists rule here.
             |
@@ -581,6 +620,9 @@ class UpdateBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | REJECTION / CANCELLATION
             |--------------------------------------------------------------------------
+            |
+            | These fields are controlled by their dedicated workflow endpoints.
+            |
             */
 
             'rejection_reason' => [
@@ -698,7 +740,7 @@ class UpdateBookingRequest extends FormRequest
                 'The selected apartment ID must be a valid integer.',
 
             'apartment_id.exists' =>
-                'The selected apartment does not exist.',
+                'The selected apartment does not exist or does not belong to the selected property.',
 
             'unit_id.integer' =>
                 'The selected unit ID must be a valid integer.',
@@ -775,6 +817,9 @@ class UpdateBookingRequest extends FormRequest
             'amount_paid.numeric' =>
                 'Amount paid must be a valid number.',
 
+            'amount_paid.min' =>
+                'Amount paid cannot be negative.',
+
             'amount_paid.max' =>
                 'The amount paid exceeds the maximum allowed value.',
 
@@ -834,6 +879,15 @@ class UpdateBookingRequest extends FormRequest
 
             'completed_at.prohibited' =>
                 'Completion date is generated automatically.',
+
+            'rejection_reason.prohibited' =>
+                'Rejection reason must be supplied through the rejection workflow.',
+
+            'cancellation_reason.prohibited' =>
+                'Cancellation reason must be supplied through the cancellation workflow.',
+
+            'paid_at.prohibited' =>
+                'Payment date is generated automatically.',
 
             /*
             |--------------------------------------------------------------------------
