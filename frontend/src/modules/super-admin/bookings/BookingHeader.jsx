@@ -46,14 +46,11 @@ const BookingHeader = ({
   |--------------------------------------------------------------------------
   */
 
-  const isIndexPage =
-    pathname === BOOKING_ROUTES.index;
+  const isIndexPage = pathname === BOOKING_ROUTES.index;
 
-  const isCreatePage =
-    pathname === BOOKING_ROUTES.create;
+  const isCreatePage = pathname === BOOKING_ROUTES.create;
 
-  const isCancelledPage =
-    pathname === BOOKING_ROUTES.cancelled;
+  const isCancelledPage = pathname === BOOKING_ROUTES.cancelled;
 
   const isEditPage =
     pathname.includes("/super-admin/bookings/") &&
@@ -79,8 +76,7 @@ const BookingHeader = ({
 
   if (isCreatePage) {
     title = "Create Booking";
-    description =
-      "Create a new property booking or reservation.";
+    description = "Create a new property booking or reservation.";
     icon = FilePlus2;
   }
 
@@ -128,12 +124,9 @@ const BookingHeader = ({
   */
 
   const handleBack = () => {
-    if (window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-
-    navigate(BOOKING_ROUTES.index);
+    navigate(BOOKING_ROUTES.index, {
+      replace: true,
+    });
   };
 
   const handleCreate = () => {
@@ -161,6 +154,7 @@ const BookingHeader = ({
           {/* --------------------------------------------------------------
               Left
           -------------------------------------------------------------- */}
+
           <div className="flex min-w-0 items-start gap-4">
             {/* Back Button */}
 
@@ -169,8 +163,8 @@ const BookingHeader = ({
                 type="button"
                 onClick={handleBack}
                 disabled={loading}
-                aria-label="Go back"
-                title="Go back"
+                aria-label="Go back to bookings"
+                title="Back to bookings"
                 className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ArrowLeft className="h-5 w-5" />
@@ -219,6 +213,7 @@ const BookingHeader = ({
           {/* --------------------------------------------------------------
               Actions
           -------------------------------------------------------------- */}
+
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* ----------------------------------------------------------
                 Main Booking Index
@@ -226,6 +221,8 @@ const BookingHeader = ({
 
             {isIndexPage && (
               <>
+                {/* Refresh */}
+
                 {showRefresh && (
                   <button
                     type="button"
@@ -239,9 +236,7 @@ const BookingHeader = ({
                     />
 
                     <span className="hidden sm:inline">
-                      {loading
-                        ? "Refreshing..."
-                        : "Refresh"}
+                      {loading ? "Refreshing..." : "Refresh"}
                     </span>
                   </button>
                 )}
@@ -260,9 +255,7 @@ const BookingHeader = ({
                     Cancelled Bookings
                   </span>
 
-                  <span className="sm:hidden">
-                    Cancelled
-                  </span>
+                  <span className="sm:hidden">Cancelled</span>
                 </button>
 
                 {/* New Booking */}
@@ -300,9 +293,7 @@ const BookingHeader = ({
                     All Bookings
                   </span>
 
-                  <span className="sm:hidden">
-                    Bookings
-                  </span>
+                  <span className="sm:hidden">Bookings</span>
                 </button>
 
                 {/* New Booking */}
@@ -319,9 +310,7 @@ const BookingHeader = ({
                     New Booking
                   </span>
 
-                  <span className="sm:hidden">
-                    New
-                  </span>
+                  <span className="sm:hidden">New</span>
                 </button>
               </>
             )}
@@ -330,39 +319,20 @@ const BookingHeader = ({
                 Create / Edit / Details
             ---------------------------------------------------------- */}
 
-            {!isIndexPage &&
-              !isCancelledPage && (
-                <button
-                  type="button"
-                  onClick={handleViewBookings}
-                  disabled={loading}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <CalendarCheck2 className="h-4 w-4" />
-
-                  <span className="hidden sm:inline">
-                    All Bookings
-                  </span>
-
-                  <span className="sm:hidden">
-                    Bookings
-                  </span>
-                </button>
-              )}
-
-            {/* ----------------------------------------------------------
-                Create Page
-            ---------------------------------------------------------- */}
-
-            {isCreatePage && (
+            {!isIndexPage && !isCancelledPage && (
               <button
                 type="button"
-                onClick={handleCreate}
-                disabled
-                className="hidden"
-                aria-hidden="true"
+                onClick={handleViewBookings}
+                disabled={loading}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Plus className="h-4 w-4" />
+                <CalendarCheck2 className="h-4 w-4" />
+
+                <span className="hidden sm:inline">
+                  All Bookings
+                </span>
+
+                <span className="sm:hidden">Bookings</span>
               </button>
             )}
 
@@ -383,9 +353,7 @@ const BookingHeader = ({
                   New Booking
                 </span>
 
-                <span className="sm:hidden">
-                  New
-                </span>
+                <span className="sm:hidden">New</span>
               </button>
             )}
           </div>
@@ -437,20 +405,19 @@ const BookingHeader = ({
 
             {/* Create / Edit / Details */}
 
-            {!isIndexPage &&
-              !isCancelledPage && (
-                <>
-                  <span>/</span>
+            {!isIndexPage && !isCancelledPage && (
+              <>
+                <span>/</span>
 
-                  <span className="font-medium text-gray-700">
-                    {isCreatePage
-                      ? "Create"
-                      : isEditPage
-                        ? "Edit"
-                        : "Details"}
-                  </span>
-                </>
-              )}
+                <span className="font-medium text-gray-700">
+                  {isCreatePage
+                    ? "Create"
+                    : isEditPage
+                      ? "Edit"
+                      : "Details"}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
