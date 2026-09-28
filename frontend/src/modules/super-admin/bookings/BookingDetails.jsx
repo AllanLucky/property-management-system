@@ -35,6 +35,7 @@ import BookingHeader from "./BookingHeader";
 import BookingStatusBadge from "./BookingStatusBadge";
 import BookingPaymentBadge from "./BookingPaymentBadge";
 import { useBooking } from "../../../hooks/useBooking";
+import bookingService from "../../../services/booking.service";
 
 /*
 |--------------------------------------------------------------------------
@@ -111,9 +112,7 @@ const toNumber = (value) => {
     return 0;
   }
 
-  const number = Number(
-    String(value).replace(/[^0-9.-]/g, "")
-  );
+  const number = Number(String(value).replace(/[^0-9.-]/g, ""));
 
   return Number.isFinite(number) ? number : 0;
 };
@@ -138,9 +137,7 @@ const formatCurrency = (value) =>
   }).format(toNumber(value));
 
 const formatNumber = (value) =>
-  new Intl.NumberFormat("en-KE").format(
-    toNumber(value)
-  );
+  new Intl.NumberFormat("en-KE").format(toNumber(value));
 
 const formatDate = (value) => {
   if (!value) {
@@ -188,10 +185,18 @@ const formatFieldLabel = (key) => {
   return String(key)
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase()
-    );
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
+
+/*
+|--------------------------------------------------------------------------
+| Safe ID Resolver
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| Never interpolate a complete object into a React Router URL.
+|
+*/
 
 const getId = (value) => {
   if (
@@ -203,10 +208,38 @@ const getId = (value) => {
   }
 
   if (typeof value === "object") {
-    return String(value?.id ?? "");
+    const possibleId =
+      value?.id ??
+      value?.value ??
+      value?.booking_id ??
+      value?.user_id ??
+      value?.tenant_id ??
+      value?.tenancy_id ??
+      value?.property_id ??
+      value?.apartment_id ??
+      value?.unit_id;
+
+    if (
+      possibleId !== null &&
+      possibleId !== undefined &&
+      possibleId !== ""
+    ) {
+      return getId(possibleId);
+    }
+
+    return "";
   }
 
-  return String(value);
+  const normalized = String(value).trim();
+
+  if (
+    !normalized ||
+    normalized === "[object Object]"
+  ) {
+    return "";
+  }
+
+  return normalized;
 };
 
 /*
@@ -246,14 +279,6 @@ const unwrapBookingResponse = (response) => {
     }
 
     if (
-      current.payload &&
-      typeof current.payload === "object"
-    ) {
-      current = current.payload;
-      continue;
-    }
-
-    if (
       current.id !== undefined ||
       current.booking_number !== undefined ||
       current.reference !== undefined ||
@@ -283,6 +308,14 @@ const unwrapBookingResponse = (response) => {
       typeof current.data === "object"
     ) {
       current = current.data;
+      continue;
+    }
+
+    if (
+      current.payload &&
+      typeof current.payload === "object"
+    ) {
+      current = current.payload;
       continue;
     }
 
@@ -357,9 +390,10 @@ const getCustomerName = (booking) => {
     return snapshotName;
   }
 
-  const customerId =
+  const customerId = getId(
     booking?.customer_id ??
-    booking?.user_id;
+    booking?.user_id
+  );
 
   return customerId
     ? `Customer #${customerId}`
@@ -409,8 +443,7 @@ const getTenantName = (booking) => {
   const tenant = getTenant(booking);
   const tenantUser = getTenantUser(booking);
 
-  const tenantUserName =
-    getFullName(tenantUser);
+  const tenantUserName = getFullName(tenantUser);
 
   if (tenantUserName !== "—") {
     return tenantUserName;
@@ -422,8 +455,10 @@ const getTenantName = (booking) => {
     return tenantName;
   }
 
-  return booking?.tenant_id
-    ? `Tenant #${booking.tenant_id}`
+  const tenantId = getId(booking?.tenant_id);
+
+  return tenantId
+    ? `Tenant #${tenantId}`
     : "Not linked";
 };
 
@@ -445,9 +480,15 @@ const getPropertyName = (booking) => {
     property?.property_name ||
     property?.code ||
     property?.slug ||
-    (booking?.property_id
-      ? `Property #${booking.property_id}`
-      : "—")
+    (() => {
+      const propertyId = getId(
+        booking?.property_id
+      );
+
+      return propertyId
+        ? `Property #${propertyId}`
+        : "—";
+    })()
   );
 };
 
@@ -462,9 +503,15 @@ const getApartmentName = (booking) => {
     apartment?.block_name ||
     apartment?.code ||
     apartment?.slug ||
-    (booking?.apartment_id
-      ? `Apartment #${booking.apartment_id}`
-      : "—")
+    (() => {
+      const apartmentId = getId(
+        booking?.apartment_id
+      );
+
+      return apartmentId
+        ? `Apartment #${apartmentId}`
+        : "—";
+    })()
   );
 };
 
@@ -476,9 +523,15 @@ const getUnitName = (booking) => {
     unit?.number ||
     unit?.name ||
     unit?.code ||
-    (booking?.unit_id
-      ? `Unit #${booking.unit_id}`
-      : "—")
+    (() => {
+      const unitId = getId(
+        booking?.unit_id
+      );
+
+      return unitId
+        ? `Unit #${unitId}`
+        : "—";
+    })()
   );
 };
 
@@ -504,9 +557,7 @@ const getPaymentMethodLabel = (value) =>
   "—";
 
 const getStatusLabel = (value) => {
-  const normalized = String(
-    value || ""
-  ).toLowerCase();
+  const normalized = String(value || "").toLowerCase();
 
   return (
     STATUS_LABELS[normalized] ||
@@ -518,7 +569,7 @@ const getStatusLabel = (value) => {
 const getBookingNumber = (booking) =>
   booking?.booking_number ||
   booking?.reference ||
-  `Booking #${booking?.id ?? "—"}`;
+  `Booking #${getId(booking?.id) || "—"}`;
 
 /*
 |--------------------------------------------------------------------------
@@ -562,23 +613,22 @@ const getFinancialValue = (
 };
 
 const getTotal = (booking) => {
-  const explicitTotal =
-    getFinancialValue(
-      booking,
-      "total_amount",
-      [
-        "totalAmount",
-        "total",
-        "grand_total",
-        "grandTotal",
-        "booking_total",
-        "bookingTotal",
-        "total_due",
-        "totalDue",
-        "total_payable",
-        "totalPayable",
-      ]
-    );
+  const explicitTotal = getFinancialValue(
+    booking,
+    "total_amount",
+    [
+      "totalAmount",
+      "total",
+      "grand_total",
+      "grandTotal",
+      "booking_total",
+      "bookingTotal",
+      "total_due",
+      "totalDue",
+      "total_payable",
+      "totalPayable",
+    ]
+  );
 
   if (hasValue(explicitTotal)) {
     return toNumber(explicitTotal);
@@ -654,17 +704,16 @@ const getPaid = (booking) =>
   );
 
 const getBalance = (booking) => {
-  const explicitBalance =
-    getFinancialValue(
-      booking,
-      "balance",
-      [
-        "balance_amount",
-        "balanceAmount",
-        "amount_balance",
-        "amountBalance",
-      ]
-    );
+  const explicitBalance = getFinancialValue(
+    booking,
+    "balance",
+    [
+      "balance_amount",
+      "balanceAmount",
+      "amount_balance",
+      "amountBalance",
+    ]
+  );
 
   if (hasValue(explicitBalance)) {
     return Math.max(
@@ -722,9 +771,7 @@ const extractErrorMessage = (
 */
 
 const isDateField = (key) => {
-  const normalized = String(
-    key
-  ).toLowerCase();
+  const normalized = String(key).toLowerCase();
 
   return (
     normalized.includes("date") ||
@@ -735,9 +782,7 @@ const isDateField = (key) => {
 };
 
 const isCurrencyField = (key) => {
-  const normalized = String(
-    key
-  ).toLowerCase();
+  const normalized = String(key).toLowerCase();
 
   return [
     "amount",
@@ -884,6 +929,7 @@ const RawDataNode = ({
 }) => {
   const isArray = Array.isArray(value);
   const objectValue = isObject(value);
+
   const expandable =
     isArray || objectValue;
 
@@ -905,14 +951,14 @@ const RawDataNode = ({
     return (
       <div
         className={`group ${level === 0
-            ? "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-            : "border-b border-slate-100 py-3 last:border-b-0"
+          ? "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          : "border-b border-slate-100 py-3 last:border-b-0"
           }`}
       >
         <div
           className={`flex flex-col gap-2 ${level === 0
-              ? ""
-              : "sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+            ? ""
+            : "sm:flex-row sm:items-start sm:justify-between sm:gap-6"
             }`}
         >
           <div className="min-w-0">
@@ -937,8 +983,8 @@ const RawDataNode = ({
 
           <div
             className={`min-w-0 ${level === 0
-                ? "mt-2 rounded-lg bg-slate-50 px-3 py-2.5"
-                : "sm:max-w-[65%] sm:text-right"
+              ? "mt-2 rounded-lg bg-slate-50 px-3 py-2.5"
+              : "sm:max-w-[65%] sm:text-right"
               }`}
           >
             {renderPrimitiveValue(
@@ -977,8 +1023,8 @@ const RawDataNode = ({
           onToggle(fieldPath)
         }
         className={`group flex w-full items-center gap-3 text-left transition ${level === 0
-            ? "px-4 py-4 hover:bg-slate-50"
-            : "py-3 hover:bg-slate-50/80"
+          ? "px-4 py-4 hover:bg-slate-50"
+          : "py-3 hover:bg-slate-50/80"
           } ${isLoading
             ? "cursor-wait"
             : "cursor-pointer"
@@ -986,8 +1032,8 @@ const RawDataNode = ({
       >
         <div
           className={`flex shrink-0 items-center justify-center rounded-lg ${level === 0
-              ? "h-9 w-9 bg-slate-900 text-white"
-              : "h-7 w-7 bg-slate-100 text-slate-500"
+            ? "h-9 w-9 bg-slate-900 text-white"
+            : "h-7 w-7 bg-slate-100 text-slate-500"
             }`}
         >
           {isLoading ? (
@@ -1061,14 +1107,16 @@ const RawDataNode = ({
       {isExpanded && !isLoading ? (
         <div
           className={`${level === 0
-              ? "border-t border-slate-200 bg-slate-50/50 p-3 sm:p-4"
-              : "pb-2 pt-1"
+            ? "border-t border-slate-200 bg-slate-50/50 p-3 sm:p-4"
+            : "pb-2 pt-1"
             }`}
         >
           {entries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-xs italic text-slate-400">
               Empty{" "}
-              {isArray ? "array" : "object"}
+              {isArray
+                ? "array"
+                : "object"}
             </div>
           ) : (
             <div className="space-y-2">
@@ -1082,13 +1130,15 @@ const RawDataNode = ({
                       key={childPath}
                       label={
                         isArray
-                          ? `Item ${Number(childKey) +
-                          1
-                          }`
+                          ? `Item ${Number(
+                            childKey
+                          ) + 1}`
                           : childKey
                       }
                       value={childValue}
-                      level={level + 1}
+                      level={
+                        level + 1
+                      }
                       expandedFields={
                         expandedFields
                       }
@@ -1098,7 +1148,9 @@ const RawDataNode = ({
                       loadingField={
                         loadingField
                       }
-                      path={childPath}
+                      path={
+                        childPath
+                      }
                     />
                   );
                 }
@@ -1235,7 +1287,8 @@ const StatCard = ({
         </div>
 
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 transition group-hover:scale-105 ${tones[tone] || tones.slate
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 transition group-hover:scale-105 ${tones[tone] ||
+            tones.slate
             }`}
         >
           <Icon className="h-5 w-5" />
@@ -1275,7 +1328,8 @@ const FinancialCard = ({
 
   return (
     <div
-      className={`rounded-xl border p-4 ${tones[tone] || tones.slate
+      className={`rounded-xl border p-4 ${tones[tone] ||
+        tones.slate
         }`}
     >
       <p className="text-[11px] font-bold uppercase tracking-wider opacity-70">
@@ -1307,13 +1361,6 @@ const BookingDetails = () => {
 
   const {
     getBooking,
-    confirmBooking,
-    approveBooking,
-    checkInBooking,
-    completeBooking,
-    cancelBooking,
-    rejectBooking,
-    expireBooking,
     loading,
     error,
   } = useBooking();
@@ -1333,12 +1380,6 @@ const BookingDetails = () => {
   const [pageError, setPageError] =
     useState("");
 
-  /*
-  |--------------------------------------------------------------------------
-  | Complete Data UI State
-  |--------------------------------------------------------------------------
-  */
-
   const [
     completeDataExpanded,
     setCompleteDataExpanded,
@@ -1357,12 +1398,21 @@ const BookingDetails = () => {
   const loadingTimerRef =
     useRef(null);
 
+  /*
+  |--------------------------------------------------------------------------
+  | Cleanup
+  |--------------------------------------------------------------------------
+  */
+
   useEffect(() => {
     return () => {
       if (loadingTimerRef.current) {
         window.clearTimeout(
           loadingTimerRef.current
         );
+
+        loadingTimerRef.current =
+          null;
       }
     };
   }, []);
@@ -1375,9 +1425,13 @@ const BookingDetails = () => {
 
   const loadBooking = useCallback(
     async () => {
-      if (!id) {
+      const routeBookingId =
+        getId(id);
+
+      if (!routeBookingId) {
+        setBooking(null);
         setPageError(
-          "Booking ID is missing."
+          "Booking ID is missing or invalid."
         );
         setLoadingPage(false);
         return;
@@ -1388,7 +1442,9 @@ const BookingDetails = () => {
 
       try {
         const response =
-          await getBooking(id);
+          await getBooking(
+            routeBookingId
+          );
 
         if (import.meta.env.DEV) {
           console.debug(
@@ -1419,6 +1475,17 @@ const BookingDetails = () => {
         ) {
           throw new Error(
             "Booking details were not found."
+          );
+        }
+
+        const resolvedBookingId =
+          getId(
+            resolvedBooking.id
+          );
+
+        if (!resolvedBookingId) {
+          throw new Error(
+            "The booking response does not contain a valid booking ID."
           );
         }
 
@@ -1460,9 +1527,52 @@ const BookingDetails = () => {
   |--------------------------------------------------------------------------
   */
 
-  const bookingId =
-    getId(booking?.id) ||
-    getId(id);
+  const bookingId = useMemo(() => {
+    return (
+      getId(booking?.id) ||
+      getId(id)
+    );
+  }, [booking?.id, id]);
+
+  const bookingEditPath = useMemo(() => {
+    return bookingId
+      ? `${BOOKINGS_PATH}/${encodeURIComponent(
+        bookingId
+      )}/edit`
+      : BOOKINGS_PATH;
+  }, [bookingId]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Navigation Helpers
+  |--------------------------------------------------------------------------
+  */
+
+  const handleBackToBookings =
+    useCallback(() => {
+      navigate(BOOKINGS_PATH);
+    }, [navigate]);
+
+  const handleEditBooking =
+    useCallback(() => {
+      if (!bookingId) {
+        Swal.fire({
+          icon: "error",
+          title: "Invalid Booking",
+          text:
+            "A valid booking ID is required before editing this booking.",
+          confirmButtonText: "OK",
+        });
+
+        return;
+      }
+
+      navigate(bookingEditPath);
+    }, [
+      bookingEditPath,
+      bookingId,
+      navigate,
+    ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -1546,7 +1656,9 @@ const BookingDetails = () => {
 
         const currentlyOpen =
           Boolean(
-            expandedFields[fieldPath]
+            expandedFields[
+            fieldPath
+            ]
           );
 
         if (currentlyOpen) {
@@ -1580,6 +1692,7 @@ const BookingDetails = () => {
             );
 
             setLoadingField("");
+
             loadingTimerRef.current =
               null;
           }, 250);
@@ -1701,7 +1814,8 @@ const BookingDetails = () => {
         await Swal.fire({
           icon: "success",
           title: "Copied",
-          text: "Booking JSON copied to clipboard.",
+          text:
+            "Booking JSON copied to clipboard.",
           timer: 1600,
           showConfirmButton: false,
         });
@@ -1722,6 +1836,121 @@ const BookingDetails = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | Booking Workflow Service Resolver
+  |--------------------------------------------------------------------------
+  |
+  | The workflow actions intentionally use bookingService directly.
+  |
+  | This prevents BookingDetails from depending on whether useBooking
+  | exposes the method as:
+  |
+  | confirm()
+  | confirmBooking()
+  | approve()
+  | approveBooking()
+  |
+  | The service remains the single source of truth for API actions.
+  |
+  */
+
+  const bookingActions = useMemo(
+    () => ({
+      confirm:
+        typeof bookingService.confirmBooking ===
+          "function"
+          ? bookingService.confirmBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.confirm ===
+            "function"
+            ? bookingService.confirm.bind(
+              bookingService
+            )
+            : null,
+
+      approve:
+        typeof bookingService.approveBooking ===
+          "function"
+          ? bookingService.approveBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.approve ===
+            "function"
+            ? bookingService.approve.bind(
+              bookingService
+            )
+            : null,
+
+      checkIn:
+        typeof bookingService.checkInBooking ===
+          "function"
+          ? bookingService.checkInBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.checkIn ===
+            "function"
+            ? bookingService.checkIn.bind(
+              bookingService
+            )
+            : null,
+
+      complete:
+        typeof bookingService.completeBooking ===
+          "function"
+          ? bookingService.completeBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.complete ===
+            "function"
+            ? bookingService.complete.bind(
+              bookingService
+            )
+            : null,
+
+      cancel:
+        typeof bookingService.cancelBooking ===
+          "function"
+          ? bookingService.cancelBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.cancel ===
+            "function"
+            ? bookingService.cancel.bind(
+              bookingService
+            )
+            : null,
+
+      reject:
+        typeof bookingService.rejectBooking ===
+          "function"
+          ? bookingService.rejectBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.reject ===
+            "function"
+            ? bookingService.reject.bind(
+              bookingService
+            )
+            : null,
+
+      expire:
+        typeof bookingService.expireBooking ===
+          "function"
+          ? bookingService.expireBooking.bind(
+            bookingService
+          )
+          : typeof bookingService.expire ===
+            "function"
+            ? bookingService.expire.bind(
+              bookingService
+            )
+            : null,
+    }),
+    []
+  );
+
+  /*
+  |--------------------------------------------------------------------------
   | Action Helper
   |--------------------------------------------------------------------------
   */
@@ -1737,12 +1966,16 @@ const BookingDetails = () => {
       inputPlaceholder = "",
       inputRequired = false,
     }) => {
-      if (!bookingId) {
+      const safeBookingId =
+        getId(bookingId);
+
+      if (!safeBookingId) {
         await Swal.fire({
           icon: "error",
           title: "Invalid Booking",
           text:
             "A valid booking ID is required.",
+          confirmButtonText: "OK",
         });
 
         return;
@@ -1816,133 +2049,52 @@ const BookingDetails = () => {
       setPageError("");
 
       try {
+        const actionHandler =
+          bookingActions[action];
+
+        if (
+          typeof actionHandler !==
+          "function"
+        ) {
+          throw new Error(
+            `${action.charAt(0).toUpperCase() +
+            action.slice(1)
+            } booking action is not available.`
+          );
+        }
+
         let response;
 
-        /*
-        |--------------------------------------------------------------------------
-        | IMPORTANT
-        |--------------------------------------------------------------------------
-        | Keep the action method calls compatible with useBooking().
-        */
-
-        switch (action) {
-          case "confirm":
-            if (
-              typeof confirmBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Confirm booking action is not available."
-              );
-            }
-
-            response =
-              await confirmBooking(
-                bookingId
-              );
-            break;
-
-          case "approve":
-            if (
-              typeof approveBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Approve booking action is not available."
-              );
-            }
-
-            response =
-              await approveBooking(
-                bookingId
-              );
-            break;
-
-          case "check-in":
-            if (
-              typeof checkInBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Check-in booking action is not available."
-              );
-            }
-
-            response =
-              await checkInBooking(
-                bookingId
-              );
-            break;
-
-          case "complete":
-            if (
-              typeof completeBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Complete booking action is not available."
-              );
-            }
-
-            response =
-              await completeBooking(
-                bookingId
-              );
-            break;
-
-          case "cancel":
-            if (
-              typeof cancelBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Cancel booking action is not available."
-              );
-            }
-
-            response =
-              await cancelBooking(
-                bookingId
-              );
-            break;
-
-          case "reject":
-            if (
-              typeof rejectBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Reject booking action is not available."
-              );
-            }
-
-            response =
-              await rejectBooking(
-                bookingId,
-                reason
-              );
-            break;
-
-          case "expire":
-            if (
-              typeof expireBooking !==
-              "function"
-            ) {
-              throw new Error(
-                "Expire booking action is not available."
-              );
-            }
-
-            response =
-              await expireBooking(
-                bookingId
-              );
-            break;
-
-          default:
-            throw new Error(
-              "Unsupported booking action."
+        if (action === "reject") {
+          response =
+            await actionHandler(
+              safeBookingId,
+              reason
             );
+        } else if (action === "cancel") {
+          response =
+            await actionHandler(
+              safeBookingId,
+              reason
+                ? {
+                  cancellation_reason:
+                    reason,
+                  reason,
+                }
+                : {}
+            );
+        } else {
+          response =
+            await actionHandler(
+              safeBookingId
+            );
+        }
+
+        if (import.meta.env.DEV) {
+          console.debug(
+            `[BookingDetails] ${action} action response:`,
+            response
+          );
         }
 
         if (
@@ -1994,15 +2146,9 @@ const BookingDetails = () => {
     },
     [
       actionLoading,
-      approveBooking,
+      bookingActions,
       bookingId,
-      cancelBooking,
-      checkInBooking,
-      completeBooking,
-      confirmBooking,
-      expireBooking,
       loadBooking,
-      rejectBooking,
     ]
   );
 
@@ -2116,11 +2262,6 @@ const BookingDetails = () => {
   |--------------------------------------------------------------------------
   | Workflow Actions
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  | Store the actual imported Lucide component in `icon`.
-  | Do not store SVG strings or rendered SVG markup.
-  |
   */
 
   const workflowActions =
@@ -2186,7 +2327,7 @@ const BookingDetails = () => {
             "bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500",
           run: () =>
             runAction({
-              action: "check-in",
+              action: "checkIn",
               title:
                 "Check in this booking?",
               successMessage:
@@ -2391,8 +2532,12 @@ const BookingDetails = () => {
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
               <button
                 type="button"
-                onClick={loadBooking}
-                disabled={loadingPage}
+                onClick={
+                  loadBooking
+                }
+                disabled={
+                  loadingPage
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loadingPage ? (
@@ -2406,10 +2551,8 @@ const BookingDetails = () => {
 
               <button
                 type="button"
-                onClick={() =>
-                  navigate(
-                    BOOKINGS_PATH
-                  )
+                onClick={
+                  handleBackToBookings
                 }
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
               >
@@ -2437,7 +2580,9 @@ const BookingDetails = () => {
             booking
           )}
           subtitle="Complete booking details and workflow"
-          onRefresh={loadBooking}
+          onRefresh={
+            loadBooking
+          }
           loading={
             loadingPage ||
             loading ||
@@ -2509,7 +2654,9 @@ const BookingDetails = () => {
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <InfoPill
-                    icon={CalendarDays}
+                    icon={
+                      CalendarDays
+                    }
                   >
                     {getBookingTypeLabel(
                       booking?.booking_type
@@ -2524,7 +2671,9 @@ const BookingDetails = () => {
                     </InfoPill>
                   ) : null}
 
-                  {booking?.unit_id ? (
+                  {getId(
+                    booking?.unit_id
+                  ) ? (
                     <InfoPill
                       icon={Home}
                     >
@@ -2568,7 +2717,9 @@ const BookingDetails = () => {
               value={formatCurrency(
                 paidAmount
               )}
-              icon={CheckCircle2}
+              icon={
+                CheckCircle2
+              }
               tone="emerald"
             />
 
@@ -2596,9 +2747,7 @@ const BookingDetails = () => {
           </div>
         </section>
 
-        {/* ================================================================
-            WORKFLOW ACTIONS
-        ================================================================= */}
+        {/* Workflow Actions */}
 
         {workflowActions.length > 0 ? (
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -2637,7 +2786,8 @@ const BookingDetails = () => {
                         }
                         type="button"
                         disabled={
-                          actionLoading
+                          actionLoading ||
+                          !bookingId
                         }
                         onClick={() =>
                           item.run()
@@ -2705,7 +2855,9 @@ const BookingDetails = () => {
                 value={getCustomerName(
                   booking
                 )}
-                icon={UserRound}
+                icon={
+                  UserRound
+                }
               />
 
               <DetailItem
@@ -2755,8 +2907,14 @@ const BookingDetails = () => {
               <DetailItem
                 label="Customer ID"
                 value={
-                  booking?.customer_id
-                    ? `#${booking.customer_id}`
+                  getId(
+                    booking?.customer_id ??
+                    booking?.user_id
+                  )
+                    ? `#${getId(
+                      booking?.customer_id ??
+                      booking?.user_id
+                    )}`
                     : "—"
                 }
               />
@@ -2772,8 +2930,12 @@ const BookingDetails = () => {
               <DetailItem
                 label="Tenant ID"
                 value={
-                  booking?.tenant_id
-                    ? `#${booking.tenant_id}`
+                  getId(
+                    booking?.tenant_id
+                  )
+                    ? `#${getId(
+                      booking?.tenant_id
+                    )}`
                     : "Not linked"
                 }
               />
@@ -2797,8 +2959,12 @@ const BookingDetails = () => {
               <DetailItem
                 label="Property ID"
                 value={
-                  booking?.property_id
-                    ? `#${booking.property_id}`
+                  getId(
+                    booking?.property_id
+                  )
+                    ? `#${getId(
+                      booking?.property_id
+                    )}`
                     : "—"
                 }
               />
@@ -2813,8 +2979,12 @@ const BookingDetails = () => {
               <DetailItem
                 label="Apartment ID"
                 value={
-                  booking?.apartment_id
-                    ? `#${booking.apartment_id}`
+                  getId(
+                    booking?.apartment_id
+                  )
+                    ? `#${getId(
+                      booking?.apartment_id
+                    )}`
                     : "—"
                 }
               />
@@ -2829,8 +2999,12 @@ const BookingDetails = () => {
               <DetailItem
                 label="Unit ID"
                 value={
-                  booking?.unit_id
-                    ? `#${booking.unit_id}`
+                  getId(
+                    booking?.unit_id
+                  )
+                    ? `#${getId(
+                      booking?.unit_id
+                    )}`
                     : "—"
                 }
               />
@@ -2890,7 +3064,9 @@ const BookingDetails = () => {
                 value={formatDateTime(
                   booking?.booking_date
                 )}
-                icon={CalendarDays}
+                icon={
+                  CalendarDays
+                }
               />
 
               <DetailItem
@@ -3231,9 +3407,14 @@ const BookingDetails = () => {
               <DetailItem
                 label="Tenancy ID"
                 value={
-                  booking.tenancy
-                    ?.id
-                    ? `#${booking.tenancy.id}`
+                  getId(
+                    booking.tenancy
+                      ?.id
+                  )
+                    ? `#${getId(
+                      booking.tenancy
+                        ?.id
+                    )}`
                     : "—"
                 }
               />
@@ -3308,7 +3489,8 @@ const BookingDetails = () => {
           <div className="grid gap-5 md:grid-cols-2">
             {[
               {
-                label: "Special Request",
+                label:
+                  "Special Request",
                 value:
                   booking?.special_request ||
                   booking?.special_requests,
@@ -3323,14 +3505,16 @@ const BookingDetails = () => {
                   "No notes provided.",
               },
               {
-                label: "Description",
+                label:
+                  "Description",
                 value:
                   booking?.description,
                 empty:
                   "No description provided.",
               },
               {
-                label: "Rejection Reason",
+                label:
+                  "Rejection Reason",
                 value:
                   booking?.rejection_reason ||
                   booking?.reject_reason,
@@ -3338,7 +3522,8 @@ const BookingDetails = () => {
                   "No rejection reason provided.",
               },
               {
-                label: "Cancellation Reason",
+                label:
+                  "Cancellation Reason",
                 value:
                   booking?.cancellation_reason,
                 empty:
@@ -3376,8 +3561,8 @@ const BookingDetails = () => {
             <DetailItem
               label="Booking ID"
               value={
-                booking?.id
-                  ? `#${booking.id}`
+                bookingId
+                  ? `#${bookingId}`
                   : "—"
               }
             />
@@ -3450,8 +3635,8 @@ const BookingDetails = () => {
               >
                 <div
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${completeDataExpanded
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-900 text-white"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-900 text-white"
                     }`}
                 >
                   <Database className="h-5 w-5" />
@@ -3464,7 +3649,9 @@ const BookingDetails = () => {
                     </h2>
 
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold text-slate-500 ring-1 ring-slate-200">
-                      {rawBookingEntries.length}{" "}
+                      {
+                        rawBookingEntries.length
+                      }{" "}
                       fields
                     </span>
                   </div>
@@ -3485,7 +3672,10 @@ const BookingDetails = () => {
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
-                  {expandableFieldCount} expandable
+                  {
+                    expandableFieldCount
+                  }{" "}
+                  expandable
                 </span>
 
                 <button
@@ -3540,7 +3730,9 @@ const BookingDetails = () => {
 
                   <p className="mt-1 text-xs leading-5 text-slate-500">
                     The complete response contains{" "}
-                    {rawBookingEntries.length}{" "}
+                    {
+                      rawBookingEntries.length
+                    }{" "}
                     top-level fields. Objects and arrays can be expanded individually.
                   </p>
                 </div>
@@ -3629,9 +3821,13 @@ const BookingDetails = () => {
                   </p>
 
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {rawBookingEntries.length}{" "}
+                    {
+                      rawBookingEntries.length
+                    }{" "}
                     top-level fields •{" "}
-                    {expandableFieldCount}{" "}
+                    {
+                      expandableFieldCount
+                    }{" "}
                     expandable fields
                   </p>
                 </div>
@@ -3686,10 +3882,8 @@ const BookingDetails = () => {
         <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <button
             type="button"
-            onClick={() =>
-              navigate(
-                BOOKINGS_PATH
-              )
+            onClick={
+              handleBackToBookings
             }
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
           >
@@ -3698,17 +3892,33 @@ const BookingDetails = () => {
           </button>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Link
-              to={`/super-admin/bookings/${booking.id}/edit`}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              <Edit3 className="h-4 w-4" />
-              Edit Booking
-            </Link>
+            {bookingId ? (
+              <Link
+                to={bookingEditPath}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                <Edit3 className="h-4 w-4" />
+                Edit Booking
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={
+                  handleEditBooking
+                }
+                disabled
+                className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-bold text-slate-400"
+              >
+                <Edit3 className="h-4 w-4" />
+                Edit Booking
+              </button>
+            )}
 
             <button
               type="button"
-              onClick={loadBooking}
+              onClick={
+                loadBooking
+              }
               disabled={
                 loadingPage ||
                 loading ||
