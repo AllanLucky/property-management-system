@@ -217,9 +217,7 @@ const getId = (value) => {
     if (
       !normalized ||
       normalized === "[object Object]" ||
-      normalized.includes(
-        "[object Object]"
-      )
+      normalized.includes("[object Object]")
     ) {
       return "";
     }
@@ -273,9 +271,7 @@ const normalizeRouteId = (value) => {
     if (
       !normalized ||
       normalized === "[object Object]" ||
-      normalized.includes(
-        "[object Object]"
-      )
+      normalized.includes("[object Object]")
     ) {
       return "";
     }
@@ -730,9 +726,6 @@ const INITIAL_VALUES = {
   booking_fee: "",
   discount_amount: "",
 
-  /*
-  | Backend-managed fields.
-  */
   total_amount: "",
   amount_paid: "",
   balance: "",
@@ -839,9 +832,6 @@ const normalizeDateTime = (
 |--------------------------------------------------------------------------
 */
 
-/**
- * Convert API booking object into BookingForm values.
- */
 const normalizeBooking = (
   booking
 ) => {
@@ -924,12 +914,6 @@ const normalizeBooking = (
   return {
     ...INITIAL_VALUES,
 
-    /*
-    |--------------------------------------------------------------------------
-    | Customer
-    |--------------------------------------------------------------------------
-    */
-
     user_id:
       getCustomerUserId(
         firstValue(
@@ -962,12 +946,6 @@ const normalizeBooking = (
         )
       ) ||
       getId(tenantId),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Property / Apartment / Unit
-    |--------------------------------------------------------------------------
-    */
 
     property_id:
       getId(
@@ -1002,12 +980,6 @@ const normalizeBooking = (
       ) ||
       getId(tenancyId),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Booking
-    |--------------------------------------------------------------------------
-    */
-
     booking_type:
       booking.booking_type ??
       "rental",
@@ -1040,12 +1012,6 @@ const normalizeBooking = (
       normalizeDate(
         booking.check_out_date
       ),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Financial fields
-    |--------------------------------------------------------------------------
-    */
 
     rent_amount:
       booking.rent_amount ??
@@ -1085,12 +1051,6 @@ const normalizeBooking = (
       booking.financials?.balance ??
       "",
 
-    /*
-    |--------------------------------------------------------------------------
-    | Payment
-    |--------------------------------------------------------------------------
-    */
-
     payment_status:
       booking.payment_status ??
       "pending",
@@ -1105,23 +1065,11 @@ const normalizeBooking = (
       booking.payment?.reference ??
       "",
 
-    /*
-    |--------------------------------------------------------------------------
-    | Occupancy
-    |--------------------------------------------------------------------------
-    */
-
     number_of_adults:
       numberOfAdults,
 
     number_of_children:
       numberOfChildren,
-
-    /*
-    |--------------------------------------------------------------------------
-    | Datetime
-    |--------------------------------------------------------------------------
-    */
 
     check_in_at:
       normalizeDateTime(
@@ -1132,12 +1080,6 @@ const normalizeBooking = (
       normalizeDateTime(
         booking.check_out_at
       ),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Notes
-    |--------------------------------------------------------------------------
-    */
 
     special_requests:
       booking.special_requests ??
@@ -1185,12 +1127,6 @@ const EditBooking = () => {
   |--------------------------------------------------------------------------
   | Booking Hook
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | These names follow the exact public API
-  | returned by useBooking.js.
-  |
   */
 
   const {
@@ -1318,10 +1254,6 @@ const EditBooking = () => {
   |--------------------------------------------------------------------------
   | Hook Collections
   |--------------------------------------------------------------------------
-  |
-  | Memoized here so normalizeOptions() does not create
-  | a new array on every render.
-  |
   */
 
   const hookAvailableUnits =
@@ -1411,12 +1343,6 @@ const EditBooking = () => {
             );
           }
 
-          /*
-          |--------------------------------------------------------------------------
-          | Load booking
-          |--------------------------------------------------------------------------
-          */
-
           const bookingResponse =
             await getBooking(
               bookingId
@@ -1458,12 +1384,6 @@ const EditBooking = () => {
           setForm(
             normalizedBooking
           );
-
-          /*
-          |--------------------------------------------------------------------------
-          | Existing related objects
-          |--------------------------------------------------------------------------
-          */
 
           const bookingCustomer =
             firstValue(
@@ -1570,12 +1490,6 @@ const EditBooking = () => {
                 )
             );
           }
-
-          /*
-          |--------------------------------------------------------------------------
-          | Load available users
-          |--------------------------------------------------------------------------
-          */
 
           try {
             const usersResponse =
@@ -1685,13 +1599,6 @@ const EditBooking = () => {
             true
           );
 
-          /*
-          |--------------------------------------------------------------------------
-          | First attempt:
-          | Combined customer relationship
-          |--------------------------------------------------------------------------
-          */
-
           if (
             typeof resolveCustomerTenancies ===
             "function"
@@ -1777,19 +1684,21 @@ const EditBooking = () => {
               );
             }
 
+            /*
+            | Only stop here if we actually
+            | received both the tenant and
+            | tenancy data.
+            |
+            | If only the tenant was returned,
+            | continue to the fallback below.
+            */
             if (
-              resolvedTenant
+              resolvedTenant &&
+              allTenancies.length > 0
             ) {
               return;
             }
           }
-
-          /*
-          |--------------------------------------------------------------------------
-          | Fallback:
-          | Customer → Tenant
-          |--------------------------------------------------------------------------
-          */
 
           if (
             typeof getTenantByCustomer !==
@@ -1843,12 +1752,6 @@ const EditBooking = () => {
                 ),
             })
           );
-
-          /*
-          |--------------------------------------------------------------------------
-          | Tenant → Tenancies
-          |--------------------------------------------------------------------------
-          */
 
           if (
             typeof getTenanciesByTenant ===
@@ -2032,15 +1935,6 @@ const EditBooking = () => {
     const normalizedId =
       getId(propertyId);
 
-    if (
-      DEBUG_EDIT_BOOKING
-    ) {
-      console.debug(
-        "[EditBooking] Property changed:",
-        normalizedId
-      );
-    }
-
     setForm(
       (current) => ({
         ...current,
@@ -2087,15 +1981,6 @@ const EditBooking = () => {
   ) => {
     const normalizedId =
       getId(apartmentId);
-
-    if (
-      DEBUG_EDIT_BOOKING
-    ) {
-      console.debug(
-        "[EditBooking] Apartment changed:",
-        normalizedId
-      );
-    }
 
     setForm(
       (current) => ({
@@ -2151,14 +2036,9 @@ const EditBooking = () => {
       (current) => {
         const next = {
           ...current,
-
           unit_id:
             normalizedId,
         };
-
-        /*
-        | Only auto-fill rent when empty.
-        */
 
         if (
           selectedUnit &&
@@ -2178,8 +2058,7 @@ const EditBooking = () => {
           if (
             unitPrice !==
             undefined &&
-            unitPrice !==
-            null &&
+            unitPrice !== null &&
             unitPrice !== ""
           ) {
             next.rent_amount =
@@ -2264,7 +2143,7 @@ const EditBooking = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleTenantChange = (
+  const handleTenantChange = async (
     tenantValue
   ) => {
     const tenantId =
@@ -2299,6 +2178,77 @@ const EditBooking = () => {
     );
 
     setServerError("");
+
+    if (
+      !tenantId ||
+      typeof getTenanciesByTenant !==
+      "function"
+    ) {
+      return;
+    }
+
+    try {
+      setLoadingRelationship(
+        true
+      );
+
+      const selectedTenant =
+        tenants.find(
+          (tenant) =>
+            getTenantProfileId(
+              tenant
+            ) === tenantId
+        );
+
+      const response =
+        await getTenanciesByTenant(
+          tenantId
+        );
+
+      const apiTenancies =
+        extractTenancies(
+          response
+        );
+
+      const embeddedTenancies =
+        extractTenantTenancies(
+          selectedTenant
+        );
+
+      const allTenancies =
+        mergeUnique(
+          apiTenancies,
+          embeddedTenancies
+        );
+
+      setTenancies(
+        allTenancies
+      );
+    } catch (err) {
+      console.error(
+        "[EditBooking] Tenant tenancies failed:",
+        err
+      );
+
+      const message =
+        extractErrorMessage(
+          err
+        );
+
+      if (
+        !message
+          .toLowerCase()
+          .includes("not found")
+      ) {
+        setServerError(
+          message
+        );
+      }
+    } finally {
+      setLoadingRelationship(
+        false
+      );
+    }
   };
 
   /*
@@ -2593,12 +2543,6 @@ const EditBooking = () => {
         form.end_date
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Required parameters
-    |--------------------------------------------------------------------------
-    */
-
     if (
       !propertyId ||
       !startDate ||
@@ -2606,12 +2550,6 @@ const EditBooking = () => {
     ) {
       return;
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Validate date range
-    |--------------------------------------------------------------------------
-    */
 
     const start =
       new Date(startDate);
@@ -2646,10 +2584,6 @@ const EditBooking = () => {
             end_date:
               endDate,
 
-            /*
-            | Exclude current booking
-            | from overlap check.
-            */
             ...(bookingId
               ? {
                 booking_id:
@@ -2697,15 +2631,6 @@ const EditBooking = () => {
             normalizeOptions(
               list
             );
-
-          /*
-          |--------------------------------------------------------------------------
-          | Preserve currently selected unit.
-          |
-          | Availability endpoints can exclude the
-          | current booking's unit.
-          |--------------------------------------------------------------------------
-          */
 
           const selectedUnit =
             units.find(
@@ -2928,12 +2853,6 @@ const EditBooking = () => {
       }
     };
 
-    /*
-    |--------------------------------------------------------------------------
-    | Customer
-    |--------------------------------------------------------------------------
-    */
-
     const customerId =
       getCustomerUserId(
         firstValue(
@@ -2947,24 +2866,12 @@ const EditBooking = () => {
       customerId
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Tenant
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
       "tenant_id",
       getTenantProfileId(
         values.tenant_id
       )
     );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Property
-    |--------------------------------------------------------------------------
-    */
 
     appendIfValue(
       "property_id",
@@ -2994,12 +2901,6 @@ const EditBooking = () => {
       )
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Booking
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
       "booking_type",
       values.booking_type
@@ -3024,12 +2925,6 @@ const EditBooking = () => {
       "end_date",
       values.end_date
     );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Financial inputs
-    |--------------------------------------------------------------------------
-    */
 
     appendIfValue(
       "rent_amount",
@@ -3056,12 +2951,6 @@ const EditBooking = () => {
       values.discount_amount
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Payment
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
       "payment_method",
       values.payment_method
@@ -3071,12 +2960,6 @@ const EditBooking = () => {
       "payment_reference",
       values.payment_reference
     );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Occupancy
-    |--------------------------------------------------------------------------
-    */
 
     if (
       values.number_of_adults !==
@@ -3130,12 +3013,6 @@ const EditBooking = () => {
       }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Dates
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
       "check_in_date",
       values.check_in_date
@@ -3145,12 +3022,6 @@ const EditBooking = () => {
       "check_out_date",
       values.check_out_date
     );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Datetime
-    |--------------------------------------------------------------------------
-    */
 
     appendIfValue(
       "check_in_at",
@@ -3162,12 +3033,6 @@ const EditBooking = () => {
       values.check_out_at
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Notes
-    |--------------------------------------------------------------------------
-    */
-
     appendIfValue(
       "special_requests",
       values.special_requests
@@ -3177,12 +3042,6 @@ const EditBooking = () => {
       "notes",
       values.notes
     );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Explicit safety cleanup
-    |--------------------------------------------------------------------------
-    */
 
     const managedFields = [
       "status",
@@ -3225,21 +3084,9 @@ const EditBooking = () => {
       }
     );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Legacy aliases
-    |--------------------------------------------------------------------------
-    */
-
     delete payload.adults;
     delete payload.children;
     delete payload.special_request;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Remove undefined
-    |--------------------------------------------------------------------------
-    */
 
     Object.keys(
       payload
@@ -3268,12 +3115,6 @@ const EditBooking = () => {
   ) => {
     eventOrValues?.preventDefault?.();
 
-    /*
-    |--------------------------------------------------------------------------
-    | Validate booking ID
-    |--------------------------------------------------------------------------
-    */
-
     if (!bookingId) {
       const message =
         "A valid booking ID is required to update this booking.";
@@ -3286,19 +3127,14 @@ const EditBooking = () => {
         icon: "error",
         title: "Invalid Booking",
         text: message,
-        confirmButtonText: "Close",
+        confirmButtonText:
+          "Close",
         confirmButtonColor:
           "#dc2626",
       });
 
       return;
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Determine submitted values
-    |--------------------------------------------------------------------------
-    */
 
     const submittedValues =
       eventOrValues &&
@@ -3310,12 +3146,6 @@ const EditBooking = () => {
           ...eventOrValues,
         }
         : form;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Normalize IDs
-    |--------------------------------------------------------------------------
-    */
 
     const normalizedValues = {
       ...submittedValues,
@@ -3377,12 +3207,6 @@ const EditBooking = () => {
         "",
     };
 
-    /*
-    |--------------------------------------------------------------------------
-    | Client validation
-    |--------------------------------------------------------------------------
-    */
-
     if (
       !validate(
         normalizedValues
@@ -3395,12 +3219,6 @@ const EditBooking = () => {
       setSubmitting(true);
       setServerError("");
       setFieldErrors({});
-
-      /*
-      |--------------------------------------------------------------------------
-      | Build clean backend payload
-      |--------------------------------------------------------------------------
-      */
 
       const payload =
         buildPayload(
@@ -3429,24 +3247,12 @@ const EditBooking = () => {
           payload
         );
 
-        console.debug(
-          "Managed fields intentionally excluded:",
-          [
-            "status",
-            "payment_status",
-            "total_amount",
-            "balance",
-            "amount_paid",
-            "paid_amount",
-          ]
-        );
-
         console.groupEnd();
       }
 
       /*
       |--------------------------------------------------------------------------
-      | Update
+      | Update booking
       |--------------------------------------------------------------------------
       */
 
@@ -3465,26 +3271,113 @@ const EditBooking = () => {
         );
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | IMPORTANT
+      |
+      | Always use the normalized route ID here.
+      |
+      | Do NOT use:
+      |
+      | response.data
+      | response.data.id
+      | booking
+      | currentBooking
+      |
+      | because those may be wrapped objects.
+      |
+      | bookingId is guaranteed to be a clean
+      | scalar ID such as "25".
+      |--------------------------------------------------------------------------
+      */
+
+      const detailsUrl =
+        `/super-admin/bookings/${encodeURIComponent(
+          bookingId
+        )}`;
+
       const message =
         response?.message ||
         "Booking updated successfully.";
 
-      await Swal.fire({
-        icon: "success",
-        title: "Booking Updated",
-        text: message,
-        confirmButtonText:
-          "View Bookings",
-        confirmButtonColor:
-          "#4f46e5",
-      });
+      const result =
+        await Swal.fire({
+          icon: "success",
+          title: "Booking Updated",
+          text: message,
 
-      navigate(
-        "/super-admin/bookings",
-        {
-          replace: true,
+          /*
+          | Show both actions:
+          |
+          | - View Booking Details
+          | - Stay on booking list
+          |--------------------------------------------------------------------------
+          */
+
+          showCancelButton: true,
+
+          confirmButtonText:
+            "View Booking Details",
+
+          cancelButtonText:
+            "Back to Bookings",
+
+          confirmButtonColor:
+            "#4f46e5",
+
+          cancelButtonColor:
+            "#6b7280",
+
+          reverseButtons: true,
+
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+        });
+
+      /*
+      |--------------------------------------------------------------------------
+      | Redirect after SweetAlert action
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        result.isConfirmed
+      ) {
+        if (
+          DEBUG_EDIT_BOOKING
+        ) {
+          console.debug(
+            "[EditBooking] Redirecting to booking details:",
+            detailsUrl
+          );
         }
-      );
+
+        navigate(
+          detailsUrl,
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | User selected Back to Bookings
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        result.isDismissed
+      ) {
+        navigate(
+          "/super-admin/bookings",
+          {
+            replace: true,
+          }
+        );
+      }
     } catch (err) {
       console.error(
         "[EditBooking] Update failed:",
@@ -3789,17 +3682,9 @@ const EditBooking = () => {
 
   return (
     <div className="space-y-6">
-      {/* ================================================================
-          HEADER
-      ================================================================ */}
-
       <BookingHeader
         loading={isUpdating}
       />
-
-      {/* ================================================================
-          RELATIONSHIP LOADING
-      ================================================================ */}
 
       {loadingRelationship && (
         <div className="flex items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
@@ -3810,10 +3695,6 @@ const EditBooking = () => {
           </span>
         </div>
       )}
-
-      {/* ================================================================
-          PAGE ERROR
-      ================================================================ */}
 
       {(serverError ||
         error) && (
@@ -3849,10 +3730,6 @@ const EditBooking = () => {
             </div>
           </div>
         )}
-
-      {/* ================================================================
-          FORM
-      ================================================================ */}
 
       <BookingForm
         mode="edit"

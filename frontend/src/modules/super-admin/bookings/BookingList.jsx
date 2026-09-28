@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Search,
   X,
+  XCircle,
 } from "lucide-react";
 
 import { useBooking } from "../../../hooks/useBooking";
@@ -26,6 +27,12 @@ import BookingStatistics from "./BookingStatistics";
 */
 
 const DEFAULT_PER_PAGE = 15;
+
+const BOOKING_ROUTES = {
+  index: "/super-admin/bookings",
+  create: "/super-admin/bookings/create",
+  cancelled: "/super-admin/bookings/cancelled",
+};
 
 const STATUS_OPTIONS = [
   { value: "", label: "All Statuses" },
@@ -143,7 +150,9 @@ const normalizePagination = (
     source?.lastPage,
     source?.total_pages,
     Math.max(
-      Math.ceil(total / Math.max(perPage, 1)),
+      Math.ceil(
+        total / Math.max(perPage, 1)
+      ),
       1
     )
   );
@@ -155,7 +164,10 @@ const normalizePagination = (
 
   const to =
     total > 0
-      ? Math.min(currentPage * perPage, total)
+      ? Math.min(
+        currentPage * perPage,
+        total
+      )
       : 0;
 
   return {
@@ -201,7 +213,11 @@ const buildPaginationPages = (
     currentPage + 1
   );
 
-  for (let page = start; page <= end; page += 1) {
+  for (
+    let page = start;
+    page <= end;
+    page += 1
+  ) {
     pages.push(page);
   }
 
@@ -398,6 +414,16 @@ const BookingList = () => {
 
   /*
   |--------------------------------------------------------------------------
+  | Cancelled Bookings Navigation
+  |--------------------------------------------------------------------------
+  */
+
+  const handleViewCancelledBookings = () => {
+    navigate(BOOKING_ROUTES.cancelled);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
   | Pagination
   |--------------------------------------------------------------------------
   */
@@ -479,6 +505,10 @@ const BookingList = () => {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row">
+          {/* ------------------------------------------------------------
+              Refresh
+          ------------------------------------------------------------ */}
+
           <button
             type="button"
             onClick={handleRefresh}
@@ -494,11 +524,37 @@ const BookingList = () => {
             Refresh
           </button>
 
+          {/* ------------------------------------------------------------
+              Cancelled Bookings
+          ------------------------------------------------------------ */}
+
+          <button
+            type="button"
+            onClick={handleViewCancelledBookings}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 shadow-sm transition hover:border-red-300 hover:bg-red-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <XCircle className="h-4 w-4" />
+
+            <span className="hidden sm:inline">
+              Cancelled Bookings
+            </span>
+
+            <span className="sm:hidden">
+              Cancelled
+            </span>
+          </button>
+
+          {/* ------------------------------------------------------------
+              Create Booking
+          ------------------------------------------------------------ */}
+
           <Link
-            to="/super-admin/bookings/create"
+            to={BOOKING_ROUTES.create}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
           >
             <Plus className="h-4 w-4" />
+
             Create Booking
           </Link>
         </div>
@@ -597,9 +653,9 @@ const BookingList = () => {
                 )
               }
               className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition ${showFilters ||
-                activeFilterCount > 0
-                ? "border-slate-300 bg-slate-100 text-slate-900"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  activeFilterCount > 0
+                  ? "border-slate-300 bg-slate-100 text-slate-900"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
             >
               <Filter className="h-4 w-4" />
@@ -617,9 +673,7 @@ const BookingList = () => {
               searchValue) && (
                 <button
                   type="button"
-                  onClick={
-                    handleClearFilters
-                  }
+                  onClick={handleClearFilters}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                 >
                   <RotateCcw className="h-4 w-4" />
@@ -646,9 +700,7 @@ const BookingList = () => {
 
               <select
                 id="booking-status"
-                value={
-                  currentFilters.status
-                }
+                value={currentFilters.status}
                 onChange={(event) =>
                   handleFilterChange(
                     "status",
@@ -822,9 +874,7 @@ const BookingList = () => {
             <select
               id="booking-per-page"
               value={perPage}
-              onChange={
-                handlePerPageChange
-              }
+              onChange={handlePerPageChange}
               className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             >
               <option value="10">
@@ -887,8 +937,7 @@ const BookingList = () => {
             </p>
 
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              {(activeFilterCount >
-                0 ||
+              {(activeFilterCount > 0 ||
                 searchValue) && (
                   <button
                     type="button"
@@ -903,7 +952,7 @@ const BookingList = () => {
                 )}
 
               <Link
-                to="/super-admin/bookings/create"
+                to={BOOKING_ROUTES.create}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
               >
                 <Plus className="h-4 w-4" />
@@ -1001,8 +1050,8 @@ const BookingList = () => {
                           }
                           disabled={loading}
                           className={`hidden h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold transition sm:flex ${isCurrent
-                            ? "bg-slate-900 text-white"
-                            : "text-slate-600 hover:bg-slate-100"
+                              ? "bg-slate-900 text-white"
+                              : "text-slate-600 hover:bg-slate-100"
                             }`}
                         >
                           {page}
