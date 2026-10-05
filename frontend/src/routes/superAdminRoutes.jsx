@@ -229,7 +229,7 @@ import {
   LeaseDetails,
   LeaseList,
 } from "../modules/super-admin/leases";
-import { BookingDetails, BookingList, CancelledBookings, CreateBooking, EditBooking } from "../modules/super-admin/bookings";
+import { BookingCalendar, BookingDetails, BookingList, BookingReport, CancelledBookings, CreateBooking, EditBooking } from "../modules/super-admin/bookings";
 
 /*
 |--------------------------------------------------------------------------
@@ -1080,6 +1080,24 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="bookings.view">
             <CancelledBookings />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="bookings/calendar"
+        element={
+          <PermissionGuard permission="bookings.view">
+            <BookingCalendar />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="bookings/reports"
+        element={
+          <PermissionGuard permission="bookings.view">
+            <BookingReport />
           </PermissionGuard>
         }
       />
