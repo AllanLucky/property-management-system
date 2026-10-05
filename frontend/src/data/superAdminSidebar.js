@@ -23,7 +23,6 @@ import {
   CalendarDays,
 
   Calendar,
-  ClipboardList,
 
   Wallet,
   Receipt,
@@ -140,7 +139,6 @@ const superAdminSidebar = [
     children: [
       { title: "Bookings", path: "/super-admin/bookings" },
       { title: "Calendar", path: "/super-admin/bookings/calendar", icon: Calendar },
-      { title: "Requests", path: "/super-admin/bookings/requests", icon: ClipboardList },
       { title: "Reports", path: "/super-admin/bookings/reports", icon: FileBarChart },
     ],
   },
