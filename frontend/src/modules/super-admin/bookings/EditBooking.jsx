@@ -841,12 +841,22 @@ const normalizeBooking = (
     };
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Nested API resources
+  |--------------------------------------------------------------------------
+  */
+
   const customer =
     firstValue(
       booking.customer,
       booking.customer_user,
       booking.user
     );
+
+  const customerSnapshot =
+    booking.customer_snapshot ||
+    {};
 
   const tenant =
     firstValue(
@@ -858,6 +868,19 @@ const normalizeBooking = (
     firstValue(
       booking.tenancy
     );
+
+  /*
+  |--------------------------------------------------------------------------
+  | IMPORTANT
+  |
+  | For an existing booking, the booking's own
+  | property/apartment/unit IDs must take priority.
+  |
+  | The tenancy can contain different related
+  | unit information and must NOT overwrite the
+  | actual booking selection.
+  |--------------------------------------------------------------------------
+  */
 
   const property =
     firstValue(
@@ -877,6 +900,42 @@ const normalizeBooking = (
       tenancy?.unit
     );
 
+  /*
+  |--------------------------------------------------------------------------
+  | Financials
+  |--------------------------------------------------------------------------
+  */
+
+  const financials =
+    booking.financials ||
+    {};
+
+  /*
+  |--------------------------------------------------------------------------
+  | Occupancy
+  |--------------------------------------------------------------------------
+  */
+
+  const occupancy =
+    booking.occupancy ||
+    {};
+
+  /*
+  |--------------------------------------------------------------------------
+  | Payment
+  |--------------------------------------------------------------------------
+  */
+
+  const payment =
+    booking.payment ||
+    {};
+
+  /*
+  |--------------------------------------------------------------------------
+  | Customer ID
+  |--------------------------------------------------------------------------
+  */
+
   const customerUserId =
     firstValue(
       booking.customer_id,
@@ -885,11 +944,23 @@ const normalizeBooking = (
       customer?.user_id
     );
 
+  /*
+  |--------------------------------------------------------------------------
+  | Tenant ID
+  |--------------------------------------------------------------------------
+  */
+
   const tenantId =
     firstValue(
       booking.tenant_id,
       tenant?.id
     );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Tenancy ID
+  |--------------------------------------------------------------------------
+  */
 
   const tenancyId =
     firstValue(
@@ -897,22 +968,64 @@ const normalizeBooking = (
       tenancy?.id
     );
 
+  /*
+  |--------------------------------------------------------------------------
+  | Occupancy
+  |
+  | THIS IS THE IMPORTANT FIX.
+  |
+  | API:
+  | occupancy.number_of_adults = 5
+  | occupancy.number_of_children = 4
+  |--------------------------------------------------------------------------
+  */
+
   const numberOfAdults =
     firstValue(
+      occupancy?.number_of_adults,
       booking.number_of_adults,
       booking.adults,
-      "1"
+      1
     );
 
   const numberOfChildren =
     firstValue(
+      occupancy?.number_of_children,
       booking.number_of_children,
       booking.children,
-      "0"
+      0
     );
 
-  return {
+  /*
+  |--------------------------------------------------------------------------
+  | Normalize values for HTML form inputs.
+  |--------------------------------------------------------------------------
+  */
+
+  const normalizedAdults =
+    String(
+      numberOfAdults
+    );
+
+  const normalizedChildren =
+    String(
+      numberOfChildren
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Return normalized form
+  |--------------------------------------------------------------------------
+  */
+
+  const normalized = {
     ...INITIAL_VALUES,
+
+    /*
+    |----------------------------------------------------------------------
+    | Customer
+    |----------------------------------------------------------------------
+    */
 
     user_id:
       getCustomerUserId(
@@ -938,6 +1051,12 @@ const normalizeBooking = (
         customerUserId
       ),
 
+    /*
+    |----------------------------------------------------------------------
+    | Tenant
+    |----------------------------------------------------------------------
+    */
+
     tenant_id:
       getTenantProfileId(
         firstValue(
@@ -945,7 +1064,17 @@ const normalizeBooking = (
           tenant
         )
       ) ||
-      getId(tenantId),
+      getId(
+        tenantId
+      ),
+
+    /*
+    |----------------------------------------------------------------------
+    | Property
+    |
+    | Booking value has priority.
+    |----------------------------------------------------------------------
+    */
 
     property_id:
       getId(
@@ -955,6 +1084,14 @@ const normalizeBooking = (
         )
       ),
 
+    /*
+    |----------------------------------------------------------------------
+    | Apartment
+    |
+    | Booking value has priority.
+    |----------------------------------------------------------------------
+    */
+
     apartment_id:
       getId(
         firstValue(
@@ -962,6 +1099,21 @@ const normalizeBooking = (
           apartment
         )
       ),
+
+    /*
+    |----------------------------------------------------------------------
+    | Unit
+    |
+    | Booking value has priority.
+    |
+    | This is important because your example has:
+    |
+    | booking.unit_id = 1552
+    | tenancy.unit_id = 1547
+    |
+    | The Edit form must show 1552.
+    |----------------------------------------------------------------------
+    */
 
     unit_id:
       getId(
@@ -971,6 +1123,12 @@ const normalizeBooking = (
         )
       ),
 
+    /*
+    |----------------------------------------------------------------------
+    | Tenancy
+    |----------------------------------------------------------------------
+    */
+
     tenancy_id:
       getId(
         firstValue(
@@ -978,7 +1136,15 @@ const normalizeBooking = (
           tenancy
         )
       ) ||
-      getId(tenancyId),
+      getId(
+        tenancyId
+      ),
+
+    /*
+    |----------------------------------------------------------------------
+    | Booking
+    |----------------------------------------------------------------------
+    */
 
     booking_type:
       booking.booking_type ??
@@ -1013,63 +1179,169 @@ const normalizeBooking = (
         booking.check_out_date
       ),
 
+    /*
+    |----------------------------------------------------------------------
+    | Customer Snapshot
+    |
+    | Snapshot is preferred because it represents the booking data.
+    |----------------------------------------------------------------------
+    */
+
+    first_name:
+      firstValue(
+        booking.first_name,
+        customerSnapshot.first_name,
+        customer?.first_name,
+        ""
+      ),
+
+    last_name:
+      firstValue(
+        booking.last_name,
+        customerSnapshot.last_name,
+        customer?.last_name,
+        ""
+      ),
+
+    email:
+      firstValue(
+        booking.email,
+        customerSnapshot.email,
+        customer?.email,
+        ""
+      ),
+
+    phone:
+      firstValue(
+        booking.phone,
+        customerSnapshot.phone,
+        customer?.phone,
+        ""
+      ),
+
+    /*
+    |----------------------------------------------------------------------
+    | Financials
+    |
+    | IMPORTANT:
+    | These values are nested under financials in your API response.
+    |----------------------------------------------------------------------
+    */
+
     rent_amount:
-      booking.rent_amount ??
-      booking.rent ??
-      "",
+      firstValue(
+        financials.rent_amount,
+        booking.rent_amount,
+        booking.rent,
+        ""
+      ),
 
     deposit_amount:
-      booking.deposit_amount ??
-      booking.deposit ??
-      "",
+      firstValue(
+        financials.deposit_amount,
+        booking.deposit_amount,
+        booking.deposit,
+        ""
+      ),
 
     service_charge:
-      booking.service_charge ??
-      "",
+      firstValue(
+        financials.service_charge,
+        booking.service_charge,
+        ""
+      ),
 
     booking_fee:
-      booking.booking_fee ??
-      "",
+      firstValue(
+        financials.booking_fee,
+        booking.booking_fee,
+        ""
+      ),
 
     discount_amount:
-      booking.discount_amount ??
-      "",
+      firstValue(
+        financials.discount_amount,
+        booking.discount_amount,
+        ""
+      ),
 
     total_amount:
-      booking.total_amount ??
-      booking.financials?.total_amount ??
-      "",
+      firstValue(
+        financials.total_amount,
+        booking.total_amount,
+        ""
+      ),
 
     amount_paid:
-      booking.amount_paid ??
-      booking.paid_amount ??
-      booking.financials?.amount_paid ??
-      "",
+      firstValue(
+        financials.amount_paid,
+        booking.amount_paid,
+        booking.paid_amount,
+        ""
+      ),
 
     balance:
-      booking.balance ??
-      booking.financials?.balance ??
-      "",
+      firstValue(
+        financials.balance,
+        booking.balance,
+        ""
+      ),
+
+    /*
+    |----------------------------------------------------------------------
+    | Payment
+    |----------------------------------------------------------------------
+    */
 
     payment_status:
       booking.payment_status ??
       "pending",
 
     payment_method:
-      booking.payment_method ??
-      booking.payment?.method ??
-      "",
+      firstValue(
+        payment.method,
+        booking.payment_method,
+        ""
+      ),
 
     payment_reference:
-      booking.payment_reference ??
-      booking.payment?.reference ??
-      "",
+      firstValue(
+        payment.reference,
+        booking.payment_reference,
+        ""
+      ),
+
+    /*
+    |----------------------------------------------------------------------
+    | OCCUPANCY
+    |
+    | IMPORTANT FIX:
+    |
+    | API:
+    | occupancy:
+    | {
+    |     number_of_adults: 5,
+    |     number_of_children: 4,
+    |     total_guests: 9
+    | }
+    |
+    | Edit form:
+    | number_of_adults = "5"
+    | number_of_children = "4"
+    |----------------------------------------------------------------------
+    */
 
     number_of_adults:
-      numberOfAdults,
+      normalizedAdults,
 
     number_of_children:
-      numberOfChildren,
+      normalizedChildren,
+
+    /*
+    |----------------------------------------------------------------------
+    | Date/time
+    |----------------------------------------------------------------------
+    */
 
     check_in_at:
       normalizeDateTime(
@@ -1081,6 +1353,12 @@ const normalizeBooking = (
         booking.check_out_at
       ),
 
+    /*
+    |----------------------------------------------------------------------
+    | Notes
+    |----------------------------------------------------------------------
+    */
+
     special_requests:
       booking.special_requests ??
       booking.special_request ??
@@ -1090,6 +1368,65 @@ const normalizeBooking = (
       booking.notes ??
       "",
   };
+
+  if (
+    DEBUG_EDIT_BOOKING
+  ) {
+    console.debug(
+      "[EditBooking] Normalized form:",
+      normalized
+    );
+
+    console.debug(
+      "[EditBooking] Occupancy:",
+      {
+        apiAdults:
+          booking?.occupancy
+            ?.number_of_adults,
+
+        apiChildren:
+          booking?.occupancy
+            ?.number_of_children,
+
+        formAdults:
+          normalized.number_of_adults,
+
+        formChildren:
+          normalized.number_of_children,
+      }
+    );
+
+    console.debug(
+      "[EditBooking] Financials:",
+      {
+        rent:
+          normalized.rent_amount,
+
+        deposit:
+          normalized.deposit_amount,
+
+        serviceCharge:
+          normalized.service_charge,
+
+        bookingFee:
+          normalized.booking_fee,
+
+        discount:
+          normalized.discount_amount,
+
+        total:
+          normalized.total_amount,
+
+        paid:
+          normalized.amount_paid,
+
+        balance:
+          normalized.balance,
+      }
+    );
+  }
+
+  return normalized;
 };
 
 /*
@@ -1401,22 +1738,50 @@ const EditBooking = () => {
           const bookingTenancy =
             bookingData.tenancy;
 
+          /*
+          |--------------------------------------------------------------------------
+          | IMPORTANT
+          |
+          | Booking's own property/apartment/unit
+          | must remain authoritative.
+          |--------------------------------------------------------------------------
+          */
+
           const bookingProperty =
             firstValue(
-              bookingData.property,
-              bookingTenancy?.property
+              bookingData.property
+            ) ||
+            (
+              bookingTenancy?.property &&
+                getId(
+                  bookingData.property_id
+                ) ===
+                getId(
+                  bookingTenancy.property.id
+                )
+                ? bookingTenancy.property
+                : null
             );
 
           const bookingApartment =
             firstValue(
-              bookingData.apartment,
-              bookingTenancy?.apartment
+              bookingData.apartment
+            ) ||
+            (
+              bookingTenancy?.apartment &&
+                getId(
+                  bookingData.apartment_id
+                ) ===
+                getId(
+                  bookingTenancy.apartment.id
+                )
+                ? bookingTenancy.apartment
+                : null
             );
 
           const bookingUnit =
             firstValue(
-              bookingData.unit,
-              bookingTenancy?.unit
+              bookingData.unit
             );
 
           if (
@@ -1490,6 +1855,12 @@ const EditBooking = () => {
                 )
             );
           }
+
+          /*
+          |--------------------------------------------------------------------------
+          | Load available customers.
+          |--------------------------------------------------------------------------
+          */
 
           try {
             const usersResponse =
@@ -1662,6 +2033,11 @@ const EditBooking = () => {
                       resolvedTenant
                     ),
 
+                  /*
+                  | Keep the existing tenancy.
+                  | Only use the first resolved tenancy
+                  | when the booking has none.
+                  */
                   tenancy_id:
                     current.tenancy_id ||
                     getId(
@@ -1684,14 +2060,6 @@ const EditBooking = () => {
               );
             }
 
-            /*
-            | Only stop here if we actually
-            | received both the tenant and
-            | tenancy data.
-            |
-            | If only the tenant was returned,
-            | continue to the fallback below.
-            */
             if (
               resolvedTenant &&
               allTenancies.length > 0
@@ -2961,6 +3329,12 @@ const EditBooking = () => {
       values.payment_reference
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Occupancy
+    |--------------------------------------------------------------------------
+    */
+
     if (
       values.number_of_adults !==
       undefined &&
@@ -2982,7 +3356,9 @@ const EditBooking = () => {
         payload.number_of_adults =
           Math.max(
             0,
-            Math.trunc(adults)
+            Math.trunc(
+              adults
+            )
           );
       }
     }
@@ -3008,10 +3384,18 @@ const EditBooking = () => {
         payload.number_of_children =
           Math.max(
             0,
-            Math.trunc(children)
+            Math.trunc(
+              children
+            )
           );
       }
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dates
+    |--------------------------------------------------------------------------
+    */
 
     appendIfValue(
       "check_in_date",
@@ -3033,6 +3417,12 @@ const EditBooking = () => {
       values.check_out_at
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notes
+    |--------------------------------------------------------------------------
+    */
+
     appendIfValue(
       "special_requests",
       values.special_requests
@@ -3042,6 +3432,15 @@ const EditBooking = () => {
       "notes",
       values.notes
     );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Server-managed fields
+    |
+    | Payment status and amount paid must be
+    | managed through the payment workflow.
+    |--------------------------------------------------------------------------
+    */
 
     const managedFields = [
       "status",
@@ -3191,6 +3590,12 @@ const EditBooking = () => {
           submittedValues.tenancy_id
         ),
 
+      /*
+      |--------------------------------------------------------------------------
+      | Preserve actual occupancy values.
+      |--------------------------------------------------------------------------
+      */
+
       number_of_adults:
         submittedValues.number_of_adults ??
         submittedValues.adults ??
@@ -3250,12 +3655,6 @@ const EditBooking = () => {
         console.groupEnd();
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | Update booking
-      |--------------------------------------------------------------------------
-      */
-
       const response =
         await updateBooking(
           bookingId,
@@ -3271,26 +3670,6 @@ const EditBooking = () => {
         );
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | IMPORTANT
-      |
-      | Always use the normalized route ID here.
-      |
-      | Do NOT use:
-      |
-      | response.data
-      | response.data.id
-      | booking
-      | currentBooking
-      |
-      | because those may be wrapped objects.
-      |
-      | bookingId is guaranteed to be a clean
-      | scalar ID such as "25".
-      |--------------------------------------------------------------------------
-      */
-
       const detailsUrl =
         `/super-admin/bookings/${encodeURIComponent(
           bookingId
@@ -3305,14 +3684,6 @@ const EditBooking = () => {
           icon: "success",
           title: "Booking Updated",
           text: message,
-
-          /*
-          | Show both actions:
-          |
-          | - View Booking Details
-          | - Stay on booking list
-          |--------------------------------------------------------------------------
-          */
 
           showCancelButton: true,
 
@@ -3333,12 +3704,6 @@ const EditBooking = () => {
           allowOutsideClick: false,
           allowEscapeKey: false,
         });
-
-      /*
-      |--------------------------------------------------------------------------
-      | Redirect after SweetAlert action
-      |--------------------------------------------------------------------------
-      */
 
       if (
         result.isConfirmed
@@ -3361,12 +3726,6 @@ const EditBooking = () => {
 
         return;
       }
-
-      /*
-      |--------------------------------------------------------------------------
-      | User selected Back to Bookings
-      |--------------------------------------------------------------------------
-      */
 
       if (
         result.isDismissed
