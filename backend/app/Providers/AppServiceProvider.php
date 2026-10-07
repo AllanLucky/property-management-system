@@ -166,6 +166,15 @@ use App\Repositories\Interfaces\LeaseRepositoryInterface;
 use App\Repositories\Eloquent\BookingRepository;
 use App\Repositories\Interfaces\BookingRepositoryInterface;
 
+/*
+|--------------------------------------------------------------------------
+| PLOT REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\PlotRepository;
+use App\Repositories\Interfaces\PlotRepositoryInterface;
+
 
 
 
@@ -387,6 +396,12 @@ class AppServiceProvider extends ServiceProvider
          $this->app->bind(
             BookingRepositoryInterface::class,
             BookingRepository::class
+        );
+
+        
+        $this->app->bind(
+             PlotRepositoryInterface::class,
+             PlotRepository::class
         );
 
     }

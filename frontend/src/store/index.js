@@ -45,10 +45,23 @@ import tenancyReducer from "./tenancySlice";
 | Manages lease records and lease-related state.
 |
 | Redux state:
-| state.leases
+| state.lease
 |--------------------------------------------------------------------------
 */
 import leaseReducer from "./leaseSlice";
+
+/*
+|--------------------------------------------------------------------------
+| BOOKINGS
+|--------------------------------------------------------------------------
+| Manages property bookings, booking workflow, payments, availability,
+| statistics and reports.
+|
+| Redux state:
+| state.bookings
+|--------------------------------------------------------------------------
+*/
+import bookingReducer from "./bookingSlice";
 
 /*
 |--------------------------------------------------------------------------
@@ -140,6 +153,13 @@ export const store = configureStore({
 
     /*
     |--------------------------------------------------------------------------
+    | BOOKINGS
+    |--------------------------------------------------------------------------
+    */
+    bookings: bookingReducer,
+
+    /*
+    |--------------------------------------------------------------------------
     | USER ACTIVITY
     |--------------------------------------------------------------------------
     */
@@ -174,21 +194,6 @@ export const store = configureStore({
     propertyAnalytics: propertyAnalyticsReducer,
   },
 
-  /*
-  |--------------------------------------------------------------------------
-  | MIDDLEWARE
-  |--------------------------------------------------------------------------
-  | Redux Toolkit already includes:
-  |
-  | - redux-thunk
-  | - Serializable State Invariant Middleware
-  | - Immutable State Invariant Middleware
-  |
-  | Serializable and immutable checks are disabled because the application
-  | may contain API response objects or other values that do not need to
-  | be checked on every Redux update.
-  |--------------------------------------------------------------------------
-  */
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       thunk: true,
