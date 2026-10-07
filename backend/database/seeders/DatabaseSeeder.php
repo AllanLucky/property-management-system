@@ -41,10 +41,18 @@ class DatabaseSeeder extends Seeder
      *        ↓
      * Payments
      *        ↓
-     * Bookings / Maintenance
+     * Plots
+     *        ↓
+     * Plot Sales
+     *        ↓
+     * Plot Payments
+     *        ↓
+     * Bookings
+     *        ↓
+     * Maintenance
      *
-     * The order is important because most operational and financial records
-     * depend on records created earlier in the chain.
+     * The order is important because operational, financial and transactional
+     * records depend on records created earlier in the chain.
      */
     public function run(): void
     {
@@ -87,8 +95,8 @@ class DatabaseSeeder extends Seeder
             | 3. LOCATION DATA
             |--------------------------------------------------------------------------
             |
-            | Countries, counties, cities, areas and other location records
-            | must exist before properties are created.
+            | Countries, regions, counties, cities, areas and other location
+            | records must exist before properties and plots are created.
             |
             */
 
@@ -288,13 +296,13 @@ class DatabaseSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | 16. PAYMENTS
+            | 16. PROPERTY PAYMENTS
             |--------------------------------------------------------------------------
             |
             | Payments are the core financial records of the estate management
             | system.
             |
-            | Payments depend on existing:
+            | Payment records depend on existing:
             |
             | - Users
             | - Tenants
@@ -316,13 +324,8 @@ class DatabaseSeeder extends Seeder
             |
             | - M-Pesa
             | - Bank transfer
-            | | - Cash
+            | - Cash
             | - Card
-            |
-            | The Payment model is responsible for generating:
-            |
-            | - Payment numbers
-            | - Receipt numbers for completed payments
             |
             */
 
@@ -331,7 +334,94 @@ class DatabaseSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | 17. BOOKINGS
+            | 17. PLOTS
+            |--------------------------------------------------------------------------
+            |
+            | Plots represent land parcels that can be marketed and sold
+            | independently from rental properties, apartments and units.
+            |
+            | A plot may optionally belong to an existing property record but
+            | remains a separate land asset in the plot module.
+            |
+            | Dependencies:
+            |
+            | - Locations
+            | - Users are not required directly
+            | - Properties are optional
+            |
+            */
+
+            PlotSeeder::class,
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | 18. PLOT SALES
+            |--------------------------------------------------------------------------
+            |
+            | Plot sales represent the actual sale transaction/contract between
+            | a plot and a buyer.
+            |
+            | Dependencies:
+            |
+            | - Plots
+            | - Users
+            | - Agents (optional)
+            |
+            | Architecture:
+            |
+            | Plot
+            |   ↓
+            | PlotSale
+            |
+            | The buyer is an existing User record and does not require a
+            | separate buyer table.
+            |
+            */
+
+            PlotSaleSeeder::class,
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | 19. PLOT PAYMENTS
+            |--------------------------------------------------------------------------
+            |
+            | Plot payments represent individual payments made against a
+            | specific plot sale.
+            |
+            | Dependencies:
+            |
+            | - Plot Sales
+            | - Buyers/users through the sale relationship
+            |
+            | Architecture:
+            |
+            | Plot
+            |   ↓
+            | PlotSale
+            |   ↓
+            | PlotPayment
+            |
+            | Payment records may represent:
+            |
+            | - Deposits
+            | - Installments
+            | - Balance payments
+            | - Other plot-sale payments
+            |
+            | The PlotPayment model updates the related PlotSale amount paid
+            | and outstanding balance when completed payments are created,
+            | updated or deleted.
+            |
+            */
+
+            PlotPaymentSeeder::class,
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | 20. BOOKINGS
             |--------------------------------------------------------------------------
             |
             | Bookings depend on existing operational records.
@@ -345,6 +435,8 @@ class DatabaseSeeder extends Seeder
             | - Units
             | - Tenancies
             |
+            | Plot sales remain separate from normal property bookings.
+            |
             */
 
             BookingSeeder::class,
@@ -352,7 +444,7 @@ class DatabaseSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | 18. MAINTENANCE
+            | 21. MAINTENANCE
             |--------------------------------------------------------------------------
             |
             | Maintenance records depend on existing operational and user
