@@ -51,21 +51,10 @@ const parseFinancialObject = (value) => {
     }
 
     if (isPlainObject(value)) {
-        /*
-         * Handle:
-         *
-         * {
-         *   data: {
-         *      total_amount: ...
-         *   }
-         * }
-         */
         if (isPlainObject(value.data)) {
             const nested = value.data;
 
-            if (
-                Object.keys(nested).length > 0
-            ) {
+            if (Object.keys(nested).length > 0) {
                 return nested;
             }
         }
@@ -102,7 +91,7 @@ const parseFinancialObject = (value) => {
 };
 
 /**
- * Extract the normalized data payload from the EstateKenya API response.
+ * Extract the normalized data payload from an API response.
  */
 const getResponseData = (response) => {
     if (
@@ -113,9 +102,13 @@ const getResponseData = (response) => {
     }
 
     /*
-     * Axios response containing Laravel API envelope:
+     * Axios response:
      *
-     * response.data.data
+     * {
+     *   data: {
+     *      data: ...
+     *   }
+     * }
      */
     if (
         response?.data &&
@@ -130,10 +123,10 @@ const getResponseData = (response) => {
     }
 
     /*
-     * Already-normalized service response:
+     * Already normalized:
      *
      * {
-     *     data: ...
+     *   data: ...
      * }
      */
     if (
@@ -146,9 +139,6 @@ const getResponseData = (response) => {
         return response.data;
     }
 
-    /*
-     * Direct payload.
-     */
     return response;
 };
 
@@ -415,15 +405,6 @@ const handleRequest = async (
 
 /**
  * Convert a value to a finite number.
- *
- * Supports:
- *
- * 60000
- * "60000"
- * "60,000"
- * "KES 60,000"
- * "Ksh 60,000.00"
- * "(5,000)"
  */
 const toNumber = (value) => {
     if (
@@ -434,23 +415,17 @@ const toNumber = (value) => {
         return null;
     }
 
-    if (
-        typeof value === "number"
-    ) {
+    if (typeof value === "number") {
         return Number.isFinite(value)
             ? value
             : null;
     }
 
-    if (
-        typeof value === "bigint"
-    ) {
+    if (typeof value === "bigint") {
         return Number(value);
     }
 
-    if (
-        isPlainObject(value)
-    ) {
+    if (isPlainObject(value)) {
         const nestedValue =
             firstDefined(
                 value.value,
@@ -467,41 +442,22 @@ const toNumber = (value) => {
             : null;
     }
 
-    if (
-        typeof value !== "string"
-    ) {
+    if (typeof value !== "string") {
         return null;
     }
 
     let cleaned =
         value
-            .replace(
-                /KES/gi,
-                ""
-            )
-            .replace(
-                /KSH/gi,
-                ""
-            )
-            .replace(
-                /KSHS/gi,
-                ""
-            )
-            .replace(
-                /,/g,
-                ""
-            )
+            .replace(/KES/gi, "")
+            .replace(/KSHS/gi, "")
+            .replace(/KSH/gi, "")
+            .replace(/,/g, "")
             .trim();
 
     if (!cleaned) {
         return null;
     }
 
-    /*
-     * Support accounting-style negative values:
-     *
-     * (5000) => -5000
-     */
     const isParenthesized =
         cleaned.startsWith("(") &&
         cleaned.endsWith(")");
@@ -509,21 +465,10 @@ const toNumber = (value) => {
     if (isParenthesized) {
         cleaned =
             cleaned
-                .slice(
-                    1,
-                    -1
-                )
+                .slice(1, -1)
                 .trim();
     }
 
-    /*
-     * Remove currency symbols and other harmless
-     * formatting characters while preserving:
-     *
-     * -
-     * .
-     * digits
-     */
     cleaned =
         cleaned.replace(
             /[^0-9.-]/g,
@@ -537,11 +482,7 @@ const toNumber = (value) => {
     const numeric =
         Number(cleaned);
 
-    if (
-        !Number.isFinite(
-            numeric
-        )
-    ) {
+    if (!Number.isFinite(numeric)) {
         return null;
     }
 
@@ -552,8 +493,6 @@ const toNumber = (value) => {
 
 /**
  * Normalize a monetary value.
- *
- * Returns a number so components can safely perform arithmetic.
  */
 const normalizeMoney = (
     value,
@@ -616,32 +555,86 @@ const normalizeBoolean = (
 
 /*
 |--------------------------------------------------------------------------
-| Booking Update Payload Sanitization
+| ID Helpers
 |--------------------------------------------------------------------------
 */
 
 /**
- * Fields that are controlled by the backend booking workflow.
+ * Normalize an entity ID.
  *
- * These must NOT be sent through the normal:
+ * Prevents:
  *
- * PUT /bookings/{id}
+ * [object Object]
  *
- * endpoint.
- *
- * The backend calculates financial totals and manages workflow
- * status/timestamps itself.
+ * from ever being sent to the API.
  */
+const normalizeEntityId = (
+    value
+) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return null;
+    }
+
+    if (typeof value === "object") {
+        if (Array.isArray(value)) {
+            return null;
+        }
+
+        return normalizeEntityId(
+            firstDefined(
+                value.id,
+                value.value,
+                value.booking_id,
+                value.user_id,
+                value.customer_id,
+                value.tenant_id,
+                value.tenancy_id,
+                value.property_id,
+                value.apartment_id,
+                value.unit_id,
+                value.resource?.id,
+                value.data?.id
+            )
+        );
+    }
+
+    if (typeof value === "string") {
+        const trimmed =
+            value.trim();
+
+        if (
+            !trimmed ||
+            trimmed === "[object Object]"
+        ) {
+            return null;
+        }
+
+        return trimmed;
+    }
+
+    if (typeof value === "number") {
+        return Number.isFinite(value)
+            ? value
+            : null;
+    }
+
+    return null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Booking Update Payload Sanitization
+|--------------------------------------------------------------------------
+*/
+
 const BOOKING_UPDATE_SERVER_MANAGED_FIELDS = [
-    /*
-     * Payment workflow.
-     */
     "payment_status",
     "paymentStatus",
 
-    /*
-     * Calculated financial values.
-     */
     "total_amount",
     "totalAmount",
     "grand_total",
@@ -672,12 +665,6 @@ const BOOKING_UPDATE_SERVER_MANAGED_FIELDS = [
     "has_balance",
     "hasBalance",
 
-    /*
-     * Financial aliases.
-     *
-     * The backend should calculate these from the authoritative
-     * financial fields.
-     */
     "total",
     "paid",
     "total_paid",
@@ -685,14 +672,8 @@ const BOOKING_UPDATE_SERVER_MANAGED_FIELDS = [
     "paid_amount",
     "paidAmount",
 
-    /*
-     * Workflow status.
-     */
     "status",
 
-    /*
-     * Workflow timestamps.
-     */
     "confirmed_at",
     "confirmedAt",
 
@@ -719,28 +700,18 @@ const BOOKING_UPDATE_SERVER_MANAGED_FIELDS = [
     "refunded_at",
     "refundedAt",
 
-    /*
-     * Workflow reasons are handled by dedicated
-     * approve/reject/cancel endpoints.
-     */
     "rejection_reason",
     "rejectionReason",
 
     "cancellation_reason",
     "cancellationReason",
 
-    /*
-     * Refund workflow.
-     */
     "refund_amount",
     "refundAmount",
 
     "refund_reference",
     "refundReference",
 
-    /*
-     * Resource/system fields.
-     */
     "id",
     "booking_number",
     "bookingNumber",
@@ -760,26 +731,12 @@ const BOOKING_UPDATE_SERVER_MANAGED_FIELDS = [
 /**
  * Sanitize a normal booking update payload.
  *
- * Important:
- *
- * amount_paid IS intentionally preserved because the current
- * booking update endpoint accepts it as an editable financial
- * input and the backend recalculates:
- *
- * total_amount
- * balance
- * payment_status
- *
- * from the authoritative financial values.
- *
- * This function does not mutate the original payload.
+ * amount_paid remains allowed.
  */
 const sanitizeBookingUpdatePayload = (
     payload = {}
 ) => {
-    if (
-        !isPlainObject(payload)
-    ) {
+    if (!isPlainObject(payload)) {
         return {};
     }
 
@@ -797,32 +754,66 @@ const sanitizeBookingUpdatePayload = (
                     field
                 )
             ) {
-                removedFields.push(
-                    field
-                );
+                removedFields.push(field);
 
                 delete sanitized[field];
             }
         }
     );
 
+    /*
+     * Customer identity is represented by customer_id.
+     */
     if (
-        DEBUG_BOOKING_SERVICE
+        Object.prototype.hasOwnProperty.call(
+            sanitized,
+            "user_id"
+        )
     ) {
+        removedFields.push("user_id");
+
+        delete sanitized.user_id;
+    }
+
+    /*
+     * Never send object values for ID fields.
+     */
+    const idFields = [
+        "customer_id",
+        "tenant_id",
+        "tenancy_id",
+        "property_id",
+        "apartment_id",
+        "unit_id",
+    ];
+
+    idFields.forEach(
+        (field) => {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    sanitized,
+                    field
+                )
+            ) {
+                sanitized[field] =
+                    normalizeEntityId(
+                        sanitized[field]
+                    );
+            }
+        }
+    );
+
+    if (DEBUG_BOOKING_SERVICE) {
         console.debug(
             "[BookingService] Booking update payload sanitized",
             {
                 removedFields,
 
                 originalKeys:
-                    Object.keys(
-                        payload
-                    ),
+                    Object.keys(payload),
 
                 sanitizedKeys:
-                    Object.keys(
-                        sanitized
-                    ),
+                    Object.keys(sanitized),
 
                 preservedAmountPaid:
                     Object.prototype.hasOwnProperty.call(
@@ -831,18 +822,6 @@ const sanitizeBookingUpdatePayload = (
                     )
                         ? sanitized.amount_paid
                         : undefined,
-
-                removedPaymentStatus:
-                    Object.prototype.hasOwnProperty.call(
-                        payload,
-                        "payment_status"
-                    ),
-
-                removedTotalAmount:
-                    Object.prototype.hasOwnProperty.call(
-                        payload,
-                        "total_amount"
-                    ),
             }
         );
     }
@@ -852,22 +831,117 @@ const sanitizeBookingUpdatePayload = (
 
 /*
 |--------------------------------------------------------------------------
+| Availability Helpers
+|--------------------------------------------------------------------------
+*/
+
+const normalizeAvailableUnitsParams = (
+    params = {}
+) => {
+    if (!isPlainObject(params)) {
+        return {
+            valid: false,
+            params: {},
+            message:
+                "Availability parameters must be an object.",
+        };
+    }
+
+    const startDate =
+        firstDefined(
+            params.start_date,
+            params.startDate
+        );
+
+    const endDate =
+        firstDefined(
+            params.end_date,
+            params.endDate
+        );
+
+    const propertyId =
+        normalizeEntityId(
+            firstDefined(
+                params.property_id,
+                params.propertyId,
+                params.property
+            )
+        );
+
+    const apartmentId =
+        normalizeEntityId(
+            firstDefined(
+                params.apartment_id,
+                params.apartmentId,
+                params.apartment
+            )
+        );
+
+    const bookingId =
+        normalizeEntityId(
+            firstDefined(
+                params.booking_id,
+                params.bookingId,
+                params.booking
+            )
+        );
+
+    if (!hasValue(startDate)) {
+        return {
+            valid: false,
+            params: {},
+            message:
+                "Start date is required to check available units.",
+        };
+    }
+
+    if (!hasValue(endDate)) {
+        return {
+            valid: false,
+            params: {},
+            message:
+                "End date is required to check available units.",
+        };
+    }
+
+    const normalized = {
+        start_date: startDate,
+        end_date: endDate,
+    };
+
+    if (propertyId !== null) {
+        normalized.property_id =
+            propertyId;
+    }
+
+    if (apartmentId !== null) {
+        normalized.apartment_id =
+            apartmentId;
+    }
+
+    if (bookingId !== null) {
+        normalized.booking_id =
+            bookingId;
+    }
+
+    return {
+        valid: true,
+        params: normalized,
+        message: null,
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
 | Financial Source Helpers
 |--------------------------------------------------------------------------
 */
 
-/**
- * Resolve all possible financial objects from a booking.
- *
- * Laravel resources can expose financial data in different places.
- */
 const resolveFinancialSources = (
     booking = {}
 ) => {
     const nestedBooking =
-        isPlainObject(
-            booking?.data
-        )
+        isPlainObject(booking?.data)
             ? booking.data
             : {};
 
@@ -910,9 +984,6 @@ const resolveFinancialSources = (
     return sources;
 };
 
-/**
- * Resolve the primary financial source.
- */
 const resolveFinancialSource = (
     booking = {}
 ) => {
@@ -927,18 +998,13 @@ const resolveFinancialSource = (
     );
 };
 
-/**
- * Find a financial field across all possible sources.
- */
 const findFinancialValue = (
     booking,
     source,
     keys = []
 ) => {
     const nestedBooking =
-        isPlainObject(
-            booking?.data
-        )
+        isPlainObject(booking?.data)
             ? booking.data
             : {};
 
@@ -961,9 +1027,7 @@ const findFinancialValue = (
                 const value =
                     currentSource?.[key];
 
-                if (
-                    hasValue(value)
-                ) {
+                if (hasValue(value)) {
                     return {
                         value,
                         key,
@@ -979,17 +1043,12 @@ const findFinancialValue = (
     };
 };
 
-/**
- * Get a collection of payments from a booking.
- */
 const extractPayments = (
     booking = {},
     source = {}
 ) => {
     const nestedBooking =
-        isPlainObject(
-            booking?.data
-        )
+        isPlainObject(booking?.data)
             ? booking.data
             : {};
 
@@ -1008,28 +1067,16 @@ const extractPayments = (
     ];
 
     for (const candidate of candidates) {
-        if (
-            Array.isArray(candidate)
-        ) {
+        if (Array.isArray(candidate)) {
             return candidate;
         }
 
-        if (
-            isPlainObject(candidate)
-        ) {
-            if (
-                Array.isArray(
-                    candidate.data
-                )
-            ) {
+        if (isPlainObject(candidate)) {
+            if (Array.isArray(candidate.data)) {
                 return candidate.data;
             }
 
-            if (
-                Array.isArray(
-                    candidate.items
-                )
-            ) {
+            if (Array.isArray(candidate.items)) {
                 return candidate.items;
             }
         }
@@ -1038,15 +1085,10 @@ const extractPayments = (
     return [];
 };
 
-/**
- * Determine whether a payment should contribute to paid amount.
- */
 const isPaymentCountable = (
     payment
 ) => {
-    if (
-        !isPlainObject(payment)
-    ) {
+    if (!isPlainObject(payment)) {
         return false;
     }
 
@@ -1061,16 +1103,10 @@ const isPaymentCountable = (
             .trim()
             .toLowerCase();
 
-    /*
-     * If no status exists, trust the payment amount.
-     */
     if (!status) {
         return true;
     }
 
-    /*
-     * Explicitly excluded payment states.
-     */
     if (
         [
             "failed",
@@ -1085,9 +1121,6 @@ const isPaymentCountable = (
         return false;
     }
 
-    /*
-     * Count these as paid.
-     */
     if (
         [
             "paid",
@@ -1102,23 +1135,14 @@ const isPaymentCountable = (
         return true;
     }
 
-    /*
-     * For unknown statuses, don't blindly
-     * assume the amount is paid.
-     */
     return false;
 };
 
-/**
- * Calculate paid amount from payment records.
- */
 const calculatePaidFromPayments = (
     payments = []
 ) => {
     if (
-        !Array.isArray(
-            payments
-        ) ||
+        !Array.isArray(payments) ||
         payments.length === 0
     ) {
         return null;
@@ -1129,11 +1153,7 @@ const calculatePaidFromPayments = (
 
     payments.forEach(
         (payment) => {
-            if (
-                !isPaymentCountable(
-                    payment
-                )
-            ) {
+            if (!isPaymentCountable(payment)) {
                 return;
             }
 
@@ -1151,9 +1171,7 @@ const calculatePaidFromPayments = (
             const numeric =
                 toNumber(amount);
 
-            if (
-                numeric !== null
-            ) {
+            if (numeric !== null) {
                 total += numeric;
                 foundPaymentAmount = true;
             }
@@ -1161,9 +1179,7 @@ const calculatePaidFromPayments = (
     );
 
     return foundPaymentAmount
-        ? Number(
-            total.toFixed(2)
-        )
+        ? Number(total.toFixed(2))
         : null;
 };
 
@@ -1173,17 +1189,6 @@ const calculatePaidFromPayments = (
 |--------------------------------------------------------------------------
 */
 
-/**
- * Normalize booking financials.
- *
- * Priority:
- *
- * 1. Backend total / paid / balance.
- * 2. Backend nested financial source.
- * 3. Payment collection for paid amount.
- * 4. Component calculation for total.
- * 5. Total - paid for balance.
- */
 const normalizeBookingFinancials = (
     financials = {},
     booking = {}
@@ -1194,9 +1199,7 @@ const normalizeBookingFinancials = (
         );
 
     const nestedBooking =
-        isPlainObject(
-            booking?.data
-        )
+        isPlainObject(booking?.data)
             ? booking.data
             : {};
 
@@ -1204,12 +1207,6 @@ const normalizeBookingFinancials = (
         parseFinancialObject(
             nestedBooking?.financials
         );
-
-    /*
-     * ---------------------------------------------------------------
-     * Component amounts
-     * ---------------------------------------------------------------
-     */
 
     const rentResult =
         findFinancialValue(
@@ -1296,12 +1293,6 @@ const normalizeBookingFinancials = (
             discountResult.value
         );
 
-    /*
-     * ---------------------------------------------------------------
-     * TOTAL
-     * ---------------------------------------------------------------
-     */
-
     const totalResult =
         findFinancialValue(
             booking,
@@ -1331,13 +1322,7 @@ const normalizeBookingFinancials = (
     let totalSource =
         totalResult.key;
 
-    /*
-     * If backend did not provide a total,
-     * calculate it from the booking components.
-     */
-    if (
-        totalAmount === null
-    ) {
+    if (totalAmount === null) {
         const hasComponentData =
             [
                 rentResult.value,
@@ -1345,9 +1330,7 @@ const normalizeBookingFinancials = (
                 serviceChargeResult.value,
                 bookingFeeResult.value,
                 discountResult.value,
-            ].some(
-                hasValue
-            );
+            ].some(hasValue);
 
         if (hasComponentData) {
             totalAmount =
@@ -1361,9 +1344,7 @@ const normalizeBookingFinancials = (
                 Math.max(
                     0,
                     Number(
-                        totalAmount.toFixed(
-                            2
-                        )
+                        totalAmount.toFixed(2)
                     )
                 );
 
@@ -1371,12 +1352,6 @@ const normalizeBookingFinancials = (
                 "calculated_from_components";
         }
     }
-
-    /*
-     * ---------------------------------------------------------------
-     * PAID
-     * ---------------------------------------------------------------
-     */
 
     const paidResult =
         findFinancialValue(
@@ -1403,12 +1378,7 @@ const normalizeBookingFinancials = (
     let paidSource =
         paidResult.key;
 
-    /*
-     * If amount_paid is absent, inspect payments.
-     */
-    if (
-        amountPaid === null
-    ) {
+    if (amountPaid === null) {
         const payments =
             extractPayments(
                 booking,
@@ -1420,9 +1390,7 @@ const normalizeBookingFinancials = (
                 payments
             );
 
-        if (
-            paymentsTotal !== null
-        ) {
+        if (paymentsTotal !== null) {
             amountPaid =
                 paymentsTotal;
 
@@ -1430,12 +1398,6 @@ const normalizeBookingFinancials = (
                 "calculated_from_payments";
         }
     }
-
-    /*
-     * ---------------------------------------------------------------
-     * BALANCE
-     * ---------------------------------------------------------------
-     */
 
     const balanceResult =
         findFinancialValue(
@@ -1462,10 +1424,6 @@ const normalizeBookingFinancials = (
     let balanceSource =
         balanceResult.key;
 
-    /*
-     * If backend did not provide balance,
-     * derive it from total - paid.
-     */
     if (
         balance === null &&
         totalAmount !== null &&
@@ -1474,89 +1432,53 @@ const normalizeBookingFinancials = (
         balance =
             Math.max(
                 0,
-                totalAmount -
-                amountPaid
+                totalAmount - amountPaid
             );
 
         balance =
             Number(
-                balance.toFixed(
-                    2
-                )
+                balance.toFixed(2)
             );
 
         balanceSource =
             "calculated_from_total_minus_paid";
     }
 
-    /*
-     * ---------------------------------------------------------------
-     * Defaults
-     * ---------------------------------------------------------------
-     */
-
-    if (
-        totalAmount === null
-    ) {
+    if (totalAmount === null) {
         totalAmount = 0;
     }
 
-    if (
-        amountPaid === null
-    ) {
+    if (amountPaid === null) {
         amountPaid = 0;
     }
 
-    if (
-        balance === null
-    ) {
+    if (balance === null) {
         balance = 0;
     }
 
-    /*
-     * Prevent floating-point noise.
-     */
     totalAmount =
         Number(
-            totalAmount.toFixed(
-                2
-            )
+            totalAmount.toFixed(2)
         );
 
     amountPaid =
         Number(
-            amountPaid.toFixed(
-                2
-            )
+            amountPaid.toFixed(2)
         );
 
     balance =
         Number(
-            Math.max(
-                0,
-                balance
-            ).toFixed(
-                2
-            )
+            Math.max(0, balance).toFixed(2)
         );
-
-    /*
-     * ---------------------------------------------------------------
-     * Backend flags
-     * ---------------------------------------------------------------
-     */
 
     const backendFullyPaid =
         firstDefined(
             source?.is_fully_paid,
             source?.isFullyPaid,
-
             nestedFinancials?.is_fully_paid,
             nestedFinancials?.isFullyPaid,
-
             nestedBooking?.is_fully_paid,
             nestedBooking?.isFullyPaid,
-
             booking?.is_fully_paid,
             booking?.isFullyPaid
         );
@@ -1565,13 +1487,10 @@ const normalizeBookingFinancials = (
         firstDefined(
             source?.is_partially_paid,
             source?.isPartiallyPaid,
-
             nestedFinancials?.is_partially_paid,
             nestedFinancials?.isPartiallyPaid,
-
             nestedBooking?.is_partially_paid,
             nestedBooking?.isPartiallyPaid,
-
             booking?.is_partially_paid,
             booking?.isPartiallyPaid
         );
@@ -1580,22 +1499,13 @@ const normalizeBookingFinancials = (
         firstDefined(
             source?.has_balance,
             source?.hasBalance,
-
             nestedFinancials?.has_balance,
             nestedFinancials?.hasBalance,
-
             nestedBooking?.has_balance,
             nestedBooking?.hasBalance,
-
             booking?.has_balance,
             booking?.hasBalance
         );
-
-    /*
-     * ---------------------------------------------------------------
-     * Financial data detection
-     * ---------------------------------------------------------------
-     */
 
     const hasBackendFinancialData = [
         totalResult.value,
@@ -1606,9 +1516,7 @@ const normalizeBookingFinancials = (
         serviceChargeResult.value,
         bookingFeeResult.value,
         discountResult.value,
-    ].some(
-        hasValue
-    );
+    ].some(hasValue);
 
     const payments =
         extractPayments(
@@ -1622,12 +1530,6 @@ const normalizeBookingFinancials = (
     const hasFinancialData =
         hasBackendFinancialData ||
         hasPaymentCollection;
-
-    /*
-     * ---------------------------------------------------------------
-     * Derived states
-     * ---------------------------------------------------------------
-     */
 
     const calculatedFullyPaid =
         totalAmount > 0 &&
@@ -1663,12 +1565,6 @@ const normalizeBookingFinancials = (
                 backendHasBalance
             )
             : calculatedHasBalance;
-
-    /*
-     * ---------------------------------------------------------------
-     * Debug
-     * ---------------------------------------------------------------
-     */
 
     if (DEBUG_BOOKING_SERVICE) {
         console.debug(
@@ -1714,25 +1610,13 @@ const normalizeBookingFinancials = (
                 hasBackendFinancialData,
                 hasPaymentCollection,
                 hasFinancialData,
-
-                financialSourceKeys:
-                    Object.keys(
-                        source
-                    ),
             }
         );
     }
 
-    /*
-     * Keep the original financial source,
-     * but normalize the important fields.
-     */
     return {
         ...source,
 
-        /*
-         * Components
-         */
         rent_amount:
             rentAmount,
 
@@ -1748,9 +1632,6 @@ const normalizeBookingFinancials = (
         discount_amount:
             discountAmount,
 
-        /*
-         * Main financial values
-         */
         total_amount:
             totalAmount,
 
@@ -1760,12 +1641,8 @@ const normalizeBookingFinancials = (
         paid_amount:
             amountPaid,
 
-        balance:
-            balance,
+        balance,
 
-        /*
-         * Common aliases used by UI components.
-         */
         total:
             totalAmount,
 
@@ -1781,9 +1658,6 @@ const normalizeBookingFinancials = (
         outstanding_balance:
             balance,
 
-        /*
-         * Flags
-         */
         is_fully_paid:
             isFullyPaid,
 
@@ -1793,9 +1667,6 @@ const normalizeBookingFinancials = (
         has_balance:
             hasBalance,
 
-        /*
-         * Metadata
-         */
         has_financial_data:
             hasFinancialData,
 
@@ -1817,9 +1688,6 @@ const normalizeBookingFinancials = (
                 "KES"
             ),
 
-        /*
-         * Debug/source metadata.
-         */
         _normalization: {
             total_source:
                 totalSource,
@@ -1851,20 +1719,6 @@ const normalizeBookingFinancials = (
 |--------------------------------------------------------------------------
 */
 
-/**
- * Normalize a complete booking resource.
- *
- * Financial aliases are intentionally exposed both:
- *
- * booking.financials.total_amount
- *
- * and:
- *
- * booking.total_amount
- *
- * This prevents UI components from showing zero simply because
- * they expect the financial value at a different level.
- */
 const normalizeBookingResource = (
     booking
 ) => {
@@ -1877,14 +1731,10 @@ const normalizeBookingResource = (
     }
 
     const actualBooking =
-        isPlainObject(
-            booking.data
-        ) &&
+        isPlainObject(booking.data) &&
             (
-                booking.data.id !==
-                undefined ||
-                booking.data.booking_number !==
-                undefined
+                booking.data.id !== undefined ||
+                booking.data.booking_number !== undefined
             )
             ? booking.data
             : booking;
@@ -1903,16 +1753,7 @@ const normalizeBookingResource = (
     const normalizedBooking = {
         ...actualBooking,
 
-        /*
-         * Normalized nested financial object.
-         */
         financials,
-
-        /*
-         * -----------------------------------------------------------
-         * TOP-LEVEL FINANCIAL ALIASES
-         * -----------------------------------------------------------
-         */
 
         total_amount:
             financials.total_amount,
@@ -1941,9 +1782,6 @@ const normalizeBookingResource = (
         paid:
             financials.amount_paid,
 
-        /*
-         * Components.
-         */
         rent_amount:
             financials.rent_amount,
 
@@ -1959,9 +1797,6 @@ const normalizeBookingResource = (
         discount_amount:
             financials.discount_amount,
 
-        /*
-         * Financial flags.
-         */
         is_fully_paid:
             financials.is_fully_paid,
 
@@ -1974,9 +1809,6 @@ const normalizeBookingResource = (
         has_financial_data:
             financials.has_financial_data,
 
-        /*
-         * Explicit aliases useful for UI.
-         */
         financial_total:
             financials.total_amount,
 
@@ -1994,14 +1826,7 @@ const normalizeBookingResource = (
             ),
     };
 
-    /*
-     * Preserve wrapper response when the booking itself
-     * arrived inside booking.data.
-     */
-    if (
-        actualBooking !==
-        booking
-    ) {
+    if (actualBooking !== booking) {
         return {
             ...booking,
 
@@ -2013,17 +1838,10 @@ const normalizeBookingResource = (
     return normalizedBooking;
 };
 
-/**
- * Normalize a booking collection.
- */
 const normalizeBookingCollection = (
     bookings
 ) => {
-    if (
-        !Array.isArray(
-            bookings
-        )
-    ) {
+    if (!Array.isArray(bookings)) {
         return [];
     }
 
@@ -2034,13 +1852,10 @@ const normalizeBookingCollection = (
 
 /*
 |--------------------------------------------------------------------------
-| Resource Helpers
+| Generic Resource Helpers
 |--------------------------------------------------------------------------
 */
 
-/**
- * Extract a single resource.
- */
 const extractResource = (
     response
 ) => {
@@ -2058,36 +1873,21 @@ const extractResource = (
     if (
         typeof payload === "object" &&
         !Array.isArray(payload) &&
-        Array.isArray(
-            payload.data
-        )
+        Array.isArray(payload.data)
     ) {
-        return (
-            payload.data[0] ??
-            null
-        );
+        return payload.data[0] ?? null;
     }
 
-    if (
-        Array.isArray(payload)
-    ) {
-        return (
-            payload[0] ??
-            null
-        );
+    if (Array.isArray(payload)) {
+        return payload[0] ?? null;
     }
 
     if (
         typeof payload === "object" &&
         !Array.isArray(payload) &&
-        Array.isArray(
-            payload.items
-        )
+        Array.isArray(payload.items)
     ) {
-        return (
-            payload.items[0] ??
-            null
-        );
+        return payload.items[0] ?? null;
     }
 
     if (
@@ -2095,44 +1895,72 @@ const extractResource = (
         !Array.isArray(payload)
     ) {
         if (
-            payload.id !==
-            undefined &&
+            payload.id !== undefined &&
             payload.id !== null
         ) {
             return payload;
         }
 
         if (
+            payload.resource &&
+            typeof payload.resource === "object"
+        ) {
+            return payload.resource;
+        }
+
+        if (
+            payload.booking &&
+            typeof payload.booking === "object"
+        ) {
+            return payload.booking;
+        }
+
+        if (
             payload.tenant &&
-            typeof payload.tenant ===
-            "object"
+            typeof payload.tenant === "object"
         ) {
             return payload.tenant;
         }
 
         if (
             payload.user &&
-            typeof payload.user ===
-            "object"
+            typeof payload.user === "object"
         ) {
             return payload.user;
         }
 
         if (
-            payload.resource &&
-            typeof payload.resource ===
-            "object"
+            payload.tenancy &&
+            typeof payload.tenancy === "object"
         ) {
-            return payload.resource;
+            return payload.tenancy;
+        }
+
+        if (
+            payload.property &&
+            typeof payload.property === "object"
+        ) {
+            return payload.property;
+        }
+
+        if (
+            payload.apartment &&
+            typeof payload.apartment === "object"
+        ) {
+            return payload.apartment;
+        }
+
+        if (
+            payload.unit &&
+            typeof payload.unit === "object"
+        ) {
+            return payload.unit;
         }
     }
 
     return null;
 };
 
-/**
- * Extract a collection.
- */
 const extractCollection = (
     response
 ) => {
@@ -2147,26 +1975,20 @@ const extractCollection = (
         return [];
     }
 
-    if (
-        Array.isArray(payload)
-    ) {
+    if (Array.isArray(payload)) {
         return payload;
     }
 
     if (
         typeof payload === "object" &&
-        Array.isArray(
-            payload.data
-        )
+        Array.isArray(payload.data)
     ) {
         return payload.data;
     }
 
     if (
         typeof payload === "object" &&
-        Array.isArray(
-            payload.items
-        )
+        Array.isArray(payload.items)
     ) {
         return payload.items;
     }
@@ -2174,11 +1996,8 @@ const extractCollection = (
     if (
         typeof payload === "object" &&
         payload.data &&
-        typeof payload.data ===
-        "object" &&
-        Array.isArray(
-            payload.data.data
-        )
+        typeof payload.data === "object" &&
+        Array.isArray(payload.data.data)
     ) {
         return payload.data.data;
     }
@@ -2186,11 +2005,8 @@ const extractCollection = (
     if (
         typeof payload === "object" &&
         payload.data &&
-        typeof payload.data ===
-        "object" &&
-        Array.isArray(
-            payload.data.items
-        )
+        typeof payload.data === "object" &&
+        Array.isArray(payload.data.items)
     ) {
         return payload.data.items;
     }
@@ -2206,37 +2022,58 @@ const extractCollection = (
     return [];
 };
 
-/**
- * Extract an ID.
- */
+const normalizeCollectionResponse = (
+    result,
+    mapper = null
+) => {
+    const collection =
+        extractCollection(
+            result
+        );
+
+    return {
+        ...result,
+
+        data:
+            typeof mapper === "function"
+                ? collection.map(mapper)
+                : collection,
+    };
+};
+
+const normalizeResourceResponse = (
+    result,
+    mapper = null
+) => {
+    const resource =
+        extractResource(
+            result
+        );
+
+    return {
+        ...result,
+
+        data:
+            resource && typeof mapper === "function"
+                ? mapper(resource)
+                : resource,
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
+| ID / Relationship Helpers
+|--------------------------------------------------------------------------
+*/
+
 const getId = (
     value
 ) => {
-    if (
-        value === null ||
-        value === undefined
-    ) {
-        return null;
-    }
-
-    if (
-        typeof value === "object"
-    ) {
-        return (
-            value?.id ??
-            value?.value ??
-            value?.user_id ??
-            value?.user?.id ??
-            null
-        );
-    }
-
-    return value;
+    return normalizeEntityId(
+        value
+    );
 };
 
-/**
- * Extract customer/user ID.
- */
 const getCustomerUserId = (
     customer
 ) => {
@@ -2248,24 +2085,24 @@ const getCustomerUserId = (
     }
 
     if (
-        typeof customer !==
-        "object"
+        typeof customer !== "object"
     ) {
-        return customer;
+        return normalizeEntityId(
+            customer
+        );
     }
 
-    return (
-        customer?.user_id ??
-        customer?.user?.id ??
-        customer?.id ??
-        customer?.value ??
-        null
+    return normalizeEntityId(
+        firstDefined(
+            customer?.user_id,
+            customer?.customer_id,
+            customer?.user?.id,
+            customer?.id,
+            customer?.value
+        )
     );
 };
 
-/**
- * Extract tenant profile ID.
- */
 const getTenantId = (
     tenant
 ) => {
@@ -2277,108 +2114,98 @@ const getTenantId = (
     }
 
     if (
-        typeof tenant !==
-        "object"
+        typeof tenant !== "object"
     ) {
-        return tenant;
+        return normalizeEntityId(
+            tenant
+        );
     }
 
-    return (
-        tenant?.id ??
-        tenant?.tenant_id ??
-        null
+    return normalizeEntityId(
+        firstDefined(
+            tenant?.id,
+            tenant?.tenant_id,
+            tenant?.value
+        )
     );
 };
 
-/**
- * Extract tenant tenancies.
- */
 const extractTenantTenancies = (
     tenant
 ) => {
     if (
         !tenant ||
-        typeof tenant !==
-        "object"
+        typeof tenant !== "object"
     ) {
         return [];
     }
 
-    const embedded =
-        tenant?.tenancies ??
-        tenant?.active_tenancies ??
-        tenant?.activeTenancies ??
-        tenant?.tenancy ??
-        [];
+    const candidates = [
+        tenant?.tenancies,
+        tenant?.active_tenancies,
+        tenant?.activeTenancies,
+        tenant?.current_tenancies,
+        tenant?.currentTenancies,
+        tenant?.tenancy,
+    ];
 
-    if (!embedded) {
-        return [];
-    }
-
-    if (
-        Array.isArray(
-            embedded
-        )
-    ) {
-        return embedded;
-    }
-
-    if (
-        typeof embedded ===
-        "object"
-    ) {
-        if (
-            Array.isArray(
-                embedded.data
-            )
-        ) {
-            return embedded.data;
+    for (const embedded of candidates) {
+        if (!embedded) {
+            continue;
         }
 
-        if (
-            Array.isArray(
-                embedded.items
-            )
-        ) {
-            return embedded.items;
+        if (Array.isArray(embedded)) {
+            return embedded;
         }
-    }
 
-    if (
-        typeof embedded ===
-        "object" &&
-        embedded.id !== undefined
-    ) {
-        return [embedded];
+        if (typeof embedded === "object") {
+            if (Array.isArray(embedded.data)) {
+                return embedded.data;
+            }
+
+            if (Array.isArray(embedded.items)) {
+                return embedded.items;
+            }
+
+            if (
+                embedded.id !== undefined &&
+                embedded.id !== null
+            ) {
+                return [embedded];
+            }
+        }
     }
 
     return [];
 };
 
-/**
- * Remove duplicate resources by ID.
- */
 const uniqueById = (
     items = []
 ) => {
-    const map =
-        new Map();
+    const map = new Map();
 
     items.forEach(
         (item) => {
             if (
                 !item ||
-                typeof item !==
-                "object"
+                typeof item !== "object"
             ) {
                 return;
             }
 
             const id =
-                item?.id ??
-                item?.value ??
-                item?.tenancy_id ??
-                null;
+                normalizeEntityId(
+                    firstDefined(
+                        item?.id,
+                        item?.value,
+                        item?.tenancy_id,
+                        item?.booking_id,
+                        item?.tenant_id,
+                        item?.property_id,
+                        item?.apartment_id,
+                        item?.unit_id
+                    )
+                );
 
             if (
                 id !== null &&
@@ -2397,9 +2224,6 @@ const uniqueById = (
     );
 };
 
-/**
- * Standard validation response.
- */
 const requiredIdResponse = (
     message
 ) => ({
@@ -2431,14 +2255,10 @@ const bookingService = {
     |--------------------------------------------------------------------------
     */
 
-    async getAll(
-        params = {}
-    ) {
+    async getAll(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.getAll(
-                    params
-                ),
+                bookingApi.getAll(params),
                 {
                     label:
                         "GET /bookings",
@@ -2449,9 +2269,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2459,9 +2277,7 @@ const bookingService = {
         };
     },
 
-    async getById(
-        id
-    ) {
+    async getById(id) {
         const normalizedId =
             getId(id);
 
@@ -2492,14 +2308,10 @@ const bookingService = {
         };
     },
 
-    async create(
-        payload = {}
-    ) {
+    async create(payload = {}) {
         const result =
             await handleRequest(
-                bookingApi.create(
-                    payload
-                ),
+                bookingApi.create(payload),
                 {
                     label:
                         "POST /bookings",
@@ -2516,20 +2328,6 @@ const bookingService = {
         };
     },
 
-    /**
-     * Update an existing booking.
-     *
-     * The backend owns:
-     *
-     * - payment_status
-     * - total_amount
-     * - balance
-     * - financial flags
-     * - workflow status
-     * - workflow timestamps
-     *
-     * Therefore those fields are removed before the request.
-     */
     async update(
         id,
         payload = {}
@@ -2548,9 +2346,7 @@ const bookingService = {
                 payload
             );
 
-        if (
-            DEBUG_BOOKING_SERVICE
-        ) {
+        if (DEBUG_BOOKING_SERVICE) {
             console.debug(
                 `[BookingService] PUT /bookings/${normalizedId} → PAYLOAD`,
                 {
@@ -2559,24 +2355,6 @@ const bookingService = {
 
                     payload:
                         sanitizedPayload,
-
-                    paymentStatusSent:
-                        Object.prototype.hasOwnProperty.call(
-                            sanitizedPayload,
-                            "payment_status"
-                        ),
-
-                    totalAmountSent:
-                        Object.prototype.hasOwnProperty.call(
-                            sanitizedPayload,
-                            "total_amount"
-                        ),
-
-                    amountPaidSent:
-                        Object.prototype.hasOwnProperty.call(
-                            sanitizedPayload,
-                            "amount_paid"
-                        ),
                 }
             );
         }
@@ -2603,9 +2381,7 @@ const bookingService = {
         };
     },
 
-    async delete(
-        id
-    ) {
+    async delete(id) {
         const normalizedId =
             getId(id);
 
@@ -2637,8 +2413,7 @@ const bookingService = {
         params = {}
     ) {
         const normalizedSearch =
-            typeof searchTerm ===
-                "string"
+            typeof searchTerm === "string"
                 ? searchTerm.trim()
                 : "";
 
@@ -2646,9 +2421,7 @@ const bookingService = {
             ...params,
         };
 
-        if (
-            normalizedSearch
-        ) {
+        if (normalizedSearch) {
             requestParams.search =
                 normalizedSearch;
         } else {
@@ -2670,9 +2443,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2686,13 +2457,9 @@ const bookingService = {
     |--------------------------------------------------------------------------
     */
 
-    async statistics(
-        params = {}
-    ) {
+    async statistics(params = {}) {
         return handleRequest(
-            bookingApi.statistics(
-                params
-            ),
+            bookingApi.statistics(params),
             {
                 label:
                     "GET /bookings/statistics",
@@ -2706,13 +2473,9 @@ const bookingService = {
     |--------------------------------------------------------------------------
     */
 
-    async reports(
-        params = {}
-    ) {
+    async reports(params = {}) {
         return handleRequest(
-            bookingApi.reports(
-                params
-            ),
+            bookingApi.reports(params),
             {
                 label:
                     "GET /bookings/reports",
@@ -2726,14 +2489,10 @@ const bookingService = {
     |--------------------------------------------------------------------------
     */
 
-    async pending(
-        params = {}
-    ) {
+    async pending(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.pending(
-                    params
-                ),
+                bookingApi.pending(params),
                 {
                     label:
                         "GET /bookings/pending",
@@ -2744,9 +2503,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2754,14 +2511,10 @@ const bookingService = {
         };
     },
 
-    async confirmed(
-        params = {}
-    ) {
+    async confirmed(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.confirmed(
-                    params
-                ),
+                bookingApi.confirmed(params),
                 {
                     label:
                         "GET /bookings/confirmed",
@@ -2772,9 +2525,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2782,14 +2533,10 @@ const bookingService = {
         };
     },
 
-    async active(
-        params = {}
-    ) {
+    async active(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.active(
-                    params
-                ),
+                bookingApi.active(params),
                 {
                     label:
                         "GET /bookings/active",
@@ -2800,9 +2547,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2810,14 +2555,10 @@ const bookingService = {
         };
     },
 
-    async completed(
-        params = {}
-    ) {
+    async completed(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.completed(
-                    params
-                ),
+                bookingApi.completed(params),
                 {
                     label:
                         "GET /bookings/completed",
@@ -2828,9 +2569,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2838,14 +2577,10 @@ const bookingService = {
         };
     },
 
-    async cancelled(
-        params = {}
-    ) {
+    async cancelled(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.cancelled(
-                    params
-                ),
+                bookingApi.cancelled(params),
                 {
                     label:
                         "GET /bookings/cancelled",
@@ -2856,9 +2591,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2866,14 +2599,10 @@ const bookingService = {
         };
     },
 
-    async expired(
-        params = {}
-    ) {
+    async expired(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.expired(
-                    params
-                ),
+                bookingApi.expired(params),
                 {
                     label:
                         "GET /bookings/expired",
@@ -2884,9 +2613,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2894,14 +2621,10 @@ const bookingService = {
         };
     },
 
-    async rejected(
-        params = {}
-    ) {
+    async rejected(params = {}) {
         const result =
             await handleRequest(
-                bookingApi.rejected(
-                    params
-                ),
+                bookingApi.rejected(params),
                 {
                     label:
                         "GET /bookings/rejected",
@@ -2912,9 +2635,7 @@ const bookingService = {
             ...result,
 
             data:
-                Array.isArray(
-                    result?.data
-                )
+                Array.isArray(result?.data)
                     ? normalizeBookingCollection(
                         result.data
                     )
@@ -2926,17 +2647,79 @@ const bookingService = {
     |--------------------------------------------------------------------------
     | Booking Workflow
     |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | confirmBooking() is the canonical public method.
+    | confirm() is retained as a backwards-compatible alias.
+    |
+    |--------------------------------------------------------------------------
     */
 
-    async confirm(
-        id
-    ) {
+    async confirmBooking(id) {
         const normalizedId =
             getId(id);
 
         if (!normalizedId) {
             return requiredIdResponse(
-                "Booking ID is required."
+                "Booking ID is required to confirm the booking."
+            );
+        }
+
+        /*
+         * Protect against accidental:
+         *
+         * /bookings/[object Object]/confirm
+         */
+        if (
+            String(normalizedId) ===
+            "[object Object]"
+        ) {
+            return requiredIdResponse(
+                "A valid booking ID is required to confirm the booking."
+            );
+        }
+
+        if (
+            typeof bookingApi.confirm !==
+            "function"
+        ) {
+            console.error(
+                "[BookingService] bookingApi.confirm is not available."
+            );
+
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking confirmation API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    confirm: [
+                        "bookingApi.confirm is not defined.",
+                    ],
+                },
+            };
+        }
+
+        if (DEBUG_BOOKING_SERVICE) {
+            console.debug(
+                "[BookingService] Confirm booking",
+                {
+                    bookingId:
+                        normalizedId,
+
+                    endpoint:
+                        `/bookings/${normalizedId}/confirm`,
+                }
             );
         }
 
@@ -2961,9 +2744,18 @@ const bookingService = {
         };
     },
 
-    async approve(
-        id
-    ) {
+    /**
+     * Backward-compatible alias.
+     *
+     * Existing code can continue calling:
+     *
+     * bookingService.confirm(id)
+     */
+    async confirm(id) {
+        return this.confirmBooking(id);
+    },
+
+    async approve(id) {
         const normalizedId =
             getId(id);
 
@@ -2971,6 +2763,32 @@ const bookingService = {
             return requiredIdResponse(
                 "Booking ID is required."
             );
+        }
+
+        if (
+            typeof bookingApi.approve !==
+            "function"
+        ) {
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking approval API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    approve: [
+                        "bookingApi.approve is not defined.",
+                    ],
+                },
+            };
         }
 
         const result =
@@ -2994,9 +2812,7 @@ const bookingService = {
         };
     },
 
-    async checkIn(
-        id
-    ) {
+    async checkIn(id) {
         const normalizedId =
             getId(id);
 
@@ -3004,6 +2820,32 @@ const bookingService = {
             return requiredIdResponse(
                 "Booking ID is required."
             );
+        }
+
+        if (
+            typeof bookingApi.checkIn !==
+            "function"
+        ) {
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking check-in API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    checkIn: [
+                        "bookingApi.checkIn is not defined.",
+                    ],
+                },
+            };
         }
 
         const result =
@@ -3027,9 +2869,7 @@ const bookingService = {
         };
     },
 
-    async complete(
-        id
-    ) {
+    async complete(id) {
         const normalizedId =
             getId(id);
 
@@ -3037,6 +2877,32 @@ const bookingService = {
             return requiredIdResponse(
                 "Booking ID is required."
             );
+        }
+
+        if (
+            typeof bookingApi.complete !==
+            "function"
+        ) {
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking completion API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    complete: [
+                        "bookingApi.complete is not defined.",
+                    ],
+                },
+            };
         }
 
         const result =
@@ -3071,6 +2937,32 @@ const bookingService = {
             return requiredIdResponse(
                 "Booking ID is required."
             );
+        }
+
+        if (
+            typeof bookingApi.cancel !==
+            "function"
+        ) {
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking cancellation API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    cancel: [
+                        "bookingApi.cancel is not defined.",
+                    ],
+                },
+            };
         }
 
         const result =
@@ -3109,8 +3001,7 @@ const bookingService = {
         }
 
         const normalizedReason =
-            typeof rejectionReason ===
-                "string"
+            typeof rejectionReason === "string"
                 ? rejectionReason.trim()
                 : "";
 
@@ -3132,6 +3023,32 @@ const bookingService = {
                 errors: {
                     rejection_reason: [
                         "The rejection reason field is required.",
+                    ],
+                },
+            };
+        }
+
+        if (
+            typeof bookingApi.reject !==
+            "function"
+        ) {
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking rejection API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    reject: [
+                        "bookingApi.reject is not defined.",
                     ],
                 },
             };
@@ -3159,9 +3076,7 @@ const bookingService = {
         };
     },
 
-    async expire(
-        id
-    ) {
+    async expire(id) {
         const normalizedId =
             getId(id);
 
@@ -3169,6 +3084,32 @@ const bookingService = {
             return requiredIdResponse(
                 "Booking ID is required."
             );
+        }
+
+        if (
+            typeof bookingApi.expire !==
+            "function"
+        ) {
+            return {
+                success: false,
+
+                code: 500,
+
+                message:
+                    "The booking expiry API method is not available.",
+
+                data: null,
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    expire: [
+                        "bookingApi.expire is not defined.",
+                    ],
+                },
+            };
         }
 
         const result =
@@ -3201,15 +3142,64 @@ const bookingService = {
     async availableUnits(
         params = {}
     ) {
-        return handleRequest(
-            bookingApi.availableUnits(
+        const normalized =
+            normalizeAvailableUnitsParams(
                 params
-            ),
-            {
-                label:
-                    "GET /bookings/available-units",
+            );
+
+        if (!normalized.valid) {
+            if (DEBUG_BOOKING_SERVICE) {
+                console.warn(
+                    "[BookingService] Available units request skipped",
+                    {
+                        reason:
+                            normalized.message,
+                        params,
+                    }
+                );
             }
-        );
+
+            return {
+                success: false,
+
+                code: 422,
+
+                message:
+                    normalized.message,
+
+                data: [],
+
+                meta: null,
+
+                links: null,
+
+                errors: {
+                    availability: [
+                        normalized.message,
+                    ],
+                },
+            };
+        }
+
+        const result =
+            await handleRequest(
+                bookingApi.availableUnits(
+                    normalized.params
+                ),
+                {
+                    label:
+                        "GET /bookings/available-units",
+                }
+            );
+
+        return {
+            ...result,
+
+            data:
+                extractCollection(
+                    result
+                ),
+        };
     },
 
     /*
@@ -3223,79 +3213,61 @@ const bookingService = {
     ) {
         let normalizedSearch = "";
 
-        if (
-            typeof search ===
-            "string"
-        ) {
+        if (typeof search === "string") {
             normalizedSearch =
                 search.trim();
         } else if (
             search &&
-            typeof search ===
-            "object"
+            typeof search === "object"
         ) {
-            if (
-                typeof search.search ===
-                "string"
-            ) {
-                normalizedSearch =
-                    search.search.trim();
-            } else if (
-                search.search &&
-                typeof search.search ===
-                "object"
-            ) {
-                normalizedSearch =
-                    typeof search.search.search ===
-                        "string"
-                        ? search.search.search.trim()
-                        : "";
-            }
+            normalizedSearch =
+                String(
+                    firstDefined(
+                        search.search,
+                        search.q
+                    ) ?? ""
+                ).trim();
         }
 
-        if (!normalizedSearch) {
-            return handleRequest(
-                bookingApi.availableUsers(),
+        const result =
+            await handleRequest(
+                normalizedSearch
+                    ? bookingApi.availableUsers({
+                        search:
+                            normalizedSearch,
+                    })
+                    : bookingApi.availableUsers(),
                 {
                     label:
                         "GET /bookings/available-users",
                 }
             );
-        }
 
-        return handleRequest(
-            bookingApi.availableUsers({
-                search:
-                    normalizedSearch,
-            }),
-            {
-                label:
-                    "GET /bookings/available-users",
-            }
+        return normalizeCollectionResponse(
+            result
         );
     },
 
     async users(
         params = {}
     ) {
-        return handleRequest(
-            bookingApi.users(
-                params
-            ),
-            {
-                label:
-                    "GET /users",
-            }
+        const result =
+            await handleRequest(
+                bookingApi.users(params),
+                {
+                    label:
+                        "GET /users",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
         );
     },
 
-    async getUser(
-        id
-    ) {
+    async getUser(id) {
         const normalizedId =
-            getCustomerUserId(
-                id
-            );
+            getCustomerUserId(id);
 
         if (!normalizedId) {
             return requiredIdResponse(
@@ -3303,14 +3275,19 @@ const bookingService = {
             );
         }
 
-        return handleRequest(
-            bookingApi.getUser(
-                normalizedId
-            ),
-            {
-                label:
-                    `GET /users/${normalizedId}`,
-            }
+        const result =
+            await handleRequest(
+                bookingApi.getUser(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /users/${normalizedId}`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
         );
     },
 
@@ -3323,20 +3300,47 @@ const bookingService = {
     async tenants(
         params = {}
     ) {
-        return handleRequest(
-            bookingApi.tenants(
-                params
-            ),
-            {
-                label:
-                    "GET /tenants",
-            }
+        const normalizedParams = {
+            ...params,
+        };
+
+        if (
+            normalizedParams.user_id !==
+            undefined
+        ) {
+            normalizedParams.user_id =
+                normalizeEntityId(
+                    normalizedParams.user_id
+                );
+        }
+
+        if (
+            normalizedParams.userId !==
+            undefined
+        ) {
+            normalizedParams.userId =
+                normalizeEntityId(
+                    normalizedParams.userId
+                );
+        }
+
+        const result =
+            await handleRequest(
+                bookingApi.tenants(
+                    normalizedParams
+                ),
+                {
+                    label:
+                        "GET /tenants",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
         );
     },
 
-    async getTenant(
-        id
-    ) {
+    async getTenant(id) {
         const normalizedId =
             getTenantId(id);
 
@@ -3346,14 +3350,19 @@ const bookingService = {
             );
         }
 
-        return handleRequest(
-            bookingApi.getTenant(
-                normalizedId
-            ),
-            {
-                label:
-                    `GET /tenants/${normalizedId}`,
-            }
+        const result =
+            await handleRequest(
+                bookingApi.getTenant(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /tenants/${normalizedId}`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
         );
     },
 
@@ -3382,27 +3391,27 @@ const bookingService = {
                 }
             );
 
-        return {
-            ...result,
-
-            data:
-                extractResource(
-                    result
-                ),
-        };
+        return normalizeResourceResponse(
+            result
+        );
     },
 
     async availableTenantUsers(
         params = {}
     ) {
-        return handleRequest(
-            bookingApi.availableTenantUsers(
-                params
-            ),
-            {
-                label:
-                    "GET /tenants/available-users",
-            }
+        const result =
+            await handleRequest(
+                bookingApi.availableTenantUsers(
+                    params
+                ),
+                {
+                    label:
+                        "GET /tenants/available-users",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
         );
     },
 
@@ -3415,20 +3424,50 @@ const bookingService = {
     async tenancies(
         params = {}
     ) {
-        return handleRequest(
-            bookingApi.tenancies(
-                params
-            ),
-            {
-                label:
-                    "GET /tenancies",
+        const normalizedParams = {
+            ...params,
+        };
+
+        [
+            "tenant_id",
+            "tenantId",
+            "property_id",
+            "propertyId",
+            "apartment_id",
+            "apartmentId",
+            "unit_id",
+            "unitId",
+        ].forEach(
+            (field) => {
+                if (
+                    normalizedParams[field] !==
+                    undefined
+                ) {
+                    normalizedParams[field] =
+                        normalizeEntityId(
+                            normalizedParams[field]
+                        );
+                }
             }
+        );
+
+        const result =
+            await handleRequest(
+                bookingApi.tenancies(
+                    normalizedParams
+                ),
+                {
+                    label:
+                        "GET /tenancies",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
         );
     },
 
-    async getTenancy(
-        id
-    ) {
+    async getTenancy(id) {
         const normalizedId =
             getId(id);
 
@@ -3438,14 +3477,19 @@ const bookingService = {
             );
         }
 
-        return handleRequest(
-            bookingApi.getTenancy(
-                normalizedId
-            ),
-            {
-                label:
-                    `GET /tenancies/${normalizedId}`,
-            }
+        const result =
+            await handleRequest(
+                bookingApi.getTenancy(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /tenancies/${normalizedId}`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
         );
     },
 
@@ -3464,16 +3508,30 @@ const bookingService = {
             );
         }
 
-        return handleRequest(
-            bookingApi.getTenanciesByTenant(
-                normalizedId,
-                params
+        const result =
+            await handleRequest(
+                bookingApi.getTenanciesByTenant(
+                    normalizedId,
+                    params
+                ),
+                {
+                    label:
+                        `GET /tenants/${normalizedId}/tenancies`,
+                }
+            );
+
+        return {
+            ...normalizeCollectionResponse(
+                result
             ),
-            {
-                label:
-                    `GET /tenants/${normalizedId}/tenancies`,
-            }
-        );
+
+            data:
+                uniqueById(
+                    extractCollection(
+                        result
+                    )
+                ),
+        };
     },
 
     async getActiveTenanciesByTenant(
@@ -3491,15 +3549,226 @@ const bookingService = {
             );
         }
 
-        return handleRequest(
-            bookingApi.getActiveTenanciesByTenant(
-                normalizedId,
-                params
+        const result =
+            await handleRequest(
+                bookingApi.getActiveTenanciesByTenant(
+                    normalizedId,
+                    params
+                ),
+                {
+                    label:
+                        `GET /tenants/${normalizedId}/active-tenancies`,
+                }
+            );
+
+        return {
+            ...normalizeCollectionResponse(
+                result
             ),
-            {
-                label:
-                    `GET /tenants/${normalizedId}/active-tenancies`,
+
+            data:
+                uniqueById(
+                    extractCollection(
+                        result
+                    )
+                ),
+        };
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Properties
+    |--------------------------------------------------------------------------
+    */
+
+    async properties(
+        params = {}
+    ) {
+        const result =
+            await handleRequest(
+                bookingApi.properties(params),
+                {
+                    label:
+                        "GET /properties",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
+        );
+    },
+
+    async getProperty(id) {
+        const normalizedId =
+            getId(id);
+
+        if (!normalizedId) {
+            return requiredIdResponse(
+                "Property ID is required."
+            );
+        }
+
+        const result =
+            await handleRequest(
+                bookingApi.getProperty(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /properties/${normalizedId}`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Apartments
+    |--------------------------------------------------------------------------
+    */
+
+    async apartments(
+        params = {}
+    ) {
+        const normalizedParams = {
+            ...params,
+        };
+
+        [
+            "property_id",
+            "propertyId",
+        ].forEach(
+            (field) => {
+                if (
+                    normalizedParams[field] !==
+                    undefined
+                ) {
+                    normalizedParams[field] =
+                        normalizeEntityId(
+                            normalizedParams[field]
+                        );
+                }
             }
+        );
+
+        const result =
+            await handleRequest(
+                bookingApi.apartments(
+                    normalizedParams
+                ),
+                {
+                    label:
+                        "GET /apartments",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
+        );
+    },
+
+    async getApartment(id) {
+        const normalizedId =
+            getId(id);
+
+        if (!normalizedId) {
+            return requiredIdResponse(
+                "Apartment ID is required."
+            );
+        }
+
+        const result =
+            await handleRequest(
+                bookingApi.getApartment(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /apartments/${normalizedId}`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
+        );
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Units
+    |--------------------------------------------------------------------------
+    */
+
+    async units(
+        params = {}
+    ) {
+        const normalizedParams = {
+            ...params,
+        };
+
+        [
+            "property_id",
+            "propertyId",
+            "apartment_id",
+            "apartmentId",
+            "unit_id",
+            "unitId",
+        ].forEach(
+            (field) => {
+                if (
+                    normalizedParams[field] !==
+                    undefined
+                ) {
+                    normalizedParams[field] =
+                        normalizeEntityId(
+                            normalizedParams[field]
+                        );
+                }
+            }
+        );
+
+        const result =
+            await handleRequest(
+                bookingApi.units(
+                    normalizedParams
+                ),
+                {
+                    label:
+                        "GET /units",
+                }
+            );
+
+        return normalizeCollectionResponse(
+            result
+        );
+    },
+
+    async getUnit(id) {
+        const normalizedId =
+            getId(id);
+
+        if (!normalizedId) {
+            return requiredIdResponse(
+                "Unit ID is required."
+            );
+        }
+
+        const result =
+            await handleRequest(
+                bookingApi.getUnit(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /units/${normalizedId}`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
         );
     },
 
@@ -3526,21 +3795,13 @@ const bookingService = {
 
         try {
             const customerResult =
-                await handleRequest(
-                    bookingApi.getUser(
-                        normalizedCustomerId
-                    ),
-                    {
-                        label:
-                            `GET /users/${normalizedCustomerId}`,
-                    }
+                await this.getUser(
+                    normalizedCustomerId
                 );
 
             const customer =
                 customerResult?.success
-                    ? extractResource(
-                        customerResult
-                    )
+                    ? customerResult?.data ?? null
                     : null;
 
             const tenantResult =
@@ -3548,9 +3809,7 @@ const bookingService = {
                     normalizedCustomerId
                 );
 
-            if (
-                !tenantResult?.success
-            ) {
+            if (!tenantResult?.success) {
                 return {
                     success: false,
 
@@ -3629,19 +3888,6 @@ const bookingService = {
                     links: null,
 
                     errors: null,
-
-                    response: {
-                        customerResponse:
-                            customerResult?.response ??
-                            null,
-
-                        tenantResponse:
-                            tenantResult?.response ??
-                            null,
-
-                        tenancyResponse:
-                            null,
-                    },
                 };
             }
 
@@ -3668,8 +3914,10 @@ const bookingService = {
                         tenant,
 
                         tenancies:
-                            extractTenantTenancies(
-                                tenant
+                            uniqueById(
+                                extractTenantTenancies(
+                                    tenant
+                                )
                             ),
                     },
 
@@ -3678,26 +3926,17 @@ const bookingService = {
                     links: null,
 
                     errors: null,
-
-                    response: {
-                        customerResponse:
-                            customerResult?.response ??
-                            null,
-
-                        tenantResponse:
-                            tenantResult?.response ??
-                            null,
-
-                        tenancyResponse:
-                            null,
-                    },
                 };
             }
 
             const tenancyResult =
                 await this.getTenanciesByTenant(
                     tenantId,
-                    params
+                    {
+                        ...params,
+                        tenant_id:
+                            tenantId,
+                    }
                 );
 
             const apiTenancies =
@@ -3717,54 +3956,6 @@ const bookingService = {
                     ...apiTenancies,
                     ...embeddedTenancies,
                 ]);
-
-            if (
-                !tenancyResult?.success
-            ) {
-                return {
-                    success: true,
-
-                    code:
-                        tenancyResult?.code ??
-                        200,
-
-                    message:
-                        "Tenant profile loaded, but tenancy information could not be loaded.",
-
-                    data: {
-                        customerId:
-                            normalizedCustomerId,
-
-                        customer,
-
-                        tenant,
-
-                        tenancies,
-                    },
-
-                    meta: null,
-
-                    links: null,
-
-                    errors:
-                        tenancyResult?.errors ??
-                        null,
-
-                    response: {
-                        customerResponse:
-                            customerResult?.response ??
-                            null,
-
-                        tenantResponse:
-                            tenantResult?.response ??
-                            null,
-
-                        tenancyResponse:
-                            tenancyResult?.response ??
-                            null,
-                    },
-                };
-            }
 
             return {
                 success: true,
@@ -3813,9 +4004,7 @@ const bookingService = {
             };
         } catch (error) {
             const normalized =
-                normalizeError(
-                    error
-                );
+                normalizeError(error);
 
             return {
                 success: false,
@@ -3868,14 +4057,19 @@ const bookingService = {
             );
         }
 
-        return handleRequest(
-            bookingApi.resolveCustomer(
-                normalizedId
-            ),
-            {
-                label:
-                    `GET /users/${normalizedId}/resolve`,
-            }
+        const result =
+            await handleRequest(
+                bookingApi.resolveCustomer(
+                    normalizedId
+                ),
+                {
+                    label:
+                        `GET /users/${normalizedId}/resolve`,
+                }
+            );
+
+        return normalizeResourceResponse(
+            result
         );
     },
 
@@ -3904,9 +4098,7 @@ const bookingService = {
     |--------------------------------------------------------------------------
     */
 
-    async restore(
-        id
-    ) {
+    async restore(id) {
         const normalizedId =
             getId(id);
 
@@ -3943,9 +4135,7 @@ const bookingService = {
     |--------------------------------------------------------------------------
     */
 
-    async forceDelete(
-        id
-    ) {
+    async forceDelete(id) {
         const normalizedId =
             getId(id);
 
@@ -3997,8 +4187,12 @@ export {
 
     sanitizeBookingUpdatePayload,
 
+    normalizeAvailableUnitsParams,
+
     extractResource,
     extractCollection,
+    normalizeCollectionResponse,
+    normalizeResourceResponse,
 
     getId,
     getCustomerUserId,

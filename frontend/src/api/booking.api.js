@@ -257,8 +257,8 @@ const firstDefined = (...values) => {
 */
 
 /**
- * Normalize a Laravel collection/resource response into
- * a predictable array.
+ * Normalize a Laravel collection/resource response
+ * into a predictable array.
  */
 const normalizeCollection = (response) => {
     let payload =
@@ -346,8 +346,8 @@ const normalizeResource = (response) => {
 };
 
 /**
- * Get a normalized collection response without booking-specific
- * financial normalization.
+ * Get a normalized collection response without
+ * booking-specific financial normalization.
  */
 const getResourceCollection = async (
     url,
@@ -367,8 +367,10 @@ const getResourceCollection = async (
 
     return {
         ...response,
+
         data: {
             ...(response?.data ?? {}),
+
             data: normalizeCollection(response),
         },
     };
@@ -388,8 +390,10 @@ const getResource = async (
 
     return {
         ...response,
+
         data: {
             ...(response?.data ?? {}),
+
             data: normalizeResource(response),
         },
     };
@@ -662,45 +666,41 @@ const normalizeBookingFinancials = (
     );
 
     return {
-        rent_amount: normalizeAmount(
-            rentRaw
-        ),
+        rent_amount:
+            normalizeAmount(rentRaw),
 
-        deposit_amount: normalizeAmount(
-            depositRaw
-        ),
+        deposit_amount:
+            normalizeAmount(depositRaw),
 
-        service_charge: normalizeAmount(
-            serviceChargeRaw
-        ),
+        service_charge:
+            normalizeAmount(
+                serviceChargeRaw
+            ),
 
-        booking_fee: normalizeAmount(
-            bookingFeeRaw
-        ),
+        booking_fee:
+            normalizeAmount(bookingFeeRaw),
 
-        discount_amount: normalizeAmount(
-            discountRaw
-        ),
+        discount_amount:
+            normalizeAmount(discountRaw),
 
-        total_amount: normalizeAmount(
-            totalRaw
-        ),
+        total_amount:
+            normalizeAmount(totalRaw),
 
-        amount_paid: normalizeAmount(
-            amountPaidRaw
-        ),
+        amount_paid:
+            normalizeAmount(amountPaidRaw),
 
-        balance: normalizeAmount(
-            balanceRaw
-        ),
+        balance:
+            normalizeAmount(balanceRaw),
 
-        is_fully_paid: normalizeBoolean(
-            fullyPaidRaw
-        ),
+        is_fully_paid:
+            normalizeBoolean(
+                fullyPaidRaw
+            ),
 
-        is_partially_paid: normalizeBoolean(
-            partiallyPaidRaw
-        ),
+        is_partially_paid:
+            normalizeBoolean(
+                partiallyPaidRaw
+            ),
 
         has_balance:
             normalizeBoolean(
@@ -835,11 +835,28 @@ const getBookingCollection = async (
 
 /*
 |--------------------------------------------------------------------------
-| Generic Booking Action
+| Generic Booking Workflow Action
 |--------------------------------------------------------------------------
 */
 
-const postBookingAction = (
+/**
+ * Execute a booking workflow action.
+ *
+ * Backend:
+ *
+ * POST /api/bookings/{booking}/{action}
+ *
+ * Supported actions:
+ *
+ * - confirm
+ * - approve
+ * - cancel
+ * - reject
+ * - check-in
+ * - complete
+ * - expire
+ */
+const postBookingAction = async (
     action,
     id,
     payload = {},
@@ -849,23 +866,82 @@ const postBookingAction = (
         normalizeId(id);
 
     if (!normalizedId) {
-        return Promise.reject(
-            new Error(
-                "A valid booking ID is required."
-            )
+        throw new Error(
+            "A valid booking ID is required."
+        );
+    }
+
+    const normalizedAction =
+        String(action ?? "")
+            .trim()
+            .replace(/^\/+|\/+$/g, "");
+
+    if (!normalizedAction) {
+        throw new Error(
+            "A valid booking action is required."
         );
     }
 
     const url =
         `${BOOKING_BASE_URL}/${encodeURIComponent(
             normalizedId
-        )}/${action}`;
+        )}/${normalizedAction}`;
 
-    return axios.post(
+    const response = await axios.post(
         url,
-        payload,
+        payload ?? {},
         config
     );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Normalize workflow response
+    |--------------------------------------------------------------------------
+    |
+    | This allows the frontend to consistently access:
+    |
+    | response.data.data
+    |
+    | when the backend returns the updated booking.
+    |
+    */
+
+    const booking =
+        normalizeResource(response);
+
+    if (booking) {
+        return {
+            ...response,
+
+            data: {
+                ...(response?.data ?? {}),
+
+                data:
+                    normalizeBooking(
+                        booking
+                    ),
+            },
+        };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Some workflow endpoints may return a successful response
+    | without the complete booking resource.
+    |--------------------------------------------------------------------------
+    */
+
+    return {
+        ...response,
+
+        data: {
+            ...(response?.data ?? {}),
+
+            data:
+                response?.data?.data ??
+                null,
+        },
+    };
 };
 
 /*
@@ -1170,6 +1246,24 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Get units available for booking.
+     *
+     * Backend endpoint:
+     *
+     * GET /api/bookings/available-units
+     *
+     * Required:
+     * - start_date
+     * - end_date
+     *
+     * Optional:
+     * - property_id
+     * - apartment_id
+     * - booking_id
+     *
+     * The backend does NOT accept unit_id here.
+     */
     availableUnits: (
         params = {},
         config = {}
@@ -1181,11 +1275,17 @@ const bookingApi = {
                 ? params
                 : {};
 
-        /*
-        |--------------------------------------------------------------------------
-        | Resolve IDs
-        |--------------------------------------------------------------------------
-        */
+        const startDate =
+            firstDefined(
+                source.start_date,
+                source.startDate
+            );
+
+        const endDate =
+            firstDefined(
+                source.end_date,
+                source.endDate
+            );
 
         const propertyId =
             normalizeIntegerId(
@@ -1205,64 +1305,33 @@ const bookingApi = {
                 )
             );
 
-        const unitId =
+        const bookingId =
             normalizeIntegerId(
                 firstDefined(
-                    source.unit_id,
-                    source.unitId,
-                    source.unit
+                    source.booking_id,
+                    source.bookingId,
+                    source.booking
                 )
             );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Build final parameters
-        |--------------------------------------------------------------------------
-        */
-
         const finalParams = {
-            ...source,
+            start_date: startDate,
+            end_date: endDate,
         };
-
-        /*
-        |--------------------------------------------------------------------------
-        | Remove alternate frontend parameter names
-        |--------------------------------------------------------------------------
-        */
-
-        delete finalParams.propertyId;
-        delete finalParams.apartmentId;
-        delete finalParams.unitId;
-
-        delete finalParams.property;
-        delete finalParams.apartment;
-        delete finalParams.unit;
-
-        /*
-        |--------------------------------------------------------------------------
-        | Add normalized API parameter names
-        |--------------------------------------------------------------------------
-        */
 
         if (propertyId) {
             finalParams.property_id =
                 propertyId;
-        } else {
-            delete finalParams.property_id;
         }
 
         if (apartmentId) {
             finalParams.apartment_id =
                 apartmentId;
-        } else {
-            delete finalParams.apartment_id;
         }
 
-        if (unitId) {
-            finalParams.unit_id =
-                unitId;
-        } else {
-            delete finalParams.unit_id;
+        if (bookingId) {
+            finalParams.booking_id =
+                bookingId;
         }
 
         const cleanedParams =
@@ -1270,11 +1339,21 @@ const bookingApi = {
                 finalParams
             );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Request
-        |--------------------------------------------------------------------------
-        */
+        if (!cleanedParams.start_date) {
+            return Promise.reject(
+                new Error(
+                    "A start date is required to fetch available units."
+                )
+            );
+        }
+
+        if (!cleanedParams.end_date) {
+            return Promise.reject(
+                new Error(
+                    "An end date is required to fetch available units."
+                )
+            );
+        }
 
         return axios.get(
             `${BOOKING_BASE_URL}/available-units`,
@@ -1512,8 +1591,25 @@ const bookingApi = {
     |--------------------------------------------------------------------------
     | BOOKING WORKFLOW
     |--------------------------------------------------------------------------
+    |
+    | Backend workflow routes:
+    |
+    | POST /api/bookings/{booking}/confirm
+    | POST /api/bookings/{booking}/approve
+    | POST /api/bookings/{booking}/cancel
+    | POST /api/bookings/{booking}/reject
+    | POST /api/bookings/{booking}/check-in
+    | POST /api/bookings/{booking}/complete
+    | POST /api/bookings/{booking}/expire
+    |
+    |--------------------------------------------------------------------------
     */
 
+    /**
+     * Confirm booking.
+     *
+     * POST /api/bookings/{booking}/confirm
+     */
     confirm: (
         id,
         config = {}
@@ -1525,6 +1621,11 @@ const bookingApi = {
             config
         ),
 
+    /**
+     * Approve booking.
+     *
+     * POST /api/bookings/{booking}/approve
+     */
     approve: (
         id,
         config = {}
@@ -1536,28 +1637,48 @@ const bookingApi = {
             config
         ),
 
+    /**
+     * Check in booking.
+     *
+     * POST /api/bookings/{booking}/check-in
+     */
     checkIn: (
         id,
+        payload = {},
         config = {}
     ) =>
         postBookingAction(
             "check-in",
             id,
-            {},
+            payload,
             config
         ),
 
+    /**
+     * Complete booking.
+     *
+     * POST /api/bookings/{booking}/complete
+     */
     complete: (
         id,
+        payload = {},
         config = {}
     ) =>
         postBookingAction(
             "complete",
             id,
-            {},
+            payload,
             config
         ),
 
+    /**
+     * Cancel booking.
+     *
+     * POST /api/bookings/{booking}/cancel
+     *
+     * The backend remains responsible for determining
+     * whether the current booking status can be cancelled.
+     */
     cancel: (
         id,
         payload = {},
@@ -1570,21 +1691,48 @@ const bookingApi = {
             config
         ),
 
+    /**
+     * Reject booking.
+     *
+     * POST /api/bookings/{booking}/reject
+     *
+     * Optional:
+     * rejection_reason
+     */
     reject: (
         id,
-        rejectionReason,
+        rejectionReason = "",
         config = {}
-    ) =>
-        postBookingAction(
+    ) => {
+        const reason =
+            typeof rejectionReason === "string"
+                ? rejectionReason.trim()
+                : rejectionReason;
+
+        const payload = {};
+
+        if (
+            reason !== undefined &&
+            reason !== null &&
+            reason !== ""
+        ) {
+            payload.rejection_reason =
+                reason;
+        }
+
+        return postBookingAction(
             "reject",
             id,
-            {
-                rejection_reason:
-                    rejectionReason,
-            },
+            payload,
             config
-        ),
+        );
+    },
 
+    /**
+     * Expire booking.
+     *
+     * POST /api/bookings/{booking}/expire
+     */
     expire: (
         id,
         config = {}
@@ -2097,9 +2245,6 @@ const bookingApi = {
             if (
                 tenancies.length === 0
             ) {
-                const tenancyUrl =
-                    TENANCY_BASE_URL;
-
                 const finalParams =
                     cleanNestedParams({
                         ...params,
@@ -2110,7 +2255,7 @@ const bookingApi = {
 
                 tenancyResponse =
                     await axios.get(
-                        tenancyUrl,
+                        TENANCY_BASE_URL,
                         {
                             ...config,
 
@@ -2159,3 +2304,4 @@ const bookingApi = {
 */
 
 export default bookingApi;
+
