@@ -32,6 +32,10 @@ import {
   TrendingDown,
   PieChart,
 
+  MapPinned,
+  Handshake,
+  Landmark,
+
   Wrench,
   ListChecks,
   CheckCircle,
@@ -45,7 +49,7 @@ import {
   Key,
   LogOut,
 
-  // OPTIONAL (for future feature assignment module)
+
   Link2,
 } from "lucide-react";
 
@@ -107,6 +111,18 @@ const superAdminSidebar = [
       { title: "Property Visits", path: "/super-admin/property-visits", icon: Eye },
       { title: "property-favorites", path: "/super-admin/property-favorites", icon: Heart },
       { title: "Property Analytics", path: "/super-admin/property-analytics", icon: BarChart3 },
+    ],
+  },
+
+  /* ---------------- PLOTS ---------------- */
+  {
+    title: "Plot Management",
+    icon: MapPinned,
+    children: [
+      { title: "Plots", path: "/super-admin/plots" },
+      { title: "Plot Sales", path: "/super-admin/plot-sales", icon: Handshake },
+      { title: "Plot Payments", path: "/super-admin/plot-payments", icon: Landmark },
+      { title: "Sales Reports", path: "/super-admin/plot-sales/reports", icon: FileBarChart },
     ],
   },
 
