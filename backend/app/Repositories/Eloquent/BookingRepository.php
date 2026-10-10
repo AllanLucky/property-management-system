@@ -29,16 +29,7 @@ class BookingRepository implements BookingRepositoryInterface
     protected const DEFAULT_PER_PAGE = 15;
 
     /**
-     * Booking statuses that do not block unit availability.
-     */
-    protected const NON_BLOCKING_STATUSES = [
-        Booking::STATUS_CANCELLED,
-        Booking::STATUS_REJECTED,
-        Booking::STATUS_EXPIRED,
-    ];
-
-    /**
-     * Booking statuses considered active/occupying a booking period.
+     * Booking statuses that actively block unit availability.
      */
     protected const ACTIVE_STATUSES = [
         Booking::STATUS_PENDING,
@@ -75,7 +66,17 @@ class BookingRepository implements BookingRepositoryInterface
      */
     protected function trashedQuery(): Builder
     {
-        return $this->query()->withTrashed();
+        return Booking::query()
+            ->withTrashed()
+            ->with([
+                'user',
+                'customer',
+                'tenant.user',
+                'property',
+                'apartment',
+                'unit',
+                'tenancy',
+            ]);
     }
 
     /**
@@ -90,7 +91,7 @@ class BookingRepository implements BookingRepositoryInterface
     }
 
     /**
-     * Normalize a nullable string.
+     * Normalize nullable string.
      */
     protected function normalizeString(?string $value): ?string
     {
@@ -118,16 +119,17 @@ class BookingRepository implements BookingRepositoryInterface
 
     /**
      * Resolve a model constant safely.
-     *
-     * This protects reports/statistics from breaking if a model constant
-     * is renamed or temporarily unavailable.
      */
     protected function modelConstant(
         string $constant,
         array $fallback = []
     ): array {
-        return defined(Booking::class . '::' . $constant)
-            ? constant(Booking::class . '::' . $constant)
+        return defined(
+            Booking::class . '::' . $constant
+        )
+            ? (array) constant(
+                Booking::class . '::' . $constant
+            )
             : $fallback;
     }
 
@@ -148,7 +150,10 @@ class BookingRepository implements BookingRepositoryInterface
 
         $query = $this->query();
 
-        $this->applyFilters($query, $filters);
+        $this->applyFilters(
+            $query,
+            $filters
+        );
 
         return $query
             ->latest('id')
@@ -237,7 +242,10 @@ class BookingRepository implements BookingRepositoryInterface
         }
 
         return $this->query()
-            ->where('booking_number', $bookingNumber)
+            ->where(
+                'booking_number',
+                $bookingNumber
+            )
             ->first();
     }
 
@@ -254,7 +262,10 @@ class BookingRepository implements BookingRepositoryInterface
         }
 
         return $this->query()
-            ->where('reference', $reference)
+            ->where(
+                'reference',
+                $reference
+            )
             ->first();
     }
 
@@ -312,38 +323,94 @@ class BookingRepository implements BookingRepositoryInterface
 
         $query->where(function (Builder $builder) use ($like) {
             $builder
-                ->where('booking_number', 'like', $like)
-                ->orWhere('reference', 'like', $like)
-                ->orWhere('first_name', 'like', $like)
-                ->orWhere('last_name', 'like', $like)
-                ->orWhere('email', 'like', $like)
-                ->orWhere('phone', 'like', $like)
+                ->where(
+                    'booking_number',
+                    'like',
+                    $like
+                )
+                ->orWhere(
+                    'reference',
+                    'like',
+                    $like
+                )
+                ->orWhere(
+                    'first_name',
+                    'like',
+                    $like
+                )
+                ->orWhere(
+                    'last_name',
+                    'like',
+                    $like
+                )
+                ->orWhere(
+                    'email',
+                    'like',
+                    $like
+                )
+                ->orWhere(
+                    'phone',
+                    'like',
+                    $like
+                )
 
                 /*
-                 * Customer user.
+                 * Customer.
                  */
                 ->orWhereHas(
                     'customer',
                     function (Builder $customer) use ($like) {
                         $customer
-                            ->where('first_name', 'like', $like)
-                            ->orWhere('last_name', 'like', $like)
-                            ->orWhere('email', 'like', $like)
-                            ->orWhere('phone', 'like', $like);
+                            ->where(
+                                'first_name',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'last_name',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'email',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'phone',
+                                'like',
+                                $like
+                            );
                     }
                 )
 
                 /*
-                 * Tenant user.
+                 * Tenant.
                  */
                 ->orWhereHas(
                     'tenant.user',
                     function (Builder $user) use ($like) {
                         $user
-                            ->where('first_name', 'like', $like)
-                            ->orWhere('last_name', 'like', $like)
-                            ->orWhere('email', 'like', $like)
-                            ->orWhere('phone', 'like', $like);
+                            ->where(
+                                'first_name',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'last_name',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'email',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'phone',
+                                'like',
+                                $like
+                            );
                     }
                 )
 
@@ -354,9 +421,21 @@ class BookingRepository implements BookingRepositoryInterface
                     'property',
                     function (Builder $property) use ($like) {
                         $property
-                            ->where('name', 'like', $like)
-                            ->orWhere('code', 'like', $like)
-                            ->orWhere('slug', 'like', $like);
+                            ->where(
+                                'name',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'code',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'slug',
+                                'like',
+                                $like
+                            );
                     }
                 )
 
@@ -367,9 +446,21 @@ class BookingRepository implements BookingRepositoryInterface
                     'apartment',
                     function (Builder $apartment) use ($like) {
                         $apartment
-                            ->where('name', 'like', $like)
-                            ->orWhere('code', 'like', $like)
-                            ->orWhere('slug', 'like', $like);
+                            ->where(
+                                'name',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'code',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'slug',
+                                'like',
+                                $like
+                            );
                     }
                 )
 
@@ -380,8 +471,16 @@ class BookingRepository implements BookingRepositoryInterface
                     'unit',
                     function (Builder $unit) use ($like) {
                         $unit
-                            ->where('unit_number', 'like', $like)
-                            ->orWhere('code', 'like', $like);
+                            ->where(
+                                'unit_number',
+                                'like',
+                                $like
+                            )
+                            ->orWhere(
+                                'code',
+                                'like',
+                                $like
+                            );
                     }
                 );
         });
@@ -404,7 +503,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('status', $status);
+            ->where(
+                'status',
+                $status
+            );
 
         $this->applyFilters(
             $query,
@@ -428,7 +530,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('payment_status', $paymentStatus);
+            ->where(
+                'payment_status',
+                $paymentStatus
+            );
 
         $this->applyFilters(
             $query,
@@ -591,6 +696,7 @@ class BookingRepository implements BookingRepositoryInterface
                 now()->toDateString()
             )
             ->orderBy('end_date')
+            ->orderBy('id')
             ->get();
     }
 
@@ -611,7 +717,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('unit_id', $unitId);
+            ->where(
+                'unit_id',
+                $unitId
+            );
 
         $this->applyFilters(
             $query,
@@ -635,7 +744,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('customer_id', $customerId);
+            ->where(
+                'customer_id',
+                $customerId
+            );
 
         $this->applyFilters(
             $query,
@@ -659,7 +771,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('tenant_id', $tenantId);
+            ->where(
+                'tenant_id',
+                $tenantId
+            );
 
         $this->applyFilters(
             $query,
@@ -683,7 +798,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('property_id', $propertyId);
+            ->where(
+                'property_id',
+                $propertyId
+            );
 
         $this->applyFilters(
             $query,
@@ -707,7 +825,10 @@ class BookingRepository implements BookingRepositoryInterface
         $perPage = $this->normalizePerPage($perPage);
 
         $query = $this->query()
-            ->where('apartment_id', $apartmentId);
+            ->where(
+                'apartment_id',
+                $apartmentId
+            );
 
         $this->applyFilters(
             $query,
@@ -728,6 +849,8 @@ class BookingRepository implements BookingRepositoryInterface
 
     /**
      * Determine whether a unit has an overlapping booking.
+     *
+     * Only pending, confirmed and approved bookings block availability.
      */
     public function hasOverlappingBooking(
         int $unitId,
@@ -736,12 +859,14 @@ class BookingRepository implements BookingRepositoryInterface
         ?int $exceptBookingId = null
     ): bool {
         $query = Booking::query()
-            ->where('unit_id', $unitId)
-            ->whereNotIn(
-                'status',
-                self::NON_BLOCKING_STATUSES
+            ->where(
+                'unit_id',
+                $unitId
             )
-            ->whereNull('deleted_at')
+            ->whereIn(
+                'status',
+                self::ACTIVE_STATUSES
+            )
             ->whereNotNull('start_date')
             ->whereNotNull('end_date')
             ->whereDate(
@@ -768,6 +893,8 @@ class BookingRepository implements BookingRepositoryInterface
 
     /**
      * Get units available for the requested period.
+     *
+     * The current booking can be excluded during an edit operation.
      */
     public function getAvailableUnits(
         string $startDate,
@@ -786,7 +913,7 @@ class BookingRepository implements BookingRepositoryInterface
             );
 
         /*
-         * Property filter.
+         * Property.
          */
         if ($propertyId !== null) {
             $query->whereHas(
@@ -801,7 +928,7 @@ class BookingRepository implements BookingRepositoryInterface
         }
 
         /*
-         * Apartment filter.
+         * Apartment.
          */
         if ($apartmentId !== null) {
             $query->where(
@@ -811,7 +938,7 @@ class BookingRepository implements BookingRepositoryInterface
         }
 
         /*
-         * Exclude units with overlapping active bookings.
+         * Exclude units with overlapping bookings.
          */
         $query->whereDoesntHave(
             'bookings',
@@ -821,9 +948,9 @@ class BookingRepository implements BookingRepositoryInterface
                 $exceptBookingId
             ) {
                 $booking
-                    ->whereNotIn(
+                    ->whereIn(
                         'status',
-                        self::NON_BLOCKING_STATUSES
+                        self::ACTIVE_STATUSES
                     )
                     ->whereNotNull('start_date')
                     ->whereNotNull('end_date')
@@ -995,7 +1122,7 @@ class BookingRepository implements BookingRepositoryInterface
         );
 
         /*
-         * Core financial totals.
+         * Core totals.
          */
         $totalBookings = (clone $query)->count();
 
@@ -1065,8 +1192,6 @@ class BookingRepository implements BookingRepositoryInterface
 
         /*
          * Booking type breakdown.
-         *
-         * Booking::TYPES is the canonical model constant.
          */
         $typeBreakdown = [];
 
@@ -1221,7 +1346,7 @@ class BookingRepository implements BookingRepositoryInterface
         );
 
         /*
-         * Total bookings.
+         * Total.
          */
         $total = (clone $query)->count();
 
@@ -1379,7 +1504,8 @@ class BookingRepository implements BookingRepositoryInterface
             ->count();
 
         /*
-         * Bookings that have ended but are not yet expired.
+         * Bookings that have ended but are still
+         * in an availability-blocking status.
          */
         $ended = (clone $query)
             ->whereIn(
@@ -1395,10 +1521,14 @@ class BookingRepository implements BookingRepositoryInterface
             ->count();
 
         /*
-         * Outstanding bookings.
+         * Bookings with outstanding balance.
          */
         $outstanding = (clone $query)
-            ->where('balance', '>', 0)
+            ->where(
+                'balance',
+                '>',
+                0
+            )
             ->count();
 
         return [
@@ -1523,7 +1653,7 @@ class BookingRepository implements BookingRepositoryInterface
         ) {
             $query->where(
                 'property_id',
-                $filters['property_id']
+                (int) $filters['property_id']
             );
         }
 
@@ -1536,7 +1666,7 @@ class BookingRepository implements BookingRepositoryInterface
         ) {
             $query->where(
                 'apartment_id',
-                $filters['apartment_id']
+                (int) $filters['apartment_id']
             );
         }
 
@@ -1549,7 +1679,7 @@ class BookingRepository implements BookingRepositoryInterface
         ) {
             $query->where(
                 'unit_id',
-                $filters['unit_id']
+                (int) $filters['unit_id']
             );
         }
 
@@ -1562,7 +1692,7 @@ class BookingRepository implements BookingRepositoryInterface
         ) {
             $query->where(
                 'customer_id',
-                $filters['customer_id']
+                (int) $filters['customer_id']
             );
         }
 
@@ -1575,7 +1705,7 @@ class BookingRepository implements BookingRepositoryInterface
         ) {
             $query->where(
                 'tenant_id',
-                $filters['tenant_id']
+                (int) $filters['tenant_id']
             );
         }
 
@@ -1588,12 +1718,15 @@ class BookingRepository implements BookingRepositoryInterface
         ) {
             $query->where(
                 'tenancy_id',
-                $filters['tenancy_id']
+                (int) $filters['tenancy_id']
             );
         }
 
         /*
-         * Booking period.
+         * Start date.
+         *
+         * This filters bookings whose start date is
+         * on or after the supplied date.
          */
         if (
             isset($filters['start_date']) &&
@@ -1606,6 +1739,12 @@ class BookingRepository implements BookingRepositoryInterface
             );
         }
 
+        /*
+         * End date.
+         *
+         * This filters bookings whose end date is
+         * on or before the supplied date.
+         */
         if (
             isset($filters['end_date']) &&
             trim((string) $filters['end_date']) !== ''
@@ -1618,7 +1757,20 @@ class BookingRepository implements BookingRepositoryInterface
         }
 
         /*
-         * Booking creation date.
+         * Exact booking date.
+         */
+        if (
+            isset($filters['booking_date']) &&
+            trim((string) $filters['booking_date']) !== ''
+        ) {
+            $query->whereDate(
+                'booking_date',
+                $filters['booking_date']
+            );
+        }
+
+        /*
+         * Booking date from.
          */
         if (
             isset($filters['booking_date_from']) &&
@@ -1631,6 +1783,9 @@ class BookingRepository implements BookingRepositoryInterface
             );
         }
 
+        /*
+         * Booking date to.
+         */
         if (
             isset($filters['booking_date_to']) &&
             trim((string) $filters['booking_date_to']) !== ''
@@ -1643,7 +1798,7 @@ class BookingRepository implements BookingRepositoryInterface
         }
 
         /*
-         * Paid date.
+         * Paid date from.
          */
         if (
             isset($filters['paid_date_from']) &&
@@ -1656,6 +1811,9 @@ class BookingRepository implements BookingRepositoryInterface
             );
         }
 
+        /*
+         * Paid date to.
+         */
         if (
             isset($filters['paid_date_to']) &&
             trim((string) $filters['paid_date_to']) !== ''
@@ -1670,11 +1828,13 @@ class BookingRepository implements BookingRepositoryInterface
         /*
          * Include soft-deleted bookings.
          *
-         * `only_trashed` takes precedence.
+         * only_trashed takes precedence over with_trashed.
          */
         if (
             isset($filters['only_trashed']) &&
-            $this->isTruthy($filters['only_trashed'])
+            $this->isTruthy(
+                $filters['only_trashed']
+            )
         ) {
             $query->onlyTrashed();
 
@@ -1683,7 +1843,9 @@ class BookingRepository implements BookingRepositoryInterface
 
         if (
             isset($filters['with_trashed']) &&
-            $this->isTruthy($filters['with_trashed'])
+            $this->isTruthy(
+                $filters['with_trashed']
+            )
         ) {
             $query->withTrashed();
         }

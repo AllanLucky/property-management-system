@@ -9,6 +9,7 @@ use App\Http\Requests\Booking\StoreBookingRequest;
 use App\Http\Requests\Booking\UpdateBookingRequest;
 use App\Http\Resources\BookingResource;
 use App\Services\BookingService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,16 +32,8 @@ class BookingController extends Controller
     /**
      * Standard relationships returned with booking responses.
      *
-     * Keeping these relationships centralized ensures that:
-     *
-     * - index
-     * - show
-     * - create
-     * - update
-     * - workflow actions
-     * - restore
-     *
-     * all return a consistent booking structure.
+     * Keep this list centralized so index, show, create, update and
+     * workflow endpoints return a consistent booking structure.
      */
     protected array $bookingRelations = [
         'user',
@@ -70,7 +63,12 @@ class BookingController extends Controller
         'start_date',
         'end_date',
         'booking_date',
-        'paid_date',
+        'booking_date_from',
+        'booking_date_to',
+        'paid_date_from',
+        'paid_date_to',
+        'with_trashed',
+        'only_trashed',
     ];
 
     /**
@@ -87,10 +85,36 @@ class BookingController extends Controller
     ];
 
     /**
+     * Filters accepted by report endpoints.
+     */
+    protected array $reportFilters = [
+        'start_date',
+        'end_date',
+        'status',
+        'payment_status',
+        'booking_type',
+        'source',
+        'property_id',
+        'apartment_id',
+        'unit_id',
+        'customer_id',
+        'tenant_id',
+        'tenancy_id',
+        'booking_date',
+        'booking_date_from',
+        'booking_date_to',
+        'paid_date_from',
+        'paid_date_to',
+        'with_trashed',
+        'only_trashed',
+    ];
+
+    /**
      * Create a new controller instance.
      */
-    public function __construct(BookingService $bookingService)
-    {
+    public function __construct(
+        BookingService $bookingService
+    ) {
         $this->bookingService = $bookingService;
     }
 
@@ -102,6 +126,8 @@ class BookingController extends Controller
 
     /**
      * Display a paginated listing of bookings.
+     *
+     * GET /api/bookings
      */
     public function index(Request $request): JsonResponse
     {
@@ -117,6 +143,11 @@ class BookingController extends Controller
                 $bookings,
                 'Bookings fetched successfully.'
             );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Booking filter validation failed.'
+            );
         } catch (Throwable $e) {
             return $this->serverError(
                 'Unable to fetch bookings.',
@@ -127,9 +158,12 @@ class BookingController extends Controller
 
     /**
      * Store a newly created booking.
+     *
+     * POST /api/bookings
      */
-    public function store(StoreBookingRequest $request): JsonResponse
-    {
+    public function store(
+        StoreBookingRequest $request
+    ): JsonResponse {
         try {
             $booking = $this->bookingService->create(
                 $request->validated()
@@ -146,7 +180,7 @@ class BookingController extends Controller
                 $e->errors(),
                 'Booking validation failed.'
             );
-        } catch (ModelNotFoundException $e) {
+        } catch (ModelNotFoundException) {
             return ApiResponse::notFound(
                 'Required booking resource was not found.'
             );
@@ -160,11 +194,18 @@ class BookingController extends Controller
 
     /**
      * Display the specified booking.
+     *
+     * GET /api/bookings/{id}
      */
-    public function show(int|string $id): JsonResponse
-    {
+    public function show(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->findOrFail($id);
+            $bookingId = $this->normalizeId($id);
+
+            $booking = $this->bookingService->findOrFail(
+                $bookingId
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -176,6 +217,11 @@ class BookingController extends Controller
             return ApiResponse::notFound(
                 'Booking not found.'
             );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Booking lookup validation failed.'
+            );
         } catch (Throwable $e) {
             return $this->serverError(
                 'Unable to fetch booking.',
@@ -186,15 +232,37 @@ class BookingController extends Controller
 
     /**
      * Update the specified booking.
+     *
+     * PUT/PATCH /api/bookings/{id}
      */
     public function update(
         UpdateBookingRequest $request,
         int|string $id
     ): JsonResponse {
         try {
+            /*
+             * Normalize the route ID before it reaches the service.
+             */
+            $bookingId = $this->normalizeId($id);
+
+            /*
+             * Only validated update fields are sent to the service.
+             */
+            $validated = $request->validated();
+
+            /*
+             * BookingService handles:
+             * - current booking lookup
+             * - state merging
+             * - customer/tenant synchronization
+             * - property/apartment/unit validation
+             * - tenancy validation
+             * - availability validation
+             * - financial recalculation
+             */
             $booking = $this->bookingService->update(
-                $id,
-                $request->validated()
+                $bookingId,
+                $validated
             );
 
             $this->loadBookingRelations($booking);
@@ -222,11 +290,18 @@ class BookingController extends Controller
 
     /**
      * Soft-delete the specified booking.
+     *
+     * DELETE /api/bookings/{id}
      */
-    public function destroy(int|string $id): JsonResponse
-    {
+    public function destroy(
+        int|string $id
+    ): JsonResponse {
         try {
-            $this->bookingService->delete($id);
+            $bookingId = $this->normalizeId($id);
+
+            $this->bookingService->delete(
+                $bookingId
+            );
 
             return ApiResponse::deleted(
                 null,
@@ -257,14 +332,23 @@ class BookingController extends Controller
 
     /**
      * Search bookings.
+     *
+     * GET /api/bookings/search
      */
-    public function search(Request $request): JsonResponse
-    {
+    public function search(
+        Request $request
+    ): JsonResponse {
         try {
             $search = trim(
-                (string) $request->input('search', '')
+                (string) $request->input(
+                    'search',
+                    ''
+                )
             );
 
+            /*
+             * Empty search behaves like index.
+             */
             if ($search === '') {
                 return $this->index($request);
             }
@@ -280,6 +364,11 @@ class BookingController extends Controller
             return ApiResponse::paginated(
                 $results,
                 'Bookings search completed successfully.'
+            );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Booking search validation failed.'
             );
         } catch (Throwable $e) {
             return $this->serverError(
@@ -297,12 +386,17 @@ class BookingController extends Controller
 
     /**
      * Display booking statistics.
+     *
+     * GET /api/bookings/statistics
      */
-    public function statistics(Request $request): JsonResponse
-    {
+    public function statistics(
+        Request $request
+    ): JsonResponse {
         try {
             $statistics = $this->bookingService->getStatistics(
-                $request->only($this->statisticsFilters)
+                $request->only(
+                    $this->statisticsFilters
+                )
             );
 
             return ApiResponse::success(
@@ -324,25 +418,17 @@ class BookingController extends Controller
 
     /**
      * Generate booking report.
+     *
+     * GET /api/bookings/reports
      */
-    public function reports(Request $request): JsonResponse
-    {
+    public function reports(
+        Request $request
+    ): JsonResponse {
         try {
             $report = $this->bookingService->getReport(
-                $request->only([
-                    'start_date',
-                    'end_date',
-                    'status',
-                    'payment_status',
-                    'booking_type',
-                    'source',
-                    'property_id',
-                    'apartment_id',
-                    'unit_id',
-                    'customer_id',
-                    'tenant_id',
-                    'tenancy_id',
-                ])
+                $request->only(
+                    $this->reportFilters
+                )
             );
 
             return ApiResponse::success(
@@ -371,10 +457,11 @@ class BookingController extends Controller
     /**
      * Display pending bookings.
      */
-    public function pending(Request $request): JsonResponse
-    {
+    public function pending(
+        Request $request
+    ): JsonResponse {
         return $this->statusList(
-            'pending',
+            Booking::STATUS_PENDING,
             $request
         );
     }
@@ -382,10 +469,11 @@ class BookingController extends Controller
     /**
      * Display confirmed bookings.
      */
-    public function confirmed(Request $request): JsonResponse
-    {
+    public function confirmed(
+        Request $request
+    ): JsonResponse {
         return $this->statusList(
-            'confirmed',
+            Booking::STATUS_CONFIRMED,
             $request
         );
     }
@@ -393,8 +481,9 @@ class BookingController extends Controller
     /**
      * Display active bookings.
      */
-    public function active(Request $request): JsonResponse
-    {
+    public function active(
+        Request $request
+    ): JsonResponse {
         try {
             $bookings = $this->bookingService->getActive(
                 $this->perPage($request),
@@ -407,6 +496,11 @@ class BookingController extends Controller
                 $bookings,
                 'Active bookings fetched successfully.'
             );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                'Active booking filter validation failed.'
+            );
         } catch (Throwable $e) {
             return $this->serverError(
                 'Unable to fetch active bookings.',
@@ -418,10 +512,11 @@ class BookingController extends Controller
     /**
      * Display completed bookings.
      */
-    public function completed(Request $request): JsonResponse
-    {
+    public function completed(
+        Request $request
+    ): JsonResponse {
         return $this->statusList(
-            'completed',
+            Booking::STATUS_COMPLETED,
             $request
         );
     }
@@ -429,10 +524,11 @@ class BookingController extends Controller
     /**
      * Display cancelled bookings.
      */
-    public function cancelled(Request $request): JsonResponse
-    {
+    public function cancelled(
+        Request $request
+    ): JsonResponse {
         return $this->statusList(
-            'cancelled',
+            Booking::STATUS_CANCELLED,
             $request
         );
     }
@@ -440,10 +536,11 @@ class BookingController extends Controller
     /**
      * Display expired bookings.
      */
-    public function expired(Request $request): JsonResponse
-    {
+    public function expired(
+        Request $request
+    ): JsonResponse {
         return $this->statusList(
-            'expired',
+            Booking::STATUS_EXPIRED,
             $request
         );
     }
@@ -451,10 +548,11 @@ class BookingController extends Controller
     /**
      * Display rejected bookings.
      */
-    public function rejected(Request $request): JsonResponse
-    {
+    public function rejected(
+        Request $request
+    ): JsonResponse {
         return $this->statusList(
-            'rejected',
+            Booking::STATUS_REJECTED,
             $request
         );
     }
@@ -477,7 +575,14 @@ class BookingController extends Controller
 
             return ApiResponse::paginated(
                 $bookings,
-                ucfirst($status) . ' bookings fetched successfully.'
+                ucfirst($status)
+                    . ' bookings fetched successfully.'
+            );
+        } catch (ValidationException $e) {
+            return ApiResponse::validation(
+                $e->errors(),
+                ucfirst($status)
+                    . ' booking filter validation failed.'
             );
         } catch (Throwable $e) {
             return $this->serverError(
@@ -496,10 +601,13 @@ class BookingController extends Controller
     /**
      * Confirm a booking.
      */
-    public function confirm(int|string $id): JsonResponse
-    {
+    public function confirm(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->confirm($id);
+            $booking = $this->bookingService->confirm(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -527,10 +635,13 @@ class BookingController extends Controller
     /**
      * Approve a booking.
      */
-    public function approve(int|string $id): JsonResponse
-    {
+    public function approve(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->approve($id);
+            $booking = $this->bookingService->approve(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -558,10 +669,13 @@ class BookingController extends Controller
     /**
      * Check in a booking.
      */
-    public function checkIn(int|string $id): JsonResponse
-    {
+    public function checkIn(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->checkIn($id);
+            $booking = $this->bookingService->checkIn(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -589,10 +703,13 @@ class BookingController extends Controller
     /**
      * Complete a booking.
      */
-    public function complete(int|string $id): JsonResponse
-    {
+    public function complete(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->complete($id);
+            $booking = $this->bookingService->complete(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -626,7 +743,7 @@ class BookingController extends Controller
     ): JsonResponse {
         try {
             $booking = $this->bookingService->cancel(
-                $id,
+                $this->normalizeId($id),
                 $request->validated()
             );
 
@@ -671,7 +788,7 @@ class BookingController extends Controller
             ]);
 
             $booking = $this->bookingService->reject(
-                $id,
+                $this->normalizeId($id),
                 $validated['rejection_reason']
             );
 
@@ -701,10 +818,13 @@ class BookingController extends Controller
     /**
      * Expire a booking.
      */
-    public function expire(int|string $id): JsonResponse
-    {
+    public function expire(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->expire($id);
+            $booking = $this->bookingService->expire(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -738,23 +858,11 @@ class BookingController extends Controller
     /**
      * Get units available for booking.
      *
-     * Required:
-     * - start_date
-     * - end_date
-     *
-     * Optional:
-     * - property_id
-     * - apartment_id
-     * - booking_id
-     *
-     * Example:
-     *
      * GET /api/bookings/available-units
-     *     ?start_date=2026-09-15
-     *     &end_date=2026-09-30
      */
-    public function availableUnits(Request $request): JsonResponse
-    {
+    public function availableUnits(
+        Request $request
+    ): JsonResponse {
         try {
             $validated = $request->validate([
                 'start_date' => [
@@ -769,36 +877,51 @@ class BookingController extends Controller
                 ],
 
                 'property_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:properties,id',
                 ],
 
                 'apartment_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:apartments,id',
                 ],
 
                 'booking_id' => [
+                    'sometimes',
                     'nullable',
                     'integer',
                     'exists:bookings,id',
                 ],
             ]);
 
+            $bookingId = isset(
+                $validated['booking_id']
+            )
+                ? (int) $validated['booking_id']
+                : null;
+
+            $propertyId = isset(
+                $validated['property_id']
+            )
+                ? (int) $validated['property_id']
+                : null;
+
+            $apartmentId = isset(
+                $validated['apartment_id']
+            )
+                ? (int) $validated['apartment_id']
+                : null;
+
             $units = $this->bookingService->getAvailableUnits(
                 $validated['start_date'],
                 $validated['end_date'],
-                isset($validated['property_id'])
-                    ? (int) $validated['property_id']
-                    : null,
-                isset($validated['apartment_id'])
-                    ? (int) $validated['apartment_id']
-                    : null,
-                isset($validated['booking_id'])
-                    ? (int) $validated['booking_id']
-                    : null
+                $propertyId,
+                $apartmentId,
+                $bookingId
             );
 
             return ApiResponse::collection(
@@ -820,12 +943,21 @@ class BookingController extends Controller
 
     /**
      * Get users eligible to make bookings.
+     *
+     * GET /api/bookings/available-users
      */
-    public function availableUsers(Request $request): JsonResponse
-    {
+    public function availableUsers(
+        Request $request
+    ): JsonResponse {
         try {
+            $search = $request->filled('search')
+                ? trim(
+                    (string) $request->input('search')
+                )
+                : null;
+
             $users = $this->bookingService->getAvailableUsers(
-                $request->input('search')
+                $search
             );
 
             return ApiResponse::collection(
@@ -849,10 +981,13 @@ class BookingController extends Controller
     /**
      * Restore a soft-deleted booking.
      */
-    public function restore(int|string $id): JsonResponse
-    {
+    public function restore(
+        int|string $id
+    ): JsonResponse {
         try {
-            $booking = $this->bookingService->restore($id);
+            $booking = $this->bookingService->restore(
+                $this->normalizeId($id)
+            );
 
             $this->loadBookingRelations($booking);
 
@@ -880,10 +1015,13 @@ class BookingController extends Controller
     /**
      * Permanently delete a booking.
      */
-    public function forceDelete(int|string $id): JsonResponse
-    {
+    public function forceDelete(
+        int|string $id
+    ): JsonResponse {
         try {
-            $this->bookingService->forceDelete($id);
+            $this->bookingService->forceDelete(
+                $this->normalizeId($id)
+            );
 
             return ApiResponse::deleted(
                 null,
@@ -913,45 +1051,106 @@ class BookingController extends Controller
     */
 
     /**
-     * Load the standard booking relationships.
+     * Normalize a booking route ID.
+     *
+     * This intentionally rejects invalid values such as:
+     *
+     * [object Object]
+     * empty strings
+     * arrays
+     * zero
+     * negative numbers
+     * non-numeric strings
+     *
+     * This protects the backend from frontend navigation mistakes.
+     *
+     * @throws ValidationException
      */
-    protected function loadBookingRelations($booking): void
-    {
-        $booking->load($this->bookingRelations);
+    protected function normalizeId(
+        int|string $id
+    ): int {
+        if (is_int($id)) {
+            if ($id < 1) {
+                throw ValidationException::withMessages([
+                    'booking_id' => [
+                        'The booking ID must be a positive integer.',
+                    ],
+                ]);
+            }
+
+            return $id;
+        }
+
+        $value = trim($id);
+
+        if (
+            $value === '' ||
+            !ctype_digit($value) ||
+            (int) $value < 1
+        ) {
+            throw ValidationException::withMessages([
+                'booking_id' => [
+                    'A valid booking ID is required.',
+                ],
+            ]);
+        }
+
+        return (int) $value;
     }
 
     /**
-     * Transform every booking in a paginator into BookingResource.
-     *
-     * The paginator itself is preserved so ApiResponse::paginated()
-     * can generate the standard pagination metadata and links.
+     * Load all standard booking relationships.
      */
-    protected function transformPaginator($paginator): void
-    {
+    protected function loadBookingRelations(
+        $booking
+    ): void {
+        $booking->load(
+            $this->bookingRelations
+        );
+    }
+
+    /**
+     * Transform paginator items into BookingResource instances.
+     *
+     * The paginator itself remains intact so ApiResponse::paginated()
+     * can continue generating pagination metadata and links.
+     */
+    protected function transformPaginator(
+        LengthAwarePaginator $paginator
+    ): void {
         $paginator->through(
             fn ($booking) => new BookingResource($booking)
         );
     }
 
     /**
-     * Return the requested pagination size.
+     * Return normalized pagination size.
      *
-     * The repository remains responsible for applying the final
-     * maximum allowed page size.
+     * Final maximum enforcement remains in BookingService/Repository.
      */
-    protected function perPage(Request $request): int
-    {
+    protected function perPage(
+        Request $request
+    ): int {
+        $perPage = (int) $request->input(
+            'per_page',
+            15
+        );
+
         return max(
             1,
-            (int) $request->input('per_page', 15)
+            min(
+                100,
+                $perPage
+            )
         );
     }
 
     /**
      * Return normalized booking filters.
      */
-    protected function filters(Request $request): array
-    {
+    protected function filters(
+        Request $request
+    ): array {
         return $request->only(
             $this->bookingFilters
         );
@@ -961,7 +1160,7 @@ class BookingController extends Controller
      * Return a consistent server-error response.
      *
      * Detailed exception information is exposed only in local
-     * environments. Production receives only the safe public message.
+     * environments.
      */
     protected function serverError(
         string $message,

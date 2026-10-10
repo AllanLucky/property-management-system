@@ -26,10 +26,33 @@ class BookingSeeder extends Seeder
         */
 
         $users = User::query()
+            ->with('roles')
             ->orderBy('id')
             ->get();
 
-        $customers = $users->values();
+        /*
+        |--------------------------------------------------------------------------
+        | CUSTOMER USERS
+        |--------------------------------------------------------------------------
+        |
+        | IMPORTANT:
+        |
+        | Admin and super-admin users must NEVER be used as customers.
+        |
+        | customer_id represents the actual customer account.
+        |
+        */
+
+        $customers = User::query()
+            ->whereDoesntHave('roles', function ($query) {
+                $query->whereIn('name', [
+                    'admin',
+                    'super-admin',
+                ]);
+            })
+            ->orderBy('id')
+            ->get()
+            ->values();
 
         $tenants = Tenant::query()
             ->with('user')
@@ -69,9 +92,17 @@ class BookingSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
 
-        if ($customers->isEmpty()) {
+        if ($users->isEmpty()) {
             $this->command->warn(
                 'No users found. Please run the UserSeeder first.'
+            );
+
+            return;
+        }
+
+        if ($customers->isEmpty()) {
+            $this->command->warn(
+                'No eligible customer users found. Admin and super-admin users are excluded.'
             );
 
             return;
@@ -95,10 +126,46 @@ class BookingSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
+        | SELECT BOOKING CREATOR
+        |--------------------------------------------------------------------------
+        |
+        | user_id represents the authenticated user who created the booking.
+        |
+        | This is intentionally different from customer_id.
+        |
+        | Admin/super-admin may legitimately be the creator of a booking.
+        |
+        */
+
+        $creator = User::query()
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', [
+                    'super-admin',
+                    'admin',
+                ]);
+            })
+            ->orderBy('id')
+            ->first();
+
+        if (!$creator) {
+            $creator = $users->first();
+        }
+
+        if (!$creator) {
+            $this->command->warn(
+                'No booking creator user could be selected.'
+            );
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
         | BOOKING TEMPLATES
         |--------------------------------------------------------------------------
         |
-        | These records intentionally cover the complete booking lifecycle.
+        | total_amount and balance are intentionally NOT supplied.
+        | They are calculated by the Booking model.
         |
         */
 
@@ -432,18 +499,44 @@ class BookingSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | AVAILABLE TENANCIES
+        | PREPARE RENTAL TENANCIES
         |--------------------------------------------------------------------------
         |
-        | Only use a tenancy when its relationships are available and coherent.
+        | Rental bookings must use a real tenancy.
+        |
+        | IMPORTANT:
+        |
+        | We also exclude any tenancy whose tenant user is an admin
+        | or super-admin.
         |
         */
 
-        $validTenancies = $tenancies
+        $rentalTenancies = $tenancies
             ->filter(function ($tenancy) {
-                return !empty($tenancy->tenant_id)
-                    && !empty($tenancy->property_id)
-                    && !empty($tenancy->unit_id);
+                $customer = $tenancy->tenant?->user;
+
+                if (!$customer) {
+                    return false;
+                }
+
+                /*
+                |------------------------------------------------------------------
+                | ADMIN / SUPER-ADMIN MUST NEVER BE A BOOKING CUSTOMER
+                |------------------------------------------------------------------
+                */
+
+                if (
+                    $customer->hasAnyRole([
+                        'admin',
+                        'super-admin',
+                    ])
+                ) {
+                    return false;
+                }
+
+                return $tenancy->tenant_id
+                    && $tenancy->property_id
+                    && $tenancy->unit_id;
             })
             ->values();
 
@@ -453,160 +546,298 @@ class BookingSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
 
+        $rentalIndex = 0;
+
         foreach ($bookingTemplates as $index => $template) {
             /*
             |--------------------------------------------------------------------------
-            | Select property
+            | INITIALIZE RELATIONSHIPS
             |--------------------------------------------------------------------------
             */
 
-            $property = $properties[$index % $properties->count()];
-
-            /*
-            |--------------------------------------------------------------------------
-            | Select apartment belonging to property
-            |--------------------------------------------------------------------------
-            */
-
-            $propertyApartments = $apartments
-                ->where('property_id', $property->id)
-                ->values();
-
-            $apartment = $propertyApartments->isNotEmpty()
-                ? $propertyApartments->random()
-                : null;
-
-            /*
-            |--------------------------------------------------------------------------
-            | Select unit belonging to property/apartment
-            |--------------------------------------------------------------------------
-            */
-
-            $propertyUnits = $units
-                ->where('property_id', $property->id)
-                ->values();
-
-            if ($apartment) {
-                $apartmentUnits = $propertyUnits
-                    ->where('apartment_id', $apartment->id)
-                    ->values();
-
-                $unit = $apartmentUnits->isNotEmpty()
-                    ? $apartmentUnits->random()
-                    : (
-                        $propertyUnits->isNotEmpty()
-                            ? $propertyUnits->random()
-                            : null
-                    );
-            } else {
-                $unit = $propertyUnits->isNotEmpty()
-                    ? $propertyUnits->random()
-                    : null;
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Select customer
-            |--------------------------------------------------------------------------
-            */
-
-            $customer = $customers[$index % $customers->count()];
-
-            /*
-            |--------------------------------------------------------------------------
-            | Select tenancy
-            |--------------------------------------------------------------------------
-            |
-            | Rental/completed bookings may reference an existing tenancy.
-            | We first try to find a tenancy matching the selected property/unit.
-            |
-            */
-
+            $customer = null;
+            $tenant = null;
             $tenancy = null;
 
-            if (
-                $template['booking_type'] === Booking::TYPE_RENTAL &&
-                $validTenancies->isNotEmpty()
-            ) {
-                $matchingTenancies = $validTenancies
-                    ->filter(function ($candidate) use ($property, $unit) {
-                        if (
-                            $candidate->property_id !== $property->id
-                        ) {
-                            return false;
-                        }
-
-                        if (
-                            $unit &&
-                            $candidate->unit_id !== $unit->id
-                        ) {
-                            return false;
-                        }
-
-                        return true;
-                    })
-                    ->values();
-
-                $tenancy = $matchingTenancies->isNotEmpty()
-                    ? $matchingTenancies->random()
-                    : $validTenancies->random();
-            }
+            $property = null;
+            $apartment = null;
+            $unit = null;
 
             /*
             |--------------------------------------------------------------------------
-            | Select tenant
+            | RENTAL BOOKINGS
             |--------------------------------------------------------------------------
-            */
-
-            $tenant = null;
-
-            if ($tenancy) {
-                $tenant = $tenants
-                    ->firstWhere('id', $tenancy->tenant_id);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Dates
-            |--------------------------------------------------------------------------
-            */
-
-            $bookingDate = Carbon::now()
-                ->subDays(rand(1, 90))
-                ->subHours(rand(1, 12));
-
-            /*
-            | Historical records should generally have dates in the past.
+            |
+            | Rental bookings select a tenancy FIRST.
+            |
+            | The tenancy determines:
+            |
+            | tenant
+            | customer
+            | property
+            | apartment
+            | unit
+            |
             */
 
             if (
-                in_array(
-                    $template['status'],
-                    [
-                        Booking::STATUS_COMPLETED,
-                        Booking::STATUS_CANCELLED,
-                        Booking::STATUS_REJECTED,
-                        Booking::STATUS_EXPIRED,
-                    ],
-                    true
-                )
+                $template['booking_type'] === Booking::TYPE_RENTAL
+                && $rentalTenancies->isNotEmpty()
             ) {
-                $startDate = $bookingDate
-                    ->copy()
-                    ->addDays(rand(1, 10))
-                    ->startOfDay();
+                $tenancy = $rentalTenancies[
+                    $rentalIndex % $rentalTenancies->count()
+                ];
+
+                $rentalIndex++;
 
                 /*
-                | Ensure the end date is also historically sensible.
+                |--------------------------------------------------------------------------
+                | TENANT
+                |--------------------------------------------------------------------------
                 */
-                $endDate = $startDate
+
+                $tenant = $tenancy->tenant;
+
+                /*
+                |--------------------------------------------------------------------------
+                | CUSTOMER
+                |--------------------------------------------------------------------------
+                */
+
+                $customer = $tenant?->user;
+
+                /*
+                |--------------------------------------------------------------------------
+                | SAFETY CHECK
+                |--------------------------------------------------------------------------
+                |
+                | Never allow admin or super-admin to become a customer.
+                |
+                */
+
+                if (
+                    !$customer ||
+                    $customer->hasAnyRole([
+                        'admin',
+                        'super-admin',
+                    ])
+                ) {
+                    $customer = null;
+                    $tenant = null;
+                    $tenancy = null;
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | PROPERTY
+                |--------------------------------------------------------------------------
+                */
+
+                if ($tenancy && $customer) {
+                    $property = $tenancy->property;
+
+                    if (!$property && $tenancy->property_id) {
+                        $property = $properties->firstWhere(
+                            'id',
+                            $tenancy->property_id
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | UNIT
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $unit = $tenancy->unit;
+
+                    if (!$unit && $tenancy->unit_id) {
+                        $unit = $units->firstWhere(
+                            'id',
+                            $tenancy->unit_id
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | APARTMENT
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $apartment = $tenancy->apartment;
+
+                    if (!$apartment && $unit?->apartment_id) {
+                        $apartment = $apartments->firstWhere(
+                            'id',
+                            $unit->apartment_id
+                        );
+                    }
+
+                    if (!$apartment && $tenancy->apartment_id) {
+                        $apartment = $apartments->firstWhere(
+                            'id',
+                            $tenancy->apartment_id
+                        );
+                    }
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | NON-RENTAL / FALLBACK CUSTOMER
+            |--------------------------------------------------------------------------
+            |
+            | $customers already excludes admin and super-admin.
+            |
+            */
+
+            if (!$customer) {
+                $customer = $customers[
+                    $index % $customers->count()
+                ];
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | FALLBACK PROPERTY
+            |--------------------------------------------------------------------------
+            */
+
+            if (!$property) {
+                $property = $properties[
+                    $index % $properties->count()
+                ];
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | FALLBACK APARTMENT
+            |--------------------------------------------------------------------------
+            */
+
+            if (!$apartment) {
+                $propertyApartments = $apartments
+                    ->where('property_id', $property->id)
+                    ->values();
+
+                if ($propertyApartments->isNotEmpty()) {
+                    $apartment = $propertyApartments->random();
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | FALLBACK UNIT
+            |--------------------------------------------------------------------------
+            */
+
+            if (!$unit) {
+                $propertyUnits = $units
+                    ->where('property_id', $property->id)
+                    ->values();
+
+                if ($apartment) {
+                    $apartmentUnits = $propertyUnits
+                        ->where('apartment_id', $apartment->id)
+                        ->values();
+
+                    if ($apartmentUnits->isNotEmpty()) {
+                        $unit = $apartmentUnits->random();
+                    }
+                }
+
+                if (!$unit && $propertyUnits->isNotEmpty()) {
+                    $unit = $propertyUnits->random();
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | NON-RENTAL TENANT
+            |--------------------------------------------------------------------------
+            |
+            | A viewing/reservation can have a tenant profile if the selected
+            | customer already has one.
+            |
+            | tenancy_id remains null.
+            |
+            */
+
+            if (
+                !$tenancy &&
+                $template['booking_type'] !== Booking::TYPE_RENTAL
+            ) {
+                $tenant = $tenants
+                    ->first(function ($tenant) use ($customer) {
+                        return $tenant->user_id === $customer->id
+                            && $tenant->user
+                            && !$tenant->user->hasAnyRole([
+                                'admin',
+                                'super-admin',
+                            ]);
+                    });
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | DATES
+            |--------------------------------------------------------------------------
+            */
+
+            $historicalStatuses = [
+                Booking::STATUS_COMPLETED,
+                Booking::STATUS_CANCELLED,
+                Booking::STATUS_REJECTED,
+                Booking::STATUS_EXPIRED,
+            ];
+
+            $isHistorical = in_array(
+                $template['status'],
+                $historicalStatuses,
+                true
+            );
+
+            if ($isHistorical) {
+                /*
+                |--------------------------------------------------------------------------
+                | Historical bookings must end in the past.
+                |--------------------------------------------------------------------------
+                */
+
+                $endDate = Carbon::now()
+                    ->subDays(rand(2, 90))
+                    ->endOfDay();
+
+                if (
+                    $template['booking_type'] === Booking::TYPE_VIEWING
+                ) {
+                    $startDate = $endDate
+                        ->copy()
+                        ->startOfDay();
+                } else {
+                    $duration = rand(30, 90);
+
+                    $startDate = $endDate
+                        ->copy()
+                        ->subDays($duration)
+                        ->startOfDay();
+                }
+
+                $bookingDate = $startDate
                     ->copy()
-                    ->addDays(
-                        $template['booking_type'] === Booking::TYPE_VIEWING
-                            ? 0
-                            : rand(30, 180)
-                    );
+                    ->subDays(rand(1, 10))
+                    ->addHours(rand(1, 12));
             } else {
+                /*
+                |--------------------------------------------------------------------------
+                | Current / future bookings.
+                |--------------------------------------------------------------------------
+                */
+
+                $bookingDate = Carbon::now()
+                    ->subDays(rand(0, 7))
+                    ->subHours(rand(1, 12));
+
                 $startDate = Carbon::now()
                     ->addDays(rand(3, 30))
                     ->startOfDay();
@@ -622,7 +853,7 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Viewing bookings are single-day appointments.
+            | VIEWINGS ARE SINGLE-DAY BOOKINGS
             |--------------------------------------------------------------------------
             */
 
@@ -634,7 +865,7 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Check-in / Check-out
+            | CHECK-IN / CHECK-OUT
             |--------------------------------------------------------------------------
             */
 
@@ -643,24 +874,15 @@ class BookingSeeder extends Seeder
 
             if (
                 $template['booking_type'] !== Booking::TYPE_VIEWING
+                && $template['status'] === Booking::STATUS_COMPLETED
             ) {
-                if (
-                    in_array(
-                        $template['status'],
-                        [
-                            Booking::STATUS_COMPLETED,
-                        ],
-                        true
-                    )
-                ) {
-                    $checkInDate = $startDate->copy();
-                    $checkOutDate = $endDate->copy();
-                }
+                $checkInDate = $startDate->copy();
+                $checkOutDate = $endDate->copy();
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Financial Calculation
+            | FINANCIAL CALCULATION
             |--------------------------------------------------------------------------
             */
 
@@ -678,19 +900,17 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Amount Paid
+            | AMOUNT PAID
             |--------------------------------------------------------------------------
             */
 
             $amountPaid = match ($template['payment_status']) {
-                Booking::PAYMENT_PAID =>
+                Booking::PAYMENT_PAID,
+                Booking::PAYMENT_REFUNDED =>
                     $totalAmount,
 
                 Booking::PAYMENT_PARTIAL =>
                     round($totalAmount * 0.50, 2),
-
-                Booking::PAYMENT_REFUNDED =>
-                    $totalAmount,
 
                 default =>
                     0,
@@ -698,7 +918,7 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Payment Information
+            | PAYMENT INFORMATION
             |--------------------------------------------------------------------------
             */
 
@@ -706,33 +926,26 @@ class BookingSeeder extends Seeder
             $paymentReference = null;
             $paidAt = null;
 
-            if (
-                in_array(
-                    $template['payment_status'],
-                    [
-                        Booking::PAYMENT_PAID,
-                        Booking::PAYMENT_PARTIAL,
-                        Booking::PAYMENT_REFUNDED,
-                    ],
-                    true
-                )
-            ) {
+            if ($amountPaid > 0) {
                 $paymentMethod = 'mpesa';
 
                 $paymentReference =
                     'MPESA-' .
-                    strtoupper(
-                        str()->random(10)
-                    );
+                    strtoupper(str()->random(10));
 
                 $paidAt = $bookingDate
                     ->copy()
                     ->addHours(rand(1, 48));
+
+                if ($paidAt->greaterThan(Carbon::now())) {
+                    $paidAt = Carbon::now()
+                        ->subHours(rand(1, 6));
+                }
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Status Timestamps
+            | STATUS TIMESTAMPS
             |--------------------------------------------------------------------------
             */
 
@@ -743,7 +956,9 @@ class BookingSeeder extends Seeder
             $completedAt = null;
 
             /*
-            | Confirmed
+            |--------------------------------------------------------------------------
+            | CONFIRMED
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -760,10 +975,17 @@ class BookingSeeder extends Seeder
                 $confirmedAt = $bookingDate
                     ->copy()
                     ->addHours(rand(1, 24));
+
+                if ($confirmedAt->greaterThan(Carbon::now())) {
+                    $confirmedAt = Carbon::now()
+                        ->subHours(rand(1, 6));
+                }
             }
 
             /*
-            | Approved
+            |--------------------------------------------------------------------------
+            | APPROVED
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -779,10 +1001,31 @@ class BookingSeeder extends Seeder
                 $approvedAt = $bookingDate
                     ->copy()
                     ->addHours(rand(2, 48));
+
+                if ($approvedAt->greaterThan(Carbon::now())) {
+                    $approvedAt = Carbon::now()
+                        ->subHours(rand(1, 4));
+                }
+
+                if (
+                    $confirmedAt &&
+                    $approvedAt->lessThan($confirmedAt)
+                ) {
+                    $approvedAt = $confirmedAt
+                        ->copy()
+                        ->addHours(1);
+
+                    if ($approvedAt->greaterThan(Carbon::now())) {
+                        $approvedAt = Carbon::now()
+                            ->subHours(1);
+                    }
+                }
             }
 
             /*
-            | Rejected
+            |--------------------------------------------------------------------------
+            | REJECTED
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -791,10 +1034,17 @@ class BookingSeeder extends Seeder
                 $rejectedAt = $bookingDate
                     ->copy()
                     ->addDays(rand(1, 5));
+
+                if ($rejectedAt->greaterThan(Carbon::now())) {
+                    $rejectedAt = Carbon::now()
+                        ->subHours(rand(1, 6));
+                }
             }
 
             /*
-            | Cancelled
+            |--------------------------------------------------------------------------
+            | CANCELLED
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -803,10 +1053,17 @@ class BookingSeeder extends Seeder
                 $cancelledAt = $bookingDate
                     ->copy()
                     ->addDays(rand(1, 5));
+
+                if ($cancelledAt->greaterThan(Carbon::now())) {
+                    $cancelledAt = Carbon::now()
+                        ->subHours(rand(1, 6));
+                }
             }
 
             /*
-            | Completed
+            |--------------------------------------------------------------------------
+            | COMPLETED
+            |--------------------------------------------------------------------------
             */
 
             if (
@@ -815,11 +1072,16 @@ class BookingSeeder extends Seeder
                 $completedAt = $endDate
                     ->copy()
                     ->endOfDay();
+
+                if ($completedAt->greaterThan(Carbon::now())) {
+                    $completedAt = Carbon::now()
+                        ->subHours(rand(1, 6));
+                }
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Rejection / Cancellation Reasons
+            | REJECTION REASON
             |--------------------------------------------------------------------------
             */
 
@@ -832,6 +1094,12 @@ class BookingSeeder extends Seeder
                     'Booking application did not meet the required approval criteria.';
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | CANCELLATION REASON
+            |--------------------------------------------------------------------------
+            */
+
             $cancellationReason = null;
 
             if (
@@ -843,8 +1111,13 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Customer Snapshot
+            | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
+            |
+            | Snapshot comes from the authoritative customer user.
+            |
+            | Admin and super-admin can never reach this point as customers.
+            |
             */
 
             $firstName = $customer->first_name
@@ -852,6 +1125,10 @@ class BookingSeeder extends Seeder
 
             $lastName = $customer->last_name
                 ?? 'User';
+
+            $fullName = trim(
+                $firstName . ' ' . $lastName
+            );
 
             $email = $customer->email
                 ?? 'customer@example.com';
@@ -861,18 +1138,35 @@ class BookingSeeder extends Seeder
 
             /*
             |--------------------------------------------------------------------------
-            | Metadata
+            | PROPERTY NAME
+            |--------------------------------------------------------------------------
+            */
+
+            $propertyName = $property->name
+                ?? $property->title
+                ?? $property->slug
+                ?? 'Property';
+
+            /*
+            |--------------------------------------------------------------------------
+            | METADATA
             |--------------------------------------------------------------------------
             */
 
             $metadata = [
                 'source' => $template['source'],
-                'channel' => $template['source'] === Booking::SOURCE_WEBSITE
-                    ? 'online'
-                    : 'offline',
+
+                'channel' =>
+                    $template['source'] === Booking::SOURCE_WEBSITE
+                        ? 'online'
+                        : 'offline',
+
                 'seeded' => true,
+
                 'booking_index' => $index + 1,
-                'seeded_at' => Carbon::now()->toIso8601String(),
+
+                'seeded_at' =>
+                    Carbon::now()->toIso8601String(),
             ];
 
             /*
@@ -880,41 +1174,60 @@ class BookingSeeder extends Seeder
             | CREATE BOOKING
             |--------------------------------------------------------------------------
             |
-            | booking_number, reference, slug, total_amount and balance are
-            | intentionally allowed to be handled by the Booking model.
+            | user_id      = booking creator
+            | customer_id  = actual customer account
+            | tenant_id    = tenant profile
+            | tenancy_id   = actual tenancy
+            |
+            | Admin/super-admin are NEVER customer_id.
+            |
+            | total_amount and balance are intentionally NOT supplied.
             |
             */
 
             Booking::create([
                 /*
                 |--------------------------------------------------------------------------
-                | Creator / Customer
+                | CREATOR / CUSTOMER
                 |--------------------------------------------------------------------------
                 */
 
-                'user_id' => $customer->id,
+                'user_id' =>
+                    $creator->id,
 
-                'customer_id' => $customer->id,
+                'customer_id' =>
+                    $customer->id,
 
-                'tenant_id' => $tenant?->id,
+                'tenant_id' =>
+                    $tenant?->id,
 
                 /*
                 |--------------------------------------------------------------------------
-                | Property Relationships
+                | PROPERTY RELATIONSHIPS
                 |--------------------------------------------------------------------------
                 */
 
-                'property_id' => $property->id,
+                'property_id' =>
+                    $property->id,
 
-                'apartment_id' => $apartment?->id,
+                'apartment_id' =>
+                    $apartment?->id,
 
-                'unit_id' => $unit?->id,
-
-                'tenancy_id' => $tenancy?->id,
+                'unit_id' =>
+                    $unit?->id,
 
                 /*
                 |--------------------------------------------------------------------------
-                | Booking
+                | TENANCY
+                |--------------------------------------------------------------------------
+                */
+
+                'tenancy_id' =>
+                    $tenancy?->id,
+
+                /*
+                |--------------------------------------------------------------------------
+                | BOOKING
                 |--------------------------------------------------------------------------
                 */
 
@@ -932,7 +1245,7 @@ class BookingSeeder extends Seeder
 
                 /*
                 |--------------------------------------------------------------------------
-                | Dates
+                | DATES
                 |--------------------------------------------------------------------------
                 */
 
@@ -968,7 +1281,7 @@ class BookingSeeder extends Seeder
 
                 /*
                 |--------------------------------------------------------------------------
-                | Customer Snapshot
+                | CUSTOMER SNAPSHOT
                 |--------------------------------------------------------------------------
                 */
 
@@ -986,7 +1299,7 @@ class BookingSeeder extends Seeder
 
                 /*
                 |--------------------------------------------------------------------------
-                | Financial
+                | FINANCIALS
                 |--------------------------------------------------------------------------
                 */
 
@@ -1010,7 +1323,7 @@ class BookingSeeder extends Seeder
 
                 /*
                 |--------------------------------------------------------------------------
-                | Guest Information
+                | GUEST INFORMATION
                 |--------------------------------------------------------------------------
                 */
 
@@ -1034,7 +1347,7 @@ class BookingSeeder extends Seeder
 
                 /*
                 |--------------------------------------------------------------------------
-                | Payment
+                | PAYMENT
                 |--------------------------------------------------------------------------
                 */
 
@@ -1056,16 +1369,16 @@ class BookingSeeder extends Seeder
                 'meta_title' =>
                     ucfirst($template['booking_type']) .
                     ' booking - ' .
-                    $property->name,
+                    $propertyName,
 
                 'meta_description' =>
                     'Booking for ' .
-                    $property->name .
+                    $propertyName .
                     ' created through the EstateKenya property management system.',
 
                 /*
                 |--------------------------------------------------------------------------
-                | Metadata
+                | METADATA
                 |--------------------------------------------------------------------------
                 */
 

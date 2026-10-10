@@ -78,6 +78,16 @@ use App\Http\Controllers\Api\Lease\LeaseController;
 */
 use App\Http\Controllers\Api\Booking\BookingController;
 
+
+/*
+|--------------------------------------------------------------------------
+| PLOT
+|--------------------------------------------------------------------------
+*/
+
+use App\Http\Controllers\Api\Plot\PlotController;
+
+
 /*
 |--------------------------------------------------------------------------
 | ACTIVITY LOGS
@@ -1558,6 +1568,289 @@ Route::middleware('auth:sanctum')->group(function () {
             ->whereNumber('booking')
             ->name('destroy');
        });
+
+
+
+     /*
+     |--------------------------------------------------------------------------
+     | PLOTS
+     |--------------------------------------------------------------------------
+    */
+
+     Route::prefix('plots')
+           ->name('plots.')
+           ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SEARCH
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'search',
+            [PlotController::class, 'search']
+        )->name('search');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [PlotController::class, 'statistics']
+        )->name('statistics');
+
+        Route::get(
+            'statistics/inventory',
+            [PlotController::class, 'inventoryStatistics']
+        )->name('statistics.inventory');
+
+        Route::get(
+            'statistics/sales',
+            [PlotController::class, 'salesStatistics']
+        )->name('statistics.sales');
+
+        Route::get(
+            'statistics/payments',
+            [PlotController::class, 'paymentStatistics']
+        )->name('statistics.payments');
+
+        Route::get(
+            'statistics/locations',
+            [PlotController::class, 'locationStatistics']
+        )->name('statistics.locations');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT REPORTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'reports/inventory',
+            [PlotController::class, 'inventoryReport']
+        )->name('reports.inventory');
+
+        Route::get(
+            'reports/sales',
+            [PlotController::class, 'salesReport']
+        )->name('reports.sales');
+
+        Route::get(
+            'reports/payments',
+            [PlotController::class, 'paymentReport']
+        )->name('reports.payments');
+
+        Route::get(
+            'reports/outstanding',
+            [PlotController::class, 'outstandingReport']
+        )->name('reports.outstanding');
+
+        Route::get(
+            'reports/agents',
+            [PlotController::class, 'agentReport']
+        )->name('reports.agents');
+
+        Route::get(
+            'reports/locations',
+            [PlotController::class, 'locationReport']
+        )->name('reports.locations');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AVAILABLE PLOTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'available',
+            [PlotController::class, 'available']
+        )->name('available');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOTS BY LOCATION
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'county/{county}',
+            [PlotController::class, 'byCounty']
+        )
+            ->whereNumber('county')
+            ->name('by-county');
+
+        Route::get(
+            'city/{city}',
+            [PlotController::class, 'byCity']
+        )
+            ->whereNumber('city')
+            ->name('by-city');
+
+        Route::get(
+            'area/{area}',
+            [PlotController::class, 'byArea']
+        )
+            ->whereNumber('area')
+            ->name('by-area');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT CRUD
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [PlotController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [PlotController::class, 'store']
+        )->name('store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT STATUS / ACTIONS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{plot}/status',
+            [PlotController::class, 'updateStatus']
+        )
+            ->whereNumber('plot')
+            ->name('status.update');
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESERVE PLOT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{plot}/reserve',
+            [PlotController::class, 'reserve']
+        )
+            ->whereNumber('plot')
+            ->name('reserve');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SELL PLOT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{plot}/sell',
+            [PlotController::class, 'sell']
+        )
+            ->whereNumber('plot')
+            ->name('sell');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT AVAILABILITY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{plot}/availability',
+            [PlotController::class, 'availability']
+        )
+            ->whereNumber('plot')
+            ->name('availability');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT RESTORE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{plot}/restore',
+            [PlotController::class, 'restore']
+        )
+            ->whereNumber('plot')
+            ->name('restore');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT FORCE DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{plot}/force',
+            [PlotController::class, 'forceDelete']
+        )
+            ->whereNumber('plot')
+            ->name('force-delete');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SHOW
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{plot}',
+            [PlotController::class, 'show']
+        )
+            ->whereNumber('plot')
+            ->name('show');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT UPDATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{plot}',
+            [PlotController::class, 'update']
+        )
+            ->whereNumber('plot')
+            ->name('update');
+
+        Route::patch(
+            '{plot}',
+            [PlotController::class, 'update']
+        )
+            ->whereNumber('plot')
+            ->name('patch');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT DELETE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{plot}',
+            [PlotController::class, 'destroy']
+        )
+            ->whereNumber('plot')
+            ->name('destroy');
+    });
+
+
 
 
     /*

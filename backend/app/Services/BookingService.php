@@ -3,10 +3,13 @@
 namespace App\Services;
 
 use App\Models\Booking;
+use App\Models\Tenant;
 use App\Models\Unit;
+use App\Models\User;
 use App\Repositories\Interfaces\BookingRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -19,10 +22,12 @@ class BookingService
     */
 
     private const DEFAULT_PER_PAGE = 15;
+
     private const MAX_PER_PAGE = 100;
 
     /**
-     * Fields used when merging persisted booking data with an update payload.
+     * Fields used when building the complete persisted state
+     * during booking updates.
      */
     private const MERGE_FIELDS = [
         'property_id',
@@ -33,6 +38,7 @@ class BookingService
         'tenancy_id',
         'booking_type',
         'source',
+        'booking_date',
         'start_date',
         'end_date',
         'check_in_date',
@@ -43,6 +49,18 @@ class BookingService
         'booking_fee',
         'discount_amount',
         'amount_paid',
+        'number_of_adults',
+        'number_of_children',
+        'first_name',
+        'last_name',
+        'email',
+        'phone',
+        'special_requests',
+        'notes',
+        'payment_method',
+        'payment_reference',
+        'meta_title',
+        'meta_description',
     ];
 
     /**
@@ -80,7 +98,7 @@ class BookingService
     ];
 
     /**
-     * Bookings allowed to be completed.
+     * Bookings allowed to be completed/checked in.
      */
     private const COMPLETABLE_STATUSES = [
         Booking::STATUS_CONFIRMED,
@@ -145,17 +163,21 @@ class BookingService
     /**
      * Find booking by ID.
      */
-    public function find(int $id): ?Booking
+    public function find(int|string $id): ?Booking
     {
-        return $this->bookingRepository->find($id);
+        return $this->bookingRepository->find(
+            $this->normalizeId($id)
+        );
     }
 
     /**
      * Find booking or fail.
      */
-    public function findOrFail(int $id): Booking
+    public function findOrFail(int|string $id): Booking
     {
-        return $this->bookingRepository->findOrFail($id);
+        return $this->bookingRepository->findOrFail(
+            $this->normalizeId($id)
+        );
     }
 
     /**
@@ -164,11 +186,69 @@ class BookingService
     public function create(array $data): Booking
     {
         return DB::transaction(function () use ($data) {
+            /*
+            |--------------------------------------------------------------------------
+            | Authenticated booking creator
+            |--------------------------------------------------------------------------
+            */
+
+            $authenticatedUser = Auth::user();
+
+            if (!$authenticatedUser) {
+                throw ValidationException::withMessages([
+                    'user_id' => [
+                        'An authenticated user is required to create a booking.',
+                    ],
+                ]);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Normalize incoming data
+            |--------------------------------------------------------------------------
+            */
+
             $data = $this->prepareBookingData($data);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Assign authenticated booking creator
+            |--------------------------------------------------------------------------
+            */
+
+            $data['user_id'] = $authenticatedUser->id;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Resolve authoritative customer
+            |--------------------------------------------------------------------------
+            */
+
+            $data = $this->resolveCustomerData($data);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Resolve tenant
+            |--------------------------------------------------------------------------
+            */
+
+            $data = $this->resolveTenantData($data);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate dates and relationships
+            |--------------------------------------------------------------------------
+            */
 
             $this->validateBookingDates($data);
             $this->validateBookingReferences($data);
             $this->validateUnitAvailability($data);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Calculate financial values server-side
+            |--------------------------------------------------------------------------
+            */
 
             $financialData = $this->prepareFinancialData($data);
 
@@ -178,68 +258,149 @@ class BookingService
             );
 
             /*
-             * All newly created bookings begin as pending.
-             */
+            |--------------------------------------------------------------------------
+            | New bookings always begin as pending
+            |--------------------------------------------------------------------------
+            */
+
             $data['status'] = Booking::STATUS_PENDING;
 
             /*
-             * Never trust payment_status from the client.
-             */
+            |--------------------------------------------------------------------------
+            | Payment status is derived from financial values
+            |--------------------------------------------------------------------------
+            */
+
             $data['payment_status'] = $this->calculatePaymentStatus(
                 (float) $data['total_amount'],
                 (float) $data['amount_paid']
             );
 
-            return $this->bookingRepository->create($data);
+            /*
+            |--------------------------------------------------------------------------
+            | Identifier generation remains in Booking model
+            |--------------------------------------------------------------------------
+            */
+
+            $data = $this->generateBookingIdentifiers($data);
+
+            $booking = $this->bookingRepository->create($data);
+
+            return $booking->fresh(
+                $this->bookingRelations()
+            );
         });
     }
 
     /**
-     * Update an existing booking.
+     * Update an existing booking by ID.
+     *
+     * IMPORTANT:
+     * The controller passes a booking ID.
+     * The service resolves the Booking model internally.
      */
     public function update(
-        Booking $booking,
+        int|string $id,
         array $data
     ): Booking {
-        return DB::transaction(function () use ($booking, $data) {
+        return DB::transaction(function () use (
+            $id,
+            $data
+        ) {
+            /*
+            |--------------------------------------------------------------------------
+            | Resolve booking
+            |--------------------------------------------------------------------------
+            */
+
+            $bookingId = $this->normalizeId($id);
+
+            $booking = $this->bookingRepository->findOrFail(
+                $bookingId
+            );
+
+            $booking->refresh();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Ensure booking is editable
+            |--------------------------------------------------------------------------
+            */
+
             $this->ensureBookingCanBeUpdated($booking);
 
             /*
-             * Build a complete validation state from the persisted
-             * booking plus incoming values.
-             */
+            |--------------------------------------------------------------------------
+            | Merge persisted state with submitted state
+            |--------------------------------------------------------------------------
+            */
+
             $mergedData = array_merge(
                 $booking->only(self::MERGE_FIELDS),
                 $data
             );
 
+            $mergedData['id'] = $bookingId;
+
             /*
-             * Normalize the complete merged state.
-             */
+            |--------------------------------------------------------------------------
+            | Normalize complete state
+            |--------------------------------------------------------------------------
+            */
+
             $mergedData = $this->prepareBookingData(
                 $mergedData,
                 $booking
             );
 
             /*
-             * If customer identity changes, remove any manually
-             * supplied snapshot values. The customer snapshot should
-             * be resolved by the application layer.
-             */
-            if (
-                array_key_exists('customer_id', $data) &&
-                (int) $data['customer_id'] !== (int) $booking->customer_id
-            ) {
-                $this->removeCustomerSnapshot($data);
-            }
+            |--------------------------------------------------------------------------
+            | Resolve customer
+            |--------------------------------------------------------------------------
+            */
+
+            $mergedData = $this->resolveCustomerData(
+                $mergedData,
+                $booking
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Resolve tenant
+            |--------------------------------------------------------------------------
+            */
+
+            $mergedData = $this->resolveTenantData(
+                $mergedData,
+                $booking
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate complete state
+            |--------------------------------------------------------------------------
+            */
 
             $this->validateBookingDates($mergedData);
+
             $this->validateBookingReferences($mergedData);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Exclude current booking from availability check
+            |--------------------------------------------------------------------------
+            */
 
             $this->validateUnitAvailability(
                 $mergedData,
-                $booking->id
+                $bookingId
             );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Recalculate financial values
+            |--------------------------------------------------------------------------
+            */
 
             $financialData = $this->prepareFinancialData(
                 $mergedData,
@@ -247,62 +408,145 @@ class BookingService
             );
 
             /*
-             * Only the explicitly submitted normal fields should
-             * be persisted. Financial values are overwritten with
-             * server-calculated values.
-             */
-            foreach (self::FINANCIAL_FIELDS as $field) {
-                if (array_key_exists($field, $financialData)) {
-                    $data[$field] = $financialData[$field];
-                }
-            }
+            |--------------------------------------------------------------------------
+            | Only legitimate editable fields are accepted
+            |--------------------------------------------------------------------------
+            */
+
+            $updateData = $this->filterUpdateData($data);
 
             /*
-             * Normal update cannot alter workflow state.
-             */
-            $this->removeWorkflowFields($data);
+            |--------------------------------------------------------------------------
+            | Remove workflow-controlled fields
+            |--------------------------------------------------------------------------
+            */
+
+            $this->removeWorkflowFields($updateData);
 
             /*
-             * Never allow client-side calculated fields.
-             */
+            |--------------------------------------------------------------------------
+            | Never trust client-calculated financial fields
+            |--------------------------------------------------------------------------
+            */
+
             unset(
-                $data['total_amount'],
-                $data['balance'],
-                $data['payment_status']
+                $updateData['total_amount'],
+                $updateData['balance'],
+                $updateData['payment_status']
             );
 
             /*
-             * Re-apply server-calculated financial fields after
-             * removing client-controlled financial fields.
-             */
-            foreach ([
-                'rent_amount',
-                'deposit_amount',
-                'service_charge',
-                'booking_fee',
-                'discount_amount',
-                'amount_paid',
-                'total_amount',
-                'balance',
-                'payment_status',
-            ] as $field) {
+            |--------------------------------------------------------------------------
+            | Apply calculated financial values
+            |--------------------------------------------------------------------------
+            */
+
+            foreach (self::FINANCIAL_FIELDS as $field) {
                 if (array_key_exists($field, $financialData)) {
-                    $data[$field] = $financialData[$field];
+                    $updateData[$field] = $financialData[$field];
                 }
             }
 
-            return $this->bookingRepository->update(
+            /*
+            |--------------------------------------------------------------------------
+            | Customer relationship and snapshot are authoritative
+            |--------------------------------------------------------------------------
+            */
+
+            foreach ([
+                'customer_id',
+                'first_name',
+                'last_name',
+                'email',
+                'phone',
+            ] as $field) {
+                if (array_key_exists($field, $mergedData)) {
+                    $updateData[$field] = $mergedData[$field];
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Tenant relationship is authoritative
+            |--------------------------------------------------------------------------
+            */
+
+            if (array_key_exists('tenant_id', $mergedData)) {
+                $updateData['tenant_id'] = $mergedData['tenant_id'];
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Preserve validated booking state
+            |--------------------------------------------------------------------------
+            */
+
+            foreach ([
+                'property_id',
+                'apartment_id',
+                'unit_id',
+                'tenancy_id',
+                'booking_type',
+                'source',
+                'start_date',
+                'end_date',
+                'check_in_date',
+                'check_out_date',
+                'booking_date',
+                'number_of_adults',
+                'number_of_children',
+                'special_requests',
+                'notes',
+                'payment_method',
+                'payment_reference',
+                'meta_title',
+                'meta_description',
+            ] as $field) {
+                if (array_key_exists($field, $mergedData)) {
+                    $updateData[$field] = $mergedData[$field];
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Booking creator and identifiers cannot change
+            |--------------------------------------------------------------------------
+            */
+
+            unset(
+                $updateData['id'],
+                $updateData['user_id'],
+                $updateData['booking_number'],
+                $updateData['reference'],
+                $updateData['slug']
+            );
+
+            $this->removeWorkflowFields($updateData);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Persist
+            |--------------------------------------------------------------------------
+            */
+
+            $updatedBooking = $this->bookingRepository->update(
                 $booking,
-                $data
+                $updateData
+            );
+
+            return $updatedBooking->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
     /**
-     * Soft delete booking.
+     * Soft delete booking by ID.
      */
-    public function delete(Booking $booking): bool
+    public function delete(int|string $id): bool
     {
+        $booking = $this->findOrFail($id);
+
         if (
             in_array(
                 $booking->status,
@@ -321,18 +565,26 @@ class BookingService
     }
 
     /**
-     * Restore a soft-deleted booking.
+     * Restore a soft-deleted booking by ID.
      */
-    public function restore(Booking $booking): bool
+    public function restore(int|string $id): Booking
     {
-        return $this->bookingRepository->restore($booking);
+        $booking = $this->findOrFail($id);
+
+        $this->bookingRepository->restore($booking);
+
+        return $booking->fresh(
+            $this->bookingRelations()
+        );
     }
 
     /**
-     * Permanently delete a booking.
+     * Permanently delete a booking by ID.
      */
-    public function forceDelete(Booking $booking): bool
+    public function forceDelete(int|string $id): bool
     {
+        $booking = $this->findOrFail($id);
+
         return $this->bookingRepository->forceDelete($booking);
     }
 
@@ -342,9 +594,6 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Find by booking number.
-     */
     public function findByBookingNumber(
         string $bookingNumber
     ): ?Booking {
@@ -353,9 +602,6 @@ class BookingService
         );
     }
 
-    /**
-     * Find by reference.
-     */
     public function findByReference(
         string $reference
     ): ?Booking {
@@ -370,16 +616,15 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Search bookings.
-     */
     public function search(
         string $query,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->search(
             trim($query),
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
@@ -389,12 +634,10 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Get bookings by status.
-     */
     public function getByStatus(
         string $status,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         $status = strtolower(trim($status));
 
@@ -402,16 +645,15 @@ class BookingService
 
         return $this->bookingRepository->getByStatus(
             $status,
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get bookings by payment status.
-     */
     public function getByPaymentStatus(
         string $paymentStatus,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         $paymentStatus = strtolower(trim($paymentStatus));
 
@@ -419,79 +661,81 @@ class BookingService
 
         return $this->bookingRepository->getByPaymentStatus(
             $paymentStatus,
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get pending bookings.
-     */
     public function getPending(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getPending(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get confirmed bookings.
-     */
     public function getConfirmed(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getConfirmed(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get active bookings.
-     */
     public function getActive(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getActive(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get completed bookings.
-     */
     public function getCompleted(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getCompleted(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get cancelled bookings.
-     */
     public function getCancelled(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getCancelled(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get expired bookings.
-     */
+    public function getRejected(
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
+    ): LengthAwarePaginator {
+        return $this->bookingRepository->getRejected(
+            $this->normalizePerPage($perPage),
+            $filters
+        );
+    }
+
     public function getExpired(
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getExpired(
-            $this->normalizePerPage($perPage)
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get bookings whose end date has passed.
-     */
     public function getEndedBookings(): Collection
     {
         return $this->bookingRepository->getEndedBookings();
@@ -503,11 +747,10 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Confirm booking.
-     */
-    public function confirm(Booking $booking): Booking
+    public function confirm(int|string $id): Booking
     {
+        $booking = $this->findOrFail($id);
+
         return DB::transaction(function () use ($booking) {
             if ($booking->status !== Booking::STATUS_PENDING) {
                 throw ValidationException::withMessages([
@@ -525,15 +768,16 @@ class BookingService
                     'status' => Booking::STATUS_CONFIRMED,
                     'confirmed_at' => now(),
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Approve booking.
-     */
-    public function approve(Booking $booking): Booking
+    public function approve(int|string $id): Booking
     {
+        $booking = $this->findOrFail($id);
+
         return DB::transaction(function () use ($booking) {
             $this->ensureStatusAllowed(
                 $booking,
@@ -549,17 +793,16 @@ class BookingService
                     'status' => Booking::STATUS_APPROVED,
                     'approved_at' => now(),
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Check in booking.
-     *
-     * Check-in is represented by check_in_date.
-     */
-    public function checkIn(Booking $booking): Booking
+    public function checkIn(int|string $id): Booking
     {
+        $booking = $this->findOrFail($id);
+
         $this->ensureStatusAllowed(
             $booking,
             self::COMPLETABLE_STATUSES,
@@ -602,17 +845,18 @@ class BookingService
                 [
                     'check_in_date' => now()->toDateString(),
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Reject booking.
-     */
     public function reject(
-        Booking $booking,
+        int|string $id,
         ?string $reason = null
     ): Booking {
+        $booking = $this->findOrFail($id);
+
         $this->ensureStatusAllowed(
             $booking,
             self::REJECTABLE_STATUSES,
@@ -629,7 +873,10 @@ class BookingService
             ]);
         }
 
-        return DB::transaction(function () use ($booking, $reason) {
+        return DB::transaction(function () use (
+            $booking,
+            $reason
+        ) {
             return $this->bookingRepository->update(
                 $booking,
                 [
@@ -637,24 +884,27 @@ class BookingService
                     'rejected_at' => now(),
                     'rejection_reason' => $reason,
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Cancel booking.
-     */
     public function cancel(
-        Booking $booking,
-        ?string $reason = null
+        int|string $id,
+        array $data = []
     ): Booking {
+        $booking = $this->findOrFail($id);
+
         $this->ensureStatusAllowed(
             $booking,
             self::CANCELLABLE_STATUSES,
             'This booking cannot be cancelled from its current status.'
         );
 
-        $reason = $this->normalizeReason($reason);
+        $reason = $this->normalizeReason(
+            $data['cancellation_reason'] ?? null
+        );
 
         if (!$reason) {
             throw ValidationException::withMessages([
@@ -664,23 +914,30 @@ class BookingService
             ]);
         }
 
-        return DB::transaction(function () use ($booking, $reason) {
+        return DB::transaction(function () use (
+            $booking,
+            $reason,
+            $data
+        ) {
             return $this->bookingRepository->update(
                 $booking,
                 [
                     'status' => Booking::STATUS_CANCELLED,
                     'cancelled_at' => now(),
                     'cancellation_reason' => $reason,
+                    'payment_reference' => $data['payment_reference']
+                        ?? $booking->payment_reference,
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Complete booking.
-     */
-    public function complete(Booking $booking): Booking
+    public function complete(int|string $id): Booking
     {
+        $booking = $this->findOrFail($id);
+
         $this->ensureStatusAllowed(
             $booking,
             self::COMPLETABLE_STATUSES,
@@ -696,15 +953,16 @@ class BookingService
                     'check_out_date' => $booking->check_out_date
                         ?? now()->toDateString(),
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Expire booking.
-     */
-    public function expire(Booking $booking): Booking
+    public function expire(int|string $id): Booking
     {
+        $booking = $this->findOrFail($id);
+
         if (!$booking->end_date) {
             throw ValidationException::withMessages([
                 'end_date' => [
@@ -744,20 +1002,22 @@ class BookingService
                 [
                     'status' => Booking::STATUS_EXPIRED,
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Automatically expire all ended bookings.
-     */
     public function expireEndedBookings(): int
     {
         $bookings = $this->bookingRepository->getEndedBookings();
 
         $count = 0;
 
-        DB::transaction(function () use ($bookings, &$count) {
+        DB::transaction(function () use (
+            $bookings,
+            &$count
+        ) {
             foreach ($bookings as $booking) {
                 if (
                     in_array(
@@ -800,68 +1060,63 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Get bookings by unit.
-     */
     public function getByUnit(
         int $unitId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByUnit(
-            $unitId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($unitId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get bookings by customer.
-     */
     public function getByCustomer(
         int $customerId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByCustomer(
-            $customerId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($customerId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get bookings by tenant.
-     */
     public function getByTenant(
         int $tenantId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByTenant(
-            $tenantId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($tenantId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get bookings by property.
-     */
     public function getByProperty(
         int $propertyId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByProperty(
-            $propertyId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($propertyId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
-    /**
-     * Get bookings by apartment.
-     */
     public function getByApartment(
         int $apartmentId,
-        int $perPage = self::DEFAULT_PER_PAGE
+        int $perPage = self::DEFAULT_PER_PAGE,
+        array $filters = []
     ): LengthAwarePaginator {
         return $this->bookingRepository->getByApartment(
-            $apartmentId,
-            $this->normalizePerPage($perPage)
+            $this->normalizeId($apartmentId),
+            $this->normalizePerPage($perPage),
+            $filters
         );
     }
 
@@ -872,7 +1127,7 @@ class BookingService
     */
 
     /**
-     * Check whether a unit has an overlapping booking.
+     * Check whether a unit has an overlapping active booking.
      */
     public function hasOverlappingBooking(
         int $unitId,
@@ -886,15 +1141,17 @@ class BookingService
         );
 
         return $this->bookingRepository->hasOverlappingBooking(
-            $unitId,
+            $this->normalizeId($unitId),
             $startDate,
             $endDate,
-            $exceptBookingId
+            $exceptBookingId !== null
+                ? $this->normalizeId($exceptBookingId)
+                : null
         );
     }
 
     /**
-     * Get available units.
+     * Get units available for the requested booking period.
      */
     public function getAvailableUnits(
         string $startDate,
@@ -911,15 +1168,18 @@ class BookingService
         return $this->bookingRepository->getAvailableUnits(
             $startDate,
             $endDate,
-            $propertyId,
-            $apartmentId,
-            $exceptBookingId
+            $propertyId !== null
+                ? $this->normalizeId($propertyId)
+                : null,
+            $apartmentId !== null
+                ? $this->normalizeId($apartmentId)
+                : null,
+            $exceptBookingId !== null
+                ? $this->normalizeId($exceptBookingId)
+                : null
         );
     }
 
-    /**
-     * Get available users.
-     */
     public function getAvailableUsers(
         ?string $search = null
     ): Collection {
@@ -934,9 +1194,6 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Get bookings by date range.
-     */
     public function getByDateRange(
         string $startDate,
         string $endDate,
@@ -960,13 +1217,12 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Mark booking as fully paid.
-     */
     public function markAsPaid(
-        Booking $booking,
+        int|string $id,
         ?float $amount = null
     ): Booking {
+        $booking = $this->findOrFail($id);
+
         $totalAmount = $this->calculateBookingTotal($booking);
 
         $amountPaid = $amount !== null
@@ -1007,17 +1263,18 @@ class BookingService
                     'payment_status' => Booking::PAYMENT_PAID,
                     'paid_at' => now(),
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Record a partial or final payment.
-     */
     public function recordPartialPayment(
-        Booking $booking,
+        int|string $id,
         float $amount
     ): Booking {
+        $booking = $this->findOrFail($id);
+
         $amount = round($amount, 2);
 
         if ($amount <= 0) {
@@ -1070,15 +1327,16 @@ class BookingService
                         ? now()
                         : $booking->paid_at,
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
 
-    /**
-     * Mark booking as refunded.
-     */
-    public function refund(Booking $booking): Booking
+    public function refund(int|string $id): Booking
     {
+        $booking = $this->findOrFail($id);
+
         if (
             !in_array(
                 $booking->payment_status,
@@ -1102,6 +1360,8 @@ class BookingService
                 [
                     'payment_status' => Booking::PAYMENT_REFUNDED,
                 ]
+            )->fresh(
+                $this->bookingRelations()
             );
         });
     }
@@ -1112,9 +1372,6 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Get booking statistics.
-     */
     public function getStatistics(
         array $filters = []
     ): array {
@@ -1123,9 +1380,6 @@ class BookingService
         );
     }
 
-    /**
-     * Get booking reports.
-     */
     public function getReport(
         array $filters = []
     ): array {
@@ -1141,12 +1395,18 @@ class BookingService
     */
 
     /**
-     * Prepare booking data.
+     * Normalize booking data before validation/persistence.
      */
     protected function prepareBookingData(
         array $data,
         ?Booking $booking = null
     ): array {
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize strings
+        |--------------------------------------------------------------------------
+        */
+
         $stringFields = [
             'reference',
             'first_name',
@@ -1170,12 +1430,115 @@ class BookingService
             }
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize email
+        |--------------------------------------------------------------------------
+        */
+
         if (
             isset($data['email']) &&
             $data['email'] !== ''
         ) {
-            $data['email'] = strtolower($data['email']);
+            $data['email'] = strtolower(
+                $data['email']
+            );
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize relationship IDs
+        |--------------------------------------------------------------------------
+        */
+
+        foreach ([
+            'property_id',
+            'apartment_id',
+            'unit_id',
+            'customer_id',
+            'tenant_id',
+            'tenancy_id',
+        ] as $field) {
+            if (
+                array_key_exists($field, $data) &&
+                $data[$field] !== null &&
+                $data[$field] !== ''
+            ) {
+                if (
+                    !is_numeric($data[$field]) ||
+                    (int) $data[$field] < 1
+                ) {
+                    throw ValidationException::withMessages([
+                        $field => [
+                            'The selected value must be a valid ID.',
+                        ],
+                    ]);
+                }
+
+                $data[$field] = (int) $data[$field];
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize adults
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            array_key_exists('number_of_adults', $data) &&
+            $data['number_of_adults'] !== null &&
+            $data['number_of_adults'] !== ''
+        ) {
+            if (
+                !is_numeric($data['number_of_adults']) ||
+                (int) $data['number_of_adults'] < 1
+            ) {
+                throw ValidationException::withMessages([
+                    'number_of_adults' => [
+                        'Number of adults must be at least 1.',
+                    ],
+                ]);
+            }
+
+            $data['number_of_adults'] = (int) $data['number_of_adults'];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize children
+        |--------------------------------------------------------------------------
+        |
+        | IMPORTANT:
+        | number_of_children is a COUNT, not a relationship ID.
+        | Zero is valid.
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            array_key_exists('number_of_children', $data) &&
+            $data['number_of_children'] !== null &&
+            $data['number_of_children'] !== ''
+        ) {
+            if (
+                !is_numeric($data['number_of_children']) ||
+                (int) $data['number_of_children'] < 0
+            ) {
+                throw ValidationException::withMessages([
+                    'number_of_children' => [
+                        'Number of children must be a valid whole number.',
+                    ],
+                ]);
+            }
+
+            $data['number_of_children'] = (int) $data['number_of_children'];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize monetary fields
+        |--------------------------------------------------------------------------
+        */
 
         foreach ([
             'rent_amount',
@@ -1198,12 +1561,22 @@ class BookingService
         }
 
         /*
-         * Calculated values must never come from the client.
-         */
+        |--------------------------------------------------------------------------
+        | Server-side financial values
+        |--------------------------------------------------------------------------
+        */
+
         unset(
             $data['total_amount'],
-            $data['balance']
+            $data['balance'],
+            $data['payment_status']
         );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Booking type
+        |--------------------------------------------------------------------------
+        */
 
         if (
             isset($data['booking_type']) &&
@@ -1213,6 +1586,12 @@ class BookingService
                 trim($data['booking_type'])
             );
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Source
+        |--------------------------------------------------------------------------
+        */
 
         if (
             isset($data['source']) &&
@@ -1224,15 +1603,171 @@ class BookingService
         }
 
         /*
-         * Normal create/update cannot control workflow state.
-         */
+        |--------------------------------------------------------------------------
+        | Workflow fields are service-controlled
+        |--------------------------------------------------------------------------
+        */
+
         $this->removeWorkflowFields($data);
 
-        /*
-         * Payment status is always calculated by the service.
-         */
-        unset($data['payment_status']);
+        return $data;
+    }
 
+    /**
+     * Resolve authoritative customer relationship and snapshot.
+     */
+    protected function resolveCustomerData(
+        array $data,
+        ?Booking $booking = null
+    ): array {
+        $customerId = array_key_exists(
+            'customer_id',
+            $data
+        )
+            ? $data['customer_id']
+            : $booking?->customer_id;
+
+        if (
+            $customerId === null ||
+            $customerId === ''
+        ) {
+            $data['customer_id'] = null;
+
+            return $data;
+        }
+
+        $customer = User::query()->find(
+            (int) $customerId
+        );
+
+        if (!$customer) {
+            throw ValidationException::withMessages([
+                'customer_id' => [
+                    'The selected customer does not exist.',
+                ],
+            ]);
+        }
+
+        $data['customer_id'] = $customer->id;
+
+        $data['first_name'] = $customer->first_name
+            ?? '';
+
+        $data['last_name'] = $customer->last_name
+            ?? '';
+
+        if (
+            $data['first_name'] === '' &&
+            !empty($customer->name)
+        ) {
+            $nameParts = preg_split(
+                '/\s+/',
+                trim($customer->name),
+                2
+            );
+
+            $data['first_name'] = $nameParts[0] ?? '';
+
+            if (
+                $data['last_name'] === '' &&
+                isset($nameParts[1])
+            ) {
+                $data['last_name'] = $nameParts[1];
+            }
+        }
+
+        $data['email'] = $customer->email
+            ? strtolower(trim($customer->email))
+            : null;
+
+        $data['phone'] = $customer->phone
+            ? trim($customer->phone)
+            : null;
+
+        return $data;
+    }
+
+    /**
+     * Resolve tenant relationship.
+     */
+    protected function resolveTenantData(
+        array $data,
+        ?Booking $booking = null
+    ): array {
+        $tenantId = array_key_exists(
+            'tenant_id',
+            $data
+        )
+            ? $data['tenant_id']
+            : $booking?->tenant_id;
+
+        if (
+            $tenantId === null ||
+            $tenantId === ''
+        ) {
+            $data['tenant_id'] = null;
+
+            return $data;
+        }
+
+        $tenant = Tenant::query()
+            ->with('user')
+            ->find((int) $tenantId);
+
+        if (!$tenant) {
+            throw ValidationException::withMessages([
+                'tenant_id' => [
+                    'The selected tenant does not exist.',
+                ],
+            ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Customer and tenant must represent the same user
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            !empty($data['customer_id']) &&
+            $tenant->user_id &&
+            (int) $tenant->user_id !==
+                (int) $data['customer_id']
+        ) {
+            throw ValidationException::withMessages([
+                'tenant_id' => [
+                    'The selected tenant does not belong to the selected customer.',
+                ],
+            ]);
+        }
+
+        $data['tenant_id'] = $tenant->id;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Tenant can resolve customer automatically
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            empty($data['customer_id']) &&
+            $tenant->user_id
+        ) {
+            $data = $this->resolveCustomerData([
+                ...$data,
+                'customer_id' => $tenant->user_id,
+            ]);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Keep identifier generation inside Booking model.
+     */
+    protected function generateBookingIdentifiers(
+        array $data
+    ): array {
         return $data;
     }
 
@@ -1330,9 +1865,6 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Calculate payment status.
-     */
     protected function calculatePaymentStatus(
         float $totalAmount,
         float $amountPaid
@@ -1354,9 +1886,6 @@ class BookingService
         return Booking::PAYMENT_PARTIAL;
     }
 
-    /**
-     * Calculate booking total from persisted charges.
-     */
     protected function calculateBookingTotal(
         Booking $booking
     ): float {
@@ -1373,15 +1902,15 @@ class BookingService
         );
     }
 
-    /**
-     * Read a monetary value from incoming data or existing model.
-     */
     protected function moneyValue(
         array $data,
         string $field,
         mixed $fallback = null
     ): float {
-        $value = array_key_exists($field, $data)
+        $value = array_key_exists(
+            $field,
+            $data
+        )
             ? $data[$field]
             : $fallback;
 
@@ -1411,9 +1940,6 @@ class BookingService
         return $value;
     }
 
-    /**
-     * Ensure payment does not exceed booking total.
-     */
     protected function ensurePaymentDoesNotExceedTotal(
         float $amountPaid,
         float $totalAmount
@@ -1444,9 +1970,6 @@ class BookingService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Validate booking dates.
-     */
     protected function validateBookingDates(
         array $data
     ): void {
@@ -1475,9 +1998,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * Check-in cannot happen before the booking starts.
-         */
         if (
             $startDate &&
             $checkIn &&
@@ -1490,9 +2010,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * Check-out cannot happen after the booking ends.
-         */
         if (
             $endDate &&
             $checkOut &&
@@ -1505,10 +2022,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * If only check-in exists, it must still be inside the
-         * booking period.
-         */
         if (
             $startDate &&
             $endDate &&
@@ -1525,10 +2038,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * If only check-out exists, it must still be inside the
-         * booking period.
-         */
         if (
             $startDate &&
             $endDate &&
@@ -1546,9 +2055,6 @@ class BookingService
         }
     }
 
-    /**
-     * Validate date range.
-     */
     protected function validateDateRange(
         string $startDate,
         string $endDate
@@ -1576,12 +2082,6 @@ class BookingService
         }
     }
 
-    /**
-     * Validate property/apartment/unit relationships.
-     *
-     * Unit belongs to Apartment and Apartment belongs to Property.
-     * We intentionally do not assume Unit has a direct property relation.
-     */
     protected function validateBookingReferences(
         array $data
     ): void {
@@ -1597,7 +2097,7 @@ class BookingService
             ->with([
                 'apartment.property',
             ])
-            ->find($unitId);
+            ->find((int) $unitId);
 
         if (!$unit) {
             throw ValidationException::withMessages([
@@ -1607,26 +2107,17 @@ class BookingService
             ]);
         }
 
-        /*
-         * Resolve apartment through the unit.
-         */
         $resolvedApartmentId = $unit->apartment_id
             ?? $unit->apartment?->id;
 
-        /*
-         * Resolve property through Apartment.
-         */
         $resolvedPropertyId = $unit->apartment?->property_id
             ?? $unit->apartment?->property?->id;
 
-        /*
-         * If an apartment was explicitly selected, the unit must
-         * belong to that apartment.
-         */
         if (
             $apartmentId &&
             $resolvedApartmentId &&
-            (int) $resolvedApartmentId !== (int) $apartmentId
+            (int) $resolvedApartmentId !==
+                (int) $apartmentId
         ) {
             throw ValidationException::withMessages([
                 'unit_id' => [
@@ -1635,14 +2126,11 @@ class BookingService
             ]);
         }
 
-        /*
-         * If a property was explicitly selected, the unit's
-         * apartment must belong to that property.
-         */
         if (
             $propertyId &&
             $resolvedPropertyId &&
-            (int) $resolvedPropertyId !== (int) $propertyId
+            (int) $resolvedPropertyId !==
+                (int) $propertyId
         ) {
             throw ValidationException::withMessages([
                 'unit_id' => [
@@ -1651,10 +2139,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * If the database structure cannot resolve the relationship,
-         * fail safely instead of silently accepting invalid references.
-         */
         if (
             $apartmentId &&
             !$resolvedApartmentId
@@ -1677,9 +2161,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * Maintenance units can never be booked.
-         */
         if (
             method_exists($unit, 'isMaintenance') &&
             $unit->isMaintenance()
@@ -1691,9 +2172,6 @@ class BookingService
             ]);
         }
 
-        /*
-         * Fallback for models that expose status directly.
-         */
         if (
             isset($unit->status) &&
             strtolower((string) $unit->status) === 'maintenance'
@@ -1707,7 +2185,7 @@ class BookingService
     }
 
     /**
-     * Validate booking availability.
+     * Validate unit availability.
      */
     protected function validateUnitAvailability(
         array $data,
@@ -1725,14 +2203,20 @@ class BookingService
             return;
         }
 
-        if (
-            $this->bookingRepository->hasOverlappingBooking(
-                (int) $unitId,
-                (string) $startDate,
-                (string) $endDate,
+        if ($exceptBookingId !== null) {
+            $exceptBookingId = $this->normalizeId(
                 $exceptBookingId
-            )
-        ) {
+            );
+        }
+
+        $hasOverlap = $this->bookingRepository->hasOverlappingBooking(
+            (int) $unitId,
+            (string) $startDate,
+            (string) $endDate,
+            $exceptBookingId
+        );
+
+        if ($hasOverlap) {
             throw ValidationException::withMessages([
                 'unit_id' => [
                     'The selected unit is already booked for the selected dates.',
@@ -1742,7 +2226,7 @@ class BookingService
     }
 
     /**
-     * Validate availability for an existing booking.
+     * Validate availability using an existing booking.
      */
     protected function validateUnitAvailabilityForBooking(
         Booking $booking
@@ -1757,17 +2241,14 @@ class BookingService
 
         $this->validateUnitAvailability(
             [
-                'unit_id' => $booking->unit_id,
+                'unit_id' => (int) $booking->unit_id,
                 'start_date' => $booking->start_date,
                 'end_date' => $booking->end_date,
             ],
-            $booking->id
+            (int) $booking->id
         );
     }
 
-    /**
-     * Ensure booking can still be edited.
-     */
     protected function ensureBookingCanBeUpdated(
         Booking $booking
     ): void {
@@ -1786,9 +2267,6 @@ class BookingService
         }
     }
 
-    /**
-     * Ensure booking has an allowed status.
-     */
     protected function ensureStatusAllowed(
         Booking $booking,
         array $allowedStatuses,
@@ -1809,13 +2287,12 @@ class BookingService
         }
     }
 
-    /**
-     * Validate booking status.
-     */
     protected function validateStatus(
         string $status
     ): void {
-        $allowed = defined(Booking::class . '::STATUSES')
+        $allowed = defined(
+            Booking::class . '::STATUSES'
+        )
             ? Booking::STATUSES
             : [
                 Booking::STATUS_PENDING,
@@ -1836,13 +2313,12 @@ class BookingService
         }
     }
 
-    /**
-     * Validate payment status.
-     */
     protected function validatePaymentStatus(
         string $paymentStatus
     ): void {
-        $allowed = defined(Booking::class . '::PAYMENT_STATUSES')
+        $allowed = defined(
+            Booking::class . '::PAYMENT_STATUSES'
+        )
             ? Booking::PAYMENT_STATUSES
             : [
                 Booking::PAYMENT_PENDING,
@@ -1863,13 +2339,116 @@ class BookingService
 
     /*
     |--------------------------------------------------------------------------
+    | UPDATE HELPERS
+    |--------------------------------------------------------------------------
+    */
+
+    protected function filterUpdateData(
+        array $data
+    ): array {
+        $allowed = [
+            'property_id',
+            'apartment_id',
+            'unit_id',
+            'customer_id',
+            'tenant_id',
+            'tenancy_id',
+            'booking_type',
+            'source',
+            'booking_date',
+            'start_date',
+            'end_date',
+            'check_in_date',
+            'check_out_date',
+            'rent_amount',
+            'deposit_amount',
+            'service_charge',
+            'booking_fee',
+            'discount_amount',
+            'amount_paid',
+            'number_of_adults',
+            'number_of_children',
+            'first_name',
+            'last_name',
+            'email',
+            'phone',
+            'special_requests',
+            'notes',
+            'payment_method',
+            'payment_reference',
+            'meta_title',
+            'meta_description',
+        ];
+
+        return array_intersect_key(
+            $data,
+            array_flip($allowed)
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | INTERNAL HELPERS
     |--------------------------------------------------------------------------
     */
 
     /**
-     * Normalize pagination size.
+     * Normalize a booking ID.
+     *
+     * Prevents accidental values such as:
+     *
+     * [object Object]
+     *
+     * from reaching the repository.
      */
+    protected function normalizeId(
+        int|string $id
+    ): int {
+        if (is_int($id)) {
+            if ($id < 1) {
+                throw ValidationException::withMessages([
+                    'booking' => [
+                        'The booking ID must be a positive integer.',
+                    ],
+                ]);
+            }
+
+            return $id;
+        }
+
+        $id = trim($id);
+
+        if (
+            $id === '' ||
+            !ctype_digit($id) ||
+            (int) $id < 1
+        ) {
+            throw ValidationException::withMessages([
+                'booking' => [
+                    'The booking ID must be a valid positive integer.',
+                ],
+            ]);
+        }
+
+        return (int) $id;
+    }
+
+    /**
+     * Relationships returned with a complete booking.
+     */
+    protected function bookingRelations(): array
+    {
+        return [
+            'user',
+            'customer',
+            'tenant.user',
+            'property',
+            'apartment',
+            'unit',
+            'tenancy',
+        ];
+    }
+
     protected function normalizePerPage(
         int $perPage
     ): int {
@@ -1879,9 +2458,6 @@ class BookingService
         );
     }
 
-    /**
-     * Normalize workflow reason.
-     */
     protected function normalizeReason(
         ?string $reason
     ): ?string {
@@ -1896,9 +2472,6 @@ class BookingService
             : null;
     }
 
-    /**
-     * Remove workflow-controlled fields from normal update.
-     */
     protected function removeWorkflowFields(
         array &$data
     ): void {
@@ -1910,21 +2483,9 @@ class BookingService
             $data['cancelled_at'],
             $data['completed_at'],
             $data['rejection_reason'],
-            $data['cancellation_reason']
-        );
-    }
-
-    /**
-     * Remove customer snapshot fields when customer identity changes.
-     */
-    protected function removeCustomerSnapshot(
-        array &$data
-    ): void {
-        unset(
-            $data['first_name'],
-            $data['last_name'],
-            $data['email'],
-            $data['phone']
+            $data['cancellation_reason'],
+            $data['paid_at']
         );
     }
 }
+

@@ -1,6 +1,5 @@
 <?php
 
-
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
@@ -40,6 +39,12 @@ class LocationSeeder extends Seeder
                 'currency' => 'KES',
 
                 'regions' => [
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | NAIROBI REGION
+                    |--------------------------------------------------------------------------
+                    */
 
                     [
                         'name' => 'Nairobi Region',
@@ -192,13 +197,264 @@ class LocationSeeder extends Seeder
                                             ],
                                         ],
                                     ],
-
                                 ],
                             ],
-
                         ],
                     ],
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | CENTRAL REGION
+                    |--------------------------------------------------------------------------
+                    */
+
+                    [
+                        'name' => 'Central Region',
+                        'code' => 'CEN',
+
+                        'counties' => [
+
+                            [
+                                'name' => 'Kiambu County',
+                                'code' => 'KBU',
+
+                                'cities' => [
+
+                                    [
+                                        'name' => 'Ruiru',
+                                        'code' => 'RUI',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Ruiru',
+                                                'latitude' => -1.1483,
+                                                'longitude' => 36.9600,
+                                            ],
+
+                                            [
+                                                'name' => 'Kahawa Sukari',
+                                                'latitude' => -1.1830,
+                                                'longitude' => 36.9500,
+                                            ],
+
+                                            [
+                                                'name' => 'Kahawa Wendani',
+                                                'latitude' => -1.1780,
+                                                'longitude' => 36.9300,
+                                            ],
+
+                                            [
+                                                'name' => 'Membley',
+                                                'latitude' => -1.1300,
+                                                'longitude' => 36.9600,
+                                            ],
+                                        ],
+                                    ],
+
+                                    [
+                                        'name' => 'Juja',
+                                        'code' => 'JUJ',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Juja',
+                                                'latitude' => -1.1007,
+                                                'longitude' => 37.0130,
+                                            ],
+
+                                            [
+                                                'name' => 'Juja Farm',
+                                                'latitude' => -1.0700,
+                                                'longitude' => 37.0400,
+                                            ],
+
+                                            [
+                                                'name' => 'Kalimoni',
+                                                'latitude' => -1.0900,
+                                                'longitude' => 37.0200,
+                                            ],
+                                        ],
+                                    ],
+
+                                    [
+                                        'name' => 'Ruaka',
+                                        'code' => 'RUA',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Ruaka',
+                                                'latitude' => -1.2044,
+                                                'longitude' => 36.7794,
+                                            ],
+
+                                            [
+                                                'name' => 'Rosslyn',
+                                                'latitude' => -1.2200,
+                                                'longitude' => 36.7900,
+                                            ],
+
+                                            [
+                                                'name' => 'Banana',
+                                                'latitude' => -1.1900,
+                                                'longitude' => 36.7700,
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | RIFT VALLEY REGION
+                    |--------------------------------------------------------------------------
+                    */
+
+                    [
+                        'name' => 'Rift Valley Region',
+                        'code' => 'RVT',
+
+                        'counties' => [
+
+                            [
+                                'name' => 'Kajiado County',
+                                'code' => 'KJD',
+
+                                'cities' => [
+
+                                    [
+                                        'name' => 'Kitengela',
+                                        'code' => 'KIT',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Kitengela',
+                                                'latitude' => -1.4734,
+                                                'longitude' => 36.9584,
+                                            ],
+
+                                            [
+                                                'name' => 'Milimani',
+                                                'latitude' => -1.4600,
+                                                'longitude' => 36.9500,
+                                            ],
+
+                                            [
+                                                'name' => 'Acacia',
+                                                'latitude' => -1.4800,
+                                                'longitude' => 36.9700,
+                                            ],
+                                        ],
+                                    ],
+
+                                    [
+                                        'name' => 'Ngong',
+                                        'code' => 'NGO',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Ngong',
+                                                'latitude' => -1.3612,
+                                                'longitude' => 36.6560,
+                                            ],
+
+                                            [
+                                                'name' => 'Oloolua',
+                                                'latitude' => -1.3500,
+                                                'longitude' => 36.6800,
+                                            ],
+
+                                            [
+                                                'name' => 'Ngong Hills',
+                                                'latitude' => -1.3500,
+                                                'longitude' => 36.6200,
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | EASTERN REGION
+                    |--------------------------------------------------------------------------
+                    */
+
+                    [
+                        'name' => 'Eastern Region',
+                        'code' => 'EST',
+
+                        'counties' => [
+
+                            [
+                                'name' => 'Machakos County',
+                                'code' => 'MKS',
+
+                                'cities' => [
+
+                                    [
+                                        'name' => 'Syokimau',
+                                        'code' => 'SYO',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Syokimau',
+                                                'latitude' => -1.3632,
+                                                'longitude' => 36.9205,
+                                            ],
+
+                                            [
+                                                'name' => 'Katani',
+                                                'latitude' => -1.3500,
+                                                'longitude' => 36.9300,
+                                            ],
+
+                                            [
+                                                'name' => 'Mlolongo',
+                                                'latitude' => -1.3900,
+                                                'longitude' => 36.9400,
+                                            ],
+                                        ],
+                                    ],
+
+                                    [
+                                        'name' => 'Athi River',
+                                        'code' => 'ATH',
+
+                                        'areas' => [
+
+                                            [
+                                                'name' => 'Athi River',
+                                                'latitude' => -1.4563,
+                                                'longitude' => 36.9783,
+                                            ],
+
+                                            [
+                                                'name' => 'Kinanie',
+                                                'latitude' => -1.4700,
+                                                'longitude' => 37.0000,
+                                            ],
+
+                                            [
+                                                'name' => 'Lukenya',
+                                                'latitude' => -1.5000,
+                                                'longitude' => 37.0300,
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
                 ],
             ],
 
@@ -295,13 +551,10 @@ class LocationSeeder extends Seeder
                                             ],
                                         ],
                                     ],
-
                                 ],
                             ],
-
                         ],
                     ],
-
                 ],
             ],
 
@@ -398,13 +651,10 @@ class LocationSeeder extends Seeder
                                             ],
                                         ],
                                     ],
-
                                 ],
                             ],
-
                         ],
                     ],
-
                 ],
             ],
 
@@ -495,13 +745,10 @@ class LocationSeeder extends Seeder
                                             ],
                                         ],
                                     ],
-
                                 ],
                             ],
-
                         ],
                     ],
-
                 ],
             ],
 
@@ -622,13 +869,10 @@ class LocationSeeder extends Seeder
                                             ],
                                         ],
                                     ],
-
                                 ],
                             ],
-
                         ],
                     ],
-
                 ],
             ],
         ];
@@ -647,6 +891,8 @@ class LocationSeeder extends Seeder
             |--------------------------------------------------------------------------
             */
 
+            $countrySlug = Str::slug($countryData['country']);
+
             $country = Country::updateOrCreate(
                 [
                     'code' => $countryData['code'],
@@ -654,7 +900,7 @@ class LocationSeeder extends Seeder
                 [
                     'name' => $countryData['country'],
                     'code' => $countryData['code'],
-                    'slug' => Str::slug($countryData['country']),
+                    'slug' => $countrySlug,
                     'phone_code' => $countryData['phone_code'],
                     'currency' => $countryData['currency'],
                     'is_active' => true,
@@ -665,9 +911,28 @@ class LocationSeeder extends Seeder
             |--------------------------------------------------------------------------
             | REGIONS
             |--------------------------------------------------------------------------
+            |
+            | IMPORTANT:
+            |
+            | regions.slug is globally unique in the database.
+            |
+            | Therefore:
+            |
+            | Kenya + Central Region
+            |     => kenya-central-region
+            |
+            | Uganda + Central Region
+            |     => uganda-central-region
+            |
+            | This prevents duplicate slug errors between countries.
+            |
             */
 
             foreach ($countryData['regions'] as $regionData) {
+
+                $regionSlug = $countrySlug . '-' . Str::slug(
+                    $regionData['name']
+                );
 
                 $region = Region::updateOrCreate(
                     [
@@ -678,7 +943,7 @@ class LocationSeeder extends Seeder
                         'country_id' => $country->id,
                         'name' => $regionData['name'],
                         'code' => $regionData['code'],
-                        'slug' => Str::slug($regionData['name']),
+                        'slug' => $regionSlug,
                         'is_active' => true,
                     ]
                 );
@@ -753,7 +1018,11 @@ class LocationSeeder extends Seeder
 
                             $areaPrefix = Str::upper(
                                 Str::substr(
-                                    Str::replace('-', '', $areaSlug),
+                                    Str::replace(
+                                        '-',
+                                        '',
+                                        $areaSlug
+                                    ),
                                     0,
                                     3
                                 )
@@ -763,15 +1032,17 @@ class LocationSeeder extends Seeder
 
                             /*
                             |--------------------------------------------------------------------------
-                            | Prevent duplicate area codes
+                            | PREVENT DUPLICATE AREA CODES
                             |--------------------------------------------------------------------------
                             */
 
-                            $existingArea = Area::where('code', $areaCode)
+                            $existingArea = Area::query()
+                                ->where('code', $areaCode)
                                 ->where('city_id', '!=', $city->id)
                                 ->exists();
 
                             if ($existingArea) {
+
                                 $areaCode .= '-' . Str::upper(
                                     Str::substr(
                                         md5($areaSlug),
@@ -824,8 +1095,7 @@ class LocationSeeder extends Seeder
         */
 
         $this->command?->info(
-            'Countries, regions, counties, cities and areas seeded successfully with codes, phone codes, currencies and coordinates.'
+            'Countries, regions, counties, cities and areas seeded successfully with globally unique region slugs, codes, phone codes, currencies and coordinates.'
         );
     }
 }
-

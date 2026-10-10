@@ -21,61 +21,237 @@ class StoreBookingRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        $data = [];
+
         /*
         |--------------------------------------------------------------------------
-        | Normalize Optional Values
+        | RELATIONSHIP IDS
         |--------------------------------------------------------------------------
         */
 
-        $this->merge([
-            'booking_type' => $this->filled('booking_type')
-                ? strtolower(trim((string) $this->booking_type))
-                : 'reservation',
+        foreach ([
+            'customer_id',
+            'tenant_id',
+            'property_id',
+            'apartment_id',
+            'unit_id',
+            'tenancy_id',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
 
-            'source' => $this->filled('source')
-                ? strtolower(trim((string) $this->source))
-                : 'other',
+                $data[$field] = $value === null || $value === ''
+                    ? null
+                    : (int) $value;
+            }
+        }
 
-            'payment_status' => $this->filled('payment_status')
-                ? strtolower(trim((string) $this->payment_status))
-                : 'pending',
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING CLASSIFICATION
+        |--------------------------------------------------------------------------
+        */
 
-            'status' => $this->filled('status')
-                ? strtolower(trim((string) $this->status))
-                : 'pending',
+        if ($this->has('booking_type')) {
+            $data['booking_type'] = $this->filled('booking_type')
+                ? strtolower(trim((string) $this->input('booking_type')))
+                : 'reservation';
+        }
 
-            'email' => $this->filled('email')
-                ? strtolower(trim((string) $this->email))
-                : null,
+        if ($this->has('source')) {
+            $data['source'] = $this->filled('source')
+                ? strtolower(trim((string) $this->input('source')))
+                : 'other';
+        }
 
-            'phone' => $this->filled('phone')
-                ? trim((string) $this->phone)
-                : null,
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS
+        |--------------------------------------------------------------------------
+        |
+        | New bookings are always created as pending.
+        | Workflow transitions are handled by BookingService.
+        |
+        */
 
-            'first_name' => $this->filled('first_name')
-                ? trim((string) $this->first_name)
-                : null,
+        if ($this->has('status')) {
+            $data['status'] = $this->filled('status')
+                ? strtolower(trim((string) $this->input('status')))
+                : 'pending';
+        }
 
-            'last_name' => $this->filled('last_name')
-                ? trim((string) $this->last_name)
-                : null,
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENT STATUS
+        |--------------------------------------------------------------------------
+        */
 
-            'special_requests' => $this->filled('special_requests')
-                ? trim((string) $this->special_requests)
-                : null,
+        if ($this->has('payment_status')) {
+            $data['payment_status'] = $this->filled('payment_status')
+                ? strtolower(trim((string) $this->input('payment_status')))
+                : 'pending';
+        }
 
-            'notes' => $this->filled('notes')
-                ? trim((string) $this->notes)
-                : null,
+        /*
+        |--------------------------------------------------------------------------
+        | CUSTOMER SNAPSHOT
+        |--------------------------------------------------------------------------
+        */
 
-            'payment_method' => $this->filled('payment_method')
-                ? strtolower(trim((string) $this->payment_method))
-                : null,
+        if ($this->has('first_name')) {
+            $data['first_name'] = $this->filled('first_name')
+                ? trim((string) $this->input('first_name'))
+                : null;
+        }
 
-            'payment_reference' => $this->filled('payment_reference')
-                ? trim((string) $this->payment_reference)
-                : null,
-        ]);
+        if ($this->has('last_name')) {
+            $data['last_name'] = $this->filled('last_name')
+                ? trim((string) $this->input('last_name'))
+                : null;
+        }
+
+        if ($this->has('email')) {
+            $data['email'] = $this->filled('email')
+                ? strtolower(trim((string) $this->input('email')))
+                : null;
+        }
+
+        if ($this->has('phone')) {
+            $data['phone'] = $this->filled('phone')
+                ? trim((string) $this->input('phone'))
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | DATES
+        |--------------------------------------------------------------------------
+        */
+
+        foreach ([
+            'booking_date',
+            'start_date',
+            'end_date',
+            'check_in_date',
+            'check_out_date',
+        ] as $field) {
+            if ($this->has($field) && $this->input($field) === '') {
+                $data[$field] = null;
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | FINANCIAL VALUES
+        |--------------------------------------------------------------------------
+        |
+        | These are normalized here but the final total/balance calculation
+        | remains the responsibility of BookingService / Booking model.
+        |
+        */
+
+        foreach ([
+            'rent_amount',
+            'deposit_amount',
+            'service_charge',
+            'booking_fee',
+            'discount_amount',
+            'amount_paid',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                $data[$field] = $value === null || $value === ''
+                    ? null
+                    : (float) $value;
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | OCCUPANCY
+        |--------------------------------------------------------------------------
+        |
+        | number_of_children is a COUNT, not a relationship ID.
+        |
+        */
+
+        foreach ([
+            'number_of_adults',
+            'number_of_children',
+        ] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+
+                $data[$field] = $value === null || $value === ''
+                    ? null
+                    : (int) $value;
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | REQUESTS / NOTES
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('special_requests')) {
+            $data['special_requests'] = $this->filled('special_requests')
+                ? trim((string) $this->input('special_requests'))
+                : null;
+        }
+
+        if ($this->has('notes')) {
+            $data['notes'] = $this->filled('notes')
+                ? trim((string) $this->input('notes'))
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENT
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('payment_method')) {
+            $data['payment_method'] = $this->filled('payment_method')
+                ? strtolower(trim((string) $this->input('payment_method')))
+                : null;
+        }
+
+        if ($this->has('payment_reference')) {
+            $data['payment_reference'] = $this->filled('payment_reference')
+                ? trim((string) $this->input('payment_reference'))
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | SEO / METADATA
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->has('meta_title')) {
+            $data['meta_title'] = $this->filled('meta_title')
+                ? trim((string) $this->input('meta_title'))
+                : null;
+        }
+
+        if ($this->has('meta_description')) {
+            $data['meta_description'] = $this->filled('meta_description')
+                ? trim((string) $this->input('meta_description'))
+                : null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | MERGE NORMALIZED VALUES
+        |--------------------------------------------------------------------------
+        */
+
+        if (!empty($data)) {
+            $this->merge($data);
+        }
     }
 
     /**
@@ -86,24 +262,37 @@ class StoreBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
+
             /*
             |--------------------------------------------------------------------------
             | USER / CUSTOMER / TENANT
             |--------------------------------------------------------------------------
             */
 
+            /*
+             * The authenticated application user is assigned by the service.
+             *
+             * The frontend must never be allowed to choose the booking owner.
+             */
             'user_id' => [
-                'nullable',
-                'integer',
-                'exists:users,id',
+                'prohibited',
             ],
 
+            /*
+             * customer_id references users.id.
+             *
+             * This represents the customer account selected from the
+             * available customer/user list.
+             */
             'customer_id' => [
                 'nullable',
                 'integer',
                 'exists:users,id',
             ],
 
+            /*
+             * tenant_id references tenants.id.
+             */
             'tenant_id' => [
                 'nullable',
                 'integer',
@@ -112,7 +301,7 @@ class StoreBookingRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | PROPERTY / APARTMENT / UNIT
+            | PROPERTY / APARTMENT / UNIT / TENANCY
             |--------------------------------------------------------------------------
             */
 
@@ -126,6 +315,14 @@ class StoreBookingRequest extends FormRequest
                 'nullable',
                 'integer',
                 'exists:apartments,id',
+                Rule::exists('apartments', 'id')
+                    ->where(function ($query) {
+                        $propertyId = $this->input('property_id');
+
+                        if ($propertyId !== null) {
+                            $query->where('property_id', $propertyId);
+                        }
+                    }),
             ],
 
             'unit_id' => [
@@ -142,7 +339,7 @@ class StoreBookingRequest extends FormRequest
 
             /*
             |--------------------------------------------------------------------------
-            | BOOKING TYPE / STATUS
+            | BOOKING CLASSIFICATION
             |--------------------------------------------------------------------------
             */
 
@@ -155,30 +352,6 @@ class StoreBookingRequest extends FormRequest
                 ]),
             ],
 
-            /*
-            | Status is intentionally restricted to creation-safe states.
-            |
-            | Confirming, approving, rejecting, cancelling, completing
-            | and expiring should happen through BookingService actions.
-            */
-            'status' => [
-                'nullable',
-                Rule::in([
-                    'pending',
-                ]),
-            ],
-
-            'payment_status' => [
-                'nullable',
-                Rule::in([
-                    'pending',
-                    'partial',
-                    'paid',
-                    'failed',
-                    'refunded',
-                ]),
-            ],
-
             'source' => [
                 'required',
                 Rule::in([
@@ -188,6 +361,41 @@ class StoreBookingRequest extends FormRequest
                     'phone',
                     'referral',
                     'other',
+                ]),
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | STATUS
+            |--------------------------------------------------------------------------
+            |
+            | Store requests may only create pending bookings.
+            | confirm/approve/reject/cancel/complete/expire are workflow
+            | operations handled by BookingService.
+            |
+            */
+
+            'status' => [
+                'nullable',
+                Rule::in([
+                    'pending',
+                ]),
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENT STATUS
+            |--------------------------------------------------------------------------
+            */
+
+            'payment_status' => [
+                'nullable',
+                Rule::in([
+                    'pending',
+                    'partial',
+                    'paid',
+                    'failed',
+                    'refunded',
                 ]),
             ],
 
@@ -228,6 +436,13 @@ class StoreBookingRequest extends FormRequest
             |--------------------------------------------------------------------------
             | CUSTOMER SNAPSHOT
             |--------------------------------------------------------------------------
+            |
+            | If customer_id exists, BookingService should populate the snapshot
+            | from the selected customer account.
+            |
+            | If customer_id is not supplied, the snapshot is required for a
+            | walk-in / unregistered customer.
+            |
             */
 
             'first_name' => [
@@ -299,6 +514,14 @@ class StoreBookingRequest extends FormRequest
                 'max:999999999999.99',
             ],
 
+            /*
+             * Amount actually paid can be supplied.
+             *
+             * BookingService/model calculates:
+             *
+             * total_amount
+             * balance
+             */
             'amount_paid' => [
                 'nullable',
                 'numeric',
@@ -307,9 +530,11 @@ class StoreBookingRequest extends FormRequest
             ],
 
             /*
-            | total_amount and balance are calculated by Booking.
-            | They should not be trusted from the client.
+            |--------------------------------------------------------------------------
+            | SERVER-CALCULATED FINANCIAL FIELDS
+            |--------------------------------------------------------------------------
             */
+
             'total_amount' => [
                 'prohibited',
             ],
@@ -407,28 +632,111 @@ class StoreBookingRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'property_id.required' => 'Please select a property.',
-            'property_id.exists' => 'The selected property does not exist.',
 
-            'apartment_id.exists' => 'The selected apartment does not exist.',
+            /*
+            |--------------------------------------------------------------------------
+            | RELATIONSHIPS
+            |--------------------------------------------------------------------------
+            */
 
-            'unit_id.required' => 'Please select a unit.',
-            'unit_id.exists' => 'The selected unit does not exist.',
+            'property_id.required' =>
+                'Please select a property.',
 
-            'customer_id.exists' => 'The selected customer does not exist.',
-            'tenant_id.exists' => 'The selected tenant does not exist.',
-            'tenancy_id.exists' => 'The selected tenancy does not exist.',
+            'property_id.integer' =>
+                'The selected property is invalid.',
 
-            'booking_type.in' => 'The selected booking type is invalid.',
-            'status.in' => 'A new booking must start with pending status.',
-            'payment_status.in' => 'The selected payment status is invalid.',
-            'source.in' => 'The selected booking source is invalid.',
+            'property_id.exists' =>
+                'The selected property does not exist.',
+
+            'apartment_id.integer' =>
+                'The selected apartment is invalid.',
+
+            'apartment_id.exists' =>
+                'The selected apartment does not exist or does not belong to the selected property.',
+
+            'unit_id.required' =>
+                'Please select a unit.',
+
+            'unit_id.integer' =>
+                'The selected unit is invalid.',
+
+            'unit_id.exists' =>
+                'The selected unit does not exist.',
+
+            'customer_id.integer' =>
+                'The selected customer is invalid.',
+
+            'customer_id.exists' =>
+                'The selected customer does not exist.',
+
+            'tenant_id.integer' =>
+                'The selected tenant is invalid.',
+
+            'tenant_id.exists' =>
+                'The selected tenant does not exist.',
+
+            'tenancy_id.integer' =>
+                'The selected tenancy is invalid.',
+
+            'tenancy_id.exists' =>
+                'The selected tenancy does not exist.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING
+            |--------------------------------------------------------------------------
+            */
+
+            'booking_type.required' =>
+                'Please select a booking type.',
+
+            'booking_type.in' =>
+                'The selected booking type is invalid.',
+
+            'source.required' =>
+                'Please select a booking source.',
+
+            'source.in' =>
+                'The selected booking source is invalid.',
+
+            'status.in' =>
+                'A new booking must start with pending status.',
+
+            'payment_status.in' =>
+                'The selected payment status is invalid.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | DATES
+            |--------------------------------------------------------------------------
+            */
+
+            'booking_date.date' =>
+                'The booking date must be a valid date.',
+
+            'start_date.date' =>
+                'The start date must be a valid date.',
+
+            'end_date.date' =>
+                'The end date must be a valid date.',
 
             'end_date.after_or_equal' =>
                 'The booking end date must be on or after the start date.',
 
+            'check_in_date.date' =>
+                'The check-in date must be a valid date.',
+
+            'check_out_date.date' =>
+                'The check-out date must be a valid date.',
+
             'check_out_date.after_or_equal' =>
                 'The check-out date must be on or after the check-in date.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | CUSTOMER
+            |--------------------------------------------------------------------------
+            */
 
             'first_name.required_without' =>
                 'First name is required when no customer account is selected.',
@@ -442,8 +750,47 @@ class StoreBookingRequest extends FormRequest
             'phone.required_without' =>
                 'Phone number is required when no customer account is selected.',
 
+            /*
+            |--------------------------------------------------------------------------
+            | OCCUPANCY
+            |--------------------------------------------------------------------------
+            */
+
+            'number_of_adults.integer' =>
+                'Number of adults must be a whole number.',
+
             'number_of_adults.min' =>
                 'At least one adult is required.',
+
+            'number_of_children.integer' =>
+                'Number of children must be a whole number.',
+
+            'number_of_children.min' =>
+                'Number of children cannot be negative.',
+
+            /*
+            |--------------------------------------------------------------------------
+            | FINANCIALS
+            |--------------------------------------------------------------------------
+            */
+
+            'rent_amount.numeric' =>
+                'Rent amount must be a valid number.',
+
+            'deposit_amount.numeric' =>
+                'Deposit amount must be a valid number.',
+
+            'service_charge.numeric' =>
+                'Service charge must be a valid number.',
+
+            'booking_fee.numeric' =>
+                'Booking fee must be a valid number.',
+
+            'discount_amount.numeric' =>
+                'Discount amount must be a valid number.',
+
+            'amount_paid.numeric' =>
+                'Amount paid must be a valid number.',
 
             'total_amount.prohibited' =>
                 'Total amount is calculated automatically.',
