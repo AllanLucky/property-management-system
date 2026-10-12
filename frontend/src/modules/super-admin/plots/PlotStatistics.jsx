@@ -1,4 +1,3 @@
-
 import {
   AlertCircle,
   Ban,
@@ -20,54 +19,83 @@ import {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Safely convert a value to a number.
- */
 const toNumber = (value) => {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "object") {
+    return toNumber(
+      value.count ??
+      value.total ??
+      value.value ??
+      value.amount ??
+      value.total_amount ??
+      value.amount_paid ??
+      value.balance ??
+      0
+    );
+  }
+
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
 
-/**
- * Format numbers.
- */
 const formatNumber = (value) =>
-  new Intl.NumberFormat("en-KE").format(toNumber(value));
+  new Intl.NumberFormat("en-KE", {
+    maximumFractionDigits: 0,
+  }).format(toNumber(value));
 
-/**
- * Format Kenyan currency.
- */
 const formatCurrency = (value) =>
   new Intl.NumberFormat("en-KE", {
     style: "currency",
     currency: "KES",
-    currencyDisplay: "symbol",
-    minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(toNumber(value));
 
-/**
- * Resolve supported statistics response structures.
- */
-const getStatisticsSource = (statistics) => {
-  let source = statistics;
+const formatPercentage = (value) =>
+  `${toNumber(value).toFixed(1)}%`;
 
-  for (let index = 0; index < 4; index += 1) {
-    if (
-      source?.data &&
-      typeof source.data === "object" &&
-      !Array.isArray(source.data)
-    ) {
-      source = source.data;
+const getPercentage = (value, total) => {
+  const amount = toNumber(value);
+  const denominator = toNumber(total);
+
+  if (denominator <= 0) return 0;
+
+  return Math.min(100, Math.max(0, (amount / denominator) * 100));
+};
+
+/*
+|--------------------------------------------------------------------------
+| Normalize Laravel/API Statistics
+|--------------------------------------------------------------------------
+|
+| Supports:
+| { data: { total_plots: 10 } }
+| { data: { statistics: { total: 10 } } }
+| { data: { plots: { total: 10 }, sales: {...} } }
+| { statistics: { inventory: {...}, financials: {...} } }
+|--------------------------------------------------------------------------
+*/
+
+const getStatisticsSource = (input) => {
+  let source = input;
+
+  // Unwrap common API envelope layers.
+  for (let index = 0; index < 6; index += 1) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      return {};
+    }
+
+    if (source.statistics && typeof source.statistics === "object") {
+      source = source.statistics;
       continue;
     }
 
     if (
-      source?.statistics &&
-      typeof source.statistics === "object" &&
-      !Array.isArray(source.statistics)
+      source.data &&
+      typeof source.data === "object" &&
+      !Array.isArray(source.data)
     ) {
-      source = source.statistics;
+      source = source.data;
       continue;
     }
 
@@ -77,102 +105,115 @@ const getStatisticsSource = (statistics) => {
   return source && typeof source === "object" ? source : {};
 };
 
-/**
- * Extract a statistic from multiple possible API keys.
- *
- * Supports numeric values and nested objects such as:
- * { count: 20 }, { total: 20 }, { amount: 500000 }
- */
-const getStatisticValue = (
-  statistics,
-  keys = [],
-  fallback = 0
-) => {
+const normalizeKey = (key) =>
+  String(key)
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+
+/*
+|--------------------------------------------------------------------------
+| Find Values in Nested Statistic Groups
+|--------------------------------------------------------------------------
+*/
+
+const getStatisticValue = (statistics, keys = [], fallback = 0) => {
   const source = getStatisticsSource(statistics);
+  const wantedKeys = keys.map(normalizeKey);
+  const visited = new Set();
 
-  for (const key of keys) {
-    const value = source?.[key];
-
-    if (value === undefined || value === null || value === "") {
-      continue;
-    }
-
+  const findValue = (object, depth = 0) => {
     if (
-      typeof value === "object" &&
-      !Array.isArray(value)
+      !object ||
+      typeof object !== "object" ||
+      Array.isArray(object) ||
+      depth > 5 ||
+      visited.has(object)
     ) {
-      const nested =
-        value.count ??
-        value.total ??
-        value.value ??
-        value.amount ??
-        value.total_amount ??
-        value.amount_paid ??
-        value.balance;
+      return undefined;
+    }
 
+    visited.add(object);
+
+    // Search the current object first.
+    for (const [key, value] of Object.entries(object)) {
       if (
-        nested !== undefined &&
-        nested !== null &&
-        nested !== ""
+        wantedKeys.includes(normalizeKey(key)) &&
+        value !== null &&
+        value !== undefined &&
+        value !== ""
       ) {
-        return nested;
+        if (typeof value !== "object" || Array.isArray(value)) {
+          return value;
+        }
+
+        const nestedValue =
+          value.count ??
+          value.total ??
+          value.value ??
+          value.amount ??
+          value.total_amount ??
+          value.amount_paid ??
+          value.balance;
+
+        if (nestedValue !== undefined && nestedValue !== null) {
+          return nestedValue;
+        }
       }
-
-      continue;
     }
 
-    return value;
-  }
+    // Search nested groups, such as plots, sales, payments and financials.
+    for (const value of Object.values(object)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const result = findValue(value, depth + 1);
 
-  return fallback;
+        if (result !== undefined) return result;
+      }
+    }
+
+    return undefined;
+  };
+
+  const result = findValue(source);
+
+  return result === undefined ? fallback : result;
 };
 
-/**
- * Check whether a statistic exists in the response.
- */
 const hasStatistic = (statistics, keys = []) => {
-  const source = getStatisticsSource(statistics);
+  const marker = "__PLOT_STATISTIC_NOT_FOUND__";
 
-  return keys.some((key) => {
-    const value = source?.[key];
-
-    if (value === undefined || value === null || value === "") {
-      return false;
-    }
-
-    if (typeof value === "object" && !Array.isArray(value)) {
-      return (
-        value.count !== undefined ||
-        value.total !== undefined ||
-        value.value !== undefined ||
-        value.amount !== undefined
-      );
-    }
-
-    return true;
-  });
-};
-
-/**
- * Calculate a safe percentage.
- */
-const getPercentage = (value, total) => {
-  const numericValue = toNumber(value);
-  const numericTotal = toNumber(total);
-
-  if (numericTotal <= 0) return 0;
-
-  return Math.min(
-    100,
-    Math.max(0, (numericValue / numericTotal) * 100)
+  return (
+    getStatisticValue(statistics, keys, marker) !== marker
   );
 };
 
-/**
- * Format percentage.
- */
-const formatPercentage = (value) =>
-  `${toNumber(value).toFixed(1)}%`;
+/*
+|--------------------------------------------------------------------------
+| Plot Record Fallbacks
+|--------------------------------------------------------------------------
+*/
+
+const getPlotStatus = (plot) =>
+  String(plot?.status ?? plot?.plot_status ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const countPlotsByStatus = (plots, statuses) => {
+  if (!Array.isArray(plots)) return 0;
+
+  const normalizedStatuses = statuses.map((status) =>
+    status.toLowerCase().replace(/[\s-]+/g, "_")
+  );
+
+  return plots.filter((plot) =>
+    normalizedStatuses.includes(getPlotStatus(plot))
+  ).length;
+};
+
+const countPlots = (plots) =>
+  Array.isArray(plots) ? plots.length : 0;
 
 /*
 |--------------------------------------------------------------------------
@@ -189,7 +230,6 @@ const StatisticCard = ({
   description,
   progress = 0,
   progressClass,
-  trend,
 }) => {
   const safeProgress = Math.min(
     100,
@@ -204,17 +244,9 @@ const StatisticCard = ({
 
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-xs font-semibold uppercase tracking-wide text-gray-500">
-              {label}
-            </p>
-
-            {trend && (
-              <span className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
-                {trend}
-              </span>
-            )}
-          </div>
+          <p className="truncate text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {label}
+          </p>
 
           <p className="mt-2 truncate text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
             {value}
@@ -235,17 +267,17 @@ const StatisticCard = ({
       <div className="mt-5">
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
           <div
-            className={`h-full rounded-full transition-all duration-700 ease-out ${progressClass}`}
+            className={`h-full rounded-full transition-all duration-700 ${progressClass}`}
             style={{ width: `${safeProgress}%` }}
           />
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="min-w-0 truncate text-xs text-gray-500">
+          <p className="truncate text-xs text-gray-500">
             {description}
           </p>
 
-          {progress > 0 && (
+          {safeProgress > 0 && (
             <span className="shrink-0 text-[11px] font-semibold text-gray-500">
               {formatPercentage(safeProgress)}
             </span>
@@ -258,7 +290,7 @@ const StatisticCard = ({
 
 /*
 |--------------------------------------------------------------------------
-| Compact Breakdown Card
+| Breakdown Card
 |--------------------------------------------------------------------------
 */
 
@@ -332,20 +364,14 @@ const FinancialCard = ({
       <div
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
       >
-        <Icon
-          className="h-4 w-4"
-          strokeWidth={2}
-          aria-hidden="true"
-        />
+        <Icon className="h-4 w-4" strokeWidth={2} />
       </div>
 
-      <span className="truncate text-xs font-semibold">
-        {label}
-      </span>
+      <span className="truncate text-xs font-semibold">{label}</span>
     </div>
 
     <p
-      className="mt-4 min-w-0 break-words text-xl font-bold leading-tight tracking-tight text-gray-900 sm:text-2xl"
+      className="mt-4 break-words text-xl font-bold leading-tight tracking-tight text-gray-900 sm:text-2xl"
       title={value}
     >
       {value}
@@ -368,41 +394,35 @@ const PlotStatisticsSkeleton = () => (
     aria-label="Plot statistics loading"
     className="min-w-0 space-y-5"
   >
-    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {Array.from({ length: 4 }).map((_, index) => (
         <div
           key={index}
-          className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+          className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 space-y-3">
               <div className="h-3 w-24 rounded bg-gray-200" />
               <div className="h-8 w-24 rounded bg-gray-200" />
             </div>
-
             <div className="h-11 w-11 rounded-xl bg-gray-200" />
           </div>
-
-          <div className="mt-5 h-1.5 rounded-full bg-gray-200" />
+          <div className="mt-5 h-1.5 rounded bg-gray-200" />
           <div className="mt-2 h-3 w-32 rounded bg-gray-200" />
         </div>
       ))}
     </div>
 
-    <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
-      {Array.from({ length: 2 }).map((_, sectionIndex) => (
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      {[0, 1].map((item) => (
         <div
-          key={sectionIndex}
-          className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+          key={item}
+          className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5"
         >
           <div className="h-4 w-36 rounded bg-gray-200" />
-
           <div className="mt-6 grid grid-cols-2 gap-3">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div
-                key={index}
-                className="rounded-xl bg-gray-100 p-4"
-              >
+            {[0, 1, 2, 3].map((number) => (
+              <div key={number} className="rounded-xl bg-gray-100 p-4">
                 <div className="h-9 w-9 rounded-lg bg-gray-200" />
                 <div className="mt-3 h-3 w-20 rounded bg-gray-200" />
                 <div className="mt-2 h-1 rounded bg-gray-200" />
@@ -412,278 +432,291 @@ const PlotStatisticsSkeleton = () => (
         </div>
       ))}
     </div>
-
-    <div className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="h-4 w-40 rounded bg-gray-200" />
-
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="rounded-xl bg-gray-100 p-4"
-          >
-            <div className="h-8 w-8 rounded-lg bg-gray-200" />
-            <div className="mt-4 h-7 w-32 rounded bg-gray-200" />
-            <div className="mt-2 h-3 w-28 rounded bg-gray-200" />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 border-t border-gray-100 pt-5">
-        <div className="h-3 w-36 rounded bg-gray-200" />
-        <div className="mt-3 h-2 rounded-full bg-gray-200" />
-      </div>
-    </div>
   </section>
 );
 
 /*
 |--------------------------------------------------------------------------
-| Main Component
+| Main Plot Statistics Component
 |--------------------------------------------------------------------------
 */
 
 const PlotStatistics = ({
   statistics = {},
+  plots = [],
   loading = false,
 }) => {
+  const source = getStatisticsSource(statistics);
+  const plotRecords = Array.isArray(plots) ? plots : [];
 
   /*
   |--------------------------------------------------------------------------
-  | Inventory Statistics
+  | Inventory
   |--------------------------------------------------------------------------
   */
 
-  const total = toNumber(
-    getStatisticValue(statistics, [
-      "total_plots",
-      "total",
-      "plots_count",
-      "total_count",
-      "count",
-    ])
-  );
+  const apiTotal = getStatisticValue(source, [
+    "total_plots",
+    "total",
+    "plots_count",
+    "total_count",
+    "count",
+    "total_records",
+  ], undefined);
 
-  const available = toNumber(
-    getStatisticValue(statistics, [
-      "available_plots",
-      "available",
-      "available_count",
-    ])
-  );
+  const total =
+    apiTotal !== undefined
+      ? toNumber(apiTotal)
+      : countPlots(plotRecords);
 
-  const reserved = toNumber(
-    getStatisticValue(statistics, [
-      "reserved_plots",
-      "reserved",
-      "reserved_count",
-    ])
-  );
+  const availableFromApi = getStatisticValue(source, [
+    "available_plots",
+    "available",
+    "available_count",
+    "plots_available",
+  ], undefined);
 
-  const sold = toNumber(
-    getStatisticValue(statistics, [
-      "sold_plots",
-      "sold",
-      "sold_count",
-    ])
-  );
+  const available =
+    availableFromApi !== undefined
+      ? toNumber(availableFromApi)
+      : countPlotsByStatus(plotRecords, ["available"]);
 
-  const unavailable = toNumber(
-    getStatisticValue(statistics, [
-      "unavailable_plots",
-      "unavailable",
-      "unavailable_count",
-    ])
-  );
+  const reservedFromApi = getStatisticValue(source, [
+    "reserved_plots",
+    "reserved",
+    "reserved_count",
+    "plots_reserved",
+  ], undefined);
+
+  const reserved =
+    reservedFromApi !== undefined
+      ? toNumber(reservedFromApi)
+      : countPlotsByStatus(plotRecords, ["reserved"]);
+
+  const soldFromApi = getStatisticValue(source, [
+    "sold_plots",
+    "sold",
+    "sold_count",
+    "plots_sold",
+  ], undefined);
+
+  const sold =
+    soldFromApi !== undefined
+      ? toNumber(soldFromApi)
+      : countPlotsByStatus(plotRecords, ["sold"]);
+
+  const unavailableFromApi = getStatisticValue(source, [
+    "unavailable_plots",
+    "unavailable",
+    "unavailable_count",
+    "plots_unavailable",
+  ], undefined);
+
+  const unavailable =
+    unavailableFromApi !== undefined
+      ? toNumber(unavailableFromApi)
+      : countPlotsByStatus(plotRecords, [
+        "unavailable",
+        "inactive",
+        "maintenance",
+      ]);
 
   /*
   |--------------------------------------------------------------------------
-  | Sales Statistics
+  | Sales
   |--------------------------------------------------------------------------
   */
 
   const totalSales = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "total_sales",
       "sales_count",
-      "completed_sales",
-      "sold_count",
-      "sold_plots",
+      "plot_sales_count",
+      "total_plot_sales",
+      "sales_total",
     ])
   );
 
   const pendingSales = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "pending_sales",
-      "pending_count",
+      "pending_sales_count",
       "sales_pending",
+      "pending_count",
     ])
   );
 
   const completedSales = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "completed_sales",
+      "completed_sales_count",
       "successful_sales",
       "sales_completed",
     ], sold)
   );
 
   const cancelledSales = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "cancelled_sales",
+      "cancelled_sales_count",
       "sales_cancelled",
     ])
   );
 
   /*
   |--------------------------------------------------------------------------
-  | Payment Statistics
+  | Payments
   |--------------------------------------------------------------------------
   */
 
   const paidPayments = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "paid_payments",
       "fully_paid",
       "paid",
       "payment_paid",
       "paid_count",
+      "paid_payments_count",
     ])
   );
 
   const partialPayments = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "partial_payments",
       "partially_paid",
       "partial",
       "payment_partial",
       "partial_count",
+      "partial_payments_count",
     ])
   );
 
   const unpaidPayments = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "unpaid_payments",
       "unpaid",
       "payment_pending",
       "pending_payment",
       "unpaid_count",
+      "pending_payments_count",
     ])
   );
 
+  const paymentTotal =
+    paidPayments + partialPayments + unpaidPayments;
+
   /*
   |--------------------------------------------------------------------------
-  | Financial Statistics
+  | Financials
   |--------------------------------------------------------------------------
   */
 
   const inventoryValue = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "total_inventory_value",
       "inventory_value",
       "total_asking_price",
       "total_asking_prices",
       "total_plot_value",
       "total_value",
+      "asking_price_total",
+      "total_asking_value",
     ])
   );
 
   const salesValue = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "total_sales_value",
       "sales_value",
       "total_sold_value",
       "sold_value",
       "total_revenue",
       "revenue",
+      "total_sale_amount",
+      "sales_amount",
     ])
   );
 
   const totalPaid = toNumber(
-    getStatisticValue(statistics, [
+    getStatisticValue(source, [
       "total_paid",
       "amount_paid",
       "paid_amount",
       "total_collected",
       "collected",
       "total_payments",
+      "total_amount_paid",
+      "payments_total",
     ])
   );
 
-  const suppliedBalance = getStatisticValue(
-    statistics,
-    [
-      "total_balance",
-      "outstanding_balance",
-      "balance",
-      "amount_due",
-      "outstanding",
-      "total_outstanding",
-    ],
-    undefined
-  );
-
-  const totalBalance =
-    suppliedBalance !== undefined &&
-    suppliedBalance !== null &&
-    suppliedBalance !== ""
-      ? toNumber(suppliedBalance)
-      : Math.max(salesValue - totalPaid, 0);
-
-  const averagePlotValue =
-    total > 0
-      ? inventoryValue > 0
-        ? inventoryValue / total
-        : salesValue > 0 && sold > 0
-          ? salesValue / sold
-          : 0
-      : 0;
-
-  const collectionRate = getPercentage(
-    totalPaid,
-    salesValue
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | Determine Which Financial Metrics Were Supplied
-  |--------------------------------------------------------------------------
-  */
-
-  const hasInventoryValue = hasStatistic(statistics, [
-    "total_inventory_value",
-    "inventory_value",
-    "total_asking_price",
-    "total_asking_prices",
-    "total_plot_value",
-    "total_value",
-  ]);
-
-  const hasSalesValue = hasStatistic(statistics, [
-    "total_sales_value",
-    "sales_value",
-    "total_sold_value",
-    "sold_value",
-    "total_revenue",
-    "revenue",
-  ]);
-
-  const hasPaidValue = hasStatistic(statistics, [
-    "total_paid",
-    "amount_paid",
-    "paid_amount",
-    "total_collected",
-    "collected",
-    "total_payments",
-  ]);
-
-  const hasBalanceValue = hasStatistic(statistics, [
+  const suppliedBalance = getStatisticValue(source, [
     "total_balance",
     "outstanding_balance",
     "balance",
     "amount_due",
     "outstanding",
     "total_outstanding",
+    "total_amount_due",
+    "remaining_balance",
+  ], undefined);
+
+  const totalBalance =
+    suppliedBalance !== undefined
+      ? toNumber(suppliedBalance)
+      : Math.max(salesValue - totalPaid, 0);
+
+  const averagePlotValue =
+    total > 0 && inventoryValue > 0
+      ? inventoryValue / total
+      : total > 0 && salesValue > 0 && sold > 0
+        ? salesValue / sold
+        : 0;
+
+  const collectionRate = getPercentage(totalPaid, salesValue);
+
+  const hasInventoryValue = hasStatistic(source, [
+    "total_inventory_value",
+    "inventory_value",
+    "total_asking_price",
+    "total_asking_prices",
+    "total_plot_value",
+    "total_value",
+    "asking_price_total",
+    "total_asking_value",
+  ]);
+
+  const hasSalesValue = hasStatistic(source, [
+    "total_sales_value",
+    "sales_value",
+    "total_sold_value",
+    "sold_value",
+    "total_revenue",
+    "revenue",
+    "total_sale_amount",
+    "sales_amount",
+  ]);
+
+  const hasPaidValue = hasStatistic(source, [
+    "total_paid",
+    "amount_paid",
+    "paid_amount",
+    "total_collected",
+    "collected",
+    "total_payments",
+    "total_amount_paid",
+    "payments_total",
+  ]);
+
+  const hasBalanceValue = hasStatistic(source, [
+    "total_balance",
+    "outstanding_balance",
+    "balance",
+    "amount_due",
+    "outstanding",
+    "total_outstanding",
+    "total_amount_due",
+    "remaining_balance",
   ]);
 
   const hasFinancialData =
@@ -692,19 +725,13 @@ const PlotStatistics = ({
     hasPaidValue ||
     hasBalanceValue;
 
-  /*
-  |--------------------------------------------------------------------------
-  | Loading State
-  |--------------------------------------------------------------------------
-  */
-
   if (loading) {
     return <PlotStatisticsSkeleton />;
   }
 
   /*
   |--------------------------------------------------------------------------
-  | Primary Statistics
+  | Main Statistic Cards
   |--------------------------------------------------------------------------
   */
 
@@ -751,12 +778,6 @@ const PlotStatistics = ({
     },
   ];
 
-  /*
-  |--------------------------------------------------------------------------
-  | Inventory Status Breakdown
-  |--------------------------------------------------------------------------
-  */
-
   const statusStatistics = [
     {
       label: "Available",
@@ -791,12 +812,6 @@ const PlotStatistics = ({
       progressClass: "bg-gray-500",
     },
   ];
-
-  /*
-  |--------------------------------------------------------------------------
-  | Sales Breakdown
-  |--------------------------------------------------------------------------
-  */
 
   const salesStatistics = [
     {
@@ -833,12 +848,6 @@ const PlotStatistics = ({
     },
   ];
 
-  /*
-  |--------------------------------------------------------------------------
-  | Payment Breakdown
-  |--------------------------------------------------------------------------
-  */
-
   const paymentStatistics = [
     {
       label: "Fully Paid",
@@ -866,9 +875,6 @@ const PlotStatistics = ({
     },
   ];
 
-  const paymentTotal =
-    paidPayments + partialPayments + unpaidPayments;
-
   /*
   |--------------------------------------------------------------------------
   | Render
@@ -884,35 +890,26 @@ const PlotStatistics = ({
 
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {primaryStatistics.map((item) => (
-          <StatisticCard
-            key={item.label}
-            {...item}
-          />
+          <StatisticCard key={item.label} {...item} />
         ))}
       </div>
 
-      {/* Inventory Status + Sales Breakdown */}
+      {/* Inventory and Sales */}
 
       <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
-        {/* Inventory Status */}
-
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h3 className="truncate text-sm font-bold text-gray-900">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">
                 Plot Inventory Status
               </h3>
-
-              <p className="mt-1 truncate text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Current distribution of plot availability
               </p>
             </div>
 
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-              <LandPlot
-                className="h-4 w-4 text-indigo-600"
-                aria-hidden="true"
-              />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50">
+              <LandPlot className="h-4 w-4 text-indigo-600" />
             </div>
           </div>
 
@@ -927,25 +924,19 @@ const PlotStatistics = ({
           </div>
         </div>
 
-        {/* Sales Breakdown */}
-
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h3 className="truncate text-sm font-bold text-gray-900">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">
                 Plot Sales Overview
               </h3>
-
-              <p className="mt-1 truncate text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Sales activity and completion status
               </p>
             </div>
 
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-              <TrendingUp
-                className="h-4 w-4 text-blue-600"
-                aria-hidden="true"
-              />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50">
+              <TrendingUp className="h-4 w-4 text-blue-600" />
             </div>
           </div>
 
@@ -966,21 +957,17 @@ const PlotStatistics = ({
       {(paymentTotal > 0 || hasPaidValue || hasBalanceValue) && (
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h3 className="truncate text-sm font-bold text-gray-900">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">
                 Plot Payment Status
               </h3>
-
-              <p className="mt-1 truncate text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Payment completion across plot sales
               </p>
             </div>
 
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
-              <Wallet
-                className="h-4 w-4 text-emerald-600"
-                aria-hidden="true"
-              />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50">
+              <Wallet className="h-4 w-4 text-emerald-600" />
             </div>
           </div>
 
@@ -997,23 +984,21 @@ const PlotStatistics = ({
                   key={item.label}
                   className="min-w-0 rounded-xl border border-gray-100 bg-gray-50/60 p-4"
                 >
-                  <div className="flex min-w-0 items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <div
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${item.backgroundClass}`}
                       >
                         <Icon
                           className={`h-4 w-4 ${item.iconClass}`}
-                          aria-hidden="true"
                         />
                       </div>
-
                       <span className="truncate text-sm font-semibold text-gray-700">
                         {item.label}
                       </span>
                     </div>
 
-                    <span className="shrink-0 text-sm font-bold text-gray-900">
+                    <span className="text-sm font-bold text-gray-900">
                       {formatNumber(item.value)}
                     </span>
                   </div>
@@ -1040,32 +1025,25 @@ const PlotStatistics = ({
       {hasFinancialData && (
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div className="min-w-0">
+            <div>
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-                  <CircleDollarSign
-                    className="h-4 w-4 text-indigo-600"
-                    aria-hidden="true"
-                  />
+                  <CircleDollarSign className="h-4 w-4 text-indigo-600" />
                 </div>
 
-                <h3 className="truncate text-sm font-bold text-gray-900">
+                <h3 className="text-sm font-bold text-gray-900">
                   Plot Financial Overview
                 </h3>
               </div>
 
-              <p className="mt-2 truncate text-xs text-gray-500">
+              <p className="mt-2 text-xs text-gray-500">
                 Inventory value, sales collections and outstanding balances
               </p>
             </div>
 
             {hasSalesValue && hasPaidValue && (
-              <div className="flex items-center gap-2 self-start rounded-full bg-gray-50 px-3 py-1.5 sm:self-auto">
-                <TrendingUp
-                  className="h-3.5 w-3.5 text-emerald-600"
-                  aria-hidden="true"
-                />
-
+              <div className="flex items-center gap-2 self-start rounded-full bg-gray-50 px-3 py-1.5">
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
                 <span className="text-xs font-semibold text-gray-600">
                   {formatPercentage(collectionRate)} collected
                 </span>
@@ -1112,72 +1090,53 @@ const PlotStatistics = ({
               />
             </div>
 
-            {/* Collection Progress */}
-
             {hasSalesValue && hasPaidValue && (
               <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
-                      <TrendingUp
-                        className="h-4 w-4 text-emerald-600"
-                        aria-hidden="true"
-                      />
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm">
+                      <TrendingUp className="h-4 w-4 text-emerald-600" />
                     </div>
-
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold text-gray-700">
-                        Sales Collection Progress
-                      </p>
-
-                      <p className="hidden truncate text-[10px] text-gray-400 sm:block">
-                        Amount collected against total sales value
-                      </p>
-                    </div>
+                    <p className="text-xs font-semibold text-gray-700">
+                      Sales Collection Progress
+                    </p>
                   </div>
 
-                  <span className="shrink-0 text-sm font-bold text-gray-900">
+                  <span className="text-sm font-bold text-gray-900">
                     {formatPercentage(collectionRate)}
                   </span>
                 </div>
 
                 <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-gray-200">
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out"
+                    className="h-full rounded-full bg-emerald-500 transition-all duration-700"
                     style={{ width: `${collectionRate}%` }}
                   />
                 </div>
 
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <span className="truncate text-[10px] text-gray-400">
+                  <span className="text-[10px] text-gray-500">
                     Collected: {formatCurrency(totalPaid)}
                   </span>
-
-                  <span className="truncate text-[10px] text-gray-400">
+                  <span className="text-[10px] text-gray-500">
                     Due: {formatCurrency(totalBalance)}
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Average Plot Value */}
-
             {hasInventoryValue && (
               <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-white p-4">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50">
-                    <Banknote
-                      className="h-5 w-5 text-purple-600"
-                      aria-hidden="true"
-                    />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50">
+                    <Banknote className="h-5 w-5 text-purple-600" />
                   </div>
 
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-gray-700">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700">
                       Average Plot Value
                     </p>
-
-                    <p className="mt-1 truncate text-[11px] text-gray-400">
+                    <p className="mt-1 text-[11px] text-gray-400">
                       Inventory value divided by total plots
                     </p>
                   </div>
@@ -1202,11 +1161,10 @@ const PlotStatistics = ({
             <p className="text-sm font-semibold text-gray-700">
               Financial statistics unavailable
             </p>
-
             <p className="mt-1 text-xs text-gray-500">
-              Inventory and sales counts are displayed above. Financial
-              cards will populate when the statistics API returns inventory
-              value, sales value, or payment totals.
+              Inventory counts can use the supplied plot records. Financial
+              totals require the statistics API to return inventory value,
+              sales value or payment totals.
             </p>
           </div>
         </div>

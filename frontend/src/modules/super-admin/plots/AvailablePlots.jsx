@@ -1,5 +1,11 @@
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -8,54 +14,79 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Eye,
+  ClipboardList,
   Filter,
   Loader2,
   MapPin,
   RefreshCw,
   RotateCcw,
-  Ruler,
   Search,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 
 import PlotHeader from "./PlotHeader";
-import PlotStatusBadge from "./PlotStatusBadge";
+import PlotTable from "./PlotTable";
 import { usePlot } from "../../../hooks/usePlots";
 
 /*
 |--------------------------------------------------------------------------
-| HELPERS
+| CONSTANTS
 |--------------------------------------------------------------------------
 */
 
-const getErrorMessage = (error) => {
-  const responseData = error?.response?.data;
+const DEFAULT_PER_PAGE = 12;
+const AVAILABLE_STATUS = "available";
 
-  if (responseData?.errors) {
-    const firstError = Object.values(responseData.errors)
-      .flat()
-      .find((message) => typeof message === "string");
+const EMPTY_FILTERS = {
+  county: "",
+  min_price: "",
+  max_price: "",
+  min_size: "",
+  max_size: "",
+};
 
-    if (firstError) return firstError;
+/*
+|--------------------------------------------------------------------------
+| API HELPERS
+|--------------------------------------------------------------------------
+*/
+
+const getResponseBody = (response) => {
+  if (
+    response &&
+    typeof response === "object" &&
+    response.data &&
+    typeof response.data === "object" &&
+    (
+      "config" in response ||
+      "headers" in response ||
+      typeof response.status === "number"
+    )
+  ) {
+    return response.data;
   }
 
-  return (
-    responseData?.message ||
-    error?.message ||
-    "Unable to load available plots. Please try again."
-  );
+  return response;
 };
 
 const unwrapResponse = (response) => {
-  let result = response?.data ?? response;
+  let result = getResponseBody(response);
 
   for (let index = 0; index < 4; index += 1) {
     if (
       result &&
       typeof result === "object" &&
       !Array.isArray(result) &&
-      result.data !== undefined
+      result.data !== undefined &&
+      result.data !== null &&
+      (
+        "code" in result ||
+        "message" in result ||
+        "meta" in result ||
+        "links" in result ||
+        typeof result.status === "boolean"
+      )
     ) {
       result = result.data;
       continue;
@@ -68,29 +99,142 @@ const unwrapResponse = (response) => {
 };
 
 const extractPlots = (response) => {
+  const body = getResponseBody(response);
   const result = unwrapResponse(response);
 
   if (Array.isArray(result)) return result;
-  if (Array.isArray(result?.data)) return result.data;
-  if (Array.isArray(result?.items)) return result.items;
   if (Array.isArray(result?.plots)) return result.plots;
+  if (Array.isArray(result?.items)) return result.items;
+  if (Array.isArray(result?.data)) return result.data;
+
+  if (Array.isArray(body?.data)) return body.data;
+  if (Array.isArray(body?.plots)) return body.plots;
+  if (Array.isArray(body?.data?.plots)) {
+    return body.data.plots;
+  }
 
   return [];
 };
 
 const isFailedResponse = (response) => {
-  if (!response || typeof response !== "object") return false;
-  if (response.status === false) return true;
+  const body = getResponseBody(response);
 
-  const code = Number(response.code);
+  if (!body || typeof body !== "object") {
+    return false;
+  }
 
-  return Number.isFinite(code) && code >= 400;
+  return (
+    body.success === false ||
+    body.status === false ||
+    (typeof body.code === "number" && body.code >= 400)
+  );
 };
 
+const getErrorMessage = (
+  error,
+  fallback = "Unable to load available plots. Please try again.",
+) => {
+  const responseData = error?.response?.data;
+
+  if (responseData?.errors) {
+    const firstError = Object.values(responseData.errors)
+      .flat()
+      .find((message) => typeof message === "string");
+
+    if (firstError) return firstError;
+  }
+
+  return (
+    responseData?.message ||
+    error?.data?.message ||
+    error?.message ||
+    fallback
+  );
+};
+
+const getPagination = (
+  response,
+  fallbackPage = 1,
+  fallbackPerPage = DEFAULT_PER_PAGE,
+) => {
+  const body = getResponseBody(response);
+  const result = unwrapResponse(response);
+
+  const meta =
+    body?.meta ||
+    body?.data?.meta ||
+    result?.meta ||
+    result?.pagination ||
+    result?.data?.meta ||
+    {};
+
+  const currentPage = Number(
+    meta.current_page ??
+      meta.currentPage ??
+      result?.current_page ??
+      fallbackPage,
+  );
+
+  const perPage = Number(
+    meta.per_page ??
+      meta.perPage ??
+      result?.per_page ??
+      fallbackPerPage,
+  );
+
+  const total = Number(
+    meta.total ??
+      meta.total_records ??
+      result?.total ??
+      body?.total ??
+      (Array.isArray(result) ? result.length : 0),
+  );
+
+  const safePage =
+    Number.isFinite(currentPage) && currentPage > 0
+      ? currentPage
+      : 1;
+
+  const safePerPage =
+    Number.isFinite(perPage) && perPage > 0
+      ? perPage
+      : fallbackPerPage;
+
+  const safeTotal =
+    Number.isFinite(total) && total >= 0 ? total : 0;
+
+  const lastPage = Number(
+    meta.last_page ??
+      meta.lastPage ??
+      result?.last_page ??
+      Math.max(1, Math.ceil(safeTotal / safePerPage)),
+  );
+
+  return {
+    currentPage: safePage,
+    perPage: safePerPage,
+    total: safeTotal,
+    lastPage:
+      Number.isFinite(lastPage) && lastPage > 0
+        ? lastPage
+        : 1,
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| FORMATTING HELPERS
+|--------------------------------------------------------------------------
+*/
+
 const formatCurrency = (value, currency = "KES") => {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
   const amount = Number(value);
 
-  if (!Number.isFinite(amount)) return `${currency} 0.00`;
+  if (!Number.isFinite(amount)) return "—";
 
   try {
     return new Intl.NumberFormat("en-KE", {
@@ -109,247 +253,111 @@ const formatNumber = (value) => {
   if (!Number.isFinite(number)) return "—";
 
   return number.toLocaleString("en-KE", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   });
 };
 
-const getPlotId = (plot) => plot?.id ?? plot?.plot_id;
+const getNumericValue = (...values) => {
+  for (const value of values) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      typeof value !== "object"
+    ) {
+      const number = Number(value);
 
-const getPlotTitle = (plot) =>
-  plot?.title || plot?.name || "Untitled Plot";
-
-const getPlotCode = (plot) =>
-  plot?.code || plot?.plot_code || "Code not assigned";
-
-const getPlotSize = (plot) => {
-  const size = plot?.size ?? plot?.plot_size;
-
-  if (size === null || size === undefined || size === "") {
-    return "Not specified";
+      if (Number.isFinite(number)) {
+        return number;
+      }
+    }
   }
 
-  if (typeof size === "string") return size;
-
-  const unit = plot?.size_unit ?? plot?.measurement_unit;
-
-  return `${formatNumber(size)}${unit ? ` ${unit}` : ""}`;
+  return null;
 };
 
-const getPlotLocation = (plot) => {
-  const parts = [
-    plot?.area?.name ?? plot?.area_name,
-    plot?.city?.name ?? plot?.city_name,
-    plot?.county?.name ?? plot?.county_name,
-    plot?.region?.name ?? plot?.region_name,
-  ].filter(
-    (value, index, array) =>
-      typeof value === "string" &&
-      value.trim() &&
-      array.indexOf(value) === index,
-  );
+const getActiveState = (value) => {
+  if (value === undefined || value === null) {
+    return true;
+  }
 
-  return parts.length ? parts.join(", ") : "Location not specified";
+  if (typeof value === "string") {
+    return !["false", "0", "inactive", "no"].includes(
+      value.trim().toLowerCase(),
+    );
+  }
+
+  return value === true || value === 1;
 };
 
-const getActiveState = (value) =>
-  !(
-    value === false ||
-    value === 0 ||
-    value === "0" ||
-    value === "false"
-  );
+const getPlotStatus = (plot) =>
+  String(plot?.status ?? AVAILABLE_STATUS)
+    .trim()
+    .toLowerCase();
 
-const getPagination = (response, fallbackPage, fallbackPerPage) => {
-  const result = unwrapResponse(response);
+const getPlotPrice = (plot) =>
+  Number(
+    plot?.asking_price ??
+      plot?.price ??
+      plot?.sale_price ??
+      0,
+  ) || 0;
 
-  const meta =
-    response?.meta ||
-    response?.data?.meta ||
-    result?.meta ||
-    {};
-
-  const currentPage = Number(
-    meta.current_page ??
-    result?.current_page ??
-    response?.current_page ??
-    fallbackPage,
-  );
-
-  const perPage = Number(
-    meta.per_page ??
-    result?.per_page ??
-    response?.per_page ??
-    fallbackPerPage,
-  );
-
-  const total = Number(
-    meta.total ??
-    result?.total ??
-    response?.total ??
-    (Array.isArray(result) ? result.length : 0),
-  );
-
-  const lastPage = Number(
-    meta.last_page ??
-    result?.last_page ??
-    response?.last_page ??
-    Math.max(1, Math.ceil(total / Math.max(perPage, 1))),
-  );
-
-  return {
-    currentPage: Number.isFinite(currentPage) && currentPage > 0
-      ? currentPage
-      : 1,
-    perPage: Number.isFinite(perPage) && perPage > 0
-      ? perPage
-      : fallbackPerPage,
-    total: Number.isFinite(total) && total >= 0 ? total : 0,
-    lastPage: Number.isFinite(lastPage) && lastPage > 0
-      ? lastPage
-      : 1,
-  };
-};
 
 /*
 |--------------------------------------------------------------------------
-| AVAILABLE PLOT CARD
+| STATISTICS CARD
 |--------------------------------------------------------------------------
 */
 
-const AvailablePlotCard = ({ plot, onView, onEdit }) => {
-  const id = getPlotId(plot);
-  const title = getPlotTitle(plot);
-  const code = getPlotCode(plot);
-  const location = getPlotLocation(plot);
-  const size = getPlotSize(plot);
-  const currency = plot?.currency || "KES";
-
+function StatisticCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  iconClass = "text-emerald-600",
+  iconBackground = "bg-emerald-50",
+}) {
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md">
-      {/* Card Header */}
-
-      <div className="border-b border-gray-100 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-              <MapPin className="h-5 w-5" />
-            </div>
-
-            <div className="min-w-0">
-              <h2 className="break-words text-base font-semibold text-gray-900 transition group-hover:text-emerald-700">
-                {title}
-              </h2>
-
-              <p className="mt-1 break-words text-xs font-medium text-gray-500">
-                {code}
-              </p>
-            </div>
-          </div>
-
-          <PlotStatusBadge
-            status={plot?.status || "available"}
-            isActive={plot?.is_active}
-          />
-        </div>
-
-        <div className="mt-4 flex items-start gap-2 text-sm text-gray-500">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-          <p className="break-words">{location}</p>
-        </div>
-      </div>
-
-      {/* Price and Size */}
-
-      <div className="flex-1 space-y-4 p-5">
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
-          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-emerald-800">
-            <Banknote className="h-4 w-4" />
-            Asking Price
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-500">
+            {title}
           </p>
 
-          <p className="mt-2 break-words text-xl font-bold text-gray-900">
-            {formatCurrency(plot?.asking_price, currency)}
+          <p className="mt-2 break-words text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+            {value}
           </p>
+
+          {description && (
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {description}
+            </p>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
-            <p className="flex items-center gap-1.5 text-xs text-gray-500">
-              <Ruler className="h-3.5 w-3.5" />
-              Plot Size
-            </p>
-
-            <p className="mt-2 break-words text-sm font-semibold text-gray-900">
-              {size}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
-            <p className="flex items-center gap-1.5 text-xs text-gray-500">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Availability
-            </p>
-
-            <p className="mt-2 text-sm font-semibold text-emerald-700">
-              Available
-            </p>
-          </div>
-        </div>
-
-        {plot?.description && (
-          <p className="line-clamp-3 text-sm leading-6 text-gray-500">
-            {plot.description}
-          </p>
-        )}
-      </div>
-
-      {/* Actions */}
-
-      <div className="flex flex-wrap gap-2 border-t border-gray-100 bg-gray-50/60 p-4">
-        <button
-          type="button"
-          onClick={() => onView(id)}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBackground}`}
         >
-          <Eye className="h-4 w-4" />
-          View
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onEdit(id)}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-        >
-          Edit Plot
-          <ArrowRight className="h-4 w-4" />
-        </button>
+          <Icon className={`h-5 w-5 ${iconClass}`} />
+        </div>
       </div>
-    </article>
+    </div>
   );
-};
+}
 
 /*
 |--------------------------------------------------------------------------
-| AVAILABLE PLOTS
+| AVAILABLE PLOTS PAGE
 |--------------------------------------------------------------------------
 */
 
-const AvailablePlots = () => {
+export default function AvailablePlots() {
   const navigate = useNavigate();
 
-  /*
-  |--------------------------------------------------------------------------
-  | PLOT HOOK
-  |--------------------------------------------------------------------------
-  |
-  | Expected usePlot methods:
-  | - getPlots(params)
-  | - getStatistics() (optional)
-  | - loading
-  | - error
-  | - clearError() (optional)
-  |
-  */
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(false);
 
   const {
     loading: hookLoading = false,
@@ -361,60 +369,81 @@ const AvailablePlots = () => {
 
   /*
   |--------------------------------------------------------------------------
-  | LOCAL STATE
+  | STATE
   |--------------------------------------------------------------------------
   */
 
   const [plots, setPlots] = useState([]);
   const [statistics, setStatistics] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pageError, setPageError] = useState("");
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [countyFilter, setCountyFilter] = useState("");
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [minSize, setMinSize] = useState("");
-  const [maxSize, setMaxSize] = useState("");
+
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const [filters, setFilters] = useState({
+    ...EMPTY_FILTERS,
+  });
+
+  const [appliedFilters, setAppliedFilters] = useState({
+    ...EMPTY_FILTERS,
+  });
+
   const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState(12);
+  const [perPage, setPerPage] = useState(DEFAULT_PER_PAGE);
+
   const [pagination, setPagination] = useState({
     currentPage: 1,
-    perPage: 12,
+    perPage: DEFAULT_PER_PAGE,
     total: 0,
     lastPage: 1,
   });
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
   /*
   |--------------------------------------------------------------------------
-  | FILTER OPTIONS
+  | REQUEST LIFECYCLE
   |--------------------------------------------------------------------------
   */
 
-  const countyOptions = useMemo(() => {
-    const names = plots
-      .map(
-        (plot) =>
-          plot?.county?.name ??
-          plot?.county_name ??
-          "",
-      )
-      .filter((name) => typeof name === "string" && name.trim());
+  useEffect(() => {
+    mountedRef.current = true;
 
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
-  }, [plots]);
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
 
-  const activeFilterCount = [
-    countyFilter,
-    minPrice,
-    maxPrice,
-    minSize,
-    maxSize,
-  ].filter((value) => value !== "").length;
+  /*
+  |--------------------------------------------------------------------------
+  | FILTER VALIDATION
+  |--------------------------------------------------------------------------
+  */
+
+  const invalidPriceRange =
+    appliedFilters.min_price !== "" &&
+    appliedFilters.max_price !== "" &&
+    Number(appliedFilters.min_price) >
+      Number(appliedFilters.max_price);
+
+  const invalidSizeRange =
+    appliedFilters.min_size !== "" &&
+    appliedFilters.max_size !== "" &&
+    Number(appliedFilters.min_size) >
+      Number(appliedFilters.max_size);
+
+  const hasInvalidFilters =
+    invalidPriceRange || invalidSizeRange;
+
+  const activeFilterCount = Object.values(appliedFilters).filter(
+    (value) => String(value).trim() !== "",
+  ).length;
 
   /*
   |--------------------------------------------------------------------------
@@ -423,7 +452,9 @@ const AvailablePlots = () => {
   */
 
   const loadPlots = useCallback(
-    async ({ showRefresh = false, page = currentPage } = {}) => {
+    async ({ page = 1, showRefresh = false } = {}) => {
+      const requestId = ++requestIdRef.current;
+
       if (typeof getPlots !== "function") {
         setPageError(
           "The getPlots action is unavailable. Check your usePlot hook.",
@@ -442,100 +473,188 @@ const AvailablePlots = () => {
       setPageError("");
 
       try {
-        clearError?.();
-
         const params = {
           page,
           per_page: perPage,
-          search: search || undefined,
-          status: "available",
-          county: countyFilter || undefined,
-          county_name: countyFilter || undefined,
-          min_price: minPrice !== "" ? minPrice : undefined,
-          max_price: maxPrice !== "" ? maxPrice : undefined,
-          min_size: minSize !== "" ? minSize : undefined,
-          max_size: maxSize !== "" ? maxSize : undefined,
+          status: AVAILABLE_STATUS,
         };
 
-        Object.keys(params).forEach((key) => {
-          if (params[key] === undefined || params[key] === "") {
-            delete params[key];
-          }
-        });
+        if (search.trim()) {
+          params.search = search.trim();
+        }
+
+        if (appliedFilters.county.trim()) {
+          params.county = appliedFilters.county.trim();
+        }
+
+        if (appliedFilters.min_price !== "") {
+          params.min_price = appliedFilters.min_price;
+        }
+
+        if (appliedFilters.max_price !== "") {
+          params.max_price = appliedFilters.max_price;
+        }
+
+        if (appliedFilters.min_size !== "") {
+          params.min_size = appliedFilters.min_size;
+        }
+
+        if (appliedFilters.max_size !== "") {
+          params.max_size = appliedFilters.max_size;
+        }
 
         const response = await getPlots(params);
 
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
         if (isFailedResponse(response)) {
           throw new Error(
-            response.message || "Unable to load available plots.",
+            getResponseBody(response)?.message ||
+              "Unable to load available plots.",
           );
         }
 
-        const result = unwrapResponse(response);
         const records = extractPlots(response);
 
-        // Some hooks return the normalized records directly.
-        const resolvedRecords = Array.isArray(result)
-          ? result
-          : records;
-
-        setPlots(
-          resolvedRecords.filter((plot) => {
-            const status = String(plot?.status || "available")
-              .toLowerCase()
-              .trim();
-
-            return (
-              status === "available" &&
-              getActiveState(plot?.is_active)
-            );
-          }),
+        const availablePlots = records.filter(
+          (plot) =>
+            getPlotStatus(plot) === AVAILABLE_STATUS &&
+            getActiveState(plot?.is_active),
         );
 
-        setPagination(getPagination(response, page, perPage));
+        const nextPagination = getPagination(
+          response,
+          page,
+          perPage,
+        );
 
-        if (typeof getStatistics === "function") {
-          try {
-            const statsResponse = await getStatistics();
+        setPlots(availablePlots);
 
-            if (!isFailedResponse(statsResponse)) {
-              setStatistics(unwrapResponse(statsResponse));
-            }
-          } catch {
-            // Statistics are optional; the plot list can still be shown.
-          }
+        setPagination({
+          ...nextPagination,
+          currentPage: page,
+          perPage,
+        });
+
+        setPageError("");
+      } catch (error) {
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
         }
-      } catch (loadError) {
-        setPageError(getErrorMessage(loadError));
+
+        setPlots([]);
+        setPagination((previous) => ({
+          ...previous,
+          total: 0,
+          lastPage: 1,
+        }));
+
+        setPageError(getErrorMessage(error));
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (
+          mountedRef.current &&
+          requestId === requestIdRef.current
+        ) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [
       getPlots,
-      getStatistics,
-      clearError,
-      currentPage,
-      perPage,
       search,
-      countyFilter,
-      minPrice,
-      maxPrice,
-      minSize,
-      maxSize,
+      appliedFilters,
+      perPage,
     ],
   );
 
   /*
   |--------------------------------------------------------------------------
-  | INITIAL LOAD AND FILTER CHANGES
+  | LOAD STATISTICS
+  |--------------------------------------------------------------------------
+  */
+
+  const loadStatistics = useCallback(async () => {
+    if (typeof getStatistics !== "function") {
+      return;
+    }
+
+    try {
+      const response = await getStatistics();
+
+      if (
+        !mountedRef.current ||
+        isFailedResponse(response)
+      ) {
+        return;
+      }
+
+      const result = unwrapResponse(response);
+
+      const nextStatistics =
+        result?.statistics ||
+        result?.data?.statistics ||
+        result?.data ||
+        result ||
+        {};
+
+      if (
+        nextStatistics &&
+        typeof nextStatistics === "object"
+      ) {
+        setStatistics(nextStatistics);
+      }
+    } catch {
+      // Statistics are optional. Inventory can still be displayed.
+    }
+  }, [getStatistics]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | INITIAL LOAD AND REFRESH
   |--------------------------------------------------------------------------
   */
 
   useEffect(() => {
     loadPlots({ page: currentPage });
-  }, [loadPlots, currentPage]);
+  }, [loadPlots, currentPage, refreshKey]);
+
+  useEffect(() => {
+    loadStatistics();
+  }, [loadStatistics, refreshKey]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | COUNTY OPTIONS
+  |--------------------------------------------------------------------------
+  */
+
+  const countyOptions = useMemo(() => {
+    const names = plots
+      .map(
+        (plot) =>
+          plot?.county?.name ??
+          plot?.county_name ??
+          plot?.area?.county?.name ??
+          "",
+      )
+      .filter(
+        (name) =>
+          typeof name === "string" && name.trim(),
+      );
+
+    return [...new Set(names)].sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }, [plots]);
 
   /*
   |--------------------------------------------------------------------------
@@ -545,8 +664,39 @@ const AvailablePlots = () => {
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
+
+    setPageError("");
     setCurrentPage(1);
     setSearch(searchInput.trim());
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | APPLY FILTERS
+  |--------------------------------------------------------------------------
+  */
+
+  const handleApplyFilters = () => {
+    const invalidPrice =
+      filters.min_price !== "" &&
+      filters.max_price !== "" &&
+      Number(filters.min_price) > Number(filters.max_price);
+
+    const invalidSize =
+      filters.min_size !== "" &&
+      filters.max_size !== "" &&
+      Number(filters.min_size) > Number(filters.max_size);
+
+    if (invalidPrice || invalidSize) {
+      setPageError(
+        "Please check your filters. Minimum values cannot exceed maximum values.",
+      );
+      return;
+    }
+
+    setPageError("");
+    setCurrentPage(1);
+    setAppliedFilters({ ...filters });
   };
 
   /*
@@ -558,13 +708,27 @@ const AvailablePlots = () => {
   const handleResetFilters = () => {
     setSearchInput("");
     setSearch("");
-    setCountyFilter("");
-    setMinPrice("");
-    setMaxPrice("");
-    setMinSize("");
-    setMaxSize("");
+    setFilters({ ...EMPTY_FILTERS });
+    setAppliedFilters({ ...EMPTY_FILTERS });
     setCurrentPage(1);
     setPageError("");
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | PAGE SIZE
+  |--------------------------------------------------------------------------
+  */
+
+  const handlePerPageChange = (event) => {
+    const nextPerPage = Number(event.target.value);
+
+    if (!Number.isFinite(nextPerPage) || nextPerPage < 1) {
+      return;
+    }
+
+    setPerPage(nextPerPage);
+    setCurrentPage(1);
   };
 
   /*
@@ -574,7 +738,27 @@ const AvailablePlots = () => {
   */
 
   const handleRefresh = () => {
-    loadPlots({ showRefresh: true, page: currentPage });
+    clearError?.();
+    setPageError("");
+    setRefreshKey((previous) => previous + 1);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | PAGINATION
+  |--------------------------------------------------------------------------
+  */
+
+  const handlePageChange = (nextPage) => {
+    if (
+      nextPage < 1 ||
+      nextPage > pagination.lastPage ||
+      nextPage === currentPage
+    ) {
+      return;
+    }
+
+    setCurrentPage(nextPage);
   };
 
   /*
@@ -583,17 +767,27 @@ const AvailablePlots = () => {
   |--------------------------------------------------------------------------
   */
 
-  const handleView = (plotId) => {
-    if (plotId === undefined || plotId === null) return;
+  const handleView = useCallback(
+    (plotId) => {
+      if (plotId === undefined || plotId === null) {
+        return;
+      }
 
-    navigate(`/super-admin/plots/${plotId}`);
-  };
+      navigate(`/super-admin/plots/${plotId}`);
+    },
+    [navigate],
+  );
 
-  const handleEdit = (plotId) => {
-    if (plotId === undefined || plotId === null) return;
+  const handleEdit = useCallback(
+    (plotId) => {
+      if (plotId === undefined || plotId === null) {
+        return;
+      }
 
-    navigate(`/super-admin/plots/${plotId}/edit`);
-  };
+      navigate(`/super-admin/plots/${plotId}/edit`);
+    },
+    [navigate],
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -602,26 +796,43 @@ const AvailablePlots = () => {
   */
 
   const totalAvailable =
-    statistics?.available ??
-    statistics?.available_plots ??
-    statistics?.inventory?.available ??
-    pagination.total;
+    getNumericValue(
+      statistics?.available_count,
+      statistics?.available,
+      statistics?.available_plots,
+      statistics?.inventory?.available,
+    ) ?? pagination.total;
 
-  const totalInventoryValue =
-    statistics?.available_value ??
-    statistics?.inventory_value ??
-    statistics?.inventory?.available_value;
+  const totalInventoryValue = getNumericValue(
+    statistics?.available_value,
+    statistics?.inventory_value,
+    statistics?.inventory?.available_value,
+  );
 
-  const averagePrice =
-    statistics?.average_plot_value ??
-    statistics?.average_price ??
-    statistics?.inventory?.average_price;
+  const averagePrice = getNumericValue(
+    statistics?.average_available_price,
+    statistics?.average_plot_value,
+    statistics?.average_price,
+    statistics?.inventory?.average_price,
+  );
 
-  const hasStatistics = statistics !== null;
+  const visibleInventoryValue = useMemo(
+    () =>
+      plots.reduce(
+        (total, plot) => total + getPlotPrice(plot),
+        0,
+      ),
+    [plots],
+  );
+
+  const visibleAveragePrice =
+    plots.length > 0
+      ? visibleInventoryValue / plots.length
+      : 0;
 
   /*
   |--------------------------------------------------------------------------
-  | ERROR DISPLAY
+  | PAGE STATUS
   |--------------------------------------------------------------------------
   */
 
@@ -629,9 +840,19 @@ const AvailablePlots = () => {
     pageError ||
     (typeof hookError === "string"
       ? hookError
-      : hookError?.message);
+      : hookError?.message || "");
 
-  const isBusy = loading || hookLoading;
+  const isBusy = loading || Boolean(hookLoading);
+
+  const showingFrom =
+    pagination.total === 0
+      ? 0
+      : (currentPage - 1) * perPage + 1;
+
+  const showingTo = Math.min(
+    currentPage * perPage,
+    pagination.total,
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -640,583 +861,572 @@ const AvailablePlots = () => {
   */
 
   return (
-    <div className="min-h-screen bg-gray-50/70">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Header */}
+    <div className="min-w-0 w-full space-y-6">
+      {/* ================================================================
+          HEADER
+      ================================================================ */}
 
-        <PlotHeader
-          title="Available Plots"
-          description="Browse available land plots, compare prices and manage plot records."
-          loading={isBusy || refreshing}
-          onRefresh={handleRefresh}
-          showRefresh
-        />
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <MapPin className="h-5 w-5" />
+            </div>
 
-        {/* Error */}
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                Available Plots
+              </h1>
 
-        {displayedError && (
-          <div
-            role="alert"
-            className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-          >
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">
-                Unable to Load Available Plots
+              <p className="mt-0.5 text-sm text-slate-500">
+                Browse available land plots, compare prices, and manage plot inventory.
               </p>
-
-              <p className="mt-1 break-words">
-                {displayedError}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setPageError("")}
-              className="rounded-lg p-1 transition hover:bg-red-100"
-              aria-label="Dismiss error"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Summary Cards */}
-
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-gray-500">
-                  Available Plots
-                </p>
-
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {isBusy && !plots.length
-                    ? "—"
-                    : formatNumber(totalAvailable)}
-                </p>
-
-                <p className="mt-1 text-xs text-emerald-700">
-                  Ready for sale
-                </p>
-              </div>
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <CheckCircle2 className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-gray-500">
-                  Total Inventory Value
-                </p>
-
-                <p className="mt-2 break-words text-xl font-bold text-gray-900">
-                  {totalInventoryValue !== undefined
-                    ? formatCurrency(totalInventoryValue)
-                    : "—"}
-                </p>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  Available plot value
-                </p>
-              </div>
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <Banknote className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-gray-500">
-                  Average Asking Price
-                </p>
-
-                <p className="mt-2 break-words text-xl font-bold text-gray-900">
-                  {averagePrice !== undefined
-                    ? formatCurrency(averagePrice)
-                    : "—"}
-                </p>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  Per plot
-                </p>
-              </div>
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                <Banknote className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-gray-500">
-                  Current Results
-                </p>
-
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {formatNumber(pagination.total)}
-                </p>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  Matching available plots
-                </p>
-              </div>
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <MapPin className="h-6 w-6" />
-              </div>
             </div>
           </div>
         </div>
 
-        {/* Search and Filters */}
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={isBusy || refreshing}
+          className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        >
+          <RefreshCw
+            className={`h-4 w-4 ${
+              refreshing ? "animate-spin" : ""
+            }`}
+          />
+          Refresh
+        </button>
+      </div>
 
-        <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-gray-900">
-                  Find Available Plots
-                </h2>
+      {/* Shared plot navigation/header */}
+      <PlotHeader
+        title="Available Plots"
+        subtitle="Manage available plots and land inventory."
+        activeTab="available"
+      />
 
-                <p className="mt-1 text-sm text-gray-500">
-                  Search by plot name, code or location.
-                </p>
-              </div>
+      {/* ================================================================
+          ERROR MESSAGE
+      ================================================================ */}
 
-              <button
-                type="button"
-                onClick={() => setFiltersOpen((previous) => !previous)}
-                className={`inline-flex items-center justify-center gap-2 self-start rounded-lg border px-3.5 py-2.5 text-sm font-medium transition ${filtersOpen || activeFilterCount > 0
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                  }`}
-              >
-                <Filter className="h-4 w-4" />
-                Filters
+      {displayedError && (
+        <div
+          role="alert"
+          className="flex min-w-0 items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4"
+        >
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
 
-                {activeFilterCount > 0 && (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1 text-xs font-semibold text-white">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </button>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-red-800">
+              Unable to load available plots
+            </p>
+
+            <p className="mt-1 break-words text-sm text-red-700">
+              {getErrorMessage(displayedError)}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setPageError("")}
+            aria-label="Dismiss error"
+            className="shrink-0 rounded-lg p-1 text-red-600 transition hover:bg-red-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ================================================================
+          STATISTICS
+      ================================================================ */}
+
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatisticCard
+          title="Available plots"
+          value={
+            isBusy && !statistics
+              ? "..."
+              : formatNumber(totalAvailable)
+          }
+          description="Plots currently available for sale"
+          icon={CheckCircle2}
+          iconClass="text-emerald-600"
+          iconBackground="bg-emerald-50"
+        />
+
+        <StatisticCard
+          title="Total inventory value"
+          value={
+            totalInventoryValue !== null
+              ? formatCurrency(totalInventoryValue)
+              : formatCurrency(visibleInventoryValue)
+          }
+          description="Combined asking value of available inventory"
+          icon={Banknote}
+          iconClass="text-blue-600"
+          iconBackground="bg-blue-50"
+        />
+
+        <StatisticCard
+          title="Average asking price"
+          value={formatCurrency(
+            averagePrice !== null
+              ? averagePrice
+              : visibleAveragePrice,
+          )}
+          description="Average price per displayed plot"
+          icon={Banknote}
+          iconClass="text-violet-600"
+          iconBackground="bg-violet-50"
+        />
+
+        <StatisticCard
+          title="Matching results"
+          value={formatNumber(pagination.total)}
+          description="Plots matching your current search and filters"
+          icon={ClipboardList}
+          iconClass="text-amber-600"
+          iconBackground="bg-amber-50"
+        />
+      </div>
+
+      {/* ================================================================
+          SEARCH AND FILTERS
+      ================================================================ */}
+
+      <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex min-w-0 flex-col gap-4 border-b border-slate-100 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex min-w-0 w-full flex-col gap-2 sm:flex-row lg:max-w-2xl"
+          >
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(event) =>
+                  setSearchInput(event.target.value)
+                }
+                placeholder="Search plot name, code, county, or area..."
+                className="w-full min-w-0 rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              />
             </div>
 
-            <form
-              onSubmit={handleSearchSubmit}
-              className="flex flex-col gap-3 sm:flex-row"
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Search className="h-4 w-4" />
+              Search
+            </button>
+          </form>
+
+          <button
+            type="button"
+            onClick={() =>
+              setFiltersOpen((previous) => !previous)
+            }
+            aria-expanded={filtersOpen}
+            className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+              filtersOpen || activeFilterCount > 0
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+
+            {activeFilterCount > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1 text-xs text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {filtersOpen && (
+          <div className="space-y-4 border-b border-slate-100 bg-slate-50/70 p-4">
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="min-w-0">
+                <label
+                  htmlFor="available-county"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  County
+                </label>
+
+                <select
+                  id="available-county"
+                  value={filters.county}
+                  onChange={(event) =>
+                    setFilters((previous) => ({
+                      ...previous,
+                      county: event.target.value,
+                    }))
+                  }
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="">All counties</option>
+
+                  {countyOptions.map((county) => (
+                    <option key={county} value={county}>
+                      {county}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="min-w-0">
+                <label
+                  htmlFor="available-min-price"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Minimum price (KES)
+                </label>
 
                 <input
-                  type="search"
-                  value={searchInput}
+                  id="available-min-price"
+                  type="number"
+                  min="0"
+                  value={filters.min_price}
                   onChange={(event) =>
-                    setSearchInput(event.target.value)
+                    setFilters((previous) => ({
+                      ...previous,
+                      min_price: event.target.value,
+                    }))
                   }
-                  placeholder="Search plot title, code, county or area..."
-                  className="min-h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  placeholder="Minimum price"
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
 
+              <div className="min-w-0">
+                <label
+                  htmlFor="available-max-price"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Maximum price (KES)
+                </label>
+
+                <input
+                  id="available-max-price"
+                  type="number"
+                  min="0"
+                  value={filters.max_price}
+                  onChange={(event) =>
+                    setFilters((previous) => ({
+                      ...previous,
+                      max_price: event.target.value,
+                    }))
+                  }
+                  placeholder="Maximum price"
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+
+              <div className="min-w-0">
+                <label
+                  htmlFor="available-min-size"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Minimum size
+                </label>
+
+                <input
+                  id="available-min-size"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={filters.min_size}
+                  onChange={(event) =>
+                    setFilters((previous) => ({
+                      ...previous,
+                      min_size: event.target.value,
+                    }))
+                  }
+                  placeholder="Minimum size"
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+
+              <div className="min-w-0">
+                <label
+                  htmlFor="available-max-size"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Maximum size
+                </label>
+
+                <input
+                  id="available-max-size"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={filters.max_size}
+                  onChange={(event) =>
+                    setFilters((previous) => ({
+                      ...previous,
+                      max_size: event.target.value,
+                    }))
+                  }
+                  placeholder="Maximum size"
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                type="submit"
+                type="button"
+                onClick={handleApplyFilters}
                 disabled={isBusy}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Search className="h-4 w-4" />
-                Search
+                <Filter className="h-4 w-4" />
+                Apply filters
               </button>
 
               <button
                 type="button"
                 onClick={handleResetFilters}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 <RotateCcw className="h-4 w-4" />
-                Reset
+                Reset filters
               </button>
-            </form>
-
-            {filtersOpen && (
-              <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2 xl:grid-cols-5">
-                <div>
-                  <label
-                    htmlFor="available-county"
-                    className="mb-1.5 block text-sm font-medium text-gray-700"
-                  >
-                    County
-                  </label>
-
-                  <select
-                    id="available-county"
-                    value={countyFilter}
-                    onChange={(event) => {
-                      setCountyFilter(event.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="min-h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  >
-                    <option value="">All counties</option>
-
-                    {countyOptions.map((county) => (
-                      <option key={county} value={county}>
-                        {county}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="available-min-price"
-                    className="mb-1.5 block text-sm font-medium text-gray-700"
-                  >
-                    Minimum Price (KES)
-                  </label>
-
-                  <input
-                    id="available-min-price"
-                    type="number"
-                    min="0"
-                    value={minPrice}
-                    onChange={(event) => {
-                      setMinPrice(event.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="0"
-                    className="min-h-10 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="available-max-price"
-                    className="mb-1.5 block text-sm font-medium text-gray-700"
-                  >
-                    Maximum Price (KES)
-                  </label>
-
-                  <input
-                    id="available-max-price"
-                    type="number"
-                    min="0"
-                    value={maxPrice}
-                    onChange={(event) => {
-                      setMaxPrice(event.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Any"
-                    className="min-h-10 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="available-min-size"
-                    className="mb-1.5 block text-sm font-medium text-gray-700"
-                  >
-                    Minimum Size
-                  </label>
-
-                  <input
-                    id="available-min-size"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={minSize}
-                    onChange={(event) => {
-                      setMinSize(event.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Any"
-                    className="min-h-10 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="available-max-size"
-                    className="mb-1.5 block text-sm font-medium text-gray-700"
-                  >
-                    Maximum Size
-                  </label>
-
-                  <input
-                    id="available-max-size"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={maxSize}
-                    onChange={(event) => {
-                      setMaxSize(event.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Any"
-                    className="min-h-10 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-
-                {minPrice !== "" &&
-                  maxPrice !== "" &&
-                  Number(minPrice) > Number(maxPrice) && (
-                    <p className="text-sm text-red-600 sm:col-span-2 xl:col-span-5">
-                      Minimum price cannot exceed maximum price.
-                    </p>
-                  )}
-
-                {minSize !== "" &&
-                  maxSize !== "" &&
-                  Number(minSize) > Number(maxSize) && (
-                    <p className="text-sm text-red-600 sm:col-span-2 xl:col-span-5">
-                      Minimum size cannot exceed maximum size.
-                    </p>
-                  )}
-
-                <div className="sm:col-span-2 xl:col-span-5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCurrentPage(1);
-                      loadPlots({ page: 1 });
-                    }}
-                    disabled={isBusy}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Filter className="h-4 w-4" />
-                    Apply Filters
-                  </button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
-        </section>
+        )}
+      </section>
 
-        {/* Results Header */}
+      {/* ================================================================
+          INVENTORY HEADING
+      ================================================================ */}
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              Available Inventory
-            </h2>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Available inventory
+          </h2>
 
-            <p className="mt-1 text-sm text-gray-500">
-              {loading
-                ? "Loading plot inventory..."
-                : `${pagination.total.toLocaleString("en-KE")} plot(s) found`}
-            </p>
+          <p className="mt-1 text-sm text-slate-500">
+            {isBusy
+              ? "Loading plot inventory..."
+              : `${formatNumber(pagination.total)} plot(s) found`}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <label
+            htmlFor="available-per-page"
+            className="whitespace-nowrap text-sm text-slate-500"
+          >
+            Rows per page
+          </label>
+
+          <select
+            id="available-per-page"
+            value={perPage}
+            onChange={(event) => {
+              const nextPerPage = Number(event.target.value);
+              setPerPage(nextPerPage);
+              setCurrentPage(1);
+            }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+          >
+            <option value={6}>6</option>
+            <option value={12}>12</option>
+            <option value={24}>24</option>
+            <option value={48}>48</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ================================================================
+          LOADING STATE
+      ================================================================ */}
+
+      {isBusy && plots.length === 0 && (
+        <div className="flex min-h-64 w-full flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-8">
+          <Loader2 className="h-9 w-9 animate-spin text-emerald-600" />
+
+          <p className="mt-3 text-sm font-medium text-slate-700">
+            Loading available plots...
+          </p>
+
+          <p className="mt-1 text-center text-xs text-slate-500">
+            Please wait while we retrieve your inventory.
+          </p>
+        </div>
+      )}
+
+      {/* ================================================================
+          EMPTY STATE
+      ================================================================ */}
+
+      {!isBusy && plots.length === 0 && (
+        <div className="flex min-h-72 w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
+            <MapPin className="h-7 w-7 text-emerald-600" />
           </div>
 
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="available-per-page"
-              className="text-sm text-gray-500"
-            >
-              Show
-            </label>
+          <h3 className="mt-4 text-base font-semibold text-slate-900">
+            No available plots found
+          </h3>
 
-            <select
-              id="available-per-page"
-              value={perPage}
-              onChange={(event) => {
-                setPerPage(Number(event.target.value));
-                setCurrentPage(1);
-              }}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500"
+          <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+            There are no available plots matching your current search
+            or filters. Try adjusting your criteria or clearing
+            your filters.
+          </p>
+
+          <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
-              <option value={6}>6</option>
-              <option value={12}>12</option>
-              <option value={24}>24</option>
-              <option value={48}>48</option>
-            </select>
+              <RotateCcw className="h-4 w-4" />
+              Clear search and filters
+            </button>
 
             <button
               type="button"
-              onClick={handleRefresh}
-              disabled={isBusy || refreshing}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => navigate("/super-admin/plots/create")}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700"
             >
-              <RefreshCw
-                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""
-                  }`}
-              />
-              Refresh
+              Register a plot
+              <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
+      )}
 
-        {/* Loading State */}
+      {/* ================================================================
+          PLOT TABLE
+      ================================================================ */}
 
-        {loading && plots.length === 0 && (
-          <div className="rounded-2xl border border-gray-200 bg-white p-12 shadow-sm">
-            <div className="flex flex-col items-center justify-center text-center">
-              <Loader2 className="h-9 w-9 animate-spin text-emerald-600" />
+      {plots.length > 0 && (
+        <section className="min-w-0 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex min-w-0 flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <ClipboardList className="h-5 w-5" />
+              </div>
 
-              <p className="mt-4 text-sm font-semibold text-gray-900">
-                Loading available plots
-              </p>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-slate-900">
+                  Plot inventory
+                </h3>
 
-              <p className="mt-1 text-sm text-gray-500">
-                Please wait while we retrieve the inventory.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-
-        {!loading && plots.length === 0 && (
-          <div className="rounded-2xl border border-gray-200 bg-white px-6 py-12 text-center shadow-sm sm:px-12">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <MapPin className="h-7 w-7" />
-            </div>
-
-            <h3 className="mt-4 text-lg font-semibold text-gray-900">
-              No Available Plots Found
-            </h3>
-
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-              There are no available plots matching your current search
-              and filters. Try changing your search criteria or reset
-              the filters.
-            </p>
-
-            <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Reset Filters
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate("/super-admin/plots/create")}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-              >
-                Register a Plot
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Plot Grid */}
-
-        {plots.length > 0 && (
-          <>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {plots.map((plot, index) => {
-                const plotId = getPlotId(plot);
-
-                return (
-                  <AvailablePlotCard
-                    key={plotId ?? `${getPlotCode(plot)}-${index}`}
-                    plot={plot}
-                    onView={handleView}
-                    onEdit={handleEdit}
-                  />
-                );
-              })}
-            </div>
-
-            {/* Pagination */}
-
-            <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-gray-500">
-                Showing{" "}
-                <span className="font-semibold text-gray-900">
-                  {pagination.total === 0
-                    ? 0
-                    : (pagination.currentPage - 1) * pagination.perPage + 1}
-                </span>{" "}
-                to{" "}
-                <span className="font-semibold text-gray-900">
-                  {Math.min(
-                    pagination.currentPage * pagination.perPage,
-                    pagination.total,
-                  )}
-                </span>{" "}
-                of{" "}
-                <span className="font-semibold text-gray-900">
-                  {pagination.total}
-                </span>{" "}
-                plots
-              </p>
-
-              <div className="flex items-center justify-between gap-2 sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCurrentPage((page) => Math.max(1, page - 1))
-                  }
-                  disabled={pagination.currentPage <= 1 || isBusy}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </button>
-
-                <span className="whitespace-nowrap px-2 text-sm text-gray-600">
-                  Page {pagination.currentPage} of {pagination.lastPage}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCurrentPage((page) =>
-                      Math.min(pagination.lastPage, page + 1),
-                    )
-                  }
-                  disabled={
-                    pagination.currentPage >= pagination.lastPage ||
-                    isBusy
-                  }
-                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  Review plot locations, sizes, asking prices, and details.
+                </p>
               </div>
             </div>
-          </>
-        )}
 
-        {/* Refresh Overlay */}
-
-        {refreshing && (
-          <div className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-lg">
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-            Refreshing available plots...
+            <div className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              {formatNumber(pagination.total)} available
+            </div>
           </div>
-        )}
 
-        {/* Statistics Loading Note */}
+          <div className="w-full min-w-0 overflow-x-auto">
+            <PlotTable
+              plots={plots}
+              loading={isBusy || refreshing}
+              onView={handleView}
+              onEdit={handleEdit}
+            />
+          </div>
 
-        {!hasStatistics && !loading && plots.length > 0 && (
-          <p className="mt-4 text-xs text-gray-400">
-            Inventory summary figures will appear when the statistics
-            endpoint returns the required values.
+          <div className="flex min-w-0 flex-col gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p className="text-xs text-slate-500">
+              <span className="font-semibold text-slate-700">
+                {plots.length}
+              </span>{" "}
+              plot(s) displayed on this page
+            </p>
+
+            <p className="text-xs text-slate-400">
+              Default currency: KES
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* ================================================================
+          PAGINATION
+      ================================================================ */}
+
+      {!isBusy && plots.length > 0 && (
+        <div className="flex min-w-0 flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-500">
+            Showing{" "}
+            <span className="font-semibold text-slate-900">
+              {showingFrom}
+            </span>{" "}
+            to{" "}
+            <span className="font-semibold text-slate-900">
+              {showingTo}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-slate-900">
+              {formatNumber(pagination.total)}
+            </span>{" "}
+            plots
           </p>
-        )}
-      </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                handlePageChange(currentPage - 1)
+              }
+              disabled={currentPage <= 1 || isBusy}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+
+            <span className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+              Page {currentPage} of {pagination.lastPage}
+            </span>
+
+            <button
+              type="button"
+              onClick={() =>
+                handlePageChange(currentPage + 1)
+              }
+              disabled={
+                currentPage >= pagination.lastPage || isBusy
+              }
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+          REFRESH INDICATOR
+      ================================================================ */}
+
+      {refreshing && (
+        <div className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-lg">
+          <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+          Refreshing available plots...
+        </div>
+      )}
     </div>
   );
-};
-
-export default AvailablePlots;
+}
