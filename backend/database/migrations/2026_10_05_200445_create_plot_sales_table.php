@@ -26,6 +26,7 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             |
             | Each sale belongs to one plot.
+            | Restrict deletion to preserve sale history.
             |
             */
 
@@ -38,7 +39,7 @@ return new class extends Migration
             | Buyer Relationship
             |--------------------------------------------------------------------------
             |
-            | The buyer is an existing user in the EstateKenya system.
+            | The buyer is an existing user in EstateKenya.
             |
             */
 
@@ -52,6 +53,7 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             |
             | Optional agent responsible for facilitating the sale.
+            | If the agent is deleted, preserve the sale record.
             |
             */
 
@@ -74,8 +76,27 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | Sale Agreement
+            |--------------------------------------------------------------------------
+            */
+
+            $table->string('agreement_number', 100)
+                ->nullable()
+                ->unique();
+
+            $table->date('agreement_date')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
             | Financial Information
             |--------------------------------------------------------------------------
+            |
+            | Net sale price = sale price - discount.
+            | Balance should be recalculated by the service/model layer.
+            | Deposit amount represents the agreed deposit; actual receipts
+            | should be tracked in the plot_payments table.
+            |
             */
 
             $table->decimal('sale_price', 15, 2)
@@ -136,13 +157,22 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
+            | Cancellation Information
+            |--------------------------------------------------------------------------
+            */
+
+            $table->text('cancellation_reason')
+                ->nullable();
+
+            /*
+            |--------------------------------------------------------------------------
             | Sale Status
             |--------------------------------------------------------------------------
             |
             | pending   = sale has been initiated
             | reserved  = plot has been reserved for the buyer
             | approved  = sale has been approved
-            | completed = sale has been fully completed
+            | completed = sale has been completed
             | cancelled = sale has been cancelled
             |
             */
@@ -183,34 +213,34 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Indexes
+            | Composite Indexes
             |--------------------------------------------------------------------------
             */
 
             $table->index([
                 'plot_id',
                 'status',
-            ]);
+            ], 'plot_sales_plot_status_index');
 
             $table->index([
                 'buyer_id',
                 'status',
-            ]);
+            ], 'plot_sales_buyer_status_index');
 
             $table->index([
                 'agent_id',
                 'status',
-            ]);
+            ], 'plot_sales_agent_status_index');
 
             $table->index([
                 'status',
                 'is_active',
-            ]);
+            ], 'plot_sales_status_active_index');
 
             $table->index([
                 'due_date',
                 'status',
-            ]);
+            ], 'plot_sales_due_status_index');
         });
     }
 
@@ -222,4 +252,3 @@ return new class extends Migration
         Schema::dropIfExists('plot_sales');
     }
 };
-
