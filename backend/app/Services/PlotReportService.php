@@ -2,16 +2,13 @@
 
 namespace App\Services;
 
-use App\Repositories\Interfaces\PlotRepositoryInterface;
-use App\Models\Plot;
 use App\Models\PlotPayment;
 use App\Models\PlotSale;
+use App\Repositories\Interfaces\PlotRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
-use Throwable;
 
 class PlotReportService
 {
@@ -22,6 +19,29 @@ class PlotReportService
     */
 
     protected PlotRepositoryInterface $plotRepository;
+
+    /**
+     * Sale statuses excluded from active financial totals.
+     *
+     * Reserved, pending, approved and completed sales remain included.
+     *
+     * @var array<int, string>
+     */
+    protected const EXCLUDED_SALE_STATUSES = [
+        'cancelled',
+        'rejected',
+        'expired',
+    ];
+
+    /**
+     * Payment statuses considered successfully collected.
+     *
+     * @var array<int, string>
+     */
+    protected const SUCCESSFUL_PAYMENT_STATUSES = [
+        'paid',
+        'completed',
+    ];
 
     /**
      * Create a new PlotReportService instance.
@@ -41,11 +61,7 @@ class PlotReportService
     /**
      * Get complete plot statistics.
      *
-     * This combines:
-     * - inventory statistics
-     * - sales statistics
-     * - payment statistics
-     * - location statistics
+     * @return array<string, mixed>
      */
     public function statistics(
         array $filters = []
@@ -81,6 +97,11 @@ class PlotReportService
 
     /**
      * Get high-level summary statistics.
+     *
+     * Total sales value is calculated from PlotSale.sale_price.
+     * It is not calculated from payment amounts.
+     *
+     * @return array<string, mixed>
      */
     public function summaryStatistics(
         array $filters = []
@@ -98,28 +119,17 @@ class PlotReportService
         $totalAskingPrice = (clone $plotQuery)
             ->sum('asking_price');
 
-        $totalSaleValue = (clone $saleQuery)
-            ->whereNotIn('status', [
-                'cancelled',
-                'rejected',
-                'expired',
-            ])
+        $validSales = $this->validSalesQuery(
+            $saleQuery
+        );
+
+        $totalSaleValue = (clone $validSales)
             ->sum('sale_price');
 
-        $totalPaid = (clone $saleQuery)
-            ->whereNotIn('status', [
-                'cancelled',
-                'rejected',
-                'expired',
-            ])
+        $totalPaid = (clone $validSales)
             ->sum('amount_paid');
 
-        $totalOutstanding = (clone $saleQuery)
-            ->whereNotIn('status', [
-                'cancelled',
-                'rejected',
-                'expired',
-            ])
+        $totalOutstanding = (clone $validSales)
             ->sum('balance');
 
         return [
@@ -145,19 +155,15 @@ class PlotReportService
                 $totalOutstanding
             ),
 
-            'collection_rate' => $totalSaleValue > 0
-                ? round(
-                    ($totalPaid / $totalSaleValue) * 100,
-                    2
-                )
-                : 0,
+            'collection_rate' => $this->percentage(
+                $totalPaid,
+                $totalSaleValue
+            ),
 
-            'conversion_rate' => $totalPlots > 0
-                ? round(
-                    ($totalSales / $totalPlots) * 100,
-                    2
-                )
-                : 0,
+            'conversion_rate' => $this->percentage(
+                $totalSales,
+                $totalPlots
+            ),
         ];
     }
 
@@ -169,13 +175,13 @@ class PlotReportService
 
     /**
      * Get plot inventory statistics.
+     *
+     * @return array<string, mixed>
      */
     public function inventoryStatistics(
         array $filters = []
     ): array {
-        $query = $this->plotQuery(
-            $filters
-        );
+        $query = $this->plotQuery($filters);
 
         $total = (clone $query)->count();
 
@@ -269,13 +275,16 @@ class PlotReportService
 
     /**
      * Get plot sales statistics.
+     *
+     * Financial totals exclude cancelled, rejected and expired sales.
+     * Total sale value uses sale_price, not amount_paid.
+     *
+     * @return array<string, mixed>
      */
     public function salesStatistics(
         array $filters = []
     ): array {
-        $query = $this->saleQuery(
-            $filters
-        );
+        $query = $this->saleQuery($filters);
 
         $totalSales = (clone $query)->count();
 
@@ -307,12 +316,9 @@ class PlotReportService
             ->where('status', 'expired')
             ->count();
 
-        $validSalesQuery = (clone $query)
-            ->whereNotIn('status', [
-                'cancelled',
-                'rejected',
-                'expired',
-            ]);
+        $validSalesQuery = $this->validSalesQuery(
+            $query
+        );
 
         $totalSaleValue = (clone $validSalesQuery)
             ->sum('sale_price');
@@ -332,6 +338,18 @@ class PlotReportService
         $averageSalePrice = (clone $validSalesQuery)
             ->avg('sale_price');
 
+        $completedQuery = (clone $query)
+            ->where('status', 'completed');
+
+        $completedSaleValue = (clone $completedQuery)
+            ->sum('sale_price');
+
+        $completedAmountPaid = (clone $completedQuery)
+            ->sum('amount_paid');
+
+        $completedBalance = (clone $completedQuery)
+            ->sum('balance');
+
         return [
             'total_sales' => (int) $totalSales,
 
@@ -349,6 +367,9 @@ class PlotReportService
 
             'expired_sales' => (int) $expired,
 
+            /*
+             * Value of valid sales, including reserved sales.
+             */
             'total_sale_value' => $this->money(
                 $totalSaleValue
             ),
@@ -373,12 +394,25 @@ class PlotReportService
                 $averageSalePrice
             ),
 
-            'collection_rate' => $totalSaleValue > 0
-                ? round(
-                    ($totalPaid / $totalSaleValue) * 100,
-                    2
-                )
-                : 0,
+            /*
+             * Completed sales are reported separately.
+             */
+            'completed_sale_value' => $this->money(
+                $completedSaleValue
+            ),
+
+            'completed_amount_paid' => $this->money(
+                $completedAmountPaid
+            ),
+
+            'completed_sale_balance' => $this->money(
+                $completedBalance
+            ),
+
+            'collection_rate' => $this->percentage(
+                $totalPaid,
+                $totalSaleValue
+            ),
 
             'completion_rate' => $this->percentage(
                 $completed,
@@ -395,13 +429,16 @@ class PlotReportService
 
     /**
      * Get plot payment statistics.
+     *
+     * Payments with status "paid" or "completed" are treated as
+     * successful collections.
+     *
+     * @return array<string, mixed>
      */
     public function paymentStatistics(
         array $filters = []
     ): array {
-        $query = $this->paymentQuery(
-            $filters
-        );
+        $query = $this->paymentQuery($filters);
 
         $totalPayments = (clone $query)->count();
 
@@ -420,6 +457,10 @@ class PlotReportService
             ->where('status', 'paid')
             ->count();
 
+        $completed = (clone $query)
+            ->where('status', 'completed')
+            ->count();
+
         $failed = (clone $query)
             ->where('status', 'failed')
             ->count();
@@ -432,8 +473,16 @@ class PlotReportService
             ->where('status', 'overdue')
             ->count();
 
-        $successfulAmount = (clone $query)
-            ->where('status', 'paid')
+        $successfulQuery = (clone $query)
+            ->whereIn(
+                'status',
+                self::SUCCESSFUL_PAYMENT_STATUSES
+            );
+
+        $successfulCount = (clone $successfulQuery)
+            ->count();
+
+        $successfulAmount = (clone $successfulQuery)
             ->sum('amount');
 
         $failedAmount = (clone $query)
@@ -447,10 +496,16 @@ class PlotReportService
         return [
             'total_payments' => (int) $totalPayments,
 
+            /*
+             * All payment records, irrespective of status.
+             */
             'total_amount' => $this->money(
                 $totalAmount
             ),
 
+            /*
+             * Successful collections only.
+             */
             'successful_amount' => $this->money(
                 $successfulAmount
             ),
@@ -469,14 +524,18 @@ class PlotReportService
 
             'paid_payments' => (int) $paid,
 
+            'completed_payments' => (int) $completed,
+
             'failed_payments' => (int) $failed,
 
             'refunded_payments' => (int) $refunded,
 
             'overdue_payments' => (int) $overdue,
 
+            'successful_payments' => (int) $successfulCount,
+
             'successful_rate' => $this->percentage(
-                $paid,
+                $successfulCount,
                 $totalPayments
             ),
         ];
@@ -489,29 +548,35 @@ class PlotReportService
     */
 
     /**
-     * Get plot statistics grouped by location.
+     * Get plot statistics grouped by county.
+     *
+     * @return array<string, mixed>
      */
     public function locationStatistics(
         array $filters = []
     ): array {
-        $query = $this->plotQuery(
-            $filters
-        );
+        $query = $this->plotQuery($filters);
 
         $counties = (clone $query)
             ->select([
                 'county_id',
+
                 DB::raw('COUNT(*) as total_plots'),
+
                 DB::raw(
                     "SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_plots"
                 ),
+
                 DB::raw(
                     "SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_plots"
                 ),
+
                 DB::raw(
                     "SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) as sold_plots"
                 ),
+
                 DB::raw('SUM(size) as total_size'),
+
                 DB::raw(
                     'SUM(asking_price) as total_asking_price'
                 ),
@@ -558,14 +623,12 @@ class PlotReportService
     */
 
     /**
-     * Generate plot inventory report.
+     * Generate a paginated plot inventory report.
      */
     public function inventoryReport(
         array $filters = []
     ): LengthAwarePaginator {
-        $query = $this->plotQuery(
-            $filters
-        );
+        $query = $this->plotQuery($filters);
 
         $this->applyReportSorting(
             $query,
@@ -593,9 +656,7 @@ class PlotReportService
                 'activeSale',
             ])
             ->paginate(
-                $this->getPerPage(
-                    $filters
-                )
+                $this->getPerPage($filters)
             )
             ->withQueryString();
     }
@@ -607,14 +668,12 @@ class PlotReportService
     */
 
     /**
-     * Generate plot sales report.
+     * Generate a paginated plot sales report.
      */
     public function salesReport(
         array $filters = []
     ): LengthAwarePaginator {
-        $query = $this->saleQuery(
-            $filters
-        );
+        $query = $this->saleQuery($filters);
 
         $this->applyReportSorting(
             $query,
@@ -640,9 +699,7 @@ class PlotReportService
                 'payments',
             ])
             ->paginate(
-                $this->getPerPage(
-                    $filters
-                )
+                $this->getPerPage($filters)
             )
             ->withQueryString();
     }
@@ -654,14 +711,12 @@ class PlotReportService
     */
 
     /**
-     * Generate plot payment report.
+     * Generate a paginated plot payment report.
      */
     public function paymentReport(
         array $filters = []
     ): LengthAwarePaginator {
-        $query = $this->paymentQuery(
-            $filters
-        );
+        $query = $this->paymentQuery($filters);
 
         $this->applyReportSorting(
             $query,
@@ -686,9 +741,7 @@ class PlotReportService
                 'plotSale.agent',
             ])
             ->paginate(
-                $this->getPerPage(
-                    $filters
-                )
+                $this->getPerPage($filters)
             )
             ->withQueryString();
     }
@@ -700,19 +753,16 @@ class PlotReportService
     */
 
     /**
-     * Generate outstanding balance report.
+     * Generate a report of sales with outstanding balances.
+     *
+     * Excludes cancelled, rejected and expired sales.
      */
     public function outstandingReport(
         array $filters = []
     ): LengthAwarePaginator {
-        $query = $this->saleQuery(
-            $filters
+        $query = $this->validSalesQuery(
+            $this->saleQuery($filters)
         )
-            ->whereNotIn('status', [
-                'cancelled',
-                'rejected',
-                'expired',
-            ])
             ->where('balance', '>', 0);
 
         $this->applyReportSorting(
@@ -739,9 +789,7 @@ class PlotReportService
                 'payments',
             ])
             ->paginate(
-                $this->getPerPage(
-                    $filters
-                )
+                $this->getPerPage($filters)
             )
             ->withQueryString();
     }
@@ -753,15 +801,24 @@ class PlotReportService
     */
 
     /**
-     * Generate agent performance report.
+     * Generate an agent performance report.
+     *
+     * Financial totals exclude cancelled, rejected and expired sales.
      */
     public function agentReport(
         array $filters = []
     ): Collection {
-        $query = $this->saleQuery(
-            $filters
-        )
+        $query = $this->saleQuery($filters)
             ->whereNotNull('agent_id');
+
+        $excludedStatuses = implode(
+            ',',
+            array_map(
+                static fn (string $status): string => DB::getPdo()
+                    ->quote($status),
+                self::EXCLUDED_SALE_STATUSES
+            )
+        );
 
         return $query
             ->select([
@@ -784,15 +841,15 @@ class PlotReportService
                 ),
 
                 DB::raw(
-                    'SUM(sale_price) as total_sale_value'
+                    "SUM(CASE WHEN status NOT IN ({$excludedStatuses}) THEN sale_price ELSE 0 END) as total_sale_value"
                 ),
 
                 DB::raw(
-                    'SUM(amount_paid) as total_amount_paid'
+                    "SUM(CASE WHEN status NOT IN ({$excludedStatuses}) THEN amount_paid ELSE 0 END) as total_amount_paid"
                 ),
 
                 DB::raw(
-                    'SUM(balance) as total_balance'
+                    "SUM(CASE WHEN status NOT IN ({$excludedStatuses}) THEN balance ELSE 0 END) as total_balance"
                 ),
             ])
             ->groupBy('agent_id')
@@ -825,15 +882,10 @@ class PlotReportService
                         $row->total_balance
                     ),
 
-                    'collection_rate' => $row->total_sale_value > 0
-                        ? round(
-                            (
-                                $row->total_amount_paid
-                                / $row->total_sale_value
-                            ) * 100,
-                            2
-                        )
-                        : 0,
+                    'collection_rate' => $this->percentage(
+                        $row->total_amount_paid,
+                        $row->total_sale_value
+                    ),
                 ];
             });
     }
@@ -845,14 +897,12 @@ class PlotReportService
     */
 
     /**
-     * Generate detailed location report.
+     * Generate a detailed county location report.
      */
     public function locationReport(
         array $filters = []
     ): Collection {
-        return $this->plotQuery(
-            $filters
-        )
+        return $this->plotQuery($filters)
             ->select([
                 'county_id',
 
@@ -935,12 +985,9 @@ class PlotReportService
     protected function plotQuery(
         array $filters = []
     ): Builder {
-        return $this->plotRepository
-            ->getReportQuery(
-                $this->plotFilters(
-                    $filters
-                )
-            );
+        return $this->plotRepository->getReportQuery(
+            $this->plotFilters($filters)
+        );
     }
 
     /*
@@ -951,6 +998,8 @@ class PlotReportService
 
     /**
      * Build the base plot sale query.
+     *
+     * @return Builder<PlotSale>
      */
     protected function saleQuery(
         array $filters = []
@@ -975,7 +1024,7 @@ class PlotReportService
 
         /*
         |--------------------------------------------------------------------------
-        | Sale
+        | Sale ID
         |--------------------------------------------------------------------------
         */
 
@@ -1105,12 +1154,38 @@ class PlotReportService
 
     /*
     |--------------------------------------------------------------------------
+    | Valid Sales Query
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Return a cloned query containing financially valid sales.
+     *
+     * Cloning prevents this helper from modifying the original query
+     * and accidentally affecting other statistics or report counts.
+     *
+     * @param Builder<PlotSale> $query
+     * @return Builder<PlotSale>
+     */
+    protected function validSalesQuery(
+        Builder $query
+    ): Builder {
+        return (clone $query)->whereNotIn(
+            'status',
+            self::EXCLUDED_SALE_STATUSES
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Payment Query
     |--------------------------------------------------------------------------
     */
 
     /**
      * Build the base plot payment query.
+     *
+     * @return Builder<PlotPayment>
      */
     protected function paymentQuery(
         array $filters = []
@@ -1135,7 +1210,7 @@ class PlotReportService
 
         /*
         |--------------------------------------------------------------------------
-        | Payment
+        | Payment ID
         |--------------------------------------------------------------------------
         */
 
@@ -1326,7 +1401,7 @@ class PlotReportService
     ): void {
         /*
         |--------------------------------------------------------------------------
-        | Explicit Start / End
+        | Explicit Start / End Dates
         |--------------------------------------------------------------------------
         */
 
@@ -1338,9 +1413,7 @@ class PlotReportService
             ?? $filters['date_to']
             ?? null;
 
-        if (
-            $startDate
-        ) {
+        if ($startDate) {
             $query->whereDate(
                 $column,
                 '>=',
@@ -1348,9 +1421,7 @@ class PlotReportService
             );
         }
 
-        if (
-            $endDate
-        ) {
+        if ($endDate) {
             $query->whereDate(
                 $column,
                 '<=',
@@ -1364,8 +1435,7 @@ class PlotReportService
         |--------------------------------------------------------------------------
         */
 
-        $period = $filters['period']
-            ?? null;
+        $period = $filters['period'] ?? null;
 
         if (
             !$period ||
@@ -1404,13 +1474,8 @@ class PlotReportService
                 $query->whereBetween(
                     $column,
                     [
-                        now()
-                            ->subWeek()
-                            ->startOfWeek(),
-
-                        now()
-                            ->subWeek()
-                            ->endOfWeek(),
+                        now()->subWeek()->startOfWeek(),
+                        now()->subWeek()->endOfWeek(),
                     ]
                 );
                 break;
@@ -1429,13 +1494,8 @@ class PlotReportService
                 $query->whereBetween(
                     $column,
                     [
-                        now()
-                            ->subMonth()
-                            ->startOfMonth(),
-
-                        now()
-                            ->subMonth()
-                            ->endOfMonth(),
+                        now()->subMonth()->startOfMonth(),
+                        now()->subMonth()->endOfMonth(),
                     ]
                 );
                 break;
@@ -1454,13 +1514,8 @@ class PlotReportService
                 $query->whereBetween(
                     $column,
                     [
-                        now()
-                            ->subQuarter()
-                            ->startOfQuarter(),
-
-                        now()
-                            ->subQuarter()
-                            ->endOfQuarter(),
+                        now()->subQuarter()->startOfQuarter(),
+                        now()->subQuarter()->endOfQuarter(),
                     ]
                 );
                 break;
@@ -1479,13 +1534,8 @@ class PlotReportService
                 $query->whereBetween(
                     $column,
                     [
-                        now()
-                            ->subYear()
-                            ->startOfYear(),
-
-                        now()
-                            ->subYear()
-                            ->endOfYear(),
+                        now()->subYear()->startOfYear(),
+                        now()->subYear()->endOfYear(),
                     ]
                 );
                 break;
@@ -1512,13 +1562,7 @@ class PlotReportService
         $sortBy = $filters['sort_by']
             ?? $defaultColumn;
 
-        if (
-            !in_array(
-                $sortBy,
-                $allowedColumns,
-                true
-            )
-        ) {
+        if (!in_array($sortBy, $allowedColumns, true)) {
             $sortBy = $defaultColumn;
         }
 
@@ -1529,16 +1573,7 @@ class PlotReportService
             )
         );
 
-        if (
-            !in_array(
-                $direction,
-                [
-                    'asc',
-                    'desc',
-                ],
-                true
-            )
-        ) {
+        if (!in_array($direction, ['asc', 'desc'], true)) {
             $direction = 'desc';
         }
 
@@ -1547,13 +1582,10 @@ class PlotReportService
             $direction
         );
 
-        if (
-            $sortBy !== 'id' &&
-            $query->getModel()->getKeyName() !== $sortBy
-        ) {
-            $query->orderByDesc(
-                $query->getModel()->getKeyName()
-            );
+        $primaryKey = $query->getModel()->getKeyName();
+
+        if ($sortBy !== $primaryKey) {
+            $query->orderByDesc($primaryKey);
         }
     }
 
@@ -1564,7 +1596,7 @@ class PlotReportService
     */
 
     /**
-     * Get safe pagination value.
+     * Get a safe pagination value.
      */
     protected function getPerPage(
         array $filters
@@ -1576,10 +1608,7 @@ class PlotReportService
 
         return max(
             1,
-            min(
-                $perPage,
-                100
-            )
+            min($perPage, 100)
         );
     }
 
@@ -1590,7 +1619,7 @@ class PlotReportService
     */
 
     /**
-     * Format monetary value.
+     * Format a monetary value.
      */
     protected function money(
         mixed $value
@@ -1602,7 +1631,7 @@ class PlotReportService
     }
 
     /**
-     * Format numeric value.
+     * Format a numeric value.
      */
     protected function number(
         mixed $value
@@ -1614,22 +1643,20 @@ class PlotReportService
     }
 
     /**
-     * Calculate percentage.
+     * Calculate a percentage safely.
      */
     protected function percentage(
         int|float $value,
         int|float $total
     ): float {
-        if (
-            (float) $total <= 0
-        ) {
-            return 0;
+        if ((float) $total <= 0) {
+            return 0.0;
         }
 
         return round(
             (
-                (float) $value
-                / (float) $total
+                (float) $value /
+                (float) $total
             ) * 100,
             2
         );
