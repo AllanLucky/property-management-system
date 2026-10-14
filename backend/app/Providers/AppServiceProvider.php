@@ -187,10 +187,14 @@ use App\Repositories\Eloquent\PlotSaleRepository;
 use App\Repositories\Interfaces\PlotSaleRepositoryInterface;
 
 
+/*
+|--------------------------------------------------------------------------
+| PLOTPAYMENT REPOSITORY
+|--------------------------------------------------------------------------
+*/
 
-
-
-
+use App\Repositories\Eloquent\PlotPaymentRepository;
+use App\Repositories\Interfaces\PlotPaymentRepositoryInterface;
 
 
 class AppServiceProvider extends ServiceProvider
@@ -417,6 +421,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
              PlotSaleRepositoryInterface::class,
              PlotSaleRepository::class
+        );
+
+        $this->app->bind(
+             PlotPaymentRepositoryInterface::class,
+             PlotPaymentRepository::class
         );
 
     }
