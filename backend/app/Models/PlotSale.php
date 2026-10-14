@@ -7,7 +7,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class PlotSale extends Model
 {
@@ -36,6 +38,10 @@ class PlotSale extends Model
         'sale_number',
         'sale_date',
 
+        // Sale agreement
+        'agreement_number',
+        'agreement_date',
+
         // Financial information
         'sale_price',
         'deposit_amount',
@@ -44,11 +50,16 @@ class PlotSale extends Model
         'balance',
         'currency',
 
-        // Sale terms
+        // Payment terms
         'payment_frequency',
         'due_date',
+
+        // Completion
         'completion_date',
+
+        // Notes and cancellation
         'notes',
+        'cancellation_reason',
 
         // Status
         'status',
@@ -57,12 +68,13 @@ class PlotSale extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Casts
+    | Attribute Casting
     |--------------------------------------------------------------------------
     */
 
     protected $casts = [
         'sale_date' => 'date',
+        'agreement_date' => 'date',
         'due_date' => 'date',
         'completion_date' => 'date',
 
@@ -91,6 +103,8 @@ class PlotSale extends Model
         'formatted_sale_price',
         'formatted_amount_paid',
         'formatted_balance',
+        'is_fully_paid',
+        'has_outstanding_balance',
     ];
 
     /*
@@ -109,8 +123,6 @@ class PlotSale extends Model
 
     /**
      * Get the buyer associated with this sale.
-     *
-     * The buyer is an existing system user.
      */
     public function buyer(): BelongsTo
     {
@@ -135,20 +147,20 @@ class PlotSale extends Model
 
     /**
      * Get completed payments for this sale.
+     *
+     * Ensure "completed" matches the status used by PlotPayment.
      */
     public function completedPayments(): HasMany
     {
-        return $this->hasMany(PlotPayment::class)
-            ->where('status', 'completed');
+        return $this->payments()->where('status', 'completed');
     }
 
     /**
      * Get the latest payment.
      */
-    public function latestPayment()
+    public function latestPayment(): HasOne
     {
-        return $this->hasOne(PlotPayment::class)
-            ->latestOfMany();
+        return $this->hasOne(PlotPayment::class)->latestOfMany();
     }
 
     /*
@@ -169,20 +181,36 @@ class PlotSale extends Model
     }
 
     /**
-     * Get the payment completion percentage.
+     * Get the percentage of the sale price paid.
      */
     public function getPaymentPercentageAttribute(): float
     {
         $total = $this->net_sale_price;
 
         if ($total <= 0) {
-            return 0;
+            return 0.0;
         }
 
         return round(
             min(100, ((float) $this->amount_paid / $total) * 100),
             2
         );
+    }
+
+    /**
+     * Determine whether the sale is fully paid.
+     */
+    public function getIsFullyPaidAttribute(): bool
+    {
+        return (float) $this->balance <= 0;
+    }
+
+    /**
+     * Determine whether the sale has an outstanding balance.
+     */
+    public function getHasOutstandingBalanceAttribute(): bool
+    {
+        return (float) $this->balance > 0;
     }
 
     /**
@@ -202,7 +230,7 @@ class PlotSale extends Model
     }
 
     /**
-     * Get formatted balance.
+     * Get formatted outstanding balance.
      */
     public function getFormattedBalanceAttribute(): string
     {
@@ -210,15 +238,13 @@ class PlotSale extends Model
     }
 
     /**
-     * Format monetary values.
+     * Format a monetary amount using the sale currency.
      */
     protected function formatMoney($amount): string
     {
-        $currency = $this->currency ?: 'KES';
-
         return sprintf(
             '%s %s',
-            $currency,
+            $this->currency ?: 'KES',
             number_format((float) $amount, 2)
         );
     }
@@ -296,7 +322,7 @@ class PlotSale extends Model
     }
 
     /**
-     * Scope sales with an outstanding balance.
+     * Scope sales with outstanding balances.
      */
     public function scopeWithOutstandingBalance(
         Builder $query
@@ -313,29 +339,66 @@ class PlotSale extends Model
     }
 
     /**
-     * Search plot sales.
+     * Scope sales with an upcoming or overdue payment date.
+     */
+    public function scopeDue(Builder $query): Builder
+    {
+        return $query
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '<=', now()->toDateString())
+            ->where('balance', '>', 0)
+            ->where('is_active', true)
+            ->whereIn('status', ['reserved', 'approved']);
+    }
+
+    /**
+     * Search sales by sale number, agreement number, plot,
+     * buyer, or agent.
      */
     public function scopeSearch(
         Builder $query,
         string $search
     ): Builder {
+        $search = trim($search);
+
+        if ($search === '') {
+            return $query;
+        }
+
         return $query->where(function (Builder $builder) use ($search) {
             $builder
                 ->where('sale_number', 'like', "%{$search}%")
-                ->orWhereHas('plot', function (Builder $plotQuery) use ($search) {
-                    $plotQuery
-                        ->where('code', 'like', "%{$search}%")
-                        ->orWhere('title', 'like', "%{$search}%")
-                        ->orWhere('plot_number', 'like', "%{$search}%")
-                        ->orWhere('title_number', 'like', "%{$search}%");
-                })
-                ->orWhereHas('buyer', function (Builder $userQuery) use ($search) {
-                    $userQuery
-                        ->where('first_name', 'like', "%{$search}%")
-                        ->orWhere('last_name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
-                });
+                ->orWhere('agreement_number', 'like', "%{$search}%")
+                ->orWhereHas(
+                    'plot',
+                    function (Builder $plotQuery) use ($search) {
+                        $plotQuery
+                            ->where('code', 'like', "%{$search}%")
+                            ->orWhere('title', 'like', "%{$search}%")
+                            ->orWhere('plot_number', 'like', "%{$search}%")
+                            ->orWhere('title_number', 'like', "%{$search}%");
+                    }
+                )
+                ->orWhereHas(
+                    'buyer',
+                    function (Builder $userQuery) use ($search) {
+                        $userQuery
+                            ->where('first_name', 'like', "%{$search}%")
+                            ->orWhere('last_name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                    }
+                )
+                ->orWhereHas(
+                    'agent',
+                    function (Builder $userQuery) use ($search) {
+                        $userQuery
+                            ->where('first_name', 'like', "%{$search}%")
+                            ->orWhere('last_name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                    }
+                );
         });
     }
 
@@ -403,6 +466,9 @@ class PlotSale extends Model
 
     /**
      * Recalculate the sale balance.
+     *
+     * This method updates the in-memory model.
+     * Persist the model when the change needs to be saved.
      */
     public function recalculateBalance(): float
     {
@@ -410,10 +476,10 @@ class PlotSale extends Model
 
         $balance = max(
             0,
-            $netSalePrice - (float) $this->amount_paid
+            round($netSalePrice - (float) $this->amount_paid, 2)
         );
 
-        $this->balance = $balance;
+        $this->balance = number_format($balance, 2, '.', '');
 
         return $balance;
     }
@@ -423,31 +489,57 @@ class PlotSale extends Model
      */
     public function markAsApproved(): bool
     {
+        if ($this->status === 'cancelled') {
+            return false;
+        }
+
         return $this->update([
             'status' => 'approved',
+            'is_active' => true,
         ]);
     }
 
     /**
      * Mark the sale as completed.
+     *
+     * Completion requires the outstanding balance to be zero.
      */
     public function markAsCompleted(): bool
     {
+        if (
+            $this->status === 'cancelled'
+            || (float) $this->balance > 0
+        ) {
+            return false;
+        }
+
         return $this->update([
             'status' => 'completed',
-            'completion_date' => $this->completion_date ?: now()->toDateString(),
+            'completion_date' => $this->completion_date
+                ?: now()->toDateString(),
         ]);
     }
 
     /**
      * Mark the sale as cancelled.
      */
-    public function markAsCancelled(): bool
-    {
-        return $this->update([
+    public function markAsCancelled(
+        ?string $reason = null
+    ): bool {
+        if ($this->status === 'completed') {
+            return false;
+        }
+
+        $attributes = [
             'status' => 'cancelled',
             'is_active' => false,
-        ]);
+        ];
+
+        if ($reason !== null) {
+            $attributes['cancellation_reason'] = $reason;
+        }
+
+        return $this->update($attributes);
     }
 
     /*
@@ -458,60 +550,78 @@ class PlotSale extends Model
 
     protected static function booted(): void
     {
+        /*
+        |--------------------------------------------------------------------------
+        | Creating
+        |--------------------------------------------------------------------------
+        */
+
         static::creating(function (PlotSale $sale) {
-            /*
-             * Generate a sale number when one is not supplied.
-             */
+            // Generate a unique sale number if one was not supplied.
             if (empty($sale->sale_number)) {
-                $sale->sale_number = 'SALE-' . now()->format('YmdHis');
+                do {
+                    $saleNumber = 'SALE-'
+                        . now()->format('YmdHis')
+                        . '-'
+                        . Str::upper(Str::random(5));
+                } while (
+                    static::withTrashed()
+                        ->where('sale_number', $saleNumber)
+                        ->exists()
+                );
+
+                $sale->sale_number = $saleNumber;
             }
 
-            /*
-             * Default currency.
-             */
+            // Default currency.
             if (empty($sale->currency)) {
                 $sale->currency = 'KES';
             }
 
-            /*
-             * Default amount paid.
-             */
-            if ($sale->amount_paid === null) {
-                $sale->amount_paid = 0;
-            }
-
-            /*
-             * Default discount.
-             */
-            if ($sale->discount_amount === null) {
-                $sale->discount_amount = 0;
-            }
-
-            /*
-             * Calculate the initial balance.
-             */
-            $sale->recalculateBalance();
-
-            /*
-             * Default sale date.
-             */
+            // Default sale date.
             if (empty($sale->sale_date)) {
                 $sale->sale_date = now()->toDateString();
             }
 
-            /*
-             * Default active state.
-             */
+            // Default financial values.
+            if ($sale->sale_price === null) {
+                $sale->sale_price = 0;
+            }
+
+            if ($sale->deposit_amount === null) {
+                $sale->deposit_amount = 0;
+            }
+
+            if ($sale->discount_amount === null) {
+                $sale->discount_amount = 0;
+            }
+
+            if ($sale->amount_paid === null) {
+                $sale->amount_paid = 0;
+            }
+
+            // Default status.
+            if (empty($sale->status)) {
+                $sale->status = 'pending';
+            }
+
+            // Default active state.
             if ($sale->is_active === null) {
                 $sale->is_active = true;
             }
+
+            // Calculate the initial balance.
+            $sale->recalculateBalance();
         });
 
+        /*
+        |--------------------------------------------------------------------------
+        | Updating
+        |--------------------------------------------------------------------------
+        */
+
         static::updating(function (PlotSale $sale) {
-            /*
-             * Recalculate financial values when
-             * relevant fields change.
-             */
+            // Recalculate financial values when relevant fields change.
             if (
                 $sale->isDirty([
                     'sale_price',
@@ -522,12 +632,18 @@ class PlotSale extends Model
                 $sale->recalculateBalance();
             }
 
-            /*
-             * Automatically deactivate cancelled/completed sales
-             * only when appropriate.
-             */
+            // Deactivate cancelled sales.
             if ($sale->status === 'cancelled') {
                 $sale->is_active = false;
+            }
+
+            // Set completion date if a sale is marked completed.
+            if (
+                $sale->isDirty('status')
+                && $sale->status === 'completed'
+                && empty($sale->completion_date)
+            ) {
+                $sale->completion_date = now()->toDateString();
             }
         });
     }

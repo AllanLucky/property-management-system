@@ -5,7 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Plot extends Model
@@ -64,12 +66,9 @@ class Plot extends Model
     protected $casts = [
         'size' => 'decimal:2',
         'asking_price' => 'decimal:2',
-
         'latitude' => 'decimal:8',
         'longitude' => 'decimal:8',
-
         'is_active' => 'boolean',
-
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -95,7 +94,7 @@ class Plot extends Model
     /**
      * Get the property associated with the plot.
      */
-    public function property()
+    public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
@@ -103,7 +102,7 @@ class Plot extends Model
     /**
      * Get the country associated with the plot.
      */
-    public function country()
+    public function country(): BelongsTo
     {
         return $this->belongsTo(Country::class);
     }
@@ -111,7 +110,7 @@ class Plot extends Model
     /**
      * Get the region associated with the plot.
      */
-    public function region()
+    public function region(): BelongsTo
     {
         return $this->belongsTo(Region::class);
     }
@@ -119,7 +118,7 @@ class Plot extends Model
     /**
      * Get the county associated with the plot.
      */
-    public function county()
+    public function county(): BelongsTo
     {
         return $this->belongsTo(County::class);
     }
@@ -127,7 +126,7 @@ class Plot extends Model
     /**
      * Get the city associated with the plot.
      */
-    public function city()
+    public function city(): BelongsTo
     {
         return $this->belongsTo(City::class);
     }
@@ -135,7 +134,7 @@ class Plot extends Model
     /**
      * Get the area associated with the plot.
      */
-    public function area()
+    public function area(): BelongsTo
     {
         return $this->belongsTo(Area::class);
     }
@@ -149,15 +148,28 @@ class Plot extends Model
     }
 
     /**
-     * Get the active sale associated with the plot.
+     * Get the latest active reservation or approved sale.
+     *
+     * Note: Completed sales are intentionally excluded.
      */
-    public function activeSale()
+    public function activeSale(): HasOne
     {
         return $this->hasOne(PlotSale::class)
+            ->where('is_active', true)
             ->whereIn('status', [
                 'reserved',
                 'approved',
             ])
+            ->latestOfMany();
+    }
+
+    /**
+     * Get the latest completed sale.
+     */
+    public function completedSale(): HasOne
+    {
+        return $this->hasOne(PlotSale::class)
+            ->where('status', 'completed')
             ->latestOfMany();
     }
 
@@ -172,12 +184,10 @@ class Plot extends Model
      */
     public function getFormattedPriceAttribute(): string
     {
-        $currency = $this->currency ?: 'KES';
-
         return sprintf(
             '%s %s',
-            $currency,
-            number_format((float) $this->asking_price, 2)
+            $this->currency ?: 'KES',
+            number_format((float) ($this->asking_price ?? 0), 2)
         );
     }
 
@@ -208,8 +218,25 @@ class Plot extends Model
      */
     public function scopeAvailable(Builder $query): Builder
     {
-        return $query->where('status', 'available')
+        return $query
+            ->where('status', 'available')
             ->where('is_active', true);
+    }
+
+    /**
+     * Scope sold plots.
+     */
+    public function scopeSold(Builder $query): Builder
+    {
+        return $query->where('status', 'sold');
+    }
+
+    /**
+     * Scope reserved plots.
+     */
+    public function scopeReserved(Builder $query): Builder
+    {
+        return $query->where('status', 'reserved');
     }
 
     /**
@@ -269,12 +296,18 @@ class Plot extends Model
     }
 
     /**
-     * Search plots.
+     * Search plots by code, title, title number, plot number or address.
      */
     public function scopeSearch(
         Builder $query,
         string $search
     ): Builder {
+        $search = trim($search);
+
+        if ($search === '') {
+            return $query;
+        }
+
         return $query->where(function (Builder $builder) use ($search) {
             $builder
                 ->where('code', 'like', "%{$search}%")
@@ -287,7 +320,7 @@ class Plot extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Helper Methods
+    | Status Helpers
     |--------------------------------------------------------------------------
     */
 
@@ -297,7 +330,8 @@ class Plot extends Model
     public function isAvailable(): bool
     {
         return $this->status === 'available'
-            && $this->is_active;
+            && $this->is_active
+            && ! $this->trashed();
     }
 
     /**
@@ -317,12 +351,40 @@ class Plot extends Model
     }
 
     /**
+     * Determine whether the plot is unavailable.
+     */
+    public function isUnavailable(): bool
+    {
+        return $this->status === 'unavailable';
+    }
+
+    /**
+     * Determine whether the plot has a completed sale.
+     */
+    public function hasCompletedSale(): bool
+    {
+        return $this->sales()
+            ->where('status', 'completed')
+            ->exists();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Status Transitions
+    |--------------------------------------------------------------------------
+    */
+
+    /**
      * Mark the plot as sold.
+     *
+     * Call this only after the sale has been confirmed as complete
+     * according to the application's payment and completion rules.
      */
     public function markAsSold(): bool
     {
         return $this->update([
             'status' => 'sold',
+            'is_active' => true,
         ]);
     }
 
@@ -333,6 +395,7 @@ class Plot extends Model
     {
         return $this->update([
             'status' => 'available',
+            'is_active' => true,
         ]);
     }
 
@@ -343,7 +406,17 @@ class Plot extends Model
     {
         return $this->update([
             'status' => 'reserved',
+            'is_active' => true,
+        ]);
+    }
+
+    /**
+     * Mark the plot as unavailable.
+     */
+    public function markAsUnavailable(): bool
+    {
+        return $this->update([
+            'status' => 'unavailable',
         ]);
     }
 }
-
