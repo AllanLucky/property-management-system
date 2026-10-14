@@ -230,6 +230,7 @@ import {
   LeaseList,
 } from "../modules/super-admin/leases";
 import { BookingCalendar, BookingDetails, BookingList, BookingReport, CancelledBookings, CreateBooking, EditBooking } from "../modules/super-admin/bookings";
+import { AvailablePlots, CreatePlot, EditPlot, PlotDetails, PlotList, PlotReports, ReservedPlots } from "../modules/super-admin/plots";
 
 /*
 |--------------------------------------------------------------------------
@@ -1033,7 +1034,7 @@ const SuperAdminRoutes = () => {
 
       {/* ==================================================================
           BOOKINGS
-      ================================================================== */}
+          ================================================================== */}
 
       <Route
         path="bookings"
@@ -1072,8 +1073,9 @@ const SuperAdminRoutes = () => {
       />
 
       {/* ==================================================================
-    CANCELLED BOOKINGS
-================================================================== */}
+            CANCELLED BOOKINGS
+          ================================================================== 
+      */}
 
       <Route
         path="bookings/cancelled"
@@ -1101,6 +1103,89 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
+
+
+      {/*
+       ==================================================================
+          PLOT MANAGEMENT
+         ================================================================== 
+      */}
+
+      <Route
+        path="plots"
+        element={
+          <PermissionGuard permission="plots.view">
+            <PlotList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plots/create"
+        element={
+          <PermissionGuard permission="plots.create">
+            <CreatePlot />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plots/:id/edit"
+        element={
+          <PermissionGuard permission="plots.update">
+            <EditPlot />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plots/:id"
+        element={
+          <PermissionGuard permission="plots.view">
+            <PlotDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
+    AVAILABLE PLOTS
+    ================================================================== */}
+
+      <Route
+        path="plots/available"
+        element={
+          <PermissionGuard permission="plots.view">
+            <AvailablePlots />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
+    RESERVED PLOTS
+    ================================================================== */}
+
+      <Route
+        path="plots/reserved"
+        element={
+          <PermissionGuard permission="plots.view">
+            <ReservedPlots />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
+    PLOT REPORTS
+    ================================================================== */}
+
+      <Route
+        path="plots/reports"
+        element={
+          <PermissionGuard permission="plots.view">
+            <PlotReports />
+          </PermissionGuard>
+        }
+      />
+
 
     </>
   );

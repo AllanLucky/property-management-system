@@ -177,6 +177,17 @@ use App\Repositories\Interfaces\PlotRepositoryInterface;
 
 
 
+/*
+|--------------------------------------------------------------------------
+| PLOTSALE REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\PlotSaleRepository;
+use App\Repositories\Interfaces\PlotSaleRepositoryInterface;
+
+
+
 
 
 
@@ -398,10 +409,14 @@ class AppServiceProvider extends ServiceProvider
             BookingRepository::class
         );
 
-        
         $this->app->bind(
              PlotRepositoryInterface::class,
              PlotRepository::class
+        );
+
+        $this->app->bind(
+             PlotSaleRepositoryInterface::class,
+             PlotSaleRepository::class
         );
 
     }

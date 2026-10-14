@@ -98,6 +98,16 @@ import propertyVisitReducer from "./propertyVisitSlice";
 import propertyFavoriteReducer from "./propertyFavoriteSlice";
 import propertyAnalyticsReducer from "./propertyAnalyticsSlice";
 
+
+
+/*
+|--------------------------------------------------------------------------
+| PLOT MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+
+import plotReducer from "./plotSlice";
+
 /*
 |--------------------------------------------------------------------------
 | STORE CONFIGURATION
@@ -192,6 +202,14 @@ export const store = configureStore({
     propertyVisits: propertyVisitReducer,
     propertyFavorites: propertyFavoriteReducer,
     propertyAnalytics: propertyAnalyticsReducer,
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PLOT MANAGEMENT
+    |--------------------------------------------------------------------------
+    */
+    plots: plotReducer,
   },
 
   middleware: (getDefaultMiddleware) =>
