@@ -2,16 +2,33 @@
 
 namespace App\Services;
 
-use App\Repositories\Interfaces\PlotRepositoryInterface;
 use App\Models\Plot;
+use App\Repositories\Interfaces\PlotRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 class PlotService
 {
+    /*
+    |--------------------------------------------------------------------------
+    | Constants
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Supported plot statuses.
+     *
+     * @var array<int, string>
+     */
+    private const ALLOWED_STATUSES = [
+        'available',
+        'reserved',
+        'sold',
+        'unavailable',
+    ];
+
     /*
     |--------------------------------------------------------------------------
     | Repository
@@ -44,13 +61,13 @@ class PlotService
     public function getPlots(
         array $filters = []
     ): Collection|LengthAwarePaginator {
-        return $this->plotRepository->getAll(
-            $filters
-        );
+        return $this->plotRepository->getAll($filters);
     }
 
     /**
      * Get paginated plots.
+     *
+     * @param array<string, mixed> $filters
      */
     public function paginatePlots(
         array $filters = [],
@@ -58,7 +75,7 @@ class PlotService
     ): LengthAwarePaginator {
         return $this->plotRepository->paginate(
             $filters,
-            $perPage
+            $this->normalizePerPage($perPage)
         );
     }
 
@@ -68,9 +85,7 @@ class PlotService
     public function getPlot(
         int|string $id
     ): Plot {
-        return $this->plotRepository->findOrFail(
-            $id
-        );
+        return $this->plotRepository->findOrFail($id);
     }
 
     /**
@@ -79,9 +94,7 @@ class PlotService
     public function findPlot(
         int|string $id
     ): ?Plot {
-        return $this->plotRepository->findById(
-            $id
-        );
+        return $this->plotRepository->findById($id);
     }
 
     /**
@@ -91,7 +104,7 @@ class PlotService
         string $code
     ): ?Plot {
         return $this->plotRepository->findByCode(
-            $code
+            trim($code)
         );
     }
 
@@ -102,17 +115,29 @@ class PlotService
         string $titleNumber
     ): ?Plot {
         return $this->plotRepository->findByTitleNumber(
-            $titleNumber
+            trim($titleNumber)
         );
     }
 
     /**
      * Search plots.
+     *
+     * @param array<string, mixed> $filters
      */
     public function searchPlots(
         string $search,
         array $filters = []
     ): LengthAwarePaginator {
+        $search = trim($search);
+
+        if ($search === '') {
+            throw ValidationException::withMessages([
+                'search' => [
+                    'Please provide a search term.',
+                ],
+            ]);
+        }
+
         return $this->plotRepository->search(
             $search,
             $filters
@@ -134,15 +159,7 @@ class PlotService
         array $data
     ): Plot {
         return DB::transaction(function () use ($data): Plot {
-            /*
-            |--------------------------------------------------------------------------
-            | Defaults
-            |--------------------------------------------------------------------------
-            */
-
-            $data = $this->preparePlotData(
-                $data
-            );
+            $data = $this->preparePlotData($data);
 
             /*
             |--------------------------------------------------------------------------
@@ -151,7 +168,8 @@ class PlotService
             */
 
             if (
-                empty($data['code'])
+                !isset($data['code']) ||
+                $data['code'] === ''
             ) {
                 $data['code'] = $this->generatePlotCode();
             }
@@ -162,12 +180,9 @@ class PlotService
             |--------------------------------------------------------------------------
             */
 
-            if (
-                !isset($data['status']) ||
-                $data['status'] === ''
-            ) {
-                $data['status'] = 'available';
-            }
+            $data['status'] = $data['status'] ?? 'available';
+
+            $this->validateStatus($data['status']);
 
             /*
             |--------------------------------------------------------------------------
@@ -175,24 +190,29 @@ class PlotService
             |--------------------------------------------------------------------------
             */
 
-            if (
-                !array_key_exists(
-                    'is_active',
-                    $data
-                )
-            ) {
-                $data['is_active'] = true;
-            }
+            $data['is_active'] ??= true;
 
             /*
             |--------------------------------------------------------------------------
-            | Create
+            | Prevent Creating a New Plot as Sold
             |--------------------------------------------------------------------------
+            |
+            | Record a sale and complete the sale workflow before marking
+            | a plot as sold. This avoids creating sold inventory without
+            | a corresponding completed sale.
+            |
             */
 
-            return $this->plotRepository->create(
-                $data
-            );
+            if ($data['status'] === 'sold') {
+                throw ValidationException::withMessages([
+                    'status' => [
+                        'A new plot cannot be created as sold. '
+                        . 'Create the plot first and complete its sale.',
+                    ],
+                ]);
+            }
+
+            return $this->plotRepository->create($data);
         });
     }
 
@@ -215,17 +235,11 @@ class PlotService
             $plot,
             $data
         ): Plot {
-            /*
-            |--------------------------------------------------------------------------
-            | Resolve Plot
-            |--------------------------------------------------------------------------
-            */
-
             $plotModel = $plot instanceof Plot
                 ? $plot
-                : $this->plotRepository->findOrFail(
-                    $plot
-                );
+                : $this->plotRepository->findOrFail($plot);
+
+            $data = $this->preparePlotData($data);
 
             /*
             |--------------------------------------------------------------------------
@@ -240,19 +254,15 @@ class PlotService
 
             /*
             |--------------------------------------------------------------------------
-            | Prepare Data
+            | Do Not Change a Plot's Status Through General Editing
             |--------------------------------------------------------------------------
+            |
+            | Status changes should use updatePlotStatus() so the
+            | business rules remain consistent.
+            |
             */
 
-            $data = $this->preparePlotData(
-                $data
-            );
-
-            /*
-            |--------------------------------------------------------------------------
-            | Update
-            |--------------------------------------------------------------------------
-            */
+            unset($data['status']);
 
             return $this->plotRepository->update(
                 $plotModel,
@@ -273,46 +283,44 @@ class PlotService
     public function deletePlot(
         int|string|Plot $plot
     ): bool {
-        return DB::transaction(function () use (
-            $plot
-        ): bool {
+        return DB::transaction(function () use ($plot): bool {
             $plotModel = $plot instanceof Plot
                 ? $plot
-                : $this->plotRepository->findOrFail(
-                    $plot
-                );
+                : $this->plotRepository->findOrFail($plot);
 
             /*
             |--------------------------------------------------------------------------
             | Business Protection
             |--------------------------------------------------------------------------
-            |
-            | A sold or reserved plot should not normally be deleted.
-            |
             */
 
             if (
                 in_array(
                     $plotModel->status,
-                    [
-                        'sold',
-                        'reserved',
-                    ],
+                    ['sold', 'reserved'],
                     true
                 )
             ) {
                 throw ValidationException::withMessages([
                     'status' => [
                         'This plot cannot be deleted while it is '
-                        . strtolower($plotModel->status)
-                        . '.',
+                        . $plotModel->status
+                        . '. Resolve the sale or reservation first.',
                     ],
                 ]);
             }
 
-            return $this->plotRepository->delete(
-                $plotModel
-            );
+            if ($plotModel->sales()->exists()) {
+                throw ValidationException::withMessages([
+                    'plot' => [
+                        'This plot has sale records and cannot be deleted. '
+                        . 'Preserve the sales history and mark the plot '
+                        . 'unavailable instead.',
+                    ],
+                ]);
+            }
+
+            return $this->plotRepository->delete($plotModel);
         });
     }
 
@@ -328,12 +336,8 @@ class PlotService
     public function restorePlot(
         int|string $id
     ): Plot {
-        return DB::transaction(function () use (
-            $id
-        ): Plot {
-            return $this->plotRepository->restore(
-                $id
-            );
+        return DB::transaction(function () use ($id): Plot {
+            return $this->plotRepository->restore($id);
         });
     }
 
@@ -345,16 +349,40 @@ class PlotService
 
     /**
      * Permanently delete a plot.
+     *
+     * Only use this when removing the plot and its associated records
+     * is permitted by the application's retention rules.
      */
     public function forceDeletePlot(
         int|string $id
     ): bool {
-        return DB::transaction(function () use (
-            $id
-        ): bool {
-            return $this->plotRepository->forceDelete(
-                $id
-            );
+        return DB::transaction(function () use ($id): bool {
+            $plot = $this->plotRepository->findOrFail($id);
+
+            if (
+                in_array(
+                    $plot->status,
+                    ['sold', 'reserved'],
+                    true
+                )
+            ) {
+                throw ValidationException::withMessages([
+                    'status' => [
+                        'A sold or reserved plot cannot be permanently deleted.',
+                    ],
+                ]);
+            }
+
+            if ($plot->sales()->exists()) {
+                throw ValidationException::withMessages([
+                    'plot' => [
+                        'This plot has sale history and cannot be '
+                        . 'permanently deleted.',
+                    ],
+                ]);
+            }
+
+            return $this->plotRepository->forceDelete($id);
         });
     }
 
@@ -366,6 +394,8 @@ class PlotService
 
     /**
      * Get available plots.
+     *
+     * @param array<string, mixed> $filters
      */
     public function getAvailablePlots(
         array $filters = []
@@ -381,9 +411,7 @@ class PlotService
     public function isPlotAvailable(
         int|string $id
     ): bool {
-        return $this->plotRepository->isAvailable(
-            $id
-        );
+        return $this->plotRepository->isAvailable($id);
     }
 
     /*
@@ -394,36 +422,45 @@ class PlotService
 
     /**
      * Get plots by status.
+     *
+     * @param array<string, mixed> $filters
      */
     public function getPlotsByStatus(
         string $status,
         array $filters = []
     ): LengthAwarePaginator {
-        $allowedStatuses = [
-            'available',
-            'reserved',
-            'sold',
-            'unavailable',
-        ];
+        $status = strtolower(trim($status));
 
-        if (
-            !in_array(
-                $status,
-                $allowedStatuses,
-                true
-            )
-        ) {
-            throw ValidationException::withMessages([
-                'status' => [
-                    'The selected plot status is invalid.',
-                ],
-            ]);
-        }
+        $this->validateStatus($status);
 
         return $this->plotRepository->getByStatus(
             $status,
             $filters
         );
+    }
+
+    /**
+     * Get sold plots.
+     *
+     * This uses the repository's existing status-filtering method.
+     *
+     * @param array<string, mixed> $filters
+     */
+    public function getSoldPlots(
+        array $filters = []
+    ): LengthAwarePaginator {
+        return $this->getPlotsByStatus('sold', $filters);
+    }
+
+    /**
+     * Get reserved plots.
+     *
+     * @param array<string, mixed> $filters
+     */
+    public function getReservedPlots(
+        array $filters = []
+    ): LengthAwarePaginator {
+        return $this->getPlotsByStatus('reserved', $filters);
     }
 
     /**
@@ -439,13 +476,11 @@ class PlotService
         ): Plot {
             $plotModel = $plot instanceof Plot
                 ? $plot
-                : $this->plotRepository->findOrFail(
-                    $plot
-                );
+                : $this->plotRepository->findOrFail($plot);
 
-            $this->validateStatus(
-                $status
-            );
+            $status = strtolower(trim($status));
+
+            $this->validateStatus($status);
 
             $this->validateStatusTransition(
                 $plotModel,
@@ -467,6 +502,8 @@ class PlotService
 
     /**
      * Get plots by county.
+     *
+     * @param array<string, mixed> $filters
      */
     public function getPlotsByCounty(
         int|string $countyId,
@@ -480,6 +517,8 @@ class PlotService
 
     /**
      * Get plots by city.
+     *
+     * @param array<string, mixed> $filters
      */
     public function getPlotsByCity(
         int|string $cityId,
@@ -493,6 +532,8 @@ class PlotService
 
     /**
      * Get plots by area.
+     *
+     * @param array<string, mixed> $filters
      */
     public function getPlotsByArea(
         int|string $areaId,
@@ -526,18 +567,14 @@ class PlotService
     }
 
     /**
-     * Get plot with the default relationships.
+     * Get plot details with default relationships.
      */
     public function getPlotDetails(
         int|string $id
     ): Plot {
-        $plot = $this->plotRepository->findOrFail(
-            $id
-        );
+        $plot = $this->plotRepository->findOrFail($id);
 
-        return $this->plotRepository->loadRelations(
-            $plot
-        );
+        return $this->plotRepository->loadRelations($plot);
     }
 
     /*
@@ -591,21 +628,18 @@ class PlotService
         |--------------------------------------------------------------------------
         */
 
-        foreach (
-            [
-                'title',
-                'title_number',
-                'plot_number',
-                'address',
-            ] as $field
-        ) {
+        foreach ([
+            'title',
+            'title_number',
+            'plot_number',
+            'address',
+            'description',
+        ] as $field) {
             if (
                 isset($data[$field]) &&
                 is_string($data[$field])
             ) {
-                $data[$field] = trim(
-                    $data[$field]
-                );
+                $data[$field] = trim($data[$field]);
             }
         }
 
@@ -645,16 +679,22 @@ class PlotService
         |--------------------------------------------------------------------------
         */
 
-        if (
-            array_key_exists(
-                'is_active',
-                $data
-            )
-        ) {
-            $data['is_active'] = filter_var(
+        if (array_key_exists('is_active', $data)) {
+            $value = filter_var(
                 $data['is_active'],
-                FILTER_VALIDATE_BOOLEAN
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
             );
+
+            if ($value === null) {
+                throw ValidationException::withMessages([
+                    'is_active' => [
+                        'The active field must be true or false.',
+                    ],
+                ]);
+            }
+
+            $data['is_active'] = $value;
         }
 
         return $data;
@@ -663,23 +703,14 @@ class PlotService
     /**
      * Generate a unique plot code.
      *
-     * Format:
-     *
-     * PLT-YYYYMMDD-000001
+     * Format: PLT-YYYYMMDD-000001
      */
     protected function generatePlotCode(): string
     {
-        $date = now()->format('Ymd');
+        $prefix = 'PLT-' . now()->format('Ymd') . '-';
 
-        $prefix = "PLT-{$date}-";
-
-        $lastPlot = Plot::query()
-            ->withTrashed()
-            ->where(
-                'code',
-                'like',
-                "{$prefix}%"
-            )
+        $lastPlot = Plot::withTrashed()
+            ->where('code', 'like', $prefix . '%')
             ->orderByDesc('id')
             ->first();
 
@@ -704,8 +735,7 @@ class PlotService
                 STR_PAD_LEFT
             );
 
-            $exists = Plot::query()
-                ->withTrashed()
+            $exists = Plot::withTrashed()
                 ->where('code', $code)
                 ->exists();
 
@@ -718,25 +748,12 @@ class PlotService
     }
 
     /**
-     * Validate a supplied status.
+     * Validate a supplied plot status.
      */
     protected function validateStatus(
         string $status
     ): void {
-        $allowedStatuses = [
-            'available',
-            'reserved',
-            'sold',
-            'unavailable',
-        ];
-
-        if (
-            !in_array(
-                $status,
-                $allowedStatuses,
-                true
-            )
-        ) {
+        if (!in_array($status, self::ALLOWED_STATUSES, true)) {
             throw ValidationException::withMessages([
                 'status' => [
                     'The selected plot status is invalid.',
@@ -746,7 +763,7 @@ class PlotService
     }
 
     /**
-     * Validate a status change included in an update request.
+     * Validate a status supplied through general plot editing.
      *
      * @param array<string, mixed> $data
      */
@@ -754,12 +771,7 @@ class PlotService
         Plot $plot,
         array $data
     ): void {
-        if (
-            !array_key_exists(
-                'status',
-                $data
-            )
-        ) {
+        if (!array_key_exists('status', $data)) {
             return;
         }
 
@@ -767,9 +779,7 @@ class PlotService
             trim((string) $data['status'])
         );
 
-        $this->validateStatus(
-            $newStatus
-        );
+        $this->validateStatus($newStatus);
 
         $this->validateStatusTransition(
             $plot,
@@ -778,7 +788,7 @@ class PlotService
     }
 
     /**
-     * Validate business rules around status transitions.
+     * Validate business rules for plot status transitions.
      */
     protected function validateStatusTransition(
         Plot $plot,
@@ -786,15 +796,7 @@ class PlotService
     ): void {
         $currentStatus = $plot->status;
 
-        /*
-        |--------------------------------------------------------------------------
-        | No Change
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $currentStatus === $newStatus
-        ) {
+        if ($currentStatus === $newStatus) {
             return;
         }
 
@@ -803,8 +805,8 @@ class PlotService
         | Sold Plots
         |--------------------------------------------------------------------------
         |
-        | Once a plot is sold, it should not normally be returned
-        | to available/reserved without a proper sale reversal process.
+        | Sold plots cannot be returned directly to available or reserved.
+        | Use an explicit sale reversal/cancellation workflow instead.
         |
         */
 
@@ -812,10 +814,7 @@ class PlotService
             $currentStatus === 'sold' &&
             in_array(
                 $newStatus,
-                [
-                    'available',
-                    'reserved',
-                ],
+                ['available', 'reserved'],
                 true
             )
         ) {
@@ -830,78 +829,120 @@ class PlotService
 
         /*
         |--------------------------------------------------------------------------
-        | Reserved Plots
+        | Protect Plots With Completed Sales
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $newStatus !== 'sold' &&
+            $plot->sales()
+                ->where('status', 'completed')
+                ->exists()
+        ) {
+            throw ValidationException::withMessages([
+                'status' => [
+                    'This plot has a completed sale. '
+                    . 'Its status can only be changed after the sale '
+                    . 'has been formally reversed or corrected.',
+                ],
+            ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Prevent Manual Sale Status Changes
         |--------------------------------------------------------------------------
         |
-        | Reserved → sold is allowed.
-        | Reserved → available is allowed when the reservation
-        | has been released.
+        | The status endpoint must not be used to mark inventory as sold
+        | without a completed sale record.
         |
+        */
+
+        if (
+            $newStatus === 'sold' &&
+            ! $plot->sales()
+                ->where('status', 'completed')
+                ->exists()
+        ) {
+            throw ValidationException::withMessages([
+                'status' => [
+                    'A plot can only be marked as sold after a sale '
+                    . 'has been completed.',
+                ],
+            ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Reserved Plot Rules
+        |--------------------------------------------------------------------------
         */
 
         if (
             $currentStatus === 'reserved' &&
             $newStatus === 'available'
         ) {
-            return;
-        }
+            $hasActiveSale = $plot->sales()
+                ->where('is_active', true)
+                ->whereIn('status', ['reserved', 'approved'])
+                ->exists();
 
-        if (
-            $currentStatus === 'reserved' &&
-            $newStatus === 'sold'
-        ) {
+            if ($hasActiveSale) {
+                throw ValidationException::withMessages([
+                    'status' => [
+                        'This plot has an active reservation or approved '
+                        . 'sale. Release the reservation before making '
+                        . 'the plot available.',
+                    ],
+                ]);
+            }
+
             return;
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Available Plots
+        | Other Supported Transitions
         |--------------------------------------------------------------------------
         */
 
+        $allowedTransitions = [
+            'available' => [
+                'reserved',
+                'unavailable',
+            ],
+            'reserved' => [
+                'sold',
+                'unavailable',
+            ],
+            'unavailable' => [
+                'available',
+            ],
+            'sold' => [],
+        ];
+
         if (
-            $currentStatus === 'available' &&
-            in_array(
+            !in_array(
                 $newStatus,
-                [
-                    'reserved',
-                    'sold',
-                    'unavailable',
-                ],
+                $allowedTransitions[$currentStatus] ?? [],
                 true
             )
         ) {
-            return;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Unavailable Plots
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $currentStatus === 'unavailable' &&
-            in_array(
-                $newStatus,
-                [
-                    'available',
-                    'reserved',
+            throw ValidationException::withMessages([
+                'status' => [
+                    "The plot cannot transition from {$currentStatus} "
+                    . "to {$newStatus}.",
                 ],
-                true
-            )
-        ) {
-            return;
+            ]);
         }
+    }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Default
-        |--------------------------------------------------------------------------
-        |
-        | Allow other transitions unless a more specific business
-        | rule has been defined.
-        |
-        */
+    /**
+     * Normalize pagination size.
+     */
+    protected function normalizePerPage(
+        int $perPage
+    ): int {
+        return max(1, min($perPage, 100));
     }
 }
