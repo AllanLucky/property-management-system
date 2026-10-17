@@ -47,10 +47,6 @@ class PlotResource extends JsonResource
             |--------------------------------------------------------------------------
             | Location IDs
             |--------------------------------------------------------------------------
-            |
-            | Keep the foreign keys available for filtering, editing and
-            | frontend selection components.
-            |
             */
             'country_id' => $this->country_id,
             'region_id' => $this->region_id,
@@ -62,77 +58,67 @@ class PlotResource extends JsonResource
             |--------------------------------------------------------------------------
             | Location
             |--------------------------------------------------------------------------
-            |
-            | Keep this intentionally flat.
-            |
-            | Do not return nested:
-            | area -> city -> county -> region -> country
-            |
-            | This keeps the Plot API response lightweight and avoids
-            | duplicating the same location data several times.
-            |
             */
             'location' => [
-                'country' => $this->whenLoaded('country', function () {
-                    return $this->country
+                'country' => $this->whenLoaded(
+                    'country',
+                    fn () => $this->country
                         ? [
                             'id' => $this->country->id,
                             'name' => $this->country->name,
                             'code' => $this->country->code ?? null,
                             'currency' => $this->country->currency ?? null,
                         ]
-                        : null;
-                }),
+                        : null
+                ),
 
-                'region' => $this->whenLoaded('region', function () {
-                    return $this->region
+                'region' => $this->whenLoaded(
+                    'region',
+                    fn () => $this->region
                         ? [
                             'id' => $this->region->id,
                             'name' => $this->region->name,
                             'code' => $this->region->code ?? null,
                         ]
-                        : null;
-                }),
+                        : null
+                ),
 
-                'county' => $this->whenLoaded('county', function () {
-                    return $this->county
+                'county' => $this->whenLoaded(
+                    'county',
+                    fn () => $this->county
                         ? [
                             'id' => $this->county->id,
                             'name' => $this->county->name,
                             'code' => $this->county->code ?? null,
                         ]
-                        : null;
-                }),
+                        : null
+                ),
 
-                'city' => $this->whenLoaded('city', function () {
-                    return $this->city
+                'city' => $this->whenLoaded(
+                    'city',
+                    fn () => $this->city
                         ? [
                             'id' => $this->city->id,
                             'name' => $this->city->name,
                             'code' => $this->city->code ?? null,
                         ]
-                        : null;
-                }),
+                        : null
+                ),
 
-                'area' => $this->whenLoaded('area', function () {
-                    return $this->area
+                'area' => $this->whenLoaded(
+                    'area',
+                    fn () => $this->area
                         ? [
                             'id' => $this->area->id,
                             'name' => $this->area->name,
                             'code' => $this->area->code ?? null,
                         ]
-                        : null;
-                }),
+                        : null
+                ),
 
                 'address' => $this->address,
                 'latitude' => $this->latitude,
                 'longitude' => $this->longitude,
-
-                /*
-                |--------------------------------------------------------------------------
-                | Human-readable Location
-                |--------------------------------------------------------------------------
-                */
                 'full_location' => $this->buildFullLocation(),
             ],
 
@@ -142,7 +128,7 @@ class PlotResource extends JsonResource
             |--------------------------------------------------------------------------
             */
             'asking_price' => $this->asking_price,
-            'currency' => $this->currency ?? 'KES',
+            'currency' => $this->currency ?: 'KES',
             'formatted_price' => $this->formatted_price,
 
             /*
@@ -155,36 +141,80 @@ class PlotResource extends JsonResource
             'is_available' => $this->isAvailable(),
             'is_reserved' => $this->isReserved(),
             'is_sold' => $this->isSold(),
+            'is_unavailable' => $this->isUnavailable(),
 
             /*
             |--------------------------------------------------------------------------
             | Related Property
             |--------------------------------------------------------------------------
             */
-            'property' => $this->whenLoaded('property', function () {
-                return $this->property
+            'property' => $this->whenLoaded(
+                'property',
+                fn () => $this->property
                     ? [
                         'id' => $this->property->id,
                         'name' => $this->property->name ?? null,
                         'code' => $this->property->code ?? null,
                     ]
-                    : null;
-            }),
+                    : null
+            ),
 
             /*
             |--------------------------------------------------------------------------
             | Active Sale
             |--------------------------------------------------------------------------
             */
-            'active_sale' => $this->whenLoaded('activeSale', function () {
-                return $this->activeSale
+            'active_sale' => $this->whenLoaded(
+                'activeSale',
+                fn () => $this->activeSale
                     ? [
                         'id' => $this->activeSale->id,
-                        'sale_number' => $this->activeSale->sale_number ?? null,
-                        'status' => $this->activeSale->status ?? null,
+                        'sale_number' => $this->activeSale->sale_number,
+                        'status' => $this->activeSale->status,
+                        'sale_date' => $this->activeSale->sale_date?->toDateString(),
+                        'sale_price' => $this->activeSale->sale_price,
+                        'currency' => $this->activeSale->currency ?: 'KES',
+                        'balance' => $this->activeSale->balance,
+                        'is_fully_paid' => (bool) $this->activeSale->is_fully_paid,
                     ]
-                    : null;
-            }),
+                    : null
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | Completed Sale
+            |--------------------------------------------------------------------------
+            */
+            'completed_sale' => $this->whenLoaded(
+                'completedSale',
+                fn () => $this->completedSale
+                    ? [
+                        'id' => $this->completedSale->id,
+                        'sale_number' => $this->completedSale->sale_number,
+                        'status' => $this->completedSale->status,
+                        'sale_date' => $this->completedSale->sale_date?->toDateString(),
+                        'completion_date' => $this->completedSale->completion_date?->toDateString(),
+                        'sale_price' => $this->completedSale->sale_price,
+                        'discount_amount' => $this->completedSale->discount_amount,
+                        'net_sale_price' => $this->completedSale->net_sale_price,
+                        'amount_paid' => $this->completedSale->amount_paid,
+                        'balance' => $this->completedSale->balance,
+                        'currency' => $this->completedSale->currency ?: 'KES',
+                        'is_fully_paid' => (bool) $this->completedSale->is_fully_paid,
+                    ]
+                    : null
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | Sales Summary
+            |--------------------------------------------------------------------------
+            |
+            | These counts are only included when the sales relationship
+            | has been loaded or explicitly counted by the query.
+            |
+            */
+            'sales_count' => $this->whenCounted('sales'),
 
             /*
             |--------------------------------------------------------------------------
@@ -196,36 +226,47 @@ class PlotResource extends JsonResource
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Location Helpers
+    |--------------------------------------------------------------------------
+    */
+
     /**
      * Build a compact human-readable location string.
      */
     private function buildFullLocation(): ?string
     {
-        $parts = array_filter([
-            $this->whenLoaded(
-                'area',
-                fn () => $this->area?->name
-            ),
-            $this->whenLoaded(
-                'city',
-                fn () => $this->city?->name
-            ),
-            $this->whenLoaded(
-                'county',
-                fn () => $this->county?->name
-            ),
-            $this->whenLoaded(
-                'region',
-                fn () => $this->region?->name
-            ),
-            $this->whenLoaded(
-                'country',
-                fn () => $this->country?->name
-            ),
-        ], fn ($value) => is_string($value) && trim($value) !== '');
+        $parts = [];
 
-        return !empty($parts)
-            ? implode(', ', array_values(array_unique($parts)))
-            : ($this->address ?: null);
+        foreach ([
+            'area',
+            'city',
+            'county',
+            'region',
+            'country',
+        ] as $relation) {
+            if (! $this->resource->relationLoaded($relation)) {
+                continue;
+            }
+
+            $location = $this->resource->getRelation($relation);
+
+            $name = $location?->name;
+
+            if (is_string($name) && trim($name) !== '') {
+                $parts[] = trim($name);
+            }
+        }
+
+        $parts = array_values(array_unique($parts));
+
+        if ($parts !== []) {
+            return implode(', ', $parts);
+        }
+
+        $address = trim((string) $this->address);
+
+        return $address !== '' ? $address : null;
     }
 }

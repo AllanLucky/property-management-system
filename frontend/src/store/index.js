@@ -1,10 +1,5 @@
-import { configureStore } from "@reduxjs/toolkit";
 
-/*
-|--------------------------------------------------------------------------
-| CORE AUTHENTICATION
-|--------------------------------------------------------------------------
-*/
+import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./authSlice";
 
 /*
@@ -16,7 +11,7 @@ import uiReducer from "./uiSlice";
 
 /*
 |--------------------------------------------------------------------------
-| USERS & RBAC
+| USERS & ROLE-BASED ACCESS CONTROL (RBAC)
 |--------------------------------------------------------------------------
 */
 import userReducer from "./userSlice";
@@ -26,39 +21,28 @@ import roleRequestReducer from "./roleRequestSlice";
 
 /*
 |--------------------------------------------------------------------------
-| TENANTS
+| TENANT MANAGEMENT
 |--------------------------------------------------------------------------
 */
 import tenantReducer from "./tenantSlice";
 
 /*
 |--------------------------------------------------------------------------
-| TENANCIES
+| TENANCY MANAGEMENT
 |--------------------------------------------------------------------------
 */
 import tenancyReducer from "./tenancySlice";
 
 /*
 |--------------------------------------------------------------------------
-| LEASES
-|--------------------------------------------------------------------------
-| Manages lease records and lease-related state.
-|
-| Redux state:
-| state.lease
+| LEASE MANAGEMENT
 |--------------------------------------------------------------------------
 */
 import leaseReducer from "./leaseSlice";
 
 /*
 |--------------------------------------------------------------------------
-| BOOKINGS
-|--------------------------------------------------------------------------
-| Manages property bookings, booking workflow, payments, availability,
-| statistics and reports.
-|
-| Redux state:
-| state.bookings
+| BOOKING MANAGEMENT
 |--------------------------------------------------------------------------
 */
 import bookingReducer from "./bookingSlice";
@@ -72,7 +56,7 @@ import userActivityReducer from "./userActivitySlice";
 
 /*
 |--------------------------------------------------------------------------
-| PROPERTY SYSTEM
+| PROPERTY MANAGEMENT
 |--------------------------------------------------------------------------
 */
 import propertyReducer from "./propertySlice";
@@ -90,7 +74,7 @@ import propertyAmenityReducer from "./propertyAmenitySlice";
 
 /*
 |--------------------------------------------------------------------------
-| PROPERTY ENGAGEMENT
+| PROPERTY ENGAGEMENT & ANALYTICS
 |--------------------------------------------------------------------------
 */
 import propertyReviewReducer from "./propertyReviewSlice";
@@ -98,19 +82,23 @@ import propertyVisitReducer from "./propertyVisitSlice";
 import propertyFavoriteReducer from "./propertyFavoriteSlice";
 import propertyAnalyticsReducer from "./propertyAnalyticsSlice";
 
-
-
 /*
 |--------------------------------------------------------------------------
 | PLOT MANAGEMENT
 |--------------------------------------------------------------------------
 */
-
 import plotReducer from "./plotSlice";
 
 /*
 |--------------------------------------------------------------------------
-| STORE CONFIGURATION
+| PLOT SALES MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+import plotSalesReducer from "./plotSalesSlice";
+
+/*
+|--------------------------------------------------------------------------
+| REDUX STORE CONFIGURATION
 |--------------------------------------------------------------------------
 */
 
@@ -118,16 +106,10 @@ export const store = configureStore({
   reducer: {
     /*
     |--------------------------------------------------------------------------
-    | AUTHENTICATION
+    | AUTHENTICATION & GLOBAL UI
     |--------------------------------------------------------------------------
     */
     auth: authReducer,
-
-    /*
-    |--------------------------------------------------------------------------
-    | GLOBAL UI
-    |--------------------------------------------------------------------------
-    */
     ui: uiReducer,
 
     /*
@@ -142,23 +124,11 @@ export const store = configureStore({
 
     /*
     |--------------------------------------------------------------------------
-    | TENANTS
+    | TENANT & TENANCY MANAGEMENT
     |--------------------------------------------------------------------------
     */
     tenants: tenantReducer,
-
-    /*
-    |--------------------------------------------------------------------------
-    | TENANCIES
-    |--------------------------------------------------------------------------
-    */
     tenancy: tenancyReducer,
-
-    /*
-    |--------------------------------------------------------------------------
-    | LEASES
-    |--------------------------------------------------------------------------
-    */
     lease: leaseReducer,
 
     /*
@@ -177,7 +147,7 @@ export const store = configureStore({
 
     /*
     |--------------------------------------------------------------------------
-    | PROPERTY SYSTEM
+    | PROPERTY MANAGEMENT
     |--------------------------------------------------------------------------
     */
     properties: propertyReducer,
@@ -195,7 +165,7 @@ export const store = configureStore({
 
     /*
     |--------------------------------------------------------------------------
-    | PROPERTY ENGAGEMENT
+    | PROPERTY ENGAGEMENT & ANALYTICS
     |--------------------------------------------------------------------------
     */
     propertyReviews: propertyReviewReducer,
@@ -203,15 +173,25 @@ export const store = configureStore({
     propertyFavorites: propertyFavoriteReducer,
     propertyAnalytics: propertyAnalyticsReducer,
 
-
     /*
     |--------------------------------------------------------------------------
     | PLOT MANAGEMENT
     |--------------------------------------------------------------------------
     */
     plots: plotReducer,
+
+    /*
+    |--------------------------------------------------------------------------
+    | PLOT SALES MANAGEMENT
+    */
+    plotSales: plotSalesReducer,
   },
 
+  /*
+  |--------------------------------------------------------------------------
+  | MIDDLEWARE
+  |--------------------------------------------------------------------------
+  */
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       thunk: true,
@@ -223,7 +203,7 @@ export const store = configureStore({
   |--------------------------------------------------------------------------
   | REDUX DEVTOOLS
   |--------------------------------------------------------------------------
-  | Enable Redux DevTools during development and disable them in production.
+  | Enabled in development and disabled in production.
   |--------------------------------------------------------------------------
   */
   devTools: import.meta.env.MODE !== "production",

@@ -87,6 +87,20 @@ use App\Http\Controllers\Api\Booking\BookingController;
 
 use App\Http\Controllers\Api\Plot\PlotController;
 
+/*
+|--------------------------------------------------------------------------
+| PLOT-SALE
+|--------------------------------------------------------------------------
+*/
+use App\Http\Controllers\Api\PlotSales\PlotSalesController;
+
+/*
+|--------------------------------------------------------------------------
+| PLOT-PAYMENT
+|--------------------------------------------------------------------------
+*/
+use App\Http\Controllers\Api\PlotPayment\PlotPaymentController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -1851,6 +1865,396 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
 
+       /*
+       |--------------------------------------------------------------------------
+       | PLOT SALES
+       |--------------------------------------------------------------------------
+      */
+      Route::prefix('plot-sales')
+         ->name('plot-sales.')
+           ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALE STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [PlotSalesController::class, 'statistics']
+        )->name('statistics');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALE REPORTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'reports',
+            [PlotSalesController::class, 'reports']
+        )->name('reports');
+
+        Route::get(
+            'outstanding',
+            [PlotSalesController::class, 'outstanding']
+        )->name('outstanding');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALES BY STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'status/{status}',
+            [PlotSalesController::class, 'getByStatus']
+        )->where('status', '[A-Za-z_-]+')
+            ->name('by-status');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALES BY PLOT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'plot/{plotId}',
+            [PlotSalesController::class, 'getByPlot']
+        )->whereNumber('plotId')
+            ->name('by-plot');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALES BY BUYER
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'buyer/{buyerId}',
+            [PlotSalesController::class, 'getByBuyer']
+        )->whereNumber('buyerId')
+            ->name('by-buyer');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALE CRUD - LIST AND CREATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [PlotSalesController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [PlotSalesController::class, 'store']
+        )->name('store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALE APPROVAL
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/approve',
+            [PlotSalesController::class, 'approve']
+        )->whereNumber('id')
+            ->name('approve');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALE CANCELLATION
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/cancel',
+            [PlotSalesController::class, 'cancel']
+        )->whereNumber('id')
+            ->name('cancel');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | COMPLETE PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/complete',
+            [PlotSalesController::class, 'complete']
+        )->whereNumber('id')
+            ->name('complete');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESTORE PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/restore',
+            [PlotSalesController::class, 'restore']
+        )->whereNumber('id')
+            ->name('restore');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PERMANENTLY DELETE PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}/force',
+            [PlotSalesController::class, 'forceDelete']
+        )->whereNumber('id')
+            ->name('force-delete');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{id}',
+            [PlotSalesController::class, 'show']
+        )->whereNumber('id')
+            ->name('show');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{id}',
+            [PlotSalesController::class, 'update']
+        )->whereNumber('id')
+            ->name('update');
+
+        Route::patch(
+            '{id}',
+            [PlotSalesController::class, 'update']
+        )->whereNumber('id')
+            ->name('patch');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}',
+            [PlotSalesController::class, 'destroy']
+        )->whereNumber('id')
+            ->name('destroy');
+
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | PLOT PAYMENTS
+    |--------------------------------------------------------------------------
+    */
+
+      Route::prefix('plot-payments')
+        ->name('plot-payments.')
+         ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT PAYMENT STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [PlotPaymentController::class, 'statistics']
+        )->name('statistics');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT PAYMENT REPORTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'reports',
+            [PlotPaymentController::class, 'reports']
+        )->name('reports');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | OUTSTANDING PLOT PAYMENTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'outstanding',
+            [PlotPaymentController::class, 'outstanding']
+        )->name('outstanding');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | SEARCH PLOT PAYMENTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'search',
+            [PlotPaymentController::class, 'search']
+        )->name('search');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENTS BY STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'status/{status}',
+            [PlotPaymentController::class, 'getByStatus']
+        )->where('status', '[A-Za-z_-]+')
+            ->name('by-status');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PAYMENTS BY PLOT SALE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'sale/{plotSaleId}',
+            [PlotPaymentController::class, 'getBySale']
+        )->whereNumber('plotSaleId')
+            ->name('by-sale');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT PAYMENT CRUD - LIST AND CREATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [PlotPaymentController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [PlotPaymentController::class, 'store']
+        )->name('store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE PAYMENT STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/status',
+            [PlotPaymentController::class, 'updateStatus']
+        )->whereNumber('id')
+            ->name('update-status');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESTORE SOFT-DELETED PAYMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/restore',
+            [PlotPaymentController::class, 'restore']
+        )->whereNumber('id')
+            ->name('restore');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PERMANENTLY DELETE PAYMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}/force',
+            [PlotPaymentController::class, 'forceDelete']
+        )->whereNumber('id')
+            ->name('force-delete');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW PAYMENT DETAILS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{id}',
+            [PlotPaymentController::class, 'show']
+        )->whereNumber('id')
+            ->name('show');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE PAYMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{id}',
+            [PlotPaymentController::class, 'update']
+        )->whereNumber('id')
+            ->name('update');
+
+        Route::patch(
+            '{id}',
+            [PlotPaymentController::class, 'update']
+        )->whereNumber('id')
+            ->name('patch');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | SOFT-DELETE PAYMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}',
+            [PlotPaymentController::class, 'destroy']
+        )->whereNumber('id')
+            ->name('destroy');
+
+    });
 
 
     /*
