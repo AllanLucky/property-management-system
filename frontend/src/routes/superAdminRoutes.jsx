@@ -231,6 +231,7 @@ import {
 } from "../modules/super-admin/leases";
 import { BookingCalendar, BookingDetails, BookingList, BookingReport, CancelledBookings, CreateBooking, EditBooking } from "../modules/super-admin/bookings";
 import { AvailablePlots, CreatePlot, EditPlot, PlotDetails, PlotList, PlotReports, ReservedPlots } from "../modules/super-admin/plots";
+import { ApprovePlotSale, CancelPlotSale, CompletePlotSale, CreatePlotSale, EditPlotSale, OutstandingPlotSales, PlotSaleDetails, PlotSaleList, PlotSaleReports } from "../modules/super-admin/plotsales";
 
 /*
 |--------------------------------------------------------------------------
@@ -1186,6 +1187,102 @@ const SuperAdminRoutes = () => {
         }
       />
 
+
+      {/*
+|--------------------------------------------------------------------------
+| PLOT SALES MANAGEMENT
+|--------------------------------------------------------------------------
+*/}
+
+// Plot Sales List
+      <Route
+        path="plot-sales"
+        element={
+          <PermissionGuard permission="plot-sales.view">
+            <PlotSaleList />
+          </PermissionGuard>
+        }
+      />
+
+// Create Plot Sale
+      <Route
+        path="plot-sales/create"
+        element={
+          <PermissionGuard permission="plot-sales.create">
+            <CreatePlotSale />
+          </PermissionGuard>
+        }
+      />
+
+// Outstanding Plot Sales
+      <Route
+        path="plot-sales/outstanding"
+        element={
+          <PermissionGuard permission="plot-sales.view">
+            <OutstandingPlotSales />
+          </PermissionGuard>
+        }
+      />
+
+// Plot Sale Reports
+      <Route
+        path="plot-sales/reports"
+        element={
+          <PermissionGuard permission="plot-sales.view">
+            <PlotSaleReports />
+          </PermissionGuard>
+        }
+      />
+
+// Approve Plot Sale
+      <Route
+        path="plot-sales/:id/approve"
+        element={
+          <PermissionGuard permission="plot-sales.approve">
+            <ApprovePlotSale />
+          </PermissionGuard>
+        }
+      />
+
+// Cancel Plot Sale
+      <Route
+        path="plot-sales/:id/cancel"
+        element={
+          <PermissionGuard permission="plot-sales.cancel">
+            <CancelPlotSale />
+          </PermissionGuard>
+        }
+      />
+
+// Complete Plot Sale
+      <Route
+        path="plot-sales/:id/complete"
+        element={
+          <PermissionGuard permission="plot-sales.complete">
+            <CompletePlotSale />
+          </PermissionGuard>
+        }
+      />
+
+// Edit Plot Sale
+      <Route
+        path="plot-sales/:id/edit"
+        element={
+          <PermissionGuard permission="plot-sales.update">
+            <EditPlotSale />
+          </PermissionGuard>
+        }
+      />
+
+// Plot Sale Details
+      <Route
+        path="plot-sales/:id"
+        element={
+          <PermissionGuard permission="plot-sales.view">
+            <PlotSaleDetails />
+          </PermissionGuard>
+        }
+      />
 
     </>
   );
