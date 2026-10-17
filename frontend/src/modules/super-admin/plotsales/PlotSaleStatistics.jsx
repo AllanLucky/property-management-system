@@ -1,3 +1,4 @@
+
 import {
   AlertCircle,
   Banknote,
@@ -60,8 +61,7 @@ const formatCurrency = (value, currency = "KES") => {
   }
 };
 
-const formatPercentage = (value) =>
-  `${toNumber(value).toFixed(1)}%`;
+const formatPercentage = (value) => `${toNumber(value).toFixed(1)}%`;
 
 const getPercentage = (value, total) => {
   const amount = toNumber(value);
@@ -87,21 +87,14 @@ const normalizeStatus = (value) =>
 
 /*
 |--------------------------------------------------------------------------
-| Normalize Laravel/API Statistics
-|--------------------------------------------------------------------------
-|
-| Supports:
-| { data: { total_sales: 10 } }
-| { data: { statistics: { total_sales: 10 } } }
-| { statistics: { sales: {...}, financials: {...} } }
-| { data: { data: { statistics: {...} } } }
+| Normalize API Statistics
 |--------------------------------------------------------------------------
 */
 
 const getStatisticsSource = (input) => {
   let source = input;
 
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 8; index += 1) {
     if (
       !source ||
       typeof source !== "object" ||
@@ -162,7 +155,6 @@ const getStatisticValue = (
 
     visited.add(object);
 
-    // Check the current object before searching nested groups.
     for (const [key, value] of Object.entries(object)) {
       if (
         wantedKeys.includes(normalizeKey(key)) &&
@@ -238,9 +230,7 @@ const getPaymentStatus = (sale) => {
     }
 
     if (
-      ["unpaid", "pending", "overdue", "failed"].includes(
-        suppliedStatus
-      )
+      ["unpaid", "pending", "overdue", "failed"].includes(suppliedStatus)
     ) {
       return "unpaid";
     }
@@ -265,7 +255,8 @@ const getNetSalePrice = (sale) => {
   }
 
   return Math.max(
-    toNumber(sale?.sale_price) - toNumber(sale?.discount_amount),
+    toNumber(sale?.sale_price) -
+    toNumber(sale?.discount_amount ?? sale?.discount),
     0
   );
 };
@@ -292,9 +283,7 @@ const sumSales = (sales, selector) => {
 const countPaymentsByStatus = (sales, status) => {
   if (!Array.isArray(sales)) return 0;
 
-  return sales.filter(
-    (sale) => getPaymentStatus(sale) === status
-  ).length;
+  return sales.filter((sale) => getPaymentStatus(sale) === status).length;
 };
 
 /*
@@ -313,10 +302,7 @@ const StatisticCard = ({
   progress = 0,
   progressClass,
 }) => {
-  const safeProgress = Math.min(
-    100,
-    Math.max(0, toNumber(progress))
-  );
+  const safeProgress = Math.min(100, Math.max(0, toNumber(progress)));
 
   return (
     <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-lg">
@@ -330,7 +316,7 @@ const StatisticCard = ({
             {label}
           </p>
 
-          <p className="mt-2 truncate text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+          <p className="mt-2 break-words text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
             {value}
           </p>
         </div>
@@ -355,9 +341,7 @@ const StatisticCard = ({
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-gray-500">
-            {description}
-          </p>
+          <p className="truncate text-xs text-gray-500">{description}</p>
 
           {safeProgress > 0 && (
             <span className="shrink-0 text-[11px] font-semibold text-gray-500">
@@ -507,10 +491,7 @@ const PlotSaleStatisticsSkeleton = () => (
 
           <div className="mt-6 grid grid-cols-2 gap-3">
             {[0, 1, 2, 3].map((number) => (
-              <div
-                key={number}
-                className="rounded-xl bg-gray-100 p-4"
-              >
+              <div key={number} className="rounded-xl bg-gray-100 p-4">
                 <div className="h-9 w-9 rounded-lg bg-gray-200" />
                 <div className="mt-3 h-3 w-20 rounded bg-gray-200" />
                 <div className="mt-2 h-1 rounded bg-gray-200" />
@@ -527,13 +508,6 @@ const PlotSaleStatisticsSkeleton = () => (
 |--------------------------------------------------------------------------
 | Main Plot Sale Statistics Component
 |--------------------------------------------------------------------------
-|
-| Props:
-| statistics - statistics returned by the plot-sales statistics endpoint
-| sales      - plot sale records, optionally used as a fallback
-| plotSales  - alternative name for sales
-| loading    - loading state
-|--------------------------------------------------------------------------
 */
 
 const PlotSaleStatistics = ({
@@ -543,11 +517,16 @@ const PlotSaleStatistics = ({
   loading = false,
 }) => {
   const source = getStatisticsSource(statistics);
+
   const saleRecords = Array.isArray(sales)
     ? sales
     : Array.isArray(plotSales)
       ? plotSales
       : [];
+
+  if (loading) {
+    return <PlotSaleStatisticsSkeleton />;
+  }
 
   /*
   |--------------------------------------------------------------------------
@@ -555,140 +534,107 @@ const PlotSaleStatistics = ({
   |--------------------------------------------------------------------------
   */
 
-  const apiTotalSales = getStatisticValue(
-    source,
-    [
-      "total_sales",
-      "total_plot_sales",
-      "plot_sales_count",
-      "sales_count",
-      "sales_total",
-      "total_records",
-      "total",
-    ],
-    undefined
+  const totalSales = toNumber(
+    getStatisticValue(
+      source,
+      [
+        "total_sales",
+        "total_plot_sales",
+        "plot_sales_count",
+        "sales_count",
+        "sales_total",
+        "total_records",
+        "total",
+      ],
+      saleRecords.length
+    )
   );
 
-  const totalSales =
-    apiTotalSales !== undefined
-      ? toNumber(apiTotalSales)
-      : saleRecords.length;
-
-  const pendingApi = getStatisticValue(
-    source,
-    ["pending_sales", "sales_pending", "pending_sales_count"],
-    undefined
+  const pendingSales = toNumber(
+    getStatisticValue(
+      source,
+      ["pending_sales", "sales_pending", "pending_sales_count"],
+      countSalesByStatus(saleRecords, ["pending"])
+    )
   );
 
-  const pendingSales =
-    pendingApi !== undefined
-      ? toNumber(pendingApi)
-      : countSalesByStatus(saleRecords, ["pending"]);
-
-  const reservedApi = getStatisticValue(
-    source,
-    ["reserved_sales", "sales_reserved", "reserved_sales_count"],
-    undefined
+  const reservedSales = toNumber(
+    getStatisticValue(
+      source,
+      ["reserved_sales", "sales_reserved", "reserved_sales_count"],
+      countSalesByStatus(saleRecords, ["reserved"])
+    )
   );
 
-  const reservedSales =
-    reservedApi !== undefined
-      ? toNumber(reservedApi)
-      : countSalesByStatus(saleRecords, ["reserved"]);
-
-  const approvedApi = getStatisticValue(
-    source,
-    ["approved_sales", "sales_approved", "approved_sales_count"],
-    undefined
+  const approvedSales = toNumber(
+    getStatisticValue(
+      source,
+      ["approved_sales", "sales_approved", "approved_sales_count"],
+      countSalesByStatus(saleRecords, ["approved"])
+    )
   );
 
-  const approvedSales =
-    approvedApi !== undefined
-      ? toNumber(approvedApi)
-      : countSalesByStatus(saleRecords, ["approved"]);
-
-  const completedApi = getStatisticValue(
-    source,
-    [
-      "completed_sales",
-      "sales_completed",
-      "completed_sales_count",
-      "successful_sales",
-    ],
-    undefined
+  const completedSales = toNumber(
+    getStatisticValue(
+      source,
+      [
+        "completed_sales",
+        "sales_completed",
+        "completed_sales_count",
+        "successful_sales",
+      ],
+      countSalesByStatus(saleRecords, ["completed"])
+    )
   );
 
-  const completedSales =
-    completedApi !== undefined
-      ? toNumber(completedApi)
-      : countSalesByStatus(saleRecords, ["completed"]);
-
-  const cancelledApi = getStatisticValue(
-    source,
-    ["cancelled_sales", "sales_cancelled", "cancelled_sales_count"],
-    undefined
+  const cancelledSales = toNumber(
+    getStatisticValue(
+      source,
+      ["cancelled_sales", "sales_cancelled", "cancelled_sales_count"],
+      countSalesByStatus(saleRecords, ["cancelled"])
+    )
   );
-
-  const cancelledSales =
-    cancelledApi !== undefined
-      ? toNumber(cancelledApi)
-      : countSalesByStatus(saleRecords, ["cancelled"]);
 
   /*
   |--------------------------------------------------------------------------
-  | Payment Counts
+  | Payment Status Counts
   |--------------------------------------------------------------------------
   */
 
-  const paidApi = getStatisticValue(
-    source,
-    [
-      "fully_paid_sales",
-      "paid_sales",
-      "fully_paid",
-      "paid_count",
-      "payment_paid",
-    ],
-    undefined
+  const paidSales = toNumber(
+    getStatisticValue(
+      source,
+      ["fully_paid_sales", "paid_sales", "fully_paid", "paid_count"],
+      countPaymentsByStatus(saleRecords, "paid")
+    )
   );
 
-  const paidSales =
-    paidApi !== undefined
-      ? toNumber(paidApi)
-      : countPaymentsByStatus(saleRecords, "paid");
-
-  const partialApi = getStatisticValue(
-    source,
-    [
-      "partially_paid_sales",
-      "partial_sales",
-      "partial_payments",
-      "partially_paid",
-      "partial_count",
-    ],
-    undefined
+  const partialSales = toNumber(
+    getStatisticValue(
+      source,
+      [
+        "partially_paid_sales",
+        "partial_sales",
+        "partial_payments",
+        "partially_paid",
+        "partial_count",
+      ],
+      countPaymentsByStatus(saleRecords, "partial")
+    )
   );
 
-  const partialSales =
-    partialApi !== undefined
-      ? toNumber(partialApi)
-      : countPaymentsByStatus(saleRecords, "partial");
-
-  const unpaidApi = getStatisticValue(
-    source,
-    [
-      "unpaid_sales",
-      "unpaid_payments",
-      "pending_payment_sales",
-      "unpaid_count",
-    ],
-    undefined
+  const unpaidSales = toNumber(
+    getStatisticValue(
+      source,
+      [
+        "unpaid_sales",
+        "unpaid_payments",
+        "pending_payment_sales",
+        "unpaid_count",
+      ],
+      countPaymentsByStatus(saleRecords, "unpaid")
+    )
   );
-
-  const unpaidSales =
-    unpaidApi !== undefined
-      ? toNumber(unpaidApi)
-      : countPaymentsByStatus(saleRecords, "unpaid");
 
   const paymentTotal = paidSales + partialSales + unpaidSales;
 
@@ -696,17 +642,21 @@ const PlotSaleStatistics = ({
   |--------------------------------------------------------------------------
   | Financial Statistics
   |--------------------------------------------------------------------------
-  |
-  | Prefer API totals. When absent, calculate from supplied records.
-  | Record-based fallbacks cover only the sales array passed to this component.
-  |--------------------------------------------------------------------------
   */
 
   const currency =
     getStatisticValue(source, ["currency", "default_currency"], "KES") ||
     "KES";
 
-  const salesValueKeys = [
+  const grossSalesKeys = [
+    "gross_sales_value",
+    "total_gross_sales",
+    "gross_sales",
+    "total_gross_amount",
+    "total_amount",
+  ];
+
+  const netSalesKeys = [
     "total_net_sales",
     "net_sales_value",
     "total_sales_value",
@@ -717,13 +667,6 @@ const PlotSaleStatistics = ({
     "revenue",
     "total_sale_amount",
     "sales_amount",
-  ];
-
-  const grossSalesKeys = [
-    "gross_sales_value",
-    "total_gross_sales",
-    "gross_sales",
-    "total_gross_amount",
   ];
 
   const collectedKeys = [
@@ -738,120 +681,84 @@ const PlotSaleStatistics = ({
   ];
 
   const balanceKeys = [
+    "total_outstanding",
     "total_balance",
     "outstanding_balance",
-    "total_outstanding",
     "total_amount_due",
     "remaining_balance",
     "amount_due",
     "outstanding",
   ];
 
-  const suppliedSalesValue = getStatisticValue(
-    source,
-    salesValueKeys,
-    undefined
+  const discountKeys = [
+    "total_discount",
+    "total_discounts",
+    "discount_amount",
+    "discounts_total",
+  ];
+
+  const depositKeys = [
+    "total_deposit",
+    "total_deposits",
+    "total_deposit_amount",
+    "deposit_amount",
+    "deposits_total",
+  ];
+
+  const excludedSales = saleRecords.filter(
+    (sale) => getSaleStatus(sale) !== "cancelled"
   );
 
-  const salesValue =
-    suppliedSalesValue !== undefined
-      ? toNumber(suppliedSalesValue)
-      : sumSales(
-        saleRecords.filter(
-          (sale) => getSaleStatus(sale) !== "cancelled"
-        ),
-        getNetSalePrice
-      );
-
-  const suppliedGrossSales = getStatisticValue(
-    source,
-    grossSalesKeys,
-    undefined
+  const grossSalesValue = toNumber(
+    getStatisticValue(
+      source,
+      grossSalesKeys,
+      sumSales(excludedSales, (sale) => sale.sale_price)
+    )
   );
 
-  const grossSalesValue =
-    suppliedGrossSales !== undefined
-      ? toNumber(suppliedGrossSales)
-      : sumSales(
-        saleRecords.filter(
-          (sale) => getSaleStatus(sale) !== "cancelled"
-        ),
-        (sale) => toNumber(sale.sale_price)
-      );
-
-  const suppliedCollected = getStatisticValue(
-    source,
-    collectedKeys,
-    undefined
+  const totalDiscounts = toNumber(
+    getStatisticValue(
+      source,
+      discountKeys,
+      sumSales(
+        excludedSales,
+        (sale) => sale.discount_amount ?? sale.discount
+      )
+    )
   );
 
-  const totalCollected =
-    suppliedCollected !== undefined
-      ? toNumber(suppliedCollected)
-      : sumSales(
-        saleRecords.filter(
-          (sale) => getSaleStatus(sale) !== "cancelled"
-        ),
-        (sale) => toNumber(sale.amount_paid)
-      );
-
-  const suppliedBalance = getStatisticValue(
-    source,
-    balanceKeys,
-    undefined
+  const salesValue = toNumber(
+    getStatisticValue(
+      source,
+      netSalesKeys,
+      Math.max(grossSalesValue - totalDiscounts, 0)
+    )
   );
 
-  const totalBalance =
-    suppliedBalance !== undefined
-      ? toNumber(suppliedBalance)
-      : sumSales(
-        saleRecords.filter(
-          (sale) => getSaleStatus(sale) !== "cancelled"
-        ),
-        (sale) => Math.max(toNumber(sale.balance), 0)
-      );
-
-  const suppliedDiscount = getStatisticValue(
-    source,
-    [
-      "total_discounts",
-      "total_discount",
-      "discount_amount",
-      "discounts_total",
-    ],
-    undefined
+  const totalCollected = toNumber(
+    getStatisticValue(
+      source,
+      collectedKeys,
+      sumSales(excludedSales, (sale) => sale.amount_paid)
+    )
   );
 
-  const totalDiscounts =
-    suppliedDiscount !== undefined
-      ? toNumber(suppliedDiscount)
-      : sumSales(
-        saleRecords.filter(
-          (sale) => getSaleStatus(sale) !== "cancelled"
-        ),
-        (sale) => toNumber(sale.discount_amount)
-      );
-
-  const suppliedDeposits = getStatisticValue(
-    source,
-    [
-      "total_deposits",
-      "total_deposit_amount",
-      "deposit_amount",
-      "deposits_total",
-    ],
-    undefined
+  const totalBalance = toNumber(
+    getStatisticValue(
+      source,
+      balanceKeys,
+      sumSales(excludedSales, (sale) => Math.max(toNumber(sale.balance), 0))
+    )
   );
 
-  const totalDeposits =
-    suppliedDeposits !== undefined
-      ? toNumber(suppliedDeposits)
-      : sumSales(
-        saleRecords.filter(
-          (sale) => getSaleStatus(sale) !== "cancelled"
-        ),
-        (sale) => toNumber(sale.deposit_amount)
-      );
+  const totalDeposits = toNumber(
+    getStatisticValue(
+      source,
+      depositKeys,
+      sumSales(excludedSales, (sale) => sale.deposit_amount)
+    )
+  );
 
   const averageSaleValue =
     completedSales > 0
@@ -865,37 +772,15 @@ const PlotSaleStatistics = ({
     totalCollected + totalBalance
   );
 
-  const hasSalesValue = hasStatistic(source, salesValueKeys);
-  const hasGrossSales = hasStatistic(source, grossSalesKeys);
-  const hasCollectedValue = hasStatistic(source, collectedKeys);
-  const hasBalanceValue = hasStatistic(source, balanceKeys);
-  const hasDiscountValue = hasStatistic(source, [
-    "total_discounts",
-    "total_discount",
-    "discount_amount",
-    "discounts_total",
-  ]);
-  const hasDepositValue = hasStatistic(source, [
-    "total_deposits",
-    "total_deposit_amount",
-    "deposit_amount",
-    "deposits_total",
-  ]);
-
-  const hasRecordFinancials = saleRecords.length > 0;
-
   const hasFinancialData =
-    hasSalesValue ||
-    hasGrossSales ||
-    hasCollectedValue ||
-    hasBalanceValue ||
-    hasDiscountValue ||
-    hasDepositValue ||
-    hasRecordFinancials;
-
-  if (loading) {
-    return <PlotSaleStatisticsSkeleton />;
-  }
+    hasStatistic(source, [
+      ...grossSalesKeys,
+      ...netSalesKeys,
+      ...collectedKeys,
+      ...balanceKeys,
+      ...discountKeys,
+      ...depositKeys,
+    ]) || saleRecords.length > 0;
 
   /*
   |--------------------------------------------------------------------------
