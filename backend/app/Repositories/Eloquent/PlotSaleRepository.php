@@ -89,7 +89,7 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
     }
 
     /**
-     * Delete a plot sale.
+     * Delete a plot sale using soft deletes.
      */
     public function delete(PlotSale $plotSale): bool
     {
@@ -184,6 +184,11 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
 
     /**
      * Get plot sales statistics.
+     *
+     * Uses actual plot_sales columns:
+     * sale_price, amount_paid, balance, and status.
+     *
+     * Soft-deleted records are excluded by Eloquent automatically.
      */
     public function getStatistics(array $filters = []): array
     {
@@ -202,6 +207,10 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
                 ->where('status', 'reserved')
                 ->count(),
 
+            'approved_sales' => (clone $query)
+                ->where('status', 'approved')
+                ->count(),
+
             'completed_sales' => (clone $query)
                 ->where('status', 'completed')
                 ->count(),
@@ -211,7 +220,13 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
                 ->count(),
 
             'total_amount' => (float) (clone $query)
-                ->sum('total_amount'),
+                ->sum('sale_price'),
+
+            'total_deposit' => (float) (clone $query)
+                ->sum('deposit_amount'),
+
+            'total_discount' => (float) (clone $query)
+                ->sum('discount_amount'),
 
             'total_paid' => (float) (clone $query)
                 ->sum('amount_paid'),
@@ -240,6 +255,12 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
         Builder $query,
         array $filters
     ): void {
+        /*
+        |--------------------------------------------------------------------------
+        | General search
+        |--------------------------------------------------------------------------
+        */
+
         if (! empty($filters['search'])) {
             $search = trim((string) $filters['search']);
 
@@ -255,6 +276,12 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
                     });
             });
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Relationship and status filters
+        |--------------------------------------------------------------------------
+        */
 
         if (! empty($filters['plot_id'])) {
             $query->where('plot_id', $filters['plot_id']);
@@ -272,17 +299,58 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
             $query->where('status', $filters['status']);
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Payment status filter
+        |--------------------------------------------------------------------------
+        |
+        | payment_status is not a database column.
+        | Derive it from amount_paid and balance instead.
+        */
+
         if (! empty($filters['payment_status'])) {
-            $query->where('payment_status', $filters['payment_status']);
+            switch (strtolower(trim((string) $filters['payment_status']))) {
+                case 'paid':
+                    $query->where('balance', '<=', 0);
+                    break;
+
+                case 'partial':
+                case 'partially_paid':
+                    $query
+                        ->where('amount_paid', '>', 0)
+                        ->where('balance', '>', 0);
+                    break;
+
+                case 'pending':
+                case 'unpaid':
+                    $query->where(function (Builder $subQuery) {
+                        $subQuery
+                            ->whereNull('amount_paid')
+                            ->orWhere('amount_paid', '<=', 0);
+                    });
+                    break;
+
+                case 'outstanding':
+                    $query->where('balance', '>', 0);
+                    break;
+            }
         }
 
-        if (! empty($filters['sale_type'])) {
-            $query->where('sale_type', $filters['sale_type']);
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | Currency filter
+        |--------------------------------------------------------------------------
+        */
 
         if (! empty($filters['currency'])) {
             $query->where('currency', $filters['currency']);
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Sale date filters
+        |--------------------------------------------------------------------------
+        */
 
         if (! empty($filters['date_from'])) {
             $query->whereDate('sale_date', '>=', $filters['date_from']);
@@ -292,16 +360,43 @@ class PlotSaleRepository implements PlotSaleRepositoryInterface
             $query->whereDate('sale_date', '<=', $filters['date_to']);
         }
 
-        if (isset($filters['min_amount']) && $filters['min_amount'] !== '') {
-            $query->where('total_amount', '>=', $filters['min_amount']);
+        /*
+        |--------------------------------------------------------------------------
+        | Amount filters
+        |--------------------------------------------------------------------------
+        |
+        | Use sale_price instead of the nonexistent total_amount column.
+        */
+
+        if (
+            isset($filters['min_amount'])
+            && $filters['min_amount'] !== ''
+        ) {
+            $query->where('sale_price', '>=', $filters['min_amount']);
         }
 
-        if (isset($filters['max_amount']) && $filters['max_amount'] !== '') {
-            $query->where('total_amount', '<=', $filters['max_amount']);
+        if (
+            isset($filters['max_amount'])
+            && $filters['max_amount'] !== ''
+        ) {
+            $query->where('sale_price', '<=', $filters['max_amount']);
         }
 
-        if (isset($filters['outstanding_only']) && $filters['outstanding_only']) {
-            $query->where('balance', '>', 0)
+        /*
+        |--------------------------------------------------------------------------
+        | Outstanding balance filter
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($filters['outstanding_only'])
+            && filter_var(
+                $filters['outstanding_only'],
+                FILTER_VALIDATE_BOOLEAN
+            )
+        ) {
+            $query
+                ->where('balance', '>', 0)
                 ->whereNotIn('status', ['cancelled', 'rejected']);
         }
     }
