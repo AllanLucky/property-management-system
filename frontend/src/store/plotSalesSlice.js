@@ -1,5 +1,37 @@
+
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import plotSaleService from "../services/plotSale.service";
+
+/*
+|--------------------------------------------------------------------------
+| CONSTANTS
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_PER_PAGE = 15;
+
+const DEFAULT_PAGINATION = {
+  current_page: 1,
+  last_page: 1,
+  per_page: DEFAULT_PER_PAGE,
+  total: 0,
+  from: null,
+  to: null,
+};
+
+const STATISTICS_KEYS = [
+  "total_sales",
+  "pending_sales",
+  "reserved_sales",
+  "approved_sales",
+  "completed_sales",
+  "cancelled_sales",
+  "total_amount",
+  "total_deposit",
+  "total_discount",
+  "total_paid",
+  "total_outstanding",
+];
 
 /*
 |--------------------------------------------------------------------------
@@ -15,15 +47,7 @@ const initialState = {
   statistics: null,
   report: null,
 
-  pagination: {
-    current_page: 1,
-    last_page: 1,
-    per_page: 15,
-    total: 0,
-    from: null,
-    to: null,
-  },
-
+  pagination: { ...DEFAULT_PAGINATION },
   filters: {},
 
   loading: false,
@@ -35,6 +59,10 @@ const initialState = {
   actionLoading: false,
 
   error: null,
+  detailsError: null,
+  statisticsError: null,
+  reportError: null,
+  outstandingError: null,
   validationErrors: null,
   message: null,
 };
@@ -46,72 +74,117 @@ const initialState = {
 */
 
 /**
- * Extract normalized API data.
+ * Handle either a normalized service response or an Axios response.
  *
- * Supports the API envelope:
- * { status, message, data, meta, links, errors }
+ * Normalized:
+ * { status, message, data, meta, errors }
+ *
+ * Axios:
+ * { data: { status, message, data, meta, errors }, config, ... }
  */
-const getResponseData = (response) => response?.data ?? null;
+const getEnvelope = (response) => {
+  if (
+    response?.config &&
+    response?.data !== undefined
+  ) {
+    return response.data;
+  }
 
-const getResponseMessage = (response, fallback) =>
-  response?.message || fallback;
+  return response;
+};
 
-const getPagination = (response, fallback = {}) => {
-  const meta = response?.meta ?? {};
-  const data = getResponseData(response);
+const getResponseData = (response) =>
+  getEnvelope(response)?.data ?? null;
+
+const getResponseMessage = (
+  response,
+  fallback = "Request completed successfully.",
+) =>
+  getEnvelope(response)?.message ||
+  response?.message ||
+  fallback;
+
+const getErrorMessage = (error) => {
+  const envelope = getEnvelope(error?.response?.data);
+
+  return (
+    error?.serviceMessage ||
+    envelope?.message ||
+    error?.response?.data?.message ||
+    error?.response?.data?.errors?.message?.[0] ||
+    error?.message ||
+    "An unexpected error occurred. Please try again."
+  );
+};
+
+const getValidationErrors = (error) =>
+  getEnvelope(error?.response?.data)?.errors ??
+  error?.response?.data?.errors ??
+  null;
+
+/**
+ * Extract pagination metadata from Laravel responses.
+ */
+const getPagination = (
+  response,
+  fallback = {},
+) => {
+  const envelope = getEnvelope(response);
+  const data = envelope?.data;
+
+  const candidates = [
+    envelope?.meta,
+    data?.meta,
+    data?.pagination,
+    data,
+    data?.data,
+  ];
+
+  const meta = candidates.find(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      !Array.isArray(item) &&
+      (
+        item.current_page !== undefined ||
+        item.last_page !== undefined ||
+        item.total !== undefined ||
+        item.per_page !== undefined
+      ),
+  ) ?? {};
 
   return {
     current_page:
-      meta.current_page ??
-      data?.current_page ??
-      fallback.current_page ??
-      1,
+      Number(
+        meta.current_page ??
+        fallback.current_page,
+      ) || 1,
 
     last_page:
-      meta.last_page ??
-      data?.last_page ??
-      fallback.last_page ??
-      1,
+      Number(
+        meta.last_page ??
+        fallback.last_page,
+      ) || 1,
 
     per_page:
-      meta.per_page ??
-      data?.per_page ??
-      fallback.per_page ??
-      15,
+      Number(
+        meta.per_page ??
+        fallback.per_page,
+      ) || DEFAULT_PER_PAGE,
 
     total:
-      meta.total ??
-      data?.total ??
-      fallback.total ??
-      0,
+      Number(
+        meta.total ??
+        fallback.total,
+      ) || 0,
 
-    from:
-      meta.from ??
-      data?.from ??
-      fallback.from ??
-      null,
-
-    to:
-      meta.to ??
-      data?.to ??
-      fallback.to ??
-      null,
+    from: meta.from ?? fallback.from ?? null,
+    to: meta.to ?? fallback.to ?? null,
   };
 };
 
-const getErrorMessage = (error) =>
-  error?.serviceMessage ||
-  error?.response?.data?.message ||
-  error?.response?.data?.errors?.message?.[0] ||
-  error?.message ||
-  "An unexpected error occurred. Please try again.";
-
-const getValidationErrors = (error) =>
-  error?.response?.data?.errors ?? null;
-
 /**
- * Laravel resources may return a collection directly or inside
- * a data object containing a collection.
+ * Extract a collection from a resource response.
  */
 const getCollection = (response) => {
   const data = getResponseData(response);
@@ -132,42 +205,118 @@ const getCollection = (response) => {
     return data.sales;
   }
 
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
+
   return [];
 };
 
 /**
- * Extract a single sale resource.
+ * Extract a single plot sale resource.
  */
 const getSale = (response) => {
-  const data = getResponseData(response);
+  let data = getResponseData(response);
 
-  if (Array.isArray(data)) {
-    return data[0] ?? null;
-  }
+  for (let index = 0; index < 4; index += 1) {
+    if (!data || typeof data !== "object") {
+      return null;
+    }
 
-  if (data?.plot_sale) {
-    return data.plot_sale;
-  }
+    if (Array.isArray(data)) {
+      return data[0] ?? null;
+    }
 
-  if (data?.sale) {
-    return data.sale;
-  }
+    if (data.plot_sale) {
+      data = data.plot_sale;
+      continue;
+    }
 
-  if (data?.data && !Array.isArray(data.data)) {
-    return data.data;
+    if (data.sale) {
+      data = data.sale;
+      continue;
+    }
+
+    if (
+      data.data &&
+      typeof data.data === "object"
+    ) {
+      data = data.data;
+      continue;
+    }
+
+    return data;
   }
 
   return data;
 };
 
 /**
- * Update an existing sale in the Redux collection.
+ * Extract statistics from the Laravel API response.
+ */
+const getStatistics = (response) => {
+  let data = getResponseData(response);
+
+  for (let index = 0; index < 4; index += 1) {
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data)
+    ) {
+      return null;
+    }
+
+    if (
+      STATISTICS_KEYS.some(
+        (key) => data[key] !== undefined,
+      )
+    ) {
+      return data;
+    }
+
+    if (
+      data.statistics &&
+      typeof data.statistics === "object"
+    ) {
+      data = data.statistics;
+      continue;
+    }
+
+    if (
+      data.data &&
+      typeof data.data === "object"
+    ) {
+      data = data.data;
+      continue;
+    }
+
+    return data;
+  }
+
+  return data;
+};
+
+/**
+ * Normalize a failed thunk payload.
+ */
+const getRejectedMessage = (
+  action,
+  fallback,
+) =>
+  action.payload?.message ||
+  action.error?.message ||
+  fallback;
+
+/**
+ * Insert or update a sale without creating duplicates.
  */
 const upsertSale = (state, sale) => {
   if (!sale?.id) return;
 
+  const saleId = String(sale.id);
+
   const index = state.plotSales.findIndex(
-    (item) => Number(item.id) === Number(sale.id),
+    (item) => String(item.id) === saleId,
   );
 
   if (index === -1) {
@@ -181,7 +330,7 @@ const upsertSale = (state, sale) => {
 
   if (
     state.selectedPlotSale &&
-    Number(state.selectedPlotSale.id) === Number(sale.id)
+    String(state.selectedPlotSale.id) === saleId
   ) {
     state.selectedPlotSale = {
       ...state.selectedPlotSale,
@@ -189,6 +338,50 @@ const upsertSale = (state, sale) => {
     };
   }
 };
+
+/**
+ * Remove a sale from local collections.
+ */
+const removeSale = (state, id) => {
+  const saleId = String(id);
+
+  const wasInList = state.plotSales.some(
+    (sale) => String(sale.id) === saleId,
+  );
+
+  state.plotSales = state.plotSales.filter(
+    (sale) => String(sale.id) !== saleId,
+  );
+
+  state.outstandingSales = state.outstandingSales.filter(
+    (sale) => String(sale.id) !== saleId,
+  );
+
+  if (
+    String(state.selectedPlotSale?.id) === saleId
+  ) {
+    state.selectedPlotSale = null;
+  }
+
+  if (wasInList) {
+    state.pagination.total = Math.max(
+      0,
+      state.pagination.total - 1,
+    );
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| THUNK ERROR HELPER
+|--------------------------------------------------------------------------
+*/
+
+const rejectRequest = (error, rejectWithValue) =>
+  rejectWithValue({
+    message: getErrorMessage(error),
+    validationErrors: getValidationErrors(error),
+  });
 
 /*
 |--------------------------------------------------------------------------
@@ -200,19 +393,23 @@ export const fetchPlotSales = createAsyncThunk(
   "plotSales/fetchAll",
   async (filters = {}, { rejectWithValue }) => {
     try {
-      const response = await plotSaleService.getAll(filters);
+      const response =
+        await plotSaleService.getAll(filters);
 
       return {
         items: getCollection(response),
-        pagination: getPagination(response),
+        pagination: getPagination(response, {
+          current_page: filters.page ?? 1,
+          per_page: filters.per_page ?? DEFAULT_PER_PAGE,
+        }),
         filters,
-        message: response.message,
+        message: getResponseMessage(
+          response,
+          "Plot sales fetched successfully.",
+        ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -237,15 +434,18 @@ export const searchPlotSales = createAsyncThunk(
 
       return {
         items: getCollection(response),
-        pagination: getPagination(response),
+        pagination: getPagination(response, {
+          current_page: filters.page ?? 1,
+          per_page: filters.per_page ?? DEFAULT_PER_PAGE,
+        }),
         filters: { ...filters, search },
-        message: response.message,
+        message: getResponseMessage(
+          response,
+          "Plot sales search completed.",
+        ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -264,13 +464,13 @@ export const fetchPlotSaleById = createAsyncThunk(
 
       return {
         sale: getSale(response),
-        message: response.message,
+        message: getResponseMessage(
+          response,
+          "Plot sale details fetched successfully.",
+        ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -285,7 +485,8 @@ export const createPlotSale = createAsyncThunk(
   "plotSales/create",
   async (saleData, { rejectWithValue }) => {
     try {
-      const response = await plotSaleService.create(saleData);
+      const response =
+        await plotSaleService.create(saleData);
 
       return {
         sale: getSale(response),
@@ -295,10 +496,7 @@ export const createPlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -326,10 +524,7 @@ export const updatePlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -354,10 +549,7 @@ export const deletePlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -383,10 +575,7 @@ export const approvePlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -399,7 +588,10 @@ export const approvePlotSale = createAsyncThunk(
 
 export const cancelPlotSale = createAsyncThunk(
   "plotSales/cancel",
-  async ({ id, reason = null }, { rejectWithValue }) => {
+  async (
+    { id, reason = null },
+    { rejectWithValue },
+  ) => {
     try {
       const response = await plotSaleService.cancel(
         id,
@@ -415,10 +607,7 @@ export const cancelPlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -433,7 +622,8 @@ export const completePlotSale = createAsyncThunk(
   "plotSales/complete",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await plotSaleService.complete(id);
+      const response =
+        await plotSaleService.complete(id);
 
       return {
         sale: getSale(response),
@@ -444,10 +634,7 @@ export const completePlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -467,14 +654,17 @@ export const fetchOutstandingPlotSales = createAsyncThunk(
 
       return {
         items: getCollection(response),
-        pagination: getPagination(response),
-        message: response.message,
+        pagination: getPagination(response, {
+          current_page: filters.page ?? 1,
+          per_page: filters.per_page ?? DEFAULT_PER_PAGE,
+        }),
+        message: getResponseMessage(
+          response,
+          "Outstanding plot sales fetched successfully.",
+        ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -492,15 +682,30 @@ export const fetchPlotSalesStatistics = createAsyncThunk(
       const response =
         await plotSaleService.getStatistics(filters);
 
+      const statistics = getStatistics(response);
+
+      if (
+        !statistics ||
+        typeof statistics !== "object" ||
+        Array.isArray(statistics) ||
+        !STATISTICS_KEYS.some(
+          (key) => statistics[key] !== undefined,
+        )
+      ) {
+        throw new Error(
+          "The API response does not contain valid plot sales statistics.",
+        );
+      }
+
       return {
-        statistics: getResponseData(response),
-        message: response.message,
+        statistics,
+        message: getResponseMessage(
+          response,
+          "Plot sales statistics fetched successfully.",
+        ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -520,13 +725,13 @@ export const fetchPlotSalesReport = createAsyncThunk(
 
       return {
         report: getResponseData(response),
-        message: response.message,
+        message: getResponseMessage(
+          response,
+          "Plot sales report generated successfully.",
+        ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -552,10 +757,7 @@ export const restorePlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -581,10 +783,7 @@ export const forceDeletePlotSale = createAsyncThunk(
         ),
       };
     } catch (error) {
-      return rejectWithValue({
-        message: getErrorMessage(error),
-        validationErrors: getValidationErrors(error),
-      });
+      return rejectRequest(error, rejectWithValue);
     }
   },
 );
@@ -600,20 +799,16 @@ const plotSalesSlice = createSlice({
   initialState,
 
   reducers: {
-    /*
-    |--------------------------------------------------------------------------
-    | LOCAL STATE
-    |--------------------------------------------------------------------------
-    */
-
     setSelectedPlotSale: (state, action) => {
       state.selectedPlotSale = action.payload;
+      state.detailsError = null;
       state.error = null;
       state.validationErrors = null;
     },
 
     clearSelectedPlotSale: (state) => {
       state.selectedPlotSale = null;
+      state.detailsError = null;
     },
 
     setPlotSalesFilters: (state, action) => {
@@ -621,24 +816,55 @@ const plotSalesSlice = createSlice({
         ...state.filters,
         ...action.payload,
       };
+
+      state.pagination.current_page = 1;
     },
 
     clearPlotSalesFilters: (state) => {
       state.filters = {};
+      state.pagination.current_page = 1;
     },
 
     setPlotSalesPage: (state, action) => {
-      state.pagination.current_page = action.payload;
+      const nextPage = Number(action.payload) || 1;
+
+      state.pagination.current_page = Math.max(
+        1,
+        Math.min(
+          nextPage,
+          Math.max(1, state.pagination.last_page),
+        ),
+      );
     },
 
     setPlotSalesPerPage: (state, action) => {
-      state.pagination.per_page = action.payload;
+      state.pagination.per_page = Math.max(
+        1,
+        Math.min(
+          100,
+          Number(action.payload) || DEFAULT_PER_PAGE,
+        ),
+      );
+
       state.pagination.current_page = 1;
     },
 
     clearPlotSalesError: (state) => {
       state.error = null;
+      state.detailsError = null;
       state.validationErrors = null;
+    },
+
+    clearPlotSalesStatisticsError: (state) => {
+      state.statisticsError = null;
+    },
+
+    clearPlotSalesReportError: (state) => {
+      state.reportError = null;
+    },
+
+    clearOutstandingPlotSalesError: (state) => {
+      state.outstandingError = null;
     },
 
     clearPlotSalesMessage: (state) => {
@@ -647,22 +873,27 @@ const plotSalesSlice = createSlice({
 
     clearPlotSalesReport: (state) => {
       state.report = null;
+      state.reportError = null;
     },
 
     clearPlotSalesStatistics: (state) => {
       state.statistics = null;
+      state.statisticsError = null;
     },
 
-    clearPlotSalesState: () => initialState,
+    clearPlotSalesState: () => ({
+      ...initialState,
+      pagination: { ...DEFAULT_PAGINATION },
+    }),
   },
 
   extraReducers: (builder) => {
     builder
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | FETCH ALL
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(fetchPlotSales.pending, (state) => {
@@ -681,22 +912,24 @@ const plotSalesSlice = createSlice({
 
       .addCase(fetchPlotSales.rejected, (state, action) => {
         state.loading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to fetch plot sales.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to fetch plot sales.",
+        );
         state.validationErrors =
-          action.payload?.validationErrors || null;
+          action.payload?.validationErrors ?? null;
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | SEARCH
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(searchPlotSales.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.validationErrors = null;
       })
 
       .addCase(searchPlotSales.fulfilled, (state, action) => {
@@ -709,22 +942,23 @@ const plotSalesSlice = createSlice({
 
       .addCase(searchPlotSales.rejected, (state, action) => {
         state.loading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to search plot sales.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to search plot sales.",
+        );
         state.validationErrors =
-          action.payload?.validationErrors || null;
+          action.payload?.validationErrors ?? null;
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | FETCH SINGLE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(fetchPlotSaleById.pending, (state) => {
         state.detailsLoading = true;
-        state.error = null;
+        state.detailsError = null;
       })
 
       .addCase(fetchPlotSaleById.fulfilled, (state, action) => {
@@ -737,15 +971,16 @@ const plotSalesSlice = createSlice({
 
       .addCase(fetchPlotSaleById.rejected, (state, action) => {
         state.detailsLoading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to fetch plot sale details.";
+        state.detailsError = getRejectedMessage(
+          action,
+          "Failed to fetch plot sale details.",
+        );
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | CREATE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(createPlotSale.pending, (state) => {
@@ -760,26 +995,34 @@ const plotSalesSlice = createSlice({
 
         const sale = action.payload.sale;
 
-        if (sale) {
+        if (sale?.id) {
+          const alreadyExists = state.plotSales.some(
+            (item) => String(item.id) === String(sale.id),
+          );
+
           upsertSale(state, sale);
           state.selectedPlotSale = sale;
-          state.pagination.total += 1;
+
+          if (!alreadyExists) {
+            state.pagination.total += 1;
+          }
         }
       })
 
       .addCase(createPlotSale.rejected, (state, action) => {
         state.submitting = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to create plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to create plot sale.",
+        );
         state.validationErrors =
-          action.payload?.validationErrors || null;
+          action.payload?.validationErrors ?? null;
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | UPDATE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(updatePlotSale.pending, (state) => {
@@ -796,17 +1039,18 @@ const plotSalesSlice = createSlice({
 
       .addCase(updatePlotSale.rejected, (state, action) => {
         state.submitting = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to update plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to update plot sale.",
+        );
         state.validationErrors =
-          action.payload?.validationErrors || null;
+          action.payload?.validationErrors ?? null;
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | DELETE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(deletePlotSale.pending, (state) => {
@@ -816,43 +1060,22 @@ const plotSalesSlice = createSlice({
 
       .addCase(deletePlotSale.fulfilled, (state, action) => {
         state.actionLoading = false;
-
-        const id = Number(action.payload.id);
-
-        state.plotSales = state.plotSales.filter(
-          (sale) => Number(sale.id) !== id,
-        );
-
-        state.outstandingSales =
-          state.outstandingSales.filter(
-            (sale) => Number(sale.id) !== id,
-          );
-
-        if (
-          Number(state.selectedPlotSale?.id) === id
-        ) {
-          state.selectedPlotSale = null;
-        }
-
-        state.pagination.total = Math.max(
-          0,
-          state.pagination.total - 1,
-        );
-
+        removeSale(state, action.payload.id);
         state.message = action.payload.message;
       })
 
       .addCase(deletePlotSale.rejected, (state, action) => {
         state.actionLoading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to delete plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to delete plot sale.",
+        );
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | APPROVE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(approvePlotSale.pending, (state) => {
@@ -863,23 +1086,21 @@ const plotSalesSlice = createSlice({
       .addCase(approvePlotSale.fulfilled, (state, action) => {
         state.actionLoading = false;
         state.message = action.payload.message;
-
-        if (action.payload.sale) {
-          upsertSale(state, action.payload.sale);
-        }
+        upsertSale(state, action.payload.sale);
       })
 
       .addCase(approvePlotSale.rejected, (state, action) => {
         state.actionLoading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to approve plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to approve plot sale.",
+        );
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | CANCEL
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(cancelPlotSale.pending, (state) => {
@@ -890,23 +1111,21 @@ const plotSalesSlice = createSlice({
       .addCase(cancelPlotSale.fulfilled, (state, action) => {
         state.actionLoading = false;
         state.message = action.payload.message;
-
-        if (action.payload.sale) {
-          upsertSale(state, action.payload.sale);
-        }
+        upsertSale(state, action.payload.sale);
       })
 
       .addCase(cancelPlotSale.rejected, (state, action) => {
         state.actionLoading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to cancel plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to cancel plot sale.",
+        );
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | COMPLETE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(completePlotSale.pending, (state) => {
@@ -917,28 +1136,26 @@ const plotSalesSlice = createSlice({
       .addCase(completePlotSale.fulfilled, (state, action) => {
         state.actionLoading = false;
         state.message = action.payload.message;
-
-        if (action.payload.sale) {
-          upsertSale(state, action.payload.sale);
-        }
+        upsertSale(state, action.payload.sale);
       })
 
       .addCase(completePlotSale.rejected, (state, action) => {
         state.actionLoading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to complete plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to complete plot sale.",
+        );
       })
 
       /*
-      |--------------------------------------------------------------------------
-      | OUTSTANDING
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
+      | OUTSTANDING SALES
+      |----------------------------------------------------------------------
       */
 
       .addCase(fetchOutstandingPlotSales.pending, (state) => {
         state.outstandingLoading = true;
-        state.error = null;
+        state.outstandingError = null;
       })
 
       .addCase(
@@ -946,6 +1163,7 @@ const plotSalesSlice = createSlice({
         (state, action) => {
           state.outstandingLoading = false;
           state.outstandingSales = action.payload.items;
+          state.message = action.payload.message || state.message;
         },
       )
 
@@ -953,21 +1171,22 @@ const plotSalesSlice = createSlice({
         fetchOutstandingPlotSales.rejected,
         (state, action) => {
           state.outstandingLoading = false;
-          state.error =
-            action.payload?.message ||
-            "Failed to fetch outstanding plot sales.";
+          state.outstandingError = getRejectedMessage(
+            action,
+            "Failed to fetch outstanding plot sales.",
+          );
         },
       )
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | STATISTICS
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(fetchPlotSalesStatistics.pending, (state) => {
         state.statisticsLoading = true;
-        state.error = null;
+        state.statisticsError = null;
       })
 
       .addCase(
@@ -975,6 +1194,7 @@ const plotSalesSlice = createSlice({
         (state, action) => {
           state.statisticsLoading = false;
           state.statistics = action.payload.statistics;
+          state.message = action.payload.message || state.message;
         },
       )
 
@@ -982,21 +1202,22 @@ const plotSalesSlice = createSlice({
         fetchPlotSalesStatistics.rejected,
         (state, action) => {
           state.statisticsLoading = false;
-          state.error =
-            action.payload?.message ||
-            "Failed to fetch plot sales statistics.";
+          state.statisticsError = getRejectedMessage(
+            action,
+            "Failed to fetch plot sales statistics.",
+          );
         },
       )
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | REPORT
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(fetchPlotSalesReport.pending, (state) => {
         state.reportLoading = true;
-        state.error = null;
+        state.reportError = null;
       })
 
       .addCase(
@@ -1004,6 +1225,7 @@ const plotSalesSlice = createSlice({
         (state, action) => {
           state.reportLoading = false;
           state.report = action.payload.report;
+          state.message = action.payload.message || state.message;
         },
       )
 
@@ -1011,16 +1233,17 @@ const plotSalesSlice = createSlice({
         fetchPlotSalesReport.rejected,
         (state, action) => {
           state.reportLoading = false;
-          state.error =
-            action.payload?.message ||
-            "Failed to generate plot sales report.";
+          state.reportError = getRejectedMessage(
+            action,
+            "Failed to generate plot sales report.",
+          );
         },
       )
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | RESTORE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(restorePlotSale.pending, (state) => {
@@ -1031,23 +1254,21 @@ const plotSalesSlice = createSlice({
       .addCase(restorePlotSale.fulfilled, (state, action) => {
         state.actionLoading = false;
         state.message = action.payload.message;
-
-        if (action.payload.sale) {
-          upsertSale(state, action.payload.sale);
-        }
+        upsertSale(state, action.payload.sale);
       })
 
       .addCase(restorePlotSale.rejected, (state, action) => {
         state.actionLoading = false;
-        state.error =
-          action.payload?.message ||
-          "Failed to restore plot sale.";
+        state.error = getRejectedMessage(
+          action,
+          "Failed to restore plot sale.",
+        );
       })
 
       /*
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       | FORCE DELETE
-      |--------------------------------------------------------------------------
+      |----------------------------------------------------------------------
       */
 
       .addCase(forceDeletePlotSale.pending, (state) => {
@@ -1059,29 +1280,7 @@ const plotSalesSlice = createSlice({
         forceDeletePlotSale.fulfilled,
         (state, action) => {
           state.actionLoading = false;
-
-          const id = Number(action.payload.id);
-
-          state.plotSales = state.plotSales.filter(
-            (sale) => Number(sale.id) !== id,
-          );
-
-          state.outstandingSales =
-            state.outstandingSales.filter(
-              (sale) => Number(sale.id) !== id,
-            );
-
-          if (
-            Number(state.selectedPlotSale?.id) === id
-          ) {
-            state.selectedPlotSale = null;
-          }
-
-          state.pagination.total = Math.max(
-            0,
-            state.pagination.total - 1,
-          );
-
+          removeSale(state, action.payload.id);
           state.message = action.payload.message;
         },
       )
@@ -1090,9 +1289,10 @@ const plotSalesSlice = createSlice({
         forceDeletePlotSale.rejected,
         (state, action) => {
           state.actionLoading = false;
-          state.error =
-            action.payload?.message ||
-            "Failed to permanently delete plot sale.";
+          state.error = getRejectedMessage(
+            action,
+            "Failed to permanently delete plot sale.",
+          );
         },
       );
   },
@@ -1112,6 +1312,9 @@ export const {
   setPlotSalesPage,
   setPlotSalesPerPage,
   clearPlotSalesError,
+  clearPlotSalesStatisticsError,
+  clearPlotSalesReportError,
+  clearOutstandingPlotSalesError,
   clearPlotSalesMessage,
   clearPlotSalesReport,
   clearPlotSalesStatistics,
@@ -1172,6 +1375,18 @@ export const selectOutstandingPlotSalesLoading = (state) =>
 export const selectPlotSalesError = (state) =>
   state.plotSales.error;
 
+export const selectPlotSaleDetailsError = (state) =>
+  state.plotSales.detailsError;
+
+export const selectPlotSalesStatisticsError = (state) =>
+  state.plotSales.statisticsError;
+
+export const selectPlotSalesReportError = (state) =>
+  state.plotSales.reportError;
+
+export const selectOutstandingPlotSalesError = (state) =>
+  state.plotSales.outstandingError;
+
 export const selectPlotSalesValidationErrors = (state) =>
   state.plotSales.validationErrors;
 
@@ -1180,7 +1395,7 @@ export const selectPlotSalesMessage = (state) =>
 
 /*
 |--------------------------------------------------------------------------
-| EXPORT
+| REDUCER
 |--------------------------------------------------------------------------
 */
 

@@ -1,3 +1,4 @@
+
 import plotSalesApi from "../api/plotSales.api";
 
 /*
@@ -42,38 +43,28 @@ const getErrorMessage = (
 };
 
 /**
- * Normalize the standard EstateKenya API envelope.
- */
-const normalizeResponse = (response) => {
-  const payload = response?.data ?? response;
-
-  return {
-    status: payload?.status ?? "success",
-    code: payload?.code ?? null,
-    message: payload?.message ?? "",
-    data: payload?.data ?? null,
-    meta: payload?.meta ?? null,
-    links: payload?.links ?? null,
-    errors: payload?.errors ?? null,
-    timestamp: payload?.timestamp ?? null,
-    request_id: payload?.request_id ?? null,
-  };
-};
-
-/**
- * Execute an API operation and normalize its response.
+ * Execute an API operation.
  *
- * Preserve the original Axios error so callers can inspect
- * error.response, error.response.status, and validation errors.
+ * plotSalesApi already normalizes the Axios response.
+ * Do not normalize the response a second time here.
+ *
+ * Successful responses retain this structure:
+ * {
+ *   status: true,
+ *   code: 200,
+ *   message: "...",
+ *   data: { ... },
+ *   meta: null,
+ *   links: null,
+ *   errors: null
+ * }
  */
 const execute = async (
   operation,
   fallbackMessage = "An unexpected error occurred.",
 ) => {
   try {
-    const response = await operation();
-
-    return normalizeResponse(response);
+    return await operation();
   } catch (error) {
     if (error && typeof error === "object") {
       error.serviceMessage = getErrorMessage(
@@ -464,6 +455,10 @@ const plotSaleService = {
 
   /**
    * Fetch plot sale statistics.
+   *
+   * IMPORTANT:
+   * Returns the normalized API envelope.
+   * Statistics are available under response.data.
    */
   async getStatistics(filters = {}) {
     return execute(
