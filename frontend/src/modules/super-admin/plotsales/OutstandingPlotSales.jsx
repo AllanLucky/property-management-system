@@ -1,3 +1,4 @@
+
 import {
   useCallback,
   useEffect,
@@ -9,7 +10,6 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   ArrowDownRight,
-  ArrowUpRight,
   Banknote,
   CalendarDays,
   ChevronLeft,
@@ -241,13 +241,6 @@ const getStatusClasses = (status) => {
 |--------------------------------------------------------------------------
 | API Response Normalization
 |--------------------------------------------------------------------------
-|
-| Supports:
-| 1. Normalized service response: { data: [...] }
-| 2. Laravel envelope: { data: [...], meta: {...} }
-| 3. Paginated Laravel response: { data: { data: [...], meta: {...} } }
-| 4. Axios response: { data: { status: true, data: [...] } }
-|--------------------------------------------------------------------------
 */
 
 const isObject = (value) =>
@@ -320,16 +313,10 @@ const getSaleArray = (response) => {
 
   // Prefer explicitly named collections.
   for (const root of roots) {
-    if (Array.isArray(root.sales)) {
-      return root.sales.filter(isSaleRecord);
-    }
-
-    if (Array.isArray(root.items)) {
-      return root.items.filter(isSaleRecord);
-    }
-
-    if (Array.isArray(root.results)) {
-      return root.results.filter(isSaleRecord);
+    for (const key of ["sales", "items", "results"]) {
+      if (Array.isArray(root[key])) {
+        return root[key].filter(isSaleRecord);
+      }
     }
   }
 
@@ -490,7 +477,9 @@ function StatusBadge({ status }) {
 
 export default function OutstandingPlotSales() {
   const navigate = useNavigate();
-  const plotSalesHook = usePlotSales() ?? {};
+
+  // Prevent unrelated list/statistics requests from this page.
+  const plotSalesHook = usePlotSales({ autoFetch: false }) ?? {};
 
   const {
     outstandingLoading: hookOutstandingLoading = false,
@@ -510,9 +499,15 @@ export default function OutstandingPlotSales() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Prevent a late response from overwriting newer results.
   const requestIdRef = useRef(0);
   const mountedRef = useRef(false);
+
+  // Keep the latest hook data without making the loader depend on it.
+  const outstandingSalesRef = useRef(outstandingSales);
+
+  useEffect(() => {
+    outstandingSalesRef.current = outstandingSales;
+  }, [outstandingSales]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -526,13 +521,6 @@ export default function OutstandingPlotSales() {
   /*
   |--------------------------------------------------------------------------
   | Load Outstanding Records
-  |--------------------------------------------------------------------------
-  |
-  | Important:
-  | - Use the dedicated outstanding-sales API method only.
-  | - Do not depend on outstandingSales state here. Doing so can recreate
-  |   the callback after a state update and repeatedly trigger this effect.
-  | - Search and sorting are handled locally.
   |--------------------------------------------------------------------------
   */
 
@@ -573,20 +561,22 @@ export default function OutstandingPlotSales() {
           return;
         }
 
-        /*
-         * The API service returns the normalized envelope.
-         * For the supplied Laravel response, response.data is the
-         * array of plot sales.
-         */
+        if (response?.status === false || response?.error) {
+          throw new Error(
+            response?.message ??
+            response?.payload?.message ??
+            "The outstanding-sales request failed."
+          );
+        }
+
         let rows = getSaleArray(response);
         const meta = getPaginationMeta(response);
 
-        /*
-         * Some hook implementations return no data directly but update
-         * outstandingSales. Use that state only as a fallback.
-         */
+        // Use hook state only if the direct response has no sale records.
         if (rows.length === 0) {
-          const fallbackRows = getSaleArray(outstandingSales);
+          const fallbackRows = getSaleArray(
+            outstandingSalesRef.current
+          );
 
           if (fallbackRows.length > 0) {
             rows = fallbackRows;
@@ -595,15 +585,7 @@ export default function OutstandingPlotSales() {
 
         setRecords(rows);
         setPaginationMeta(meta);
-
-        // A successful empty response is not an API error.
-        if (response?.status === false || response?.error) {
-          throw new Error(
-            response?.message ??
-            response?.payload?.message ??
-            "The outstanding-sales request failed."
-          );
-        }
+        setCurrentPage(1);
       } catch (requestError) {
         if (
           !mountedRef.current ||
@@ -629,14 +611,9 @@ export default function OutstandingPlotSales() {
         }
       }
     },
-    [fetchOutstandingPlotSales, outstandingSales]
+    [fetchOutstandingPlotSales]
   );
 
-  /*
-   * Run once when the dedicated loader becomes available.
-   * The request callback deliberately does not depend on search,
-   * statusFilter, sortBy, or currentPage.
-   */
   useEffect(() => {
     loadOutstandingSales();
 
@@ -775,16 +752,17 @@ export default function OutstandingPlotSales() {
   |--------------------------------------------------------------------------
   | Client-Side Pagination
   |--------------------------------------------------------------------------
-  |
-  | We fetch up to API_PAGE_SIZE records and paginate the returned records
-  | locally. This avoids mixing Laravel's server page with the UI page.
-  |--------------------------------------------------------------------------
   */
 
   const totalPages = Math.max(
     1,
     Math.ceil(visibleRecords.length / PAGE_SIZE)
   );
+
+  // Keep the selected page valid when filters reduce the result count.
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const pageRecords = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
@@ -866,7 +844,9 @@ export default function OutstandingPlotSales() {
 
   const hasFilters = Boolean(search.trim() || statusFilter);
   const displayedError = error || hookOutstandingError;
-  const isLoading = loading || hookOutstandingLoading;
+
+  // Use the component's request state to control the table spinner.
+  const isLoading = loading;
 
   /*
   |--------------------------------------------------------------------------
@@ -875,12 +855,12 @@ export default function OutstandingPlotSales() {
   */
 
   return (
-    <div className="min-h-screen bg-gray-50/70 pb-10">
+    <div  className="w-full space-y-6">
       <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         <PlotSaleHeader
           title="Outstanding Plot Sales"
           description="Monitor unpaid plot sale balances and follow up on pending payments."
-          loading={isLoading}
+          loading={isLoading || refreshing}
           onRefresh={handleRefresh}
           showRefresh
           showCreate={false}
@@ -1421,7 +1401,7 @@ export default function OutstandingPlotSales() {
           !displayedError &&
           outstandingRecords.length > 0 && (
             <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <ArrowUpRight
+              <AlertCircle
                 size={19}
                 className="mt-0.5 shrink-0 text-amber-700"
               />

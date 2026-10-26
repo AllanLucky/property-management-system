@@ -1,3 +1,4 @@
+
 import {
   useCallback,
   useEffect,
@@ -137,9 +138,24 @@ const toDateInputValue = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+/**
+ * Use the most relevant available date field.
+ * The supplied report records include completion_date and created_at,
+ * and may not include sale_date.
+ */
+const getSaleDate = (sale) =>
+  sale?.sale_date ??
+  sale?.saleDate ??
+  sale?.agreement_date ??
+  sale?.completion_date ??
+  sale?.created_at ??
+  sale?.updated_at ??
+  null;
+
 const getSaleNumber = (sale) =>
   sale?.sale_number ??
   sale?.saleNumber ??
+  sale?.sale_code ??
   (sale?.id ? `SALE-${sale.id}` : "—");
 
 const getNetSalePrice = (sale) => {
@@ -148,7 +164,6 @@ const getNetSalePrice = (sale) => {
     sale?.discount_amount ?? sale?.discount
   );
 
-  // Prefer the backend's explicit net amount if provided.
   const explicitNet = sale?.net_sale_price;
 
   if (
@@ -193,9 +208,6 @@ const getPlotCode = (sale) =>
   sale?.plot?.plot_number ??
   "—";
 
-/**
- * Fixed: do not mix ?? and || in the same ungrouped expression.
- */
 const getPersonName = (person, fallback = "—") => {
   if (!person) return fallback;
 
@@ -208,13 +220,14 @@ const getPersonName = (person, fallback = "—") => {
     .join(" ")
     .trim();
 
-  const preferredName =
+  return (
     person.name ??
     person.full_name ??
-    person.fullName;
-
-  // Separate logical fallbacks from the nullish-coalescing expression.
-  return preferredName || fullName || person.email || fallback;
+    person.fullName ??
+    fullName ??
+    person.email ??
+    fallback
+  );
 };
 
 const getBuyerName = (sale) =>
@@ -248,11 +261,28 @@ const getStatusClasses = (status) => {
   );
 };
 
-const getErrorMessage = (error) =>
-  error?.response?.data?.message ??
-  error?.response?.data?.errors?.message?.[0] ??
-  error?.message ??
-  "Unable to load plot sale reports. Please try again.";
+const getErrorMessage = (error) => {
+  const responseData = error?.response?.data;
+  const errors = responseData?.errors;
+
+  if (typeof errors === "string") {
+    return errors;
+  }
+
+  if (errors && typeof errors === "object") {
+    const firstError = Object.values(errors)
+      .flat()
+      .find((message) => typeof message === "string");
+
+    if (firstError) return firstError;
+  }
+
+  return (
+    responseData?.message ??
+    error?.message ??
+    "Unable to load plot sale reports. Please try again."
+  );
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -260,15 +290,26 @@ const getErrorMessage = (error) =>
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Supports:
+ *
+ * Axios + EstateKenya envelope:
+ * response.data = { status, message, data: [...] }
+ *
+ * Direct EstateKenya envelope:
+ * { status, message, data: [...] }
+ *
+ * Direct array:
+ * [...]
+ */
 const getRootPayload = (response) => {
   let result = response?.data ?? response;
 
-  // Supports Axios responses and the EstateKenya API envelope.
   if (
     result &&
     typeof result === "object" &&
     !Array.isArray(result) &&
-    result.data !== undefined
+    Object.prototype.hasOwnProperty.call(result, "data")
   ) {
     result = result.data;
   }
@@ -288,36 +329,90 @@ const getSaleArray = (response) => {
   return [];
 };
 
-const getPaginationMeta = (response) => {
-  const root = response?.data ?? response;
+/**
+ * Distinguishes an actual empty sales list from a response that
+ * contains no sales array at all.
+ */
+const hasSaleArray = (response) => {
+  if (response === null || response === undefined) return false;
+
   const payload = getRootPayload(response);
 
   return (
-    root?.meta ??
+    Array.isArray(payload) ||
+    Array.isArray(payload?.data) ||
+    Array.isArray(payload?.sales) ||
+    Array.isArray(payload?.items) ||
+    Array.isArray(payload?.records)
+  );
+};
+
+const getPaginationMeta = (response) => {
+  const axiosPayload = response?.data ?? response;
+  const payload = getRootPayload(response);
+
+  return (
+    axiosPayload?.meta ??
     payload?.meta ??
-    root?.pagination ??
+    axiosPayload?.pagination ??
     payload?.pagination ??
-    {}
+    (payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      (
+        "current_page" in payload ||
+        "last_page" in payload ||
+        "total" in payload
+      )
+      ? payload
+      : {})
   );
 };
 
 const getReportPayload = (response) => {
   const payload = getRootPayload(response);
 
-  if (!payload || typeof payload !== "object") return {};
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return {};
+  }
 
   if (payload.report && typeof payload.report === "object") {
     return payload.report;
   }
 
-  if (
-    payload.statistics &&
-    typeof payload.statistics === "object"
-  ) {
+  if (payload.statistics && typeof payload.statistics === "object") {
     return payload.statistics;
   }
 
+  if (payload.stats && typeof payload.stats === "object") {
+    return payload.stats;
+  }
+
+  if (payload.summary && typeof payload.summary === "object") {
+    return payload.summary;
+  }
+
   return payload;
+};
+
+/**
+ * Read a backend statistic without assuming a single naming convention.
+ */
+const getStatNumber = (source, keys) => {
+  for (const key of keys) {
+    const value = source?.[key];
+
+    if (
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      Number.isFinite(Number(value))
+    ) {
+      return Number(value);
+    }
+  }
+
+  return null;
 };
 
 /*
@@ -370,9 +465,7 @@ function ReportStatCard({
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-500">
-            {title}
-          </p>
+          <p className="text-sm font-medium text-gray-500">{title}</p>
 
           <p className="mt-2 break-words text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">
             {value}
@@ -413,14 +506,10 @@ function SectionHeading({ title, description, icon: Icon }) {
       </div>
 
       <div className="min-w-0">
-        <h2 className="text-base font-bold text-gray-900">
-          {title}
-        </h2>
+        <h2 className="text-base font-bold text-gray-900">{title}</h2>
 
         {description && (
-          <p className="mt-1 text-sm text-gray-500">
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-gray-500">{description}</p>
         )}
       </div>
     </div>
@@ -447,7 +536,6 @@ function StatusBreakdownRow({
           <span
             className={`h-2.5 w-2.5 shrink-0 rounded-full ${colorClass}`}
           />
-
           <span className="truncate text-sm font-medium text-gray-700">
             {label}
           </span>
@@ -467,7 +555,6 @@ function StatusBreakdownRow({
 
       <div className="flex items-start justify-between gap-3 text-xs text-gray-500">
         <span>{percentage.toFixed(1)}% of displayed sales</span>
-
         <span className="text-right font-medium text-gray-700">
           {formatCurrency(amount, currency)}
         </span>
@@ -480,7 +567,6 @@ function LoadingState() {
   return (
     <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-4 py-12">
       <Loader2 size={32} className="animate-spin text-blue-600" />
-
       <p className="text-sm font-medium text-gray-600">
         Loading plot sale report...
       </p>
@@ -524,7 +610,7 @@ function EmptyState({ onReset }) {
 
 export default function PlotSaleReports() {
   const navigate = useNavigate();
-  const plotSalesHook = usePlotSales() ?? {};
+  const plotSalesHook = usePlotSales({ autoFetch: false }) ?? {};
 
   const {
     loading: hookLoading = false,
@@ -571,6 +657,24 @@ export default function PlotSaleReports() {
 
   /*
   |--------------------------------------------------------------------------
+  | Keep Fallback Hook Data Current
+  |--------------------------------------------------------------------------
+  */
+
+  const fallbackRecords = useMemo(() => {
+    if (Array.isArray(plotSales)) return plotSales;
+    if (Array.isArray(sales)) return sales;
+    return null;
+  }, [plotSales, sales]);
+
+  const fallbackRecordsRef = useRef(fallbackRecords);
+
+  useEffect(() => {
+    fallbackRecordsRef.current = fallbackRecords;
+  }, [fallbackRecords]);
+
+  /*
+  |--------------------------------------------------------------------------
   | Load Report Data
   |--------------------------------------------------------------------------
   */
@@ -589,9 +693,7 @@ export default function PlotSaleReports() {
 
       try {
         if (startDate && endDate && startDate > endDate) {
-          throw new Error(
-            "Start date cannot be after the end date."
-          );
+          throw new Error("Start date cannot be after the end date.");
         }
 
         const params = {
@@ -622,11 +724,15 @@ export default function PlotSaleReports() {
         const salesLoader = fetchPlotSales ?? fetchSales;
 
         let reportResponse = null;
-        let salesResponse = null;
         let statisticsResponse = null;
+        let salesResponse = null;
+
         let reportError = null;
         let salesError = null;
 
+        /*
+         * The report endpoint is the primary source of transaction rows.
+         */
         if (typeof reportsLoader === "function") {
           try {
             reportResponse = await reportsLoader(params);
@@ -635,17 +741,28 @@ export default function PlotSaleReports() {
           }
         }
 
+        /*
+         * Statistics are loaded separately because the report endpoint
+         * may return only a sales array.
+         */
         if (typeof statisticsLoader === "function") {
           try {
             statisticsResponse = await statisticsLoader(params);
           } catch (requestError) {
-            if (!reportResponse) {
-              reportError = reportError ?? requestError;
-            }
+            reportError = reportError ?? requestError;
           }
         }
 
-        if (typeof salesLoader === "function") {
+        /*
+         * Use the list endpoint only if the report response did not
+         * actually contain a sales array.
+         */
+        const reportContainsSales = hasSaleArray(reportResponse);
+
+        if (
+          !reportContainsSales &&
+          typeof salesLoader === "function"
+        ) {
           try {
             salesResponse = await salesLoader(params);
           } catch (requestError) {
@@ -655,32 +772,61 @@ export default function PlotSaleReports() {
 
         if (requestId !== requestSequence.current) return;
 
-        if (reportResponse) {
-          setReportData(getReportPayload(reportResponse));
-        } else if (statisticsResponse) {
-          setReportData(getReportPayload(statisticsResponse));
+        const chosenResponse = reportContainsSales
+          ? reportResponse
+          : hasSaleArray(salesResponse)
+            ? salesResponse
+            : null;
+
+        if (chosenResponse) {
+          setRecords(getSaleArray(chosenResponse));
+          setPaginationMeta(getPaginationMeta(chosenResponse));
+        } else if (fallbackRecordsRef.current) {
+          setRecords(fallbackRecordsRef.current);
+          setPaginationMeta({});
+        } else {
+          setRecords([]);
+          setPaginationMeta({});
+        }
+
+        /*
+         * Prefer the dedicated statistics endpoint.
+         * Fall back to report aggregates when the report endpoint returns
+         * an object containing summary/statistics fields.
+         */
+        const statisticsPayload = getReportPayload(statisticsResponse);
+        const reportPayload = getReportPayload(reportResponse);
+
+        const hasStatistics =
+          statisticsResponse !== null &&
+          statisticsResponse !== undefined &&
+          Object.keys(statisticsPayload).length > 0;
+
+        const hasReportStatistics =
+          reportResponse !== null &&
+          reportResponse !== undefined &&
+          Object.keys(reportPayload).length > 0 &&
+          !Array.isArray(getRootPayload(reportResponse));
+
+        if (hasStatistics) {
+          setReportData(statisticsPayload);
+        } else if (hasReportStatistics) {
+          setReportData(reportPayload);
         } else {
           setReportData({});
         }
 
-        if (salesResponse) {
-          setRecords(getSaleArray(salesResponse));
-          setPaginationMeta(getPaginationMeta(salesResponse));
-        } else if (reportResponse) {
-          setRecords(getSaleArray(reportResponse));
-          setPaginationMeta(getPaginationMeta(reportResponse));
-        } else if (Array.isArray(plotSales)) {
-          setRecords(plotSales);
-          setPaginationMeta({});
-        } else if (Array.isArray(sales)) {
-          setRecords(sales);
-          setPaginationMeta({});
-        } else {
+        if (
+          !chosenResponse &&
+          !fallbackRecordsRef.current &&
+          !statisticsResponse &&
+          !reportResponse
+        ) {
           throw (
             salesError ??
             reportError ??
             new Error(
-              "No plot sale data loader is available. Connect a report, statistics, or sales-list method in usePlotSales."
+              "No plot sale data loader is available. Check the report methods in usePlotSales."
             )
           );
         }
@@ -713,8 +859,6 @@ export default function PlotSaleReports() {
       getPlotSalesStatistics,
       fetchPlotSales,
       fetchSales,
-      plotSales,
-      sales,
     ]
   );
 
@@ -739,6 +883,7 @@ export default function PlotSaleReports() {
         _netPrice: getNetSalePrice(sale),
         _amountPaid: getAmountPaid(sale),
         _outstanding: getOutstandingBalance(sale),
+        _reportDate: getSaleDate(sale),
       })),
     [records]
   );
@@ -752,28 +897,18 @@ export default function PlotSaleReports() {
   const filteredRecords = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
-    let result = normalizedRecords.filter((sale) => {
-      const saleDateValue = sale.sale_date ?? sale.saleDate;
-      const saleDate = saleDateValue
-        ? new Date(saleDateValue)
-        : null;
+    const result = normalizedRecords.filter((sale) => {
+      const saleDateValue = sale._reportDate;
+      const saleDate = saleDateValue ? new Date(saleDateValue) : null;
+      const validSaleDate =
+        saleDate && !Number.isNaN(saleDate.getTime());
 
-      if (
-        startDate &&
-        saleDate &&
-        !Number.isNaN(saleDate.getTime()) &&
-        toDateInputValue(saleDate) < startDate
-      ) {
-        return false;
+      if (startDate && validSaleDate) {
+        if (toDateInputValue(saleDate) < startDate) return false;
       }
 
-      if (
-        endDate &&
-        saleDate &&
-        !Number.isNaN(saleDate.getTime()) &&
-        toDateInputValue(saleDate) > endDate
-      ) {
-        return false;
+      if (endDate && validSaleDate) {
+        if (toDateInputValue(saleDate) > endDate) return false;
       }
 
       if (
@@ -808,7 +943,7 @@ export default function PlotSaleReports() {
     });
 
     const getTimestamp = (sale) => {
-      const value = sale.sale_date ?? sale.saleDate;
+      const value = sale._reportDate;
       const timestamp = value ? new Date(value).getTime() : 0;
 
       return Number.isFinite(timestamp) ? timestamp : 0;
@@ -863,28 +998,36 @@ export default function PlotSaleReports() {
     );
 
     const outstandingRecords = activeRecords.filter(
-      (sale) =>
-        !["completed", "cancelled"].includes(
-          String(sale.status ?? "").toLowerCase()
-        ) && sale._outstanding > 0
+      (sale) => sale._outstanding > 0
     );
 
-    const totalSaleValue = activeRecords.reduce(
+    const localTotalSalePrice = activeRecords.reduce(
+      (total, sale) => total + toNumber(sale.sale_price),
+      0
+    );
+
+    const localTotalDiscount = activeRecords.reduce(
+      (total, sale) =>
+        total + toNumber(sale.discount_amount ?? sale.discount),
+      0
+    );
+
+    const localNetSaleValue = activeRecords.reduce(
       (total, sale) => total + sale._netPrice,
       0
     );
 
-    const totalAmountPaid = activeRecords.reduce(
+    const localTotalAmountPaid = activeRecords.reduce(
       (total, sale) => total + sale._amountPaid,
       0
     );
 
-    const totalOutstanding = outstandingRecords.reduce(
+    const localTotalOutstanding = outstandingRecords.reduce(
       (total, sale) => total + sale._outstanding,
       0
     );
 
-    const completedValue = completedRecords.reduce(
+    const localCompletedValue = completedRecords.reduce(
       (total, sale) => total + sale._netPrice,
       0
     );
@@ -900,25 +1043,156 @@ export default function PlotSaleReports() {
         (statusAmounts[status] ?? 0) + sale._netPrice;
     });
 
+    /*
+     * Backend aliases are based on the statistics response fields used
+     * by the EstateKenya plot-sales API.
+     */
+    const backendTotalSales = getStatNumber(reportData, [
+      "total_sales",
+      "total_records",
+      "total",
+    ]);
+
+    const backendCancelledSales = getStatNumber(reportData, [
+      "cancelled_sales",
+      "cancelled_count",
+    ]);
+
+    const backendPendingSales = getStatNumber(reportData, [
+      "pending_sales",
+    ]);
+
+    const backendReservedSales = getStatNumber(reportData, [
+      "reserved_sales",
+    ]);
+
+    const backendApprovedSales = getStatNumber(reportData, [
+      "approved_sales",
+    ]);
+
+    const backendCompletedSales = getStatNumber(reportData, [
+      "completed_sales",
+    ]);
+
+    const backendTotalAmount = getStatNumber(reportData, [
+      "total_amount",
+      "total_sale_price",
+      "total_sales_value",
+    ]);
+
+    const backendTotalDiscount = getStatNumber(reportData, [
+      "total_discount",
+      "total_discounts",
+    ]);
+
+    const backendNetSaleValue = getStatNumber(reportData, [
+      "total_net_sale_value",
+      "net_sale_value",
+      "total_net_amount",
+    ]);
+
+    const backendTotalPaid = getStatNumber(reportData, [
+      "total_paid",
+      "total_amount_paid",
+      "amount_paid",
+      "total_collected",
+    ]);
+
+    const backendOutstanding = getStatNumber(reportData, [
+      "total_outstanding",
+      "total_balance",
+      "outstanding_balance",
+      "total_outstanding_balance",
+    ]);
+
+    const backendCompletedValue = getStatNumber(reportData, [
+      "completed_value",
+      "completed_amount",
+      "total_completed_amount",
+    ]);
+
+    const totalSalePrice =
+      backendTotalAmount ?? localTotalSalePrice;
+
+    const totalDiscount =
+      backendTotalDiscount ?? localTotalDiscount;
+
+    const totalSaleValue =
+      backendNetSaleValue ??
+      (backendTotalAmount !== null
+        ? Math.max(0, backendTotalAmount - totalDiscount)
+        : localNetSaleValue);
+
+    const totalAmountPaid =
+      backendTotalPaid ?? localTotalAmountPaid;
+
+    const totalOutstanding =
+      backendOutstanding ?? localTotalOutstanding;
+
+    const completedSales =
+      backendCompletedSales ?? completedRecords.length;
+
+    const completedValue =
+      backendCompletedValue ?? localCompletedValue;
+
+    const activeSales =
+      backendTotalSales !== null
+        ? Math.max(
+          0,
+          backendTotalSales -
+          (backendCancelledSales ?? statusCounts.cancelled ?? 0)
+        )
+        : activeRecords.length;
+
+    const outstandingSales =
+      totalOutstanding > 0
+        ? backendOutstanding !== null
+          ? outstandingRecords.length ||
+          (backendTotalSales !== null ? undefined : 0)
+          : outstandingRecords.length
+        : 0;
+
     const collectionRate =
       totalSaleValue > 0
         ? Math.min(100, (totalAmountPaid / totalSaleValue) * 100)
         : 0;
 
     return {
-      totalRecords: filteredRecords.length,
-      activeSales: activeRecords.length,
-      completedSales: completedRecords.length,
-      outstandingSales: outstandingRecords.length,
+      totalRecords: backendTotalSales ?? filteredRecords.length,
+      activeSales,
+      completedSales,
+      outstandingSales:
+        outstandingSales === undefined
+          ? outstandingRecords.length
+          : outstandingSales,
+      totalSalePrice,
+      totalDiscount,
       totalSaleValue,
       totalAmountPaid,
       totalOutstanding,
       completedValue,
       collectionRate,
-      statusCounts,
+      statusCounts: {
+        ...statusCounts,
+        ...(backendPendingSales !== null && {
+          pending: backendPendingSales,
+        }),
+        ...(backendReservedSales !== null && {
+          reserved: backendReservedSales,
+        }),
+        ...(backendApprovedSales !== null && {
+          approved: backendApprovedSales,
+        }),
+        ...(backendCompletedSales !== null && {
+          completed: backendCompletedSales,
+        }),
+        ...(backendCancelledSales !== null && {
+          cancelled: backendCancelledSales,
+        }),
+      },
       statusAmounts,
     };
-  }, [filteredRecords]);
+  }, [filteredRecords, reportData]);
 
   const currency =
     filteredRecords[0]?.currency ??
@@ -962,9 +1236,7 @@ export default function PlotSaleReports() {
     : currentPage;
 
   const pageRecords = useMemo(() => {
-    if (hasServerPagination) {
-      return filteredRecords;
-    }
+    if (hasServerPagination) return filteredRecords;
 
     const start = (currentPage - 1) * PAGE_SIZE;
 
@@ -1038,7 +1310,7 @@ export default function PlotSaleReports() {
       ],
       ...filteredRecords.map((sale) => [
         getSaleNumber(sale),
-        sale.sale_date ?? sale.saleDate ?? "",
+        getSaleDate(sale) ?? "",
         sale.agreement_number ?? "",
         getPlotName(sale),
         getPlotCode(sale),
@@ -1077,19 +1349,21 @@ export default function PlotSaleReports() {
     (search.trim() ? 1 : 0);
 
   const startRecord =
-    filteredRecords.length === 0
+    pageRecords.length === 0
       ? 0
       : hasServerPagination
         ? (Math.max(1, displayedPage) - 1) * PAGE_SIZE + 1
         : (currentPage - 1) * PAGE_SIZE + 1;
 
   const endRecord =
-    hasServerPagination
-      ? startRecord + pageRecords.length - 1
-      : Math.min(
-        currentPage * PAGE_SIZE,
-        filteredRecords.length
-      );
+    pageRecords.length === 0
+      ? 0
+      : hasServerPagination
+        ? startRecord + pageRecords.length - 1
+        : Math.min(
+          currentPage * PAGE_SIZE,
+          filteredRecords.length
+        );
 
   /*
   |--------------------------------------------------------------------------
@@ -1098,8 +1372,8 @@ export default function PlotSaleReports() {
   */
 
   return (
-    <div className="min-h-screen bg-gray-50/70 pb-10">
-      <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen w-full min-w-0 bg-gray-50/70 pb-10">
+      <div className="w-full min-w-0 space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         <PlotSaleHeader
           title="Plot Sale Reports"
           description="Review plot sales performance, collections, outstanding balances and transaction status."
@@ -1110,7 +1384,6 @@ export default function PlotSaleReports() {
           showReports={false}
         />
 
-        {/* Error message */}
         {(error || hookError) && (
           <div
             role="alert"
@@ -1127,7 +1400,7 @@ export default function PlotSaleReports() {
               </p>
 
               <p className="mt-1 break-words text-sm text-red-700">
-                {error || hookError}
+                {error || getErrorMessage(hookError)}
               </p>
 
               <button
@@ -1144,7 +1417,7 @@ export default function PlotSaleReports() {
         )}
 
         {/* Report filters */}
-        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <section className="w-full min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-gray-200 p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-start gap-3">
               <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
@@ -1165,15 +1438,12 @@ export default function PlotSaleReports() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  setShowFilters((visible) => !visible)
-                }
+                onClick={() => setShowFilters((visible) => !visible)}
                 aria-expanded={showFilters}
                 className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
               >
                 <CalendarDays size={16} />
                 {showFilters ? "Hide filters" : "Show filters"}
-
                 <ChevronDown
                   size={16}
                   className={`transition ${showFilters ? "rotate-180" : ""
@@ -1364,7 +1634,7 @@ export default function PlotSaleReports() {
         </section>
 
         {/* KPI cards */}
-        <section className="space-y-4">
+        <section className="w-full min-w-0 space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-gray-900">
@@ -1372,7 +1642,7 @@ export default function PlotSaleReports() {
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Summary of the records currently loaded for this report.
+                Summary of the sales matching your current report filters.
               </p>
             </div>
 
@@ -1383,40 +1653,25 @@ export default function PlotSaleReports() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <ReportStatCard
-              title="Total Sale Value"
-              value={formatCompactCurrency(
-                summary.totalSaleValue,
-                currency
-              )}
-              description={`${formatNumber(
-                summary.activeSales
-              )} non-cancelled sales`}
+              title="Net Sale Value"
+              value={formatCompactCurrency(summary.totalSaleValue, currency)}
+              description={`${formatNumber(summary.activeSales)} non-cancelled sales`}
               icon={CircleDollarSign}
               iconClass="bg-blue-50 text-blue-600"
             />
 
             <ReportStatCard
               title="Amount Collected"
-              value={formatCompactCurrency(
-                summary.totalAmountPaid,
-                currency
-              )}
-              description={`${summary.collectionRate.toFixed(
-                1
-              )}% of net sale value`}
+              value={formatCompactCurrency(summary.totalAmountPaid, currency)}
+              description={`${summary.collectionRate.toFixed(1)}% of net sale value`}
               icon={Wallet}
               iconClass="bg-emerald-50 text-emerald-600"
             />
 
             <ReportStatCard
               title="Outstanding Balance"
-              value={formatCompactCurrency(
-                summary.totalOutstanding,
-                currency
-              )}
-              description={`${formatNumber(
-                summary.outstandingSales
-              )} sales with balances`}
+              value={formatCompactCurrency(summary.totalOutstanding, currency)}
+              description={`${formatNumber(summary.outstandingSales)} sales with balances`}
               icon={Clock}
               iconClass="bg-amber-50 text-amber-600"
             />
@@ -1424,10 +1679,7 @@ export default function PlotSaleReports() {
             <ReportStatCard
               title="Completed Sales"
               value={formatNumber(summary.completedSales)}
-              description={`Net value: ${formatCompactCurrency(
-                summary.completedValue,
-                currency
-              )}`}
+              description={`Net value: ${formatCompactCurrency(summary.completedValue, currency)}`}
               icon={CheckCircle2}
               iconClass="bg-violet-50 text-violet-600"
             />
@@ -1435,7 +1687,7 @@ export default function PlotSaleReports() {
         </section>
 
         {/* Collection and status performance */}
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <section className="grid w-full min-w-0 grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2">
             <SectionHeading
               title="Collection Performance"
@@ -1446,9 +1698,7 @@ export default function PlotSaleReports() {
             <div className="mt-6">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">
-                    Collection rate
-                  </p>
+                  <p className="text-sm text-gray-500">Collection rate</p>
 
                   <p className="mt-1 text-3xl font-bold tracking-tight text-gray-900">
                     {summary.collectionRate.toFixed(1)}%
@@ -1456,11 +1706,7 @@ export default function PlotSaleReports() {
                 </div>
 
                 <p className="text-sm text-gray-500">
-                  {formatCurrency(
-                    summary.totalAmountPaid,
-                    currency
-                  )}{" "}
-                  collected
+                  {formatCurrency(summary.totalAmountPaid, currency)} collected
                 </p>
               </div>
 
@@ -1483,7 +1729,6 @@ export default function PlotSaleReports() {
                   <p className="text-xs font-medium text-gray-500">
                     Net sale value
                   </p>
-
                   <p className="mt-2 break-words text-base font-bold text-gray-900">
                     {formatCurrency(summary.totalSaleValue, currency)}
                   </p>
@@ -1493,7 +1738,6 @@ export default function PlotSaleReports() {
                   <p className="text-xs font-medium text-emerald-700">
                     Payments collected
                   </p>
-
                   <p className="mt-2 break-words text-base font-bold text-emerald-800">
                     {formatCurrency(summary.totalAmountPaid, currency)}
                   </p>
@@ -1503,7 +1747,6 @@ export default function PlotSaleReports() {
                   <p className="text-xs font-medium text-amber-700">
                     Outstanding
                   </p>
-
                   <p className="mt-2 break-words text-base font-bold text-amber-800">
                     {formatCurrency(summary.totalOutstanding, currency)}
                   </p>
@@ -1511,9 +1754,9 @@ export default function PlotSaleReports() {
               </div>
 
               <p className="mt-4 text-xs leading-5 text-gray-500">
-                Collection rate is calculated using recorded payments
-                divided by net sale value. Outstanding balances exclude
-                completed and cancelled sales.
+                Collection rate is calculated from recorded payments divided
+                by net sale value. Outstanding balances are based on the
+                balance field returned by the API.
               </p>
             </div>
           </div>
@@ -1548,13 +1791,12 @@ export default function PlotSaleReports() {
         </section>
 
         {/* Sales report table */}
-        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <section className="w-full min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">
                 Plot Sales Report
               </h2>
-
               <p className="mt-1 text-sm text-gray-500">
                 Transactions matching your selected report filters.
               </p>
@@ -1577,7 +1819,7 @@ export default function PlotSaleReports() {
             <EmptyState onReset={handleClearFilters} />
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="w-full overflow-x-auto">
                 <table className="w-full min-w-[1050px] divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -1595,7 +1837,8 @@ export default function PlotSaleReports() {
                         <th
                           key={label}
                           scope="col"
-                          className={`px-5 py-4 text-${align} text-xs font-bold uppercase tracking-wider text-gray-500`}
+                          className={`px-5 py-4 ${align === "right" ? "text-right" : "text-left"
+                            } text-xs font-bold uppercase tracking-wider text-gray-500`}
                         >
                           {label}
                         </th>
@@ -1652,9 +1895,7 @@ export default function PlotSaleReports() {
 
                           <td className="whitespace-nowrap px-5 py-4">
                             <span className="text-sm text-gray-700">
-                              {formatDate(
-                                sale.sale_date ?? sale.saleDate
-                              )}
+                              {formatDate(getSaleDate(sale))}
                             </span>
 
                             {sale.agreement_number && (
@@ -1666,33 +1907,24 @@ export default function PlotSaleReports() {
 
                           <td className="whitespace-nowrap px-5 py-4 text-right">
                             <span className="text-sm font-semibold text-gray-900">
-                              {formatCurrency(
-                                sale._netPrice,
-                                saleCurrency
-                              )}
+                              {formatCurrency(sale._netPrice, saleCurrency)}
                             </span>
                           </td>
 
                           <td className="whitespace-nowrap px-5 py-4 text-right">
                             <span className="text-sm font-semibold text-emerald-700">
-                              {formatCurrency(
-                                sale._amountPaid,
-                                saleCurrency
-                              )}
+                              {formatCurrency(sale._amountPaid, saleCurrency)}
                             </span>
                           </td>
 
                           <td className="whitespace-nowrap px-5 py-4 text-right">
                             <span
                               className={`text-sm font-semibold ${sale._outstanding > 0
-                                  ? "text-red-600"
-                                  : "text-gray-500"
+                                ? "text-red-600"
+                                : "text-gray-500"
                                 }`}
                             >
-                              {formatCurrency(
-                                sale._outstanding,
-                                saleCurrency
-                              )}
+                              {formatCurrency(sale._outstanding, saleCurrency)}
                             </span>
                           </td>
 
@@ -1726,7 +1958,7 @@ export default function PlotSaleReports() {
                   </span>{" "}
                   to{" "}
                   <span className="font-semibold text-gray-800">
-                    {formatNumber(Math.max(startRecord, endRecord))}
+                    {formatNumber(endRecord)}
                   </span>{" "}
                   of{" "}
                   <span className="font-semibold text-gray-800">
@@ -1789,13 +2021,12 @@ export default function PlotSaleReports() {
               </p>
 
               <p className="mt-1 text-sm leading-6 text-blue-800">
-                The financial summaries and CSV export are calculated
-                from the records currently loaded and matching the
-                selected filters. If the API returns paginated results,
-                these summaries may represent only the current page.
-                Use aggregated totals from the backend report or
-                statistics endpoint for organization-wide financial
-                reporting.
+                Financial summaries use the backend statistics when the
+                statistics endpoint provides them; otherwise, they are
+                calculated from the loaded sales records. If your API
+                paginates the report, confirm that backend statistics apply
+                the same filters as the report before treating the totals as
+                organization-wide figures.
               </p>
             </div>
           </div>
@@ -1809,8 +2040,8 @@ export default function PlotSaleReports() {
             </p>
 
             <p className="mt-1 text-sm text-gray-500">
-              Open the full plot sale register to view or manage
-              individual sales.
+              Open the full plot sale register to view or manage individual
+              sales.
             </p>
           </div>
 
