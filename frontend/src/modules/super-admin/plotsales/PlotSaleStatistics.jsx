@@ -19,7 +19,9 @@ import {
 */
 
 const toNumber = (value) => {
-  if (value === null || value === undefined || value === "") return 0;
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
 
   if (typeof value === "object") {
     return toNumber(
@@ -29,17 +31,19 @@ const toNumber = (value) => {
       value.amount ??
       value.amount_paid ??
       value.balance ??
-      0
+      0,
     );
   }
 
   if (typeof value === "string") {
     const cleaned = value.replace(/,/g, "").replace(/[^\d.-]/g, "");
     const number = Number(cleaned);
+
     return Number.isFinite(number) ? number : 0;
   }
 
   const number = Number(value);
+
   return Number.isFinite(number) ? number : 0;
 };
 
@@ -92,136 +96,162 @@ const normalizeStatus = (value) =>
 
 /*
 |--------------------------------------------------------------------------
-| Normalize API Statistics
+| Normalize Statistics Response
 |--------------------------------------------------------------------------
+| Supports:
+| { total_sales: 2 }
+| { data: { total_sales: 2 } }
+| { data: { data: { total_sales: 2 } } }
+| { data: { statistics: { total_sales: 2 } } }
+| { statistics: { total_sales: 2 } }
 */
 
+const isPlainObject = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value);
+
+const STATISTIC_MARKERS = [
+  "total_sales",
+  "total_plot_sales",
+  "pending_sales",
+  "reserved_sales",
+  "approved_sales",
+  "completed_sales",
+  "cancelled_sales",
+  "total_amount",
+  "total_deposit",
+  "total_discount",
+  "total_paid",
+  "total_outstanding",
+  "total_balance",
+];
+
+const hasStatisticFields = (value) => {
+  if (!isPlainObject(value)) return false;
+
+  const keys = new Set(Object.keys(value).map(normalizeKey));
+
+  return STATISTIC_MARKERS.some((key) => keys.has(normalizeKey(key)));
+};
+
 const getStatisticsSource = (input) => {
-  let source = input;
+  if (!isPlainObject(input)) return {};
 
-  for (let index = 0; index < 8; index += 1) {
-    if (
-      !source ||
-      typeof source !== "object" ||
-      Array.isArray(source)
-    ) {
-      return {};
-    }
+  const queue = [input];
+  const visited = new Set();
 
-    if (
-      source.statistics &&
-      typeof source.statistics === "object" &&
-      !Array.isArray(source.statistics)
-    ) {
-      source = source.statistics;
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (!isPlainObject(current) || visited.has(current)) {
       continue;
     }
 
-    if (
-      source.data &&
-      typeof source.data === "object" &&
-      !Array.isArray(source.data)
-    ) {
-      source = source.data;
-      continue;
+    visited.add(current);
+
+    // Prefer an object that actually contains plot-sales statistics.
+    if (hasStatisticFields(current)) {
+      return current;
     }
 
-    break;
+    // Check common statistics wrappers first.
+    for (const key of [
+      "statistics",
+      "stats",
+      "summary",
+      "aggregates",
+      "data",
+      "result",
+      "payload",
+    ]) {
+      const child = current[key];
+
+      if (isPlainObject(child) && !visited.has(child)) {
+        queue.unshift(child);
+      }
+    }
+
+    // Support additional nested API wrappers.
+    for (const value of Object.values(current)) {
+      if (isPlainObject(value) && !visited.has(value)) {
+        queue.push(value);
+      }
+    }
   }
 
-  return source && typeof source === "object" ? source : {};
+  return input;
 };
 
 /*
 |--------------------------------------------------------------------------
-| Find Statistic Values
+| Read Statistics Values
 |--------------------------------------------------------------------------
 */
 
 const getStatisticValue = (
   statistics,
   keys = [],
-  fallback = undefined
+  fallback = undefined,
 ) => {
   const source = getStatisticsSource(statistics);
-  const wantedKeys = keys.map(normalizeKey);
+  const normalizedKeys = keys.map(normalizeKey);
 
-  const findValue = (object, depth = 0, visited = new Set()) => {
-    if (
-      !object ||
-      typeof object !== "object" ||
-      Array.isArray(object) ||
-      depth > 6 ||
-      visited.has(object)
-    ) {
-      return undefined;
+  const queue = [source];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (!isPlainObject(current) || visited.has(current)) {
+      continue;
     }
 
-    visited.add(object);
+    visited.add(current);
 
-    // Search exact field names before inspecting nested objects.
-    for (const key of keys) {
-      const matchingEntry = Object.entries(object).find(
-        ([field]) => normalizeKey(field) === normalizeKey(key)
-      );
+    // Exact field-name matching, including camelCase aliases.
+    for (const [field, value] of Object.entries(current)) {
+      if (!normalizedKeys.includes(normalizeKey(field))) {
+        continue;
+      }
 
-      if (matchingEntry) {
-        const value = matchingEntry[1];
+      if (value === null || value === undefined || value === "") {
+        continue;
+      }
 
-        if (value !== null && value !== undefined && value !== "") {
-          if (typeof value !== "object" || Array.isArray(value)) {
-            return value;
-          }
+      if (!isPlainObject(value)) {
+        return value;
+      }
 
-          const nestedValue =
-            value.count ??
-            value.total ??
-            value.value ??
-            value.amount ??
-            value.amount_paid ??
-            value.balance;
+      const nestedValue =
+        value.count ??
+        value.total ??
+        value.value ??
+        value.amount ??
+        value.amount_paid ??
+        value.balance;
 
-          if (nestedValue !== undefined && nestedValue !== null) {
-            return nestedValue;
-          }
-        }
+      if (nestedValue !== null && nestedValue !== undefined) {
+        return nestedValue;
       }
     }
 
-    // Support nested API statistics structures.
-    for (const [key, value] of Object.entries(object)) {
-      if (
-        wantedKeys.includes(normalizeKey(key)) &&
-        value !== null &&
-        value !== undefined &&
-        value !== ""
-      ) {
-        if (typeof value !== "object" || Array.isArray(value)) {
-          return value;
-        }
+    for (const value of Object.values(current)) {
+      if (isPlainObject(value) && !visited.has(value)) {
+        queue.push(value);
       }
     }
+  }
 
-    for (const value of Object.values(object)) {
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        const result = findValue(value, depth + 1, visited);
-
-        if (result !== undefined) return result;
-      }
-    }
-
-    return undefined;
-  };
-
-  const result = findValue(source);
-
-  return result === undefined ? fallback : result;
+  return fallback;
 };
 
 const hasStatistic = (statistics, keys = []) => {
-  const marker = "__PLOT_SALE_STATISTIC_NOT_FOUND__";
+  const marker = "__STATISTIC_NOT_FOUND__";
 
-  return getStatisticValue(statistics, keys, marker) !== marker;
+  return (
+    getStatisticValue(statistics, keys, marker) !== marker
+  );
 };
 
 /*
@@ -235,7 +265,7 @@ const getSaleStatus = (sale) =>
 
 const getPaymentStatus = (sale) => {
   const suppliedStatus = normalizeStatus(
-    sale?.payment_status ?? sale?.payment_status_label
+    sale?.payment_status ?? sale?.payment_status_label,
   );
 
   if (["paid", "fully_paid", "completed"].includes(suppliedStatus)) {
@@ -243,9 +273,11 @@ const getPaymentStatus = (sale) => {
   }
 
   if (
-    ["partial", "partially_paid", "partially_paid_status"].includes(
-      suppliedStatus
-    )
+    [
+      "partial",
+      "partially_paid",
+      "partially_paid_status",
+    ].includes(suppliedStatus)
   ) {
     return "partial";
   }
@@ -271,7 +303,7 @@ const countSalesByStatus = (sales, statuses) => {
   const accepted = statuses.map(normalizeStatus);
 
   return sales.filter((sale) =>
-    accepted.includes(getSaleStatus(sale))
+    accepted.includes(getSaleStatus(sale)),
   ).length;
 };
 
@@ -280,7 +312,7 @@ const sumSales = (sales, selector) => {
 
   return sales.reduce(
     (total, sale) => total + toNumber(selector(sale)),
-    0
+    0,
   );
 };
 
@@ -290,7 +322,7 @@ const countPaymentsByStatus = (sales, status) => {
   return sales.filter(
     (sale) =>
       getSaleStatus(sale) !== "cancelled" &&
-      getPaymentStatus(sale) === status
+      getPaymentStatus(sale) === status,
   ).length;
 };
 
@@ -311,11 +343,14 @@ const StatisticCard = ({
   progressClass,
   wide = false,
 }) => {
-  const safeProgress = Math.min(100, Math.max(0, toNumber(progress)));
+  const safeProgress = Math.min(
+    100,
+    Math.max(0, toNumber(progress)),
+  );
 
   return (
     <div
-      className={`group relative min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-6 ${wide ? "md:flex md:items-center md:gap-8" : ""
+      className={`group relative min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md ${wide ? "md:flex md:items-center md:gap-8" : ""
         }`}
     >
       <div
@@ -330,14 +365,16 @@ const StatisticCard = ({
 
           <p
             className={`mt-3 break-words font-bold tracking-tight text-gray-900 ${wide
-              ? "text-2xl sm:text-3xl lg:text-4xl"
-              : "text-2xl sm:text-3xl"
+                ? "text-2xl sm:text-3xl lg:text-4xl"
+                : "text-2xl sm:text-3xl"
               }`}
           >
             {value}
           </p>
 
-          <p className="mt-2 text-sm text-gray-500">{description}</p>
+          <p className="mt-2 text-sm text-gray-500">
+            {description}
+          </p>
         </div>
 
         <div
@@ -351,7 +388,10 @@ const StatisticCard = ({
         </div>
       </div>
 
-      <div className={`mt-5 ${wide ? "md:mt-0 md:w-2/5 md:shrink-0" : ""}`}>
+      <div
+        className={`mt-5 ${wide ? "md:mt-0 md:w-2/5 md:shrink-0" : ""
+          }`}
+      >
         <div className="h-2 overflow-hidden rounded-full bg-gray-100">
           <div
             className={`h-full rounded-full transition-all duration-700 ${progressClass}`}
@@ -442,14 +482,20 @@ const FinancialCard = ({
   wide = false,
 }) => (
   <div
-    className={`group min-w-0 overflow-hidden rounded-xl border p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${wide ? "md:flex md:items-center md:justify-between md:gap-6" : ""
+    className={`group min-w-0 overflow-hidden rounded-xl border p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${wide
+        ? "md:flex md:items-center md:justify-between md:gap-6"
+        : ""
       } ${wrapperClass}`}
   >
     <div className="flex min-w-0 items-center gap-3">
       <div
         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}
       >
-        <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+        <Icon
+          className="h-5 w-5"
+          strokeWidth={2}
+          aria-hidden="true"
+        />
       </div>
 
       <div className="min-w-0">
@@ -457,14 +503,18 @@ const FinancialCard = ({
           {label}
         </p>
 
-        <p className="mt-1 text-xs opacity-70">{description}</p>
+        <p className="mt-1 text-xs opacity-70">
+          {description}
+        </p>
       </div>
     </div>
 
     <p
-      className={`mt-4 break-words font-bold leading-tight tracking-tight text-gray-900 ${wide ? "md:mt-0 md:text-right md:text-2xl" : "text-xl sm:text-2xl"
+      className={`mt-4 break-words font-bold leading-tight tracking-tight text-gray-900 ${wide
+          ? "md:mt-0 md:text-right md:text-2xl"
+          : "text-xl sm:text-2xl"
         }`}
-      title={value}
+      title={String(value)}
     >
       {value}
     </p>
@@ -515,7 +565,10 @@ const PlotSaleStatisticsSkeleton = () => (
           <div className="h-4 w-36 rounded bg-gray-200" />
           <div className="mt-6 grid grid-cols-2 gap-3">
             {[0, 1, 2, 3].map((number) => (
-              <div key={number} className="rounded-xl bg-gray-100 p-4">
+              <div
+                key={number}
+                className="rounded-xl bg-gray-100 p-4"
+              >
                 <div className="h-9 w-9 rounded-lg bg-gray-200" />
                 <div className="mt-3 h-3 w-20 rounded bg-gray-200" />
                 <div className="mt-3 h-1.5 rounded bg-gray-200" />
@@ -554,7 +607,7 @@ const PlotSaleStatistics = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Sales Counts
+  | Sale Counts
   |--------------------------------------------------------------------------
   */
 
@@ -570,32 +623,44 @@ const PlotSaleStatistics = ({
         "total_records",
         "total",
       ],
-      saleRecords.length
-    )
+      saleRecords.length,
+    ),
   );
 
   const pendingSales = toNumber(
     getStatisticValue(
       source,
-      ["pending_sales", "sales_pending", "pending_sales_count"],
-      countSalesByStatus(saleRecords, ["pending"])
-    )
+      [
+        "pending_sales",
+        "sales_pending",
+        "pending_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["pending"]),
+    ),
   );
 
   const reservedSales = toNumber(
     getStatisticValue(
       source,
-      ["reserved_sales", "sales_reserved", "reserved_sales_count"],
-      countSalesByStatus(saleRecords, ["reserved"])
-    )
+      [
+        "reserved_sales",
+        "sales_reserved",
+        "reserved_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["reserved"]),
+    ),
   );
 
   const approvedSales = toNumber(
     getStatisticValue(
       source,
-      ["approved_sales", "sales_approved", "approved_sales_count"],
-      countSalesByStatus(saleRecords, ["approved"])
-    )
+      [
+        "approved_sales",
+        "sales_approved",
+        "approved_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["approved"]),
+    ),
   );
 
   const completedSales = toNumber(
@@ -607,16 +672,20 @@ const PlotSaleStatistics = ({
         "completed_sales_count",
         "successful_sales",
       ],
-      countSalesByStatus(saleRecords, ["completed"])
-    )
+      countSalesByStatus(saleRecords, ["completed"]),
+    ),
   );
 
   const cancelledSales = toNumber(
     getStatisticValue(
       source,
-      ["cancelled_sales", "sales_cancelled", "cancelled_sales_count"],
-      countSalesByStatus(saleRecords, ["cancelled"])
-    )
+      [
+        "cancelled_sales",
+        "sales_cancelled",
+        "cancelled_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["cancelled"]),
+    ),
   );
 
   /*
@@ -628,9 +697,14 @@ const PlotSaleStatistics = ({
   const paidSales = toNumber(
     getStatisticValue(
       source,
-      ["fully_paid_sales", "paid_sales", "fully_paid", "paid_count"],
-      countPaymentsByStatus(saleRecords, "paid")
-    )
+      [
+        "fully_paid_sales",
+        "paid_sales",
+        "fully_paid",
+        "paid_count",
+      ],
+      countPaymentsByStatus(saleRecords, "paid"),
+    ),
   );
 
   const partialSales = toNumber(
@@ -643,8 +717,8 @@ const PlotSaleStatistics = ({
         "partially_paid",
         "partial_count",
       ],
-      countPaymentsByStatus(saleRecords, "partial")
-    )
+      countPaymentsByStatus(saleRecords, "partial"),
+    ),
   );
 
   const unpaidSales = toNumber(
@@ -656,8 +730,8 @@ const PlotSaleStatistics = ({
         "pending_payment_sales",
         "unpaid_count",
       ],
-      countPaymentsByStatus(saleRecords, "unpaid")
-    )
+      countPaymentsByStatus(saleRecords, "unpaid"),
+    ),
   );
 
   const paymentTotal = paidSales + partialSales + unpaidSales;
@@ -666,11 +740,15 @@ const PlotSaleStatistics = ({
   |--------------------------------------------------------------------------
   | Financial Statistics
   |--------------------------------------------------------------------------
+  | These aliases match the Laravel plot-sales statistics response.
   */
 
   const currency =
-    getStatisticValue(source, ["currency", "default_currency"], "KES") ||
-    "KES";
+    getStatisticValue(
+      source,
+      ["currency", "default_currency"],
+      "KES",
+    ) || "KES";
 
   const grossSalesKeys = [
     "gross_sales_value",
@@ -678,6 +756,8 @@ const PlotSaleStatistics = ({
     "gross_sales",
     "total_gross_amount",
     "total_amount",
+    "total_sale_price",
+    "sum_sale_price",
   ];
 
   const netSalesKeys = [
@@ -691,6 +771,7 @@ const PlotSaleStatistics = ({
     "revenue",
     "total_sale_amount",
     "sales_amount",
+    "net_sale_price",
   ];
 
   const collectedKeys = [
@@ -730,15 +811,15 @@ const PlotSaleStatistics = ({
   ];
 
   const excludedSales = saleRecords.filter(
-    (sale) => getSaleStatus(sale) !== "cancelled"
+    (sale) => getSaleStatus(sale) !== "cancelled",
   );
 
   const grossSalesValue = toNumber(
     getStatisticValue(
       source,
       grossSalesKeys,
-      sumSales(excludedSales, (sale) => sale.sale_price)
-    )
+      sumSales(excludedSales, (sale) => sale.sale_price),
+    ),
   );
 
   const totalDiscounts = toNumber(
@@ -747,25 +828,25 @@ const PlotSaleStatistics = ({
       discountKeys,
       sumSales(
         excludedSales,
-        (sale) => sale.discount_amount ?? sale.discount
-      )
-    )
+        (sale) => sale.discount_amount ?? sale.discount,
+      ),
+    ),
   );
 
   const salesValue = toNumber(
     getStatisticValue(
       source,
       netSalesKeys,
-      Math.max(grossSalesValue - totalDiscounts, 0)
-    )
+      Math.max(grossSalesValue - totalDiscounts, 0),
+    ),
   );
 
   const totalCollected = toNumber(
     getStatisticValue(
       source,
       collectedKeys,
-      sumSales(excludedSales, (sale) => sale.amount_paid)
-    )
+      sumSales(excludedSales, (sale) => sale.amount_paid),
+    ),
   );
 
   const totalBalance = toNumber(
@@ -773,17 +854,20 @@ const PlotSaleStatistics = ({
       source,
       balanceKeys,
       sumSales(excludedSales, (sale) =>
-        Math.max(toNumber(sale.balance), 0)
-      )
-    )
+        Math.max(toNumber(sale.balance), 0),
+      ),
+    ),
   );
 
   const totalDeposits = toNumber(
     getStatisticValue(
       source,
       depositKeys,
-      sumSales(excludedSales, (sale) => sale.deposit ?? sale.deposit_amount)
-    )
+      sumSales(
+        excludedSales,
+        (sale) => sale.deposit_amount ?? sale.deposit,
+      ),
+    ),
   );
 
   const averageSaleValue =
@@ -795,7 +879,7 @@ const PlotSaleStatistics = ({
 
   const collectionRate = getPercentage(
     totalCollected,
-    totalCollected + totalBalance
+    totalCollected + totalBalance,
   );
 
   const hasFinancialData =
@@ -940,8 +1024,6 @@ const PlotSaleStatistics = ({
       aria-label="Plot sales statistics"
       className="min-w-0 space-y-6"
     >
-      {/* Primary Statistics: Three Cards + Full-Width Fourth Card */}
-
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
         {primaryStatistics.map((item) => (
           <StatisticCard key={item.label} {...item} />
@@ -956,19 +1038,17 @@ const PlotSaleStatistics = ({
             iconClass="text-red-600"
             progress={getPercentage(
               totalBalance,
-              totalCollected + totalBalance
+              totalCollected + totalBalance,
             )}
             progressClass="bg-red-500"
             description={`Remaining balance • ${formatCurrency(
               totalCollected,
-              currency
+              currency,
             )} collected`}
             wide
           />
         </div>
       </div>
-
-      {/* Sale Status and Payment Status */}
 
       <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm sm:p-6">
@@ -1026,32 +1106,28 @@ const PlotSaleStatistics = ({
 
           {paymentTotal === 0 && (
             <p className="mt-4 text-xs text-gray-500">
-              Payment status counts will appear when payment statistics
-              or sale records are available.
+              Payment status counts will appear when payment
+              statistics or sale records are available.
             </p>
           )}
         </div>
       </div>
 
-      {/* Financial Overview */}
-
       {hasFinancialData && (
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
-                  <CircleDollarSign className="h-5 w-5 text-indigo-600" />
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+                <CircleDollarSign className="h-5 w-5 text-indigo-600" />
+              </div>
 
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Plot Sales Financial Overview
-                  </h3>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Sales value, collections, discounts and balances
-                  </p>
-                </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Plot Sales Financial Overview
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Sales value, collections, discounts and balances
+                </p>
               </div>
             </div>
 
@@ -1064,8 +1140,6 @@ const PlotSaleStatistics = ({
           </div>
 
           <div className="p-5 sm:p-6">
-            {/* Three Financial Cards + Full-Width Fourth Card */}
-
             <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
               <FinancialCard
                 label="Net Sales Value"
@@ -1106,8 +1180,6 @@ const PlotSaleStatistics = ({
                 />
               </div>
             </div>
-
-            {/* Collection Progress */}
 
             <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1166,8 +1238,6 @@ const PlotSaleStatistics = ({
               </div>
             </div>
 
-            {/* Additional Financial Details */}
-
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50">
@@ -1218,8 +1288,6 @@ const PlotSaleStatistics = ({
         </div>
       )}
 
-      {/* No Financial Data */}
-
       {!hasFinancialData && (
         <div className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white p-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100">
@@ -1231,9 +1299,9 @@ const PlotSaleStatistics = ({
               Financial statistics unavailable
             </p>
             <p className="mt-1 text-xs leading-5 text-gray-500">
-              Provide statistics from the plot-sales statistics endpoint
-              or pass plot sale records through the sales or plotSales prop
-              to calculate fallback totals.
+              Ensure the statistics response is passed to the
+              statistics prop, or provide plot sale records through
+              the sales or plotSales prop.
             </p>
           </div>
         </div>
