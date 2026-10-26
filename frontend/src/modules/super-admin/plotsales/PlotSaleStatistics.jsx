@@ -1,4 +1,3 @@
-
 import {
   AlertCircle,
   Banknote,
@@ -20,7 +19,9 @@ import {
 */
 
 const toNumber = (value) => {
-  if (value === null || value === undefined || value === "") return 0;
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
 
   if (typeof value === "object") {
     return toNumber(
@@ -30,8 +31,15 @@ const toNumber = (value) => {
       value.amount ??
       value.amount_paid ??
       value.balance ??
-      0
+      0,
     );
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").replace(/[^\d.-]/g, "");
+    const number = Number(cleaned);
+
+    return Number.isFinite(number) ? number : 0;
   }
 
   const number = Number(value);
@@ -61,7 +69,8 @@ const formatCurrency = (value, currency = "KES") => {
   }
 };
 
-const formatPercentage = (value) => `${toNumber(value).toFixed(1)}%`;
+const formatPercentage = (value) =>
+  `${toNumber(value).toFixed(1)}%`;
 
 const getPercentage = (value, total) => {
   const amount = toNumber(value);
@@ -87,119 +96,162 @@ const normalizeStatus = (value) =>
 
 /*
 |--------------------------------------------------------------------------
-| Normalize API Statistics
+| Normalize Statistics Response
 |--------------------------------------------------------------------------
+| Supports:
+| { total_sales: 2 }
+| { data: { total_sales: 2 } }
+| { data: { data: { total_sales: 2 } } }
+| { data: { statistics: { total_sales: 2 } } }
+| { statistics: { total_sales: 2 } }
 */
 
+const isPlainObject = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value);
+
+const STATISTIC_MARKERS = [
+  "total_sales",
+  "total_plot_sales",
+  "pending_sales",
+  "reserved_sales",
+  "approved_sales",
+  "completed_sales",
+  "cancelled_sales",
+  "total_amount",
+  "total_deposit",
+  "total_discount",
+  "total_paid",
+  "total_outstanding",
+  "total_balance",
+];
+
+const hasStatisticFields = (value) => {
+  if (!isPlainObject(value)) return false;
+
+  const keys = new Set(Object.keys(value).map(normalizeKey));
+
+  return STATISTIC_MARKERS.some((key) => keys.has(normalizeKey(key)));
+};
+
 const getStatisticsSource = (input) => {
-  let source = input;
+  if (!isPlainObject(input)) return {};
 
-  for (let index = 0; index < 8; index += 1) {
-    if (
-      !source ||
-      typeof source !== "object" ||
-      Array.isArray(source)
-    ) {
-      return {};
-    }
+  const queue = [input];
+  const visited = new Set();
 
-    if (
-      source.statistics &&
-      typeof source.statistics === "object" &&
-      !Array.isArray(source.statistics)
-    ) {
-      source = source.statistics;
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (!isPlainObject(current) || visited.has(current)) {
       continue;
     }
 
-    if (
-      source.data &&
-      typeof source.data === "object" &&
-      !Array.isArray(source.data)
-    ) {
-      source = source.data;
-      continue;
+    visited.add(current);
+
+    // Prefer an object that actually contains plot-sales statistics.
+    if (hasStatisticFields(current)) {
+      return current;
     }
 
-    break;
+    // Check common statistics wrappers first.
+    for (const key of [
+      "statistics",
+      "stats",
+      "summary",
+      "aggregates",
+      "data",
+      "result",
+      "payload",
+    ]) {
+      const child = current[key];
+
+      if (isPlainObject(child) && !visited.has(child)) {
+        queue.unshift(child);
+      }
+    }
+
+    // Support additional nested API wrappers.
+    for (const value of Object.values(current)) {
+      if (isPlainObject(value) && !visited.has(value)) {
+        queue.push(value);
+      }
+    }
   }
 
-  return source && typeof source === "object" ? source : {};
+  return input;
 };
 
 /*
 |--------------------------------------------------------------------------
-| Find Statistic Values
+| Read Statistics Values
 |--------------------------------------------------------------------------
 */
 
 const getStatisticValue = (
   statistics,
   keys = [],
-  fallback = undefined
+  fallback = undefined,
 ) => {
   const source = getStatisticsSource(statistics);
-  const wantedKeys = keys.map(normalizeKey);
+  const normalizedKeys = keys.map(normalizeKey);
+
+  const queue = [source];
   const visited = new Set();
 
-  const findValue = (object, depth = 0) => {
-    if (
-      !object ||
-      typeof object !== "object" ||
-      Array.isArray(object) ||
-      depth > 6 ||
-      visited.has(object)
-    ) {
-      return undefined;
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (!isPlainObject(current) || visited.has(current)) {
+      continue;
     }
 
-    visited.add(object);
+    visited.add(current);
 
-    for (const [key, value] of Object.entries(object)) {
-      if (
-        wantedKeys.includes(normalizeKey(key)) &&
-        value !== null &&
-        value !== undefined &&
-        value !== ""
-      ) {
-        if (typeof value !== "object" || Array.isArray(value)) {
-          return value;
-        }
+    // Exact field-name matching, including camelCase aliases.
+    for (const [field, value] of Object.entries(current)) {
+      if (!normalizedKeys.includes(normalizeKey(field))) {
+        continue;
+      }
 
-        const nestedValue =
-          value.count ??
-          value.total ??
-          value.value ??
-          value.amount ??
-          value.amount_paid ??
-          value.balance;
+      if (value === null || value === undefined || value === "") {
+        continue;
+      }
 
-        if (nestedValue !== undefined && nestedValue !== null) {
-          return nestedValue;
-        }
+      if (!isPlainObject(value)) {
+        return value;
+      }
+
+      const nestedValue =
+        value.count ??
+        value.total ??
+        value.value ??
+        value.amount ??
+        value.amount_paid ??
+        value.balance;
+
+      if (nestedValue !== null && nestedValue !== undefined) {
+        return nestedValue;
       }
     }
 
-    for (const value of Object.values(object)) {
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        const result = findValue(value, depth + 1);
-
-        if (result !== undefined) return result;
+    for (const value of Object.values(current)) {
+      if (isPlainObject(value) && !visited.has(value)) {
+        queue.push(value);
       }
     }
+  }
 
-    return undefined;
-  };
-
-  const result = findValue(source);
-
-  return result === undefined ? fallback : result;
+  return fallback;
 };
 
 const hasStatistic = (statistics, keys = []) => {
-  const marker = "__PLOT_SALE_STATISTIC_NOT_FOUND__";
+  const marker = "__STATISTIC_NOT_FOUND__";
 
-  return getStatisticValue(statistics, keys, marker) !== marker;
+  return (
+    getStatisticValue(statistics, keys, marker) !== marker
+  );
 };
 
 /*
@@ -213,27 +265,27 @@ const getSaleStatus = (sale) =>
 
 const getPaymentStatus = (sale) => {
   const suppliedStatus = normalizeStatus(
-    sale?.payment_status ?? sale?.payment_status_label
+    sale?.payment_status ?? sale?.payment_status_label,
   );
 
-  if (suppliedStatus) {
-    if (["paid", "fully_paid", "completed"].includes(suppliedStatus)) {
-      return "paid";
-    }
+  if (["paid", "fully_paid", "completed"].includes(suppliedStatus)) {
+    return "paid";
+  }
 
-    if (
-      ["partial", "partially_paid", "partially_paid_status"].includes(
-        suppliedStatus
-      )
-    ) {
-      return "partial";
-    }
+  if (
+    [
+      "partial",
+      "partially_paid",
+      "partially_paid_status",
+    ].includes(suppliedStatus)
+  ) {
+    return "partial";
+  }
 
-    if (
-      ["unpaid", "pending", "overdue", "failed"].includes(suppliedStatus)
-    ) {
-      return "unpaid";
-    }
+  if (
+    ["unpaid", "pending", "overdue", "failed"].includes(suppliedStatus)
+  ) {
+    return "unpaid";
   }
 
   const balance = toNumber(sale?.balance);
@@ -245,29 +297,13 @@ const getPaymentStatus = (sale) => {
   return "unpaid";
 };
 
-const getNetSalePrice = (sale) => {
-  if (
-    sale?.net_sale_price !== null &&
-    sale?.net_sale_price !== undefined &&
-    sale?.net_sale_price !== ""
-  ) {
-    return toNumber(sale.net_sale_price);
-  }
-
-  return Math.max(
-    toNumber(sale?.sale_price) -
-    toNumber(sale?.discount_amount ?? sale?.discount),
-    0
-  );
-};
-
 const countSalesByStatus = (sales, statuses) => {
   if (!Array.isArray(sales)) return 0;
 
   const accepted = statuses.map(normalizeStatus);
 
   return sales.filter((sale) =>
-    accepted.includes(getSaleStatus(sale))
+    accepted.includes(getSaleStatus(sale)),
   ).length;
 };
 
@@ -276,14 +312,18 @@ const sumSales = (sales, selector) => {
 
   return sales.reduce(
     (total, sale) => total + toNumber(selector(sale)),
-    0
+    0,
   );
 };
 
 const countPaymentsByStatus = (sales, status) => {
   if (!Array.isArray(sales)) return 0;
 
-  return sales.filter((sale) => getPaymentStatus(sale) === status).length;
+  return sales.filter(
+    (sale) =>
+      getSaleStatus(sale) !== "cancelled" &&
+      getPaymentStatus(sale) === status,
+  ).length;
 };
 
 /*
@@ -301,28 +341,44 @@ const StatisticCard = ({
   description,
   progress = 0,
   progressClass,
+  wide = false,
 }) => {
-  const safeProgress = Math.min(100, Math.max(0, toNumber(progress)));
+  const safeProgress = Math.min(
+    100,
+    Math.max(0, toNumber(progress)),
+  );
 
   return (
-    <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-lg">
+    <div
+      className={`group relative min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md ${wide ? "md:flex md:items-center md:gap-8" : ""
+        }`}
+    >
       <div
-        className={`absolute inset-x-0 top-0 h-0.5 ${progressClass}`}
+        className={`absolute inset-x-0 top-0 h-1 ${progressClass}`}
       />
 
-      <div className="flex min-w-0 items-start justify-between gap-4">
+      <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
             {label}
           </p>
 
-          <p className="mt-2 break-words text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+          <p
+            className={`mt-3 break-words font-bold tracking-tight text-gray-900 ${wide
+                ? "text-2xl sm:text-3xl lg:text-4xl"
+                : "text-2xl sm:text-3xl"
+              }`}
+          >
             {value}
+          </p>
+
+          <p className="mt-2 text-sm text-gray-500">
+            {description}
           </p>
         </div>
 
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconWrapperClass}`}
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconWrapperClass}`}
         >
           <Icon
             className={`h-5 w-5 ${iconClass}`}
@@ -332,8 +388,11 @@ const StatisticCard = ({
         </div>
       </div>
 
-      <div className="mt-5">
-        <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+      <div
+        className={`mt-5 ${wide ? "md:mt-0 md:w-2/5 md:shrink-0" : ""
+          }`}
+      >
+        <div className="h-2 overflow-hidden rounded-full bg-gray-100">
           <div
             className={`h-full rounded-full transition-all duration-700 ${progressClass}`}
             style={{ width: `${safeProgress}%` }}
@@ -341,13 +400,11 @@ const StatisticCard = ({
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-gray-500">{description}</p>
+          <p className="text-xs text-gray-500">{description}</p>
 
-          {safeProgress > 0 && (
-            <span className="shrink-0 text-[11px] font-semibold text-gray-500">
-              {formatPercentage(safeProgress)}
-            </span>
-          )}
+          <span className="shrink-0 text-xs font-semibold text-gray-500">
+            {formatPercentage(safeProgress)}
+          </span>
         </div>
       </div>
     </div>
@@ -372,10 +429,10 @@ const BreakdownCard = ({
   const percentage = getPercentage(value, total);
 
   return (
-    <div className="group min-w-0 rounded-xl border border-gray-100 bg-gray-50/60 p-4 transition-all duration-200 hover:border-gray-200 hover:bg-white hover:shadow-sm">
+    <div className="group min-w-0 rounded-xl border border-gray-200/80 bg-gray-50/70 p-4 transition-all duration-200 hover:border-gray-300 hover:bg-white hover:shadow-sm">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${backgroundClass}`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${backgroundClass}`}
         >
           <Icon
             className={`h-4 w-4 ${iconClass}`}
@@ -384,22 +441,22 @@ const BreakdownCard = ({
           />
         </div>
 
-        <span className="truncate text-xl font-bold tracking-tight text-gray-900">
+        <span className="truncate text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">
           {formatNumber(value)}
         </span>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="truncate text-xs font-semibold text-gray-600">
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <p className="truncate text-sm font-medium text-gray-600">
           {label}
         </p>
 
-        <span className="shrink-0 text-[10px] font-medium text-gray-400">
+        <span className="shrink-0 text-xs font-semibold text-gray-400">
           {formatPercentage(percentage)}
         </span>
       </div>
 
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-200">
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200">
         <div
           className={`h-full rounded-full transition-all duration-500 ${progressClass}`}
           style={{ width: `${percentage}%` }}
@@ -422,29 +479,44 @@ const FinancialCard = ({
   icon: Icon,
   wrapperClass,
   iconClass,
+  wide = false,
 }) => (
   <div
-    className={`group min-w-0 overflow-hidden rounded-xl border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${wrapperClass}`}
+    className={`group min-w-0 overflow-hidden rounded-xl border p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${wide
+        ? "md:flex md:items-center md:justify-between md:gap-6"
+        : ""
+      } ${wrapperClass}`}
   >
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 items-center gap-3">
       <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}
       >
-        <Icon className="h-4 w-4" strokeWidth={2} />
+        <Icon
+          className="h-5 w-5"
+          strokeWidth={2}
+          aria-hidden="true"
+        />
       </div>
 
-      <span className="truncate text-xs font-semibold">{label}</span>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+          {label}
+        </p>
+
+        <p className="mt-1 text-xs opacity-70">
+          {description}
+        </p>
+      </div>
     </div>
 
     <p
-      className="mt-4 break-words text-xl font-bold leading-tight tracking-tight text-gray-900 sm:text-2xl"
-      title={value}
+      className={`mt-4 break-words font-bold leading-tight tracking-tight text-gray-900 ${wide
+          ? "md:mt-0 md:text-right md:text-2xl"
+          : "text-xl sm:text-2xl"
+        }`}
+      title={String(value)}
     >
       {value}
-    </p>
-
-    <p className="mt-2 truncate text-[11px] opacity-70">
-      {description}
     </p>
   </div>
 );
@@ -458,27 +530,30 @@ const FinancialCard = ({
 const PlotSaleStatisticsSkeleton = () => (
   <section
     aria-label="Plot sales statistics loading"
-    className="min-w-0 space-y-5"
+    className="min-w-0 space-y-6"
   >
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {Array.from({ length: 4 }).map((_, index) => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {[0, 1, 2].map((index) => (
         <div
           key={index}
-          className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5"
+          className="animate-pulse rounded-2xl border border-gray-200 bg-white p-6"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 space-y-3">
               <div className="h-3 w-24 rounded bg-gray-200" />
-              <div className="h-8 w-24 rounded bg-gray-200" />
+              <div className="h-8 w-28 rounded bg-gray-200" />
             </div>
-
-            <div className="h-11 w-11 rounded-xl bg-gray-200" />
+            <div className="h-12 w-12 rounded-xl bg-gray-200" />
           </div>
-
-          <div className="mt-5 h-1.5 rounded bg-gray-200" />
-          <div className="mt-2 h-3 w-32 rounded bg-gray-200" />
+          <div className="mt-6 h-2 rounded bg-gray-200" />
         </div>
       ))}
+    </div>
+
+    <div className="animate-pulse rounded-2xl border border-gray-200 bg-white p-6">
+      <div className="h-3 w-32 rounded bg-gray-200" />
+      <div className="mt-3 h-9 w-48 rounded bg-gray-200" />
+      <div className="mt-6 h-2 rounded bg-gray-200" />
     </div>
 
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -488,13 +563,15 @@ const PlotSaleStatisticsSkeleton = () => (
           className="animate-pulse rounded-2xl border border-gray-200 bg-white p-5"
         >
           <div className="h-4 w-36 rounded bg-gray-200" />
-
           <div className="mt-6 grid grid-cols-2 gap-3">
             {[0, 1, 2, 3].map((number) => (
-              <div key={number} className="rounded-xl bg-gray-100 p-4">
+              <div
+                key={number}
+                className="rounded-xl bg-gray-100 p-4"
+              >
                 <div className="h-9 w-9 rounded-lg bg-gray-200" />
                 <div className="mt-3 h-3 w-20 rounded bg-gray-200" />
-                <div className="mt-2 h-1 rounded bg-gray-200" />
+                <div className="mt-3 h-1.5 rounded bg-gray-200" />
               </div>
             ))}
           </div>
@@ -530,7 +607,7 @@ const PlotSaleStatistics = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Sales Counts
+  | Sale Counts
   |--------------------------------------------------------------------------
   */
 
@@ -546,32 +623,44 @@ const PlotSaleStatistics = ({
         "total_records",
         "total",
       ],
-      saleRecords.length
-    )
+      saleRecords.length,
+    ),
   );
 
   const pendingSales = toNumber(
     getStatisticValue(
       source,
-      ["pending_sales", "sales_pending", "pending_sales_count"],
-      countSalesByStatus(saleRecords, ["pending"])
-    )
+      [
+        "pending_sales",
+        "sales_pending",
+        "pending_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["pending"]),
+    ),
   );
 
   const reservedSales = toNumber(
     getStatisticValue(
       source,
-      ["reserved_sales", "sales_reserved", "reserved_sales_count"],
-      countSalesByStatus(saleRecords, ["reserved"])
-    )
+      [
+        "reserved_sales",
+        "sales_reserved",
+        "reserved_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["reserved"]),
+    ),
   );
 
   const approvedSales = toNumber(
     getStatisticValue(
       source,
-      ["approved_sales", "sales_approved", "approved_sales_count"],
-      countSalesByStatus(saleRecords, ["approved"])
-    )
+      [
+        "approved_sales",
+        "sales_approved",
+        "approved_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["approved"]),
+    ),
   );
 
   const completedSales = toNumber(
@@ -583,16 +672,20 @@ const PlotSaleStatistics = ({
         "completed_sales_count",
         "successful_sales",
       ],
-      countSalesByStatus(saleRecords, ["completed"])
-    )
+      countSalesByStatus(saleRecords, ["completed"]),
+    ),
   );
 
   const cancelledSales = toNumber(
     getStatisticValue(
       source,
-      ["cancelled_sales", "sales_cancelled", "cancelled_sales_count"],
-      countSalesByStatus(saleRecords, ["cancelled"])
-    )
+      [
+        "cancelled_sales",
+        "sales_cancelled",
+        "cancelled_sales_count",
+      ],
+      countSalesByStatus(saleRecords, ["cancelled"]),
+    ),
   );
 
   /*
@@ -604,9 +697,14 @@ const PlotSaleStatistics = ({
   const paidSales = toNumber(
     getStatisticValue(
       source,
-      ["fully_paid_sales", "paid_sales", "fully_paid", "paid_count"],
-      countPaymentsByStatus(saleRecords, "paid")
-    )
+      [
+        "fully_paid_sales",
+        "paid_sales",
+        "fully_paid",
+        "paid_count",
+      ],
+      countPaymentsByStatus(saleRecords, "paid"),
+    ),
   );
 
   const partialSales = toNumber(
@@ -619,8 +717,8 @@ const PlotSaleStatistics = ({
         "partially_paid",
         "partial_count",
       ],
-      countPaymentsByStatus(saleRecords, "partial")
-    )
+      countPaymentsByStatus(saleRecords, "partial"),
+    ),
   );
 
   const unpaidSales = toNumber(
@@ -632,8 +730,8 @@ const PlotSaleStatistics = ({
         "pending_payment_sales",
         "unpaid_count",
       ],
-      countPaymentsByStatus(saleRecords, "unpaid")
-    )
+      countPaymentsByStatus(saleRecords, "unpaid"),
+    ),
   );
 
   const paymentTotal = paidSales + partialSales + unpaidSales;
@@ -642,11 +740,15 @@ const PlotSaleStatistics = ({
   |--------------------------------------------------------------------------
   | Financial Statistics
   |--------------------------------------------------------------------------
+  | These aliases match the Laravel plot-sales statistics response.
   */
 
   const currency =
-    getStatisticValue(source, ["currency", "default_currency"], "KES") ||
-    "KES";
+    getStatisticValue(
+      source,
+      ["currency", "default_currency"],
+      "KES",
+    ) || "KES";
 
   const grossSalesKeys = [
     "gross_sales_value",
@@ -654,6 +756,8 @@ const PlotSaleStatistics = ({
     "gross_sales",
     "total_gross_amount",
     "total_amount",
+    "total_sale_price",
+    "sum_sale_price",
   ];
 
   const netSalesKeys = [
@@ -667,6 +771,7 @@ const PlotSaleStatistics = ({
     "revenue",
     "total_sale_amount",
     "sales_amount",
+    "net_sale_price",
   ];
 
   const collectedKeys = [
@@ -706,15 +811,15 @@ const PlotSaleStatistics = ({
   ];
 
   const excludedSales = saleRecords.filter(
-    (sale) => getSaleStatus(sale) !== "cancelled"
+    (sale) => getSaleStatus(sale) !== "cancelled",
   );
 
   const grossSalesValue = toNumber(
     getStatisticValue(
       source,
       grossSalesKeys,
-      sumSales(excludedSales, (sale) => sale.sale_price)
-    )
+      sumSales(excludedSales, (sale) => sale.sale_price),
+    ),
   );
 
   const totalDiscounts = toNumber(
@@ -723,41 +828,46 @@ const PlotSaleStatistics = ({
       discountKeys,
       sumSales(
         excludedSales,
-        (sale) => sale.discount_amount ?? sale.discount
-      )
-    )
+        (sale) => sale.discount_amount ?? sale.discount,
+      ),
+    ),
   );
 
   const salesValue = toNumber(
     getStatisticValue(
       source,
       netSalesKeys,
-      Math.max(grossSalesValue - totalDiscounts, 0)
-    )
+      Math.max(grossSalesValue - totalDiscounts, 0),
+    ),
   );
 
   const totalCollected = toNumber(
     getStatisticValue(
       source,
       collectedKeys,
-      sumSales(excludedSales, (sale) => sale.amount_paid)
-    )
+      sumSales(excludedSales, (sale) => sale.amount_paid),
+    ),
   );
 
   const totalBalance = toNumber(
     getStatisticValue(
       source,
       balanceKeys,
-      sumSales(excludedSales, (sale) => Math.max(toNumber(sale.balance), 0))
-    )
+      sumSales(excludedSales, (sale) =>
+        Math.max(toNumber(sale.balance), 0),
+      ),
+    ),
   );
 
   const totalDeposits = toNumber(
     getStatisticValue(
       source,
       depositKeys,
-      sumSales(excludedSales, (sale) => sale.deposit_amount)
-    )
+      sumSales(
+        excludedSales,
+        (sale) => sale.deposit_amount ?? sale.deposit,
+      ),
+    ),
   );
 
   const averageSaleValue =
@@ -769,7 +879,7 @@ const PlotSaleStatistics = ({
 
   const collectionRate = getPercentage(
     totalCollected,
-    totalCollected + totalBalance
+    totalCollected + totalBalance,
   );
 
   const hasFinancialData =
@@ -784,7 +894,7 @@ const PlotSaleStatistics = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Primary Statistic Cards
+  | Primary Statistics
   |--------------------------------------------------------------------------
   */
 
@@ -818,19 +928,6 @@ const PlotSaleStatistics = ({
       progress: getPercentage(completedSales, totalSales),
       progressClass: "bg-emerald-500",
       description: "Successfully completed",
-    },
-    {
-      label: "Outstanding Balance",
-      value: formatCurrency(totalBalance, currency),
-      icon: Wallet,
-      iconWrapperClass: "bg-red-50",
-      iconClass: "text-red-600",
-      progress: getPercentage(
-        totalBalance,
-        totalCollected + totalBalance
-      ),
-      progressClass: "bg-red-500",
-      description: "Amount remaining to collect",
     },
   ];
 
@@ -925,37 +1022,52 @@ const PlotSaleStatistics = ({
   return (
     <section
       aria-label="Plot sales statistics"
-      className="min-w-0 space-y-5"
+      className="min-w-0 space-y-6"
     >
-      {/* Primary Statistics */}
-
-      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
         {primaryStatistics.map((item) => (
           <StatisticCard key={item.label} {...item} />
         ))}
+
+        <div className="min-w-0 md:col-span-3">
+          <StatisticCard
+            label="Outstanding Balance"
+            value={formatCurrency(totalBalance, currency)}
+            icon={Wallet}
+            iconWrapperClass="bg-red-50"
+            iconClass="text-red-600"
+            progress={getPercentage(
+              totalBalance,
+              totalCollected + totalBalance,
+            )}
+            progressClass="bg-red-500"
+            description={`Remaining balance • ${formatCurrency(
+              totalCollected,
+              currency,
+            )} collected`}
+            wide
+          />
+        </div>
       </div>
 
-      {/* Sale Status and Payment Status */}
-
       <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h3 className="text-sm font-bold text-gray-900">
                 Plot Sales Status
               </h3>
-
               <p className="mt-1 text-xs text-gray-500">
                 Distribution of sales by their current status
               </p>
             </div>
 
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50">
-              <TrendingUp className="h-4 w-4 text-indigo-600" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+              <TrendingUp className="h-5 w-5 text-indigo-600" />
             </div>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {saleStatusStatistics.map((item) => (
               <BreakdownCard
                 key={item.label}
@@ -966,20 +1078,19 @@ const PlotSaleStatistics = ({
           </div>
         </div>
 
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h3 className="text-sm font-bold text-gray-900">
                 Payment Completion
               </h3>
-
               <p className="mt-1 text-xs text-gray-500">
                 Payment progress across recorded plot sales
               </p>
             </div>
 
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50">
-              <Wallet className="h-4 w-4 text-emerald-600" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+              <Wallet className="h-5 w-5 text-emerald-600" />
             </div>
           </div>
 
@@ -995,52 +1106,47 @@ const PlotSaleStatistics = ({
 
           {paymentTotal === 0 && (
             <p className="mt-4 text-xs text-gray-500">
-              Payment status counts will appear when payment statistics
-              or sale records are available.
+              Payment status counts will appear when payment
+              statistics or sale records are available.
             </p>
           )}
         </div>
       </div>
 
-      {/* Financial Overview */}
-
       {hasFinancialData && (
         <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-                  <CircleDollarSign className="h-4 w-4 text-indigo-600" />
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+                <CircleDollarSign className="h-5 w-5 text-indigo-600" />
+              </div>
 
+              <div>
                 <h3 className="text-sm font-bold text-gray-900">
                   Plot Sales Financial Overview
                 </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Sales value, collections, discounts and balances
+                </p>
               </div>
-
-              <p className="mt-2 text-xs text-gray-500">
-                Sales value, discounts, collections and outstanding
-                balances
-              </p>
             </div>
 
-            <div className="flex items-center gap-2 self-start rounded-full bg-gray-50 px-3 py-1.5">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
-
-              <span className="text-xs font-semibold text-gray-600">
+            <div className="flex items-center gap-2 self-start rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2">
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs font-semibold text-emerald-700">
                 {formatPercentage(collectionRate)} collected
               </span>
             </div>
           </div>
 
           <div className="p-5 sm:p-6">
-            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
               <FinancialCard
                 label="Net Sales Value"
                 value={formatCurrency(salesValue, currency)}
                 description="Sales value after discounts"
                 icon={CircleDollarSign}
-                wrapperClass="border-indigo-100 bg-indigo-50/60 text-indigo-700"
+                wrapperClass="border-indigo-100 bg-indigo-50/60"
                 iconClass="bg-indigo-100 text-indigo-600"
               />
 
@@ -1049,7 +1155,7 @@ const PlotSaleStatistics = ({
                 value={formatCurrency(totalCollected, currency)}
                 description="Payments received against sales"
                 icon={Wallet}
-                wrapperClass="border-emerald-100 bg-emerald-50/60 text-emerald-700"
+                wrapperClass="border-emerald-100 bg-emerald-50/60"
                 iconClass="bg-emerald-100 text-emerald-600"
               />
 
@@ -1058,102 +1164,120 @@ const PlotSaleStatistics = ({
                 value={formatCurrency(totalBalance, currency)}
                 description="Amount remaining to be paid"
                 icon={AlertCircle}
-                wrapperClass="border-amber-100 bg-amber-50/60 text-amber-700"
+                wrapperClass="border-amber-100 bg-amber-50/60"
                 iconClass="bg-amber-100 text-amber-600"
               />
 
-              <FinancialCard
-                label="Total Discounts"
-                value={formatCurrency(totalDiscounts, currency)}
-                description="Discounts applied to sales"
-                icon={HandCoins}
-                wrapperClass="border-purple-100 bg-purple-50/60 text-purple-700"
-                iconClass="bg-purple-100 text-purple-600"
-              />
+              <div className="min-w-0 md:col-span-3">
+                <FinancialCard
+                  label="Total Discounts"
+                  value={formatCurrency(totalDiscounts, currency)}
+                  description="Total discounts applied across eligible plot sales"
+                  icon={HandCoins}
+                  wrapperClass="border-purple-100 bg-purple-50/60"
+                  iconClass="bg-purple-100 text-purple-600"
+                  wide
+                />
+              </div>
             </div>
 
-            {/* Collection Progress */}
-
-            <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm">
-                    <TrendingUp className="h-4 w-4 text-emerald-600" />
+            <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
+                    <TrendingUp className="h-5 w-5 text-emerald-600" />
                   </div>
 
-                  <p className="text-xs font-semibold text-gray-700">
-                    Sales Collection Progress
-                  </p>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">
+                      Sales Collection Progress
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Payments received compared with the total amount due
+                    </p>
+                  </div>
                 </div>
 
-                <span className="text-sm font-bold text-gray-900">
+                <span className="text-2xl font-bold tracking-tight text-gray-900">
                   {formatPercentage(collectionRate)}
                 </span>
               </div>
 
-              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="mt-5 h-3 overflow-hidden rounded-full bg-gray-200"
+                role="progressbar"
+                aria-label="Sales collection progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Number(collectionRate.toFixed(1))}
+              >
                 <div
                   className="h-full rounded-full bg-emerald-500 transition-all duration-700"
                   style={{ width: `${collectionRate}%` }}
                 />
               </div>
 
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <span className="text-[10px] text-gray-500">
-                  Collected: {formatCurrency(totalCollected, currency)}
-                </span>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                  <p className="text-xs font-medium text-gray-500">
+                    Total Collected
+                  </p>
+                  <p className="mt-2 break-words text-lg font-bold text-emerald-700">
+                    {formatCurrency(totalCollected, currency)}
+                  </p>
+                </div>
 
-                <span className="text-[10px] text-gray-500">
-                  Due: {formatCurrency(totalBalance, currency)}
-                </span>
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                  <p className="text-xs font-medium text-gray-500">
+                    Outstanding Amount
+                  </p>
+                  <p className="mt-2 break-words text-lg font-bold text-amber-700">
+                    {formatCurrency(totalBalance, currency)}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Additional Financial Details */}
-
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50">
                   <Banknote className="h-5 w-5 text-blue-600" />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-700">
+                  <p className="text-xs font-semibold text-gray-600">
                     Gross Sales Value
                   </p>
-
                   <p className="mt-1 break-words text-base font-bold text-gray-900">
                     {formatCurrency(grossSalesValue, currency)}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50">
+              <div className="flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-50">
                   <HandCoins className="h-5 w-5 text-purple-600" />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-700">
+                  <p className="text-xs font-semibold text-gray-600">
                     Deposits Recorded
                   </p>
-
                   <p className="mt-1 break-words text-base font-bold text-gray-900">
                     {formatCurrency(totalDeposits, currency)}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+              <div className="flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
                   <Receipt className="h-5 w-5 text-indigo-600" />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-700">
+                  <p className="text-xs font-semibold text-gray-600">
                     Average Sale Value
                   </p>
-
                   <p className="mt-1 break-words text-base font-bold text-gray-900">
                     {formatCurrency(averageSaleValue, currency)}
                   </p>
@@ -1164,21 +1288,20 @@ const PlotSaleStatistics = ({
         </div>
       )}
 
-      {/* No Financial Data */}
-
       {!hasFinancialData && (
-        <div className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4">
-          <CircleDollarSign className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+        <div className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100">
+            <CircleDollarSign className="h-5 w-5 text-gray-500" />
+          </div>
 
           <div>
-            <p className="text-sm font-semibold text-gray-700">
+            <p className="text-sm font-semibold text-gray-800">
               Financial statistics unavailable
             </p>
-
-            <p className="mt-1 text-xs text-gray-500">
-              Provide statistics from the plot-sales statistics endpoint
-              or pass plot sale records through the sales or plotSales prop
-              to calculate fallback totals.
+            <p className="mt-1 text-xs leading-5 text-gray-500">
+              Ensure the statistics response is passed to the
+              statistics prop, or provide plot sale records through
+              the sales or plotSales prop.
             </p>
           </div>
         </div>

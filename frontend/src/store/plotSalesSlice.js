@@ -42,13 +42,15 @@ const STATISTICS_KEYS = [
 const initialState = {
   plotSales: [],
   selectedPlotSale: null,
-
   outstandingSales: [],
   statistics: null,
   report: null,
 
   pagination: { ...DEFAULT_PAGINATION },
+  outstandingPagination: { ...DEFAULT_PAGINATION },
   filters: {},
+  outstandingFilters: {},
+  reportFilters: {},
 
   loading: false,
   detailsLoading: false,
@@ -74,13 +76,12 @@ const initialState = {
 */
 
 /**
- * Handle either a normalized service response or an Axios response.
+ * Supports either:
+ * 1. A normalized API envelope:
+ *    { status, message, data, meta, links }
  *
- * Normalized:
- * { status, message, data, meta, errors }
- *
- * Axios:
- * { data: { status, message, data, meta, errors }, config, ... }
+ * 2. A raw Axios response:
+ *    { data: { status, message, data, meta, links }, config, ... }
  */
 const getEnvelope = (response) => {
   if (
@@ -105,30 +106,84 @@ const getResponseMessage = (
   fallback;
 
 const getErrorMessage = (error) => {
-  const envelope = getEnvelope(error?.response?.data);
+  const responseData = error?.response?.data;
+  const envelope = getEnvelope(responseData);
+  const errors = envelope?.errors ?? responseData?.errors;
+
+  if (typeof errors === "string") {
+    return errors;
+  }
+
+  if (errors && typeof errors === "object") {
+    const messages = Object.values(errors)
+      .flat(Infinity)
+      .filter(
+        (message) =>
+          typeof message === "string" &&
+          message.trim() !== "",
+      );
+
+    if (messages.length > 0) {
+      return messages[0];
+    }
+  }
 
   return (
     error?.serviceMessage ||
     envelope?.message ||
-    error?.response?.data?.message ||
-    error?.response?.data?.errors?.message?.[0] ||
+    responseData?.message ||
     error?.message ||
     "An unexpected error occurred. Please try again."
   );
 };
 
-const getValidationErrors = (error) =>
-  getEnvelope(error?.response?.data)?.errors ??
-  error?.response?.data?.errors ??
-  null;
+const getValidationErrors = (error) => {
+  const responseData = error?.response?.data;
+  const envelope = getEnvelope(responseData);
 
-/**
- * Extract pagination metadata from Laravel responses.
- */
-const getPagination = (
-  response,
-  fallback = {},
-) => {
+  return (
+    envelope?.errors ??
+    responseData?.errors ??
+    null
+  );
+};
+
+const getRejectedMessage = (action, fallback) =>
+  action.payload?.message ||
+  action.error?.message ||
+  fallback;
+
+const rejectRequest = (error, rejectWithValue) =>
+  rejectWithValue({
+    message: getErrorMessage(error),
+    validationErrors: getValidationErrors(error),
+  });
+
+/*
+|--------------------------------------------------------------------------
+| PAGINATION HELPER
+|--------------------------------------------------------------------------
+*/
+
+const normalizePagination = (meta = {}, fallback = {}) => ({
+  current_page:
+    Number(meta.current_page ?? fallback.current_page) || 1,
+
+  last_page:
+    Number(meta.last_page ?? fallback.last_page) || 1,
+
+  per_page:
+    Number(meta.per_page ?? fallback.per_page) ||
+    DEFAULT_PER_PAGE,
+
+  total:
+    Number(meta.total ?? fallback.total) || 0,
+
+  from: meta.from ?? fallback.from ?? null,
+  to: meta.to ?? fallback.to ?? null,
+});
+
+const getPagination = (response, fallback = {}) => {
   const envelope = getEnvelope(response);
   const data = envelope?.data;
 
@@ -151,74 +206,70 @@ const getPagination = (
         item.total !== undefined ||
         item.per_page !== undefined
       ),
-  ) ?? {};
+  );
 
-  return {
-    current_page:
-      Number(
-        meta.current_page ??
-        fallback.current_page,
-      ) || 1,
-
-    last_page:
-      Number(
-        meta.last_page ??
-        fallback.last_page,
-      ) || 1,
-
-    per_page:
-      Number(
-        meta.per_page ??
-        fallback.per_page,
-      ) || DEFAULT_PER_PAGE,
-
-    total:
-      Number(
-        meta.total ??
-        fallback.total,
-      ) || 0,
-
-    from: meta.from ?? fallback.from ?? null,
-    to: meta.to ?? fallback.to ?? null,
-  };
+  return normalizePagination(meta ?? {}, fallback);
 };
 
+/*
+|--------------------------------------------------------------------------
+| COLLECTION HELPER
+|--------------------------------------------------------------------------
+*/
+
 /**
- * Extract a collection from a resource response.
+ * Supports standard Laravel envelopes and common resource wrappers.
  */
 const getCollection = (response) => {
-  const data = getResponseData(response);
+  const envelope = getEnvelope(response);
+  let data = envelope?.data;
 
-  if (Array.isArray(data)) {
-    return data;
-  }
+  for (let index = 0; index < 5; index += 1) {
+    if (Array.isArray(data)) {
+      return data;
+    }
 
-  if (Array.isArray(data?.data)) {
-    return data.data;
-  }
+    if (!data || typeof data !== "object") {
+      return [];
+    }
 
-  if (Array.isArray(data?.plot_sales)) {
-    return data.plot_sales;
-  }
+    if (Array.isArray(data.items)) {
+      return data.items;
+    }
 
-  if (Array.isArray(data?.sales)) {
-    return data.sales;
-  }
+    if (Array.isArray(data.plot_sales)) {
+      return data.plot_sales;
+    }
 
-  if (Array.isArray(data?.items)) {
-    return data.items;
+    if (Array.isArray(data.sales)) {
+      return data.sales;
+    }
+
+    if (Array.isArray(data.results)) {
+      return data.results;
+    }
+
+    if (Array.isArray(data.data)) {
+      data = data.data;
+      continue;
+    }
+
+    return [];
   }
 
   return [];
 };
 
-/**
- * Extract a single plot sale resource.
- */
+/*
+|--------------------------------------------------------------------------
+| SINGLE SALE HELPER
+|--------------------------------------------------------------------------
+*/
+
 const getSale = (response) => {
   let data = getResponseData(response);
 
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     if (!data || typeof data !== "object") {
       return null;
     }
@@ -248,16 +299,19 @@ const getSale = (response) => {
     return data;
   }
 
-  return data;
+  return null;
 };
 
-/**
- * Extract statistics from the Laravel API response.
- */
+/*
+|--------------------------------------------------------------------------
+| STATISTICS HELPER
+|--------------------------------------------------------------------------
+*/
+
 const getStatistics = (response) => {
   let data = getResponseData(response);
 
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     if (
       !data ||
       typeof data !== "object" ||
@@ -296,20 +350,56 @@ const getStatistics = (response) => {
   return data;
 };
 
-/**
- * Normalize a failed thunk payload.
- */
-const getRejectedMessage = (
-  action,
-  fallback,
-) =>
-  action.payload?.message ||
-  action.error?.message ||
-  fallback;
+/*
+|--------------------------------------------------------------------------
+| REPORT HELPER
+|--------------------------------------------------------------------------
+*/
 
 /**
- * Insert or update a sale without creating duplicates.
+ * Preserve the report's actual structure while supporting common wrappers.
+ * The report component can decide how to render the returned object or array.
  */
+const getReportData = (response) => {
+  let data = getResponseData(response);
+
+  for (let index = 0; index < 5; index += 1) {
+    if (
+      data === null ||
+      data === undefined ||
+      Array.isArray(data) ||
+      typeof data !== "object"
+    ) {
+      return data;
+    }
+
+    if (data.report !== undefined) {
+      data = data.report;
+      continue;
+    }
+
+    if (data.report_data !== undefined) {
+      data = data.report_data;
+      continue;
+    }
+
+    if (data.data !== undefined) {
+      data = data.data;
+      continue;
+    }
+
+    return data;
+  }
+
+  return data;
+};
+
+/*
+|--------------------------------------------------------------------------
+| SALE STATE HELPERS
+|--------------------------------------------------------------------------
+*/
+
 const upsertSale = (state, sale) => {
   if (!sale?.id) return;
 
@@ -339,9 +429,6 @@ const upsertSale = (state, sale) => {
   }
 };
 
-/**
- * Remove a sale from local collections.
- */
 const removeSale = (state, id) => {
   const saleId = String(id);
 
@@ -369,19 +456,18 @@ const removeSale = (state, id) => {
       state.pagination.total - 1,
     );
   }
+
+  const wasOutstanding = state.outstandingSales.some(
+    (sale) => String(sale.id) === saleId,
+  );
+
+  if (wasOutstanding) {
+    state.outstandingPagination.total = Math.max(
+      0,
+      state.outstandingPagination.total - 1,
+    );
+  }
 };
-
-/*
-|--------------------------------------------------------------------------
-| THUNK ERROR HELPER
-|--------------------------------------------------------------------------
-*/
-
-const rejectRequest = (error, rejectWithValue) =>
-  rejectWithValue({
-    message: getErrorMessage(error),
-    validationErrors: getValidationErrors(error),
-  });
 
 /*
 |--------------------------------------------------------------------------
@@ -393,8 +479,7 @@ export const fetchPlotSales = createAsyncThunk(
   "plotSales/fetchAll",
   async (filters = {}, { rejectWithValue }) => {
     try {
-      const response =
-        await plotSaleService.getAll(filters);
+      const response = await plotSaleService.getAll(filters);
 
       return {
         items: getCollection(response),
@@ -485,8 +570,7 @@ export const createPlotSale = createAsyncThunk(
   "plotSales/create",
   async (saleData, { rejectWithValue }) => {
     try {
-      const response =
-        await plotSaleService.create(saleData);
+      const response = await plotSaleService.create(saleData);
 
       return {
         sale: getSale(response),
@@ -622,8 +706,7 @@ export const completePlotSale = createAsyncThunk(
   "plotSales/complete",
   async (id, { rejectWithValue }) => {
     try {
-      const response =
-        await plotSaleService.complete(id);
+      const response = await plotSaleService.complete(id);
 
       return {
         sale: getSale(response),
@@ -658,6 +741,7 @@ export const fetchOutstandingPlotSales = createAsyncThunk(
           current_page: filters.page ?? 1,
           per_page: filters.per_page ?? DEFAULT_PER_PAGE,
         }),
+        filters,
         message: getResponseMessage(
           response,
           "Outstanding plot sales fetched successfully.",
@@ -723,8 +807,17 @@ export const fetchPlotSalesReport = createAsyncThunk(
       const response =
         await plotSaleService.getReport(filters);
 
+      const report = getReportData(response);
+
+      if (report === null || report === undefined) {
+        throw new Error(
+          "The API returned an empty plot sales report.",
+        );
+      }
+
       return {
-        report: getResponseData(response),
+        report,
+        filters,
         message: getResponseMessage(
           response,
           "Plot sales report generated successfully.",
@@ -772,8 +865,7 @@ export const forceDeletePlotSale = createAsyncThunk(
   "plotSales/forceDelete",
   async (id, { rejectWithValue }) => {
     try {
-      const response =
-        await plotSaleService.forceDelete(id);
+      const response = await plotSaleService.forceDelete(id);
 
       return {
         id,
@@ -822,7 +914,7 @@ const plotSalesSlice = createSlice({
 
     clearPlotSalesFilters: (state) => {
       state.filters = {};
-      state.pagination.current_page = 1;
+      state.pagination = { ...DEFAULT_PAGINATION };
     },
 
     setPlotSalesPage: (state, action) => {
@@ -847,6 +939,46 @@ const plotSalesSlice = createSlice({
       );
 
       state.pagination.current_page = 1;
+    },
+
+    setOutstandingPlotSalesPage: (state, action) => {
+      const nextPage = Number(action.payload) || 1;
+
+      state.outstandingPagination.current_page = Math.max(
+        1,
+        Math.min(
+          nextPage,
+          Math.max(1, state.outstandingPagination.last_page),
+        ),
+      );
+    },
+
+    setOutstandingPlotSalesPerPage: (state, action) => {
+      state.outstandingPagination.per_page = Math.max(
+        1,
+        Math.min(
+          100,
+          Number(action.payload) || DEFAULT_PER_PAGE,
+        ),
+      );
+
+      state.outstandingPagination.current_page = 1;
+    },
+
+    setOutstandingPlotSalesFilters: (state, action) => {
+      state.outstandingFilters = {
+        ...state.outstandingFilters,
+        ...action.payload,
+      };
+
+      state.outstandingPagination.current_page = 1;
+    },
+
+    clearOutstandingPlotSalesFilters: (state) => {
+      state.outstandingFilters = {};
+      state.outstandingPagination = {
+        ...DEFAULT_PAGINATION,
+      };
     },
 
     clearPlotSalesError: (state) => {
@@ -884,6 +1016,7 @@ const plotSalesSlice = createSlice({
     clearPlotSalesState: () => ({
       ...initialState,
       pagination: { ...DEFAULT_PAGINATION },
+      outstandingPagination: { ...DEFAULT_PAGINATION },
     }),
   },
 
@@ -952,7 +1085,7 @@ const plotSalesSlice = createSlice({
 
       /*
       |----------------------------------------------------------------------
-      | FETCH SINGLE
+      | SINGLE SALE
       |----------------------------------------------------------------------
       */
 
@@ -965,7 +1098,6 @@ const plotSalesSlice = createSlice({
         state.detailsLoading = false;
         state.selectedPlotSale = action.payload.sale;
         state.message = action.payload.message || null;
-
         upsertSale(state, action.payload.sale);
       })
 
@@ -996,14 +1128,14 @@ const plotSalesSlice = createSlice({
         const sale = action.payload.sale;
 
         if (sale?.id) {
-          const alreadyExists = state.plotSales.some(
+          const exists = state.plotSales.some(
             (item) => String(item.id) === String(sale.id),
           );
 
           upsertSale(state, sale);
           state.selectedPlotSale = sale;
 
-          if (!alreadyExists) {
+          if (!exists) {
             state.pagination.total += 1;
           }
         }
@@ -1163,6 +1295,8 @@ const plotSalesSlice = createSlice({
         (state, action) => {
           state.outstandingLoading = false;
           state.outstandingSales = action.payload.items;
+          state.outstandingPagination = action.payload.pagination;
+          state.outstandingFilters = action.payload.filters;
           state.message = action.payload.message || state.message;
         },
       )
@@ -1225,6 +1359,7 @@ const plotSalesSlice = createSlice({
         (state, action) => {
           state.reportLoading = false;
           state.report = action.payload.report;
+          state.reportFilters = action.payload.filters;
           state.message = action.payload.message || state.message;
         },
       )
@@ -1276,25 +1411,19 @@ const plotSalesSlice = createSlice({
         state.error = null;
       })
 
-      .addCase(
-        forceDeletePlotSale.fulfilled,
-        (state, action) => {
-          state.actionLoading = false;
-          removeSale(state, action.payload.id);
-          state.message = action.payload.message;
-        },
-      )
+      .addCase(forceDeletePlotSale.fulfilled, (state, action) => {
+        state.actionLoading = false;
+        removeSale(state, action.payload.id);
+        state.message = action.payload.message;
+      })
 
-      .addCase(
-        forceDeletePlotSale.rejected,
-        (state, action) => {
-          state.actionLoading = false;
-          state.error = getRejectedMessage(
-            action,
-            "Failed to permanently delete plot sale.",
-          );
-        },
-      );
+      .addCase(forceDeletePlotSale.rejected, (state, action) => {
+        state.actionLoading = false;
+        state.error = getRejectedMessage(
+          action,
+          "Failed to permanently delete plot sale.",
+        );
+      });
   },
 });
 
@@ -1311,6 +1440,10 @@ export const {
   clearPlotSalesFilters,
   setPlotSalesPage,
   setPlotSalesPerPage,
+  setOutstandingPlotSalesPage,
+  setOutstandingPlotSalesPerPage,
+  setOutstandingPlotSalesFilters,
+  clearOutstandingPlotSalesFilters,
   clearPlotSalesError,
   clearPlotSalesStatisticsError,
   clearPlotSalesReportError,
@@ -1348,8 +1481,17 @@ export const selectPlotSalesReport = (state) =>
 export const selectPlotSalesPagination = (state) =>
   state.plotSales.pagination;
 
+export const selectOutstandingPlotSalesPagination = (state) =>
+  state.plotSales.outstandingPagination;
+
 export const selectPlotSalesFilters = (state) =>
   state.plotSales.filters;
+
+export const selectOutstandingPlotSalesFilters = (state) =>
+  state.plotSales.outstandingFilters;
+
+export const selectPlotSalesReportFilters = (state) =>
+  state.plotSales.reportFilters;
 
 export const selectPlotSalesLoading = (state) =>
   state.plotSales.loading;

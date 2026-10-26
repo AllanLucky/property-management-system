@@ -1,4 +1,3 @@
-
 import {
   useCallback,
   useEffect,
@@ -65,16 +64,49 @@ const STATISTICS_KEYS = [
 const getErrorMessage = (
   error,
   fallback = "Something went wrong. Please try again.",
-) =>
-  error?.response?.data?.message ||
-  error?.response?.data?.errors?.message?.[0] ||
-  error?.message ||
-  fallback;
+) => {
+  const responseData = error?.response?.data;
+  const errors = responseData?.errors;
 
-const getPayload = (response) => {
-  let payload = response?.data ?? response;
+  if (typeof errors === "string") {
+    return errors;
+  }
 
-  for (let index = 0; index < 5; index += 1) {
+  if (errors && typeof errors === "object") {
+    const messages = Object.values(errors)
+      .flat(Infinity)
+      .filter(
+        (message) =>
+          typeof message === "string" &&
+          message.trim() !== "",
+      );
+
+    if (messages.length > 0) {
+      return messages[0];
+    }
+  }
+
+  return (
+    error?.serviceMessage ||
+    responseData?.message ||
+    error?.message ||
+    fallback
+  );
+};
+
+/**
+ * Safely unwrap nested API envelopes.
+ *
+ * Supports:
+ * 1. Normalized envelope: { data: [...], meta: {...} }
+ * 2. Axios envelope: { data: { data: [...], meta: {...} } }
+ * 3. Nested envelopes: { data: { data: { data: [...] } } }
+ * 4. Direct arrays.
+ */
+const unwrapPayload = (response) => {
+  let payload = response;
+
+  for (let index = 0; index < 6; index += 1) {
     if (
       !payload ||
       typeof payload !== "object" ||
@@ -83,15 +115,20 @@ const getPayload = (response) => {
       return payload;
     }
 
+    // Stop at the application's normalized API envelope.
     if (
-      STATISTICS_KEYS.some(
-        (key) => payload[key] !== undefined,
+      Object.prototype.hasOwnProperty.call(payload, "status") &&
+      (
+        Object.prototype.hasOwnProperty.call(payload, "meta") ||
+        Object.prototype.hasOwnProperty.call(payload, "links") ||
+        Object.prototype.hasOwnProperty.call(payload, "request_id")
       )
     ) {
       return payload;
     }
 
     if (
+      Object.prototype.hasOwnProperty.call(payload, "data") &&
       payload.data !== undefined &&
       payload.data !== null
     ) {
@@ -105,62 +142,94 @@ const getPayload = (response) => {
   return payload;
 };
 
+/**
+ * Extract the actual API payload without losing pagination metadata.
+ */
+const getPayload = (response) => {
+  const payload = unwrapPayload(response);
+
+  if (
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    Object.prototype.hasOwnProperty.call(payload, "data")
+  ) {
+    return payload.data;
+  }
+
+  return payload;
+};
+
+/**
+ * Extract arrays from standard and paginated responses.
+ */
 const getRows = (response) => {
-  const payload = getPayload(response);
+  const payload = unwrapPayload(response);
 
   if (Array.isArray(payload)) {
     return payload;
   }
 
-  if (Array.isArray(payload?.data)) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(payload.data)) {
     return payload.data;
+  }
+
+  if (Array.isArray(payload.results)) {
+    return payload.results;
+  }
+
+  if (Array.isArray(payload.items)) {
+    return payload.items;
   }
 
   return [];
 };
 
+/**
+ * Read pagination metadata from the API envelope.
+ */
 const getPagination = (
   response,
   fallbackPage = 1,
   fallbackPerPage = DEFAULT_PER_PAGE,
 ) => {
-  const payload = response?.data ?? response;
+  const payload = unwrapPayload(response);
 
-  const candidates = [
-    payload?.meta,
-    payload?.data?.meta,
-    payload?.data?.data?.meta,
-    payload?.data,
-    payload?.data?.data,
-  ];
-
-  const metadata = candidates.find(
-    (item) =>
-      item &&
-      typeof item === "object" &&
-      !Array.isArray(item) &&
-      (
-        item.current_page !== undefined ||
-        item.last_page !== undefined ||
-        item.total !== undefined ||
-        item.per_page !== undefined
-      ),
-  );
+  const metadata =
+    payload?.meta ??
+    payload?.data?.meta ??
+    payload?.data?.data?.meta ??
+    null;
 
   return {
     current_page:
-      Number(metadata?.current_page) || fallbackPage,
+      Number(metadata?.current_page) || Number(fallbackPage) || 1,
     last_page:
       Number(metadata?.last_page) || 1,
     per_page:
-      Number(metadata?.per_page) || fallbackPerPage,
+      Number(metadata?.per_page) ||
+      Number(fallbackPerPage) ||
+      DEFAULT_PER_PAGE,
     total:
-      Number(metadata?.total) || 0,
+      metadata?.total !== undefined
+        ? Number(metadata.total) || 0
+        : Array.isArray(payload)
+          ? payload.length
+          : Array.isArray(payload?.data)
+            ? payload.data.length
+            : 0,
     from: metadata?.from ?? null,
     to: metadata?.to ?? null,
   };
 };
 
+/**
+ * Extract one resource from an API response.
+ */
 const getRecord = (response) => {
   const payload = getPayload(response);
 
@@ -179,7 +248,7 @@ const normalizeFilters = (filters = {}) =>
   Object.fromEntries(
     Object.entries(filters).filter(
       ([, value]) =>
-        value !== undefined && value !== null,
+        value !== undefined && value !== null && value !== "",
     ),
   );
 
@@ -197,8 +266,6 @@ export const usePlotSales = ({
   initialFilters = {},
   initialPerPage = DEFAULT_PER_PAGE,
 } = {}) => {
-  "use no memo";
-
   /*
   |--------------------------------------------------------------------------
   | STATE
@@ -220,6 +287,12 @@ export const usePlotSales = ({
     ...DEFAULT_PAGINATION,
     per_page: initialPerPage,
   }));
+
+  const [outstandingPagination, setOutstandingPagination] =
+    useState(() => ({
+      ...DEFAULT_PAGINATION,
+      per_page: initialPerPage,
+    }));
 
   const [page, setPageState] = useState(1);
   const [perPage, setPerPageState] = useState(initialPerPage);
@@ -246,6 +319,7 @@ export const usePlotSales = ({
   const mountedRef = useRef(false);
   const listRequestId = useRef(0);
   const statisticsRequestId = useRef(0);
+  const outstandingRequestId = useRef(0);
 
   /*
   |--------------------------------------------------------------------------
@@ -322,8 +396,8 @@ export const usePlotSales = ({
         setPagination(
           getPagination(
             response,
-            Number(requestFilters.page) || 1,
-            Number(requestFilters.per_page) || DEFAULT_PER_PAGE,
+            requestFilters.page,
+            requestFilters.per_page,
           ),
         );
 
@@ -552,30 +626,66 @@ export const usePlotSales = ({
 
   const fetchOutstandingPlotSales = useCallback(
     async (params = {}) => {
+      const requestId = ++outstandingRequestId.current;
+
+      const requestParams = {
+        ...normalizeFilters(params),
+        page: params.page ?? 1,
+        per_page: params.per_page ?? perPage,
+      };
+
       setOutstandingLoading(true);
       setOutstandingError(null);
 
       try {
         const response =
-          await plotSalesApi.getOutstandingPlotSales({
-            page: params.page ?? 1,
-            per_page: params.per_page ?? perPage,
-          });
+          await plotSalesApi.getOutstandingPlotSales(
+            requestParams,
+          );
 
-        setOutstandingSales(getRows(response));
+        const rows = getRows(response);
 
-        return response;
-      } catch (requestError) {
-        setOutstandingError(
-          getErrorMessage(
-            requestError,
-            "Failed to fetch outstanding plot sales.",
+        if (
+          !mountedRef.current ||
+          requestId !== outstandingRequestId.current
+        ) {
+          return response;
+        }
+
+        setOutstandingSales(rows);
+
+        setOutstandingPagination(
+          getPagination(
+            response,
+            requestParams.page,
+            requestParams.per_page,
           ),
         );
 
+        return response;
+      } catch (requestError) {
+        if (
+          mountedRef.current &&
+          requestId === outstandingRequestId.current
+        ) {
+          setOutstandingError(
+            getErrorMessage(
+              requestError,
+              "Failed to fetch outstanding plot sales.",
+            ),
+          );
+
+          setOutstandingSales([]);
+        }
+
         throw requestError;
       } finally {
-        setOutstandingLoading(false);
+        if (
+          mountedRef.current &&
+          requestId === outstandingRequestId.current
+        ) {
+          setOutstandingLoading(false);
+        }
       }
     },
     [perPage],
@@ -921,6 +1031,11 @@ export const usePlotSales = ({
       per_page: normalized,
     }));
 
+    setOutstandingPagination((previous) => ({
+      ...previous,
+      per_page: normalized,
+    }));
+
     setPageState(1);
   }, []);
 
@@ -954,6 +1069,7 @@ export const usePlotSales = ({
       mountedRef.current = false;
       listRequestId.current += 1;
       statisticsRequestId.current += 1;
+      outstandingRequestId.current += 1;
     };
   }, []);
 
@@ -961,10 +1077,6 @@ export const usePlotSales = ({
   |--------------------------------------------------------------------------
   | AUTOMATIC LIST FETCH
   |--------------------------------------------------------------------------
-  |
-  | Schedule the request outside the synchronous effect body.
-  | Cleanup prevents a queued request from starting after unmount
-  | or after this effect has been replaced.
   */
 
   useEffect(() => {
@@ -972,12 +1084,10 @@ export const usePlotSales = ({
 
     let cancelled = false;
 
-    queueMicrotask(() => {
+    Promise.resolve().then(() => {
       if (cancelled) return;
 
-      fetchPlotSales().catch(() => {
-        // The hook stores the error in its error state.
-      });
+      fetchPlotSales().catch(() => { });
     });
 
     return () => {
@@ -996,12 +1106,10 @@ export const usePlotSales = ({
 
     let cancelled = false;
 
-    queueMicrotask(() => {
+    Promise.resolve().then(() => {
       if (cancelled) return;
 
-      fetchPlotSalesStatistics().catch(() => {
-        // The hook stores the error in statisticsError.
-      });
+      fetchPlotSalesStatistics().catch(() => { });
     });
 
     return () => {
@@ -1073,6 +1181,7 @@ export const usePlotSales = ({
     perPage,
     pagination,
     paginationState,
+    outstandingPagination,
     summary,
     setPage,
     setPerPage,
