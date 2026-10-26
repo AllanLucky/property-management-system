@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,11 +31,12 @@ import { usePlotSales } from "../../../hooks/usePlotSales";
 
 /*
 |--------------------------------------------------------------------------
-| Helpers
+| Configuration
 |--------------------------------------------------------------------------
 */
 
 const PAGE_SIZE = 10;
+const API_PAGE_SIZE = 100;
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -43,8 +45,28 @@ const STATUS_OPTIONS = [
   { value: "approved", label: "Approved" },
 ];
 
+/*
+|--------------------------------------------------------------------------
+| Value Helpers
+|--------------------------------------------------------------------------
+*/
+
+const toNumber = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const parsed = Number(String(value).replace(/[,\s]/g, ""));
+
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const formatCurrency = (amount, currency = "KES") => {
-  const value = Number(amount ?? 0);
+  const value = toNumber(amount);
 
   try {
     return new Intl.NumberFormat("en-KE", {
@@ -52,14 +74,17 @@ const formatCurrency = (amount, currency = "KES") => {
       currency: currency || "KES",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(Number.isFinite(value) ? value : 0);
+    }).format(value);
   } catch {
-    return `KES ${Number.isFinite(value) ? value.toLocaleString("en-KE") : "0.00"}`;
+    return `KES ${value.toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   }
 };
 
 const formatNumber = (value) =>
-  new Intl.NumberFormat("en-KE").format(Number(value ?? 0));
+  new Intl.NumberFormat("en-KE").format(toNumber(value));
 
 const formatDate = (date) => {
   if (!date) return "—";
@@ -75,32 +100,127 @@ const formatDate = (date) => {
   });
 };
 
+const normalizeStatus = (status) =>
+  String(status ?? "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "_");
+
+/*
+|--------------------------------------------------------------------------
+| Financial Helpers
+|--------------------------------------------------------------------------
+*/
+
 const getEffectivePrice = (sale) => {
-  const salePrice = Number(sale?.sale_price ?? 0);
-  const discount = Number(
-    sale?.discount_amount ?? sale?.discount ?? 0
+  const netSalePrice = sale?.net_sale_price ?? sale?.netSalePrice;
+
+  if (netSalePrice !== null && netSalePrice !== undefined) {
+    return Math.max(0, toNumber(netSalePrice));
+  }
+
+  const salePrice = toNumber(
+    sale?.sale_price ??
+    sale?.salePrice ??
+    sale?.price ??
+    sale?.amount
+  );
+
+  const discount = toNumber(
+    sale?.discount_amount ??
+    sale?.discount ??
+    sale?.discountAmount
   );
 
   return Math.max(0, salePrice - discount);
 };
 
 const getAmountPaid = (sale) =>
-  Math.max(0, Number(sale?.amount_paid ?? 0));
+  Math.max(
+    0,
+    toNumber(
+      sale?.amount_paid ??
+      sale?.total_paid ??
+      sale?.amountPaid ??
+      sale?.paid_amount
+    )
+  );
 
 const getOutstandingBalance = (sale) => {
-  const balance = Number(sale?.balance);
+  const balance =
+    sale?.balance ??
+    sale?.outstanding_balance ??
+    sale?.outstanding ??
+    sale?.amount_outstanding;
 
-  if (
-    sale?.balance !== null &&
-    sale?.balance !== undefined &&
-    sale?.balance !== "" &&
-    Number.isFinite(balance)
-  ) {
-    return Math.max(0, balance);
+  if (balance !== null && balance !== undefined && balance !== "") {
+    return Math.max(0, toNumber(balance));
   }
 
   return Math.max(0, getEffectivePrice(sale) - getAmountPaid(sale));
 };
+
+/*
+|--------------------------------------------------------------------------
+| Sale Display Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getSaleNumber = (sale) =>
+  sale?.sale_number ??
+  sale?.saleNumber ??
+  sale?.reference_number ??
+  `Sale #${sale?.id ?? "—"}`;
+
+const getPlotTitle = (sale) =>
+  sale?.plot?.title ??
+  sale?.plot?.name ??
+  sale?.plot_title ??
+  sale?.plot_name ??
+  sale?.plot?.plot_number ??
+  "Plot details unavailable";
+
+const getPlotCode = (sale) =>
+  sale?.plot?.code ??
+  sale?.plot_code ??
+  sale?.plot?.plot_number ??
+  "—";
+
+const getBuyerName = (sale) => {
+  const buyer = sale?.buyer ?? sale?.customer;
+
+  if (typeof buyer === "string") {
+    return buyer;
+  }
+
+  const fullName = [
+    buyer?.first_name,
+    buyer?.middle_name,
+    buyer?.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return (
+    buyer?.name ??
+    buyer?.full_name ??
+    buyer?.fullName ??
+    fullName ??
+    buyer?.email ??
+    sale?.buyer_name ??
+    sale?.buyer_full_name ??
+    "Buyer unavailable"
+  );
+};
+
+const getSaleDate = (sale) =>
+  sale?.sale_date ??
+  sale?.saleDate ??
+  sale?.agreement_date ??
+  sale?.created_at ??
+  sale?.createdAt ??
+  null;
 
 const getStatusClasses = (status) => {
   const styles = {
@@ -112,104 +232,179 @@ const getStatusClasses = (status) => {
   };
 
   return (
-    styles[String(status ?? "").toLowerCase()] ??
+    styles[normalizeStatus(status)] ??
     "bg-gray-100 text-gray-700 ring-gray-500/20"
   );
 };
 
-const getSaleNumber = (sale) =>
-  sale?.sale_number ?? sale?.saleNumber ?? `Sale #${sale?.id ?? "—"}`;
+/*
+|--------------------------------------------------------------------------
+| API Response Normalization
+|--------------------------------------------------------------------------
+|
+| Supports:
+| 1. Normalized service response: { data: [...] }
+| 2. Laravel envelope: { data: [...], meta: {...} }
+| 3. Paginated Laravel response: { data: { data: [...], meta: {...} } }
+| 4. Axios response: { data: { status: true, data: [...] } }
+|--------------------------------------------------------------------------
+*/
 
-const getPlotTitle = (sale) =>
-  sale?.plot?.title ??
-  sale?.plot?.name ??
-  sale?.plot_title ??
-  sale?.plot_name ??
-  "Plot details unavailable";
+const isObject = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value);
 
-const getPlotCode = (sale) =>
-  sale?.plot?.code ??
-  sale?.plot_code ??
-  sale?.plot?.plot_number ??
-  "—";
+const isSaleRecord = (item) =>
+  isObject(item) &&
+  (
+    item.id !== undefined ||
+    item.sale_number !== undefined ||
+    item.saleNumber !== undefined ||
+    item.sale_price !== undefined ||
+    item.plot_id !== undefined ||
+    item.buyer_id !== undefined ||
+    item.agreement_number !== undefined
+  );
 
-const getBuyerName = (sale) => {
-  const buyer = sale?.buyer;
+const getResponseRoots = (response) => {
+  const roots = [];
+  const queue = [response];
+  const seen = new Set();
 
-  if (!buyer) {
-    return (
-      sale?.buyer_name ??
-      sale?.buyer_full_name ??
-      "Buyer unavailable"
-    );
+  while (queue.length > 0 && roots.length < 60) {
+    const current = queue.shift();
+
+    if (
+      current === null ||
+      current === undefined ||
+      typeof current !== "object" ||
+      seen.has(current)
+    ) {
+      continue;
+    }
+
+    seen.add(current);
+    roots.push(current);
+
+    if (Array.isArray(current)) {
+      continue;
+    }
+
+    [
+      "data",
+      "payload",
+      "result",
+      "response",
+      "sales",
+      "items",
+      "results",
+    ].forEach((key) => {
+      const child = current[key];
+
+      if (child && typeof child === "object") {
+        queue.push(child);
+      }
+    });
   }
 
-  const fullName = [
-    buyer.first_name,
-    buyer.middle_name,
-    buyer.last_name,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-
-  return (
-    buyer.name ??
-    buyer.full_name ??
-    buyer.fullName ??
-    fullName ??
-    buyer.email ??
-    sale?.buyer_name ??
-    "Buyer unavailable"
-  );
-};
-
-const unwrapResponse = (response) => {
-  let result = response?.data ?? response;
-
-  // Support Axios response -> API envelope -> resource payload.
-  if (result?.data !== undefined) {
-    result = result.data;
-  }
-
-  return result;
-};
-
-const getPaginationMeta = (response) => {
-  const root = response?.data ?? response;
-  const payload = root?.data ?? root;
-
-  return (
-    root?.meta ??
-    payload?.meta ??
-    root?.pagination ??
-    payload?.pagination ??
-    {}
-  );
+  return roots;
 };
 
 const getSaleArray = (response) => {
-  const root = response?.data ?? response;
-  const payload = root?.data ?? root;
+  if (Array.isArray(response)) {
+    return response.filter(isSaleRecord);
+  }
 
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.sales)) return payload.sales;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(root?.sales)) return root.sales;
+  const roots = getResponseRoots(response);
+
+  // Prefer explicitly named collections.
+  for (const root of roots) {
+    if (Array.isArray(root.sales)) {
+      return root.sales.filter(isSaleRecord);
+    }
+
+    if (Array.isArray(root.items)) {
+      return root.items.filter(isSaleRecord);
+    }
+
+    if (Array.isArray(root.results)) {
+      return root.results.filter(isSaleRecord);
+    }
+  }
+
+  // Find an array containing sale records.
+  for (const root of roots) {
+    if (Array.isArray(root) && root.every(isSaleRecord)) {
+      return root;
+    }
+
+    if (
+      Array.isArray(root.data) &&
+      root.data.every(isSaleRecord)
+    ) {
+      return root.data;
+    }
+  }
 
   return [];
 };
 
-const getErrorMessage = (error) =>
-  error?.response?.data?.message ??
-  error?.response?.data?.errors?.message?.[0] ??
-  error?.message ??
-  "Unable to load outstanding plot sales. Please try again.";
+const getPaginationMeta = (response) => {
+  const roots = getResponseRoots(response);
+
+  for (const root of roots) {
+    if (isObject(root.meta)) {
+      return root.meta;
+    }
+
+    if (isObject(root.pagination)) {
+      return root.pagination;
+    }
+
+    if (
+      root.current_page !== undefined ||
+      root.last_page !== undefined ||
+      root.total !== undefined
+    ) {
+      return root;
+    }
+  }
+
+  return {};
+};
+
+const getErrorMessage = (error) => {
+  const responseData = error?.response?.data;
+  const errors = responseData?.errors;
+
+  if (typeof errors === "string") {
+    return errors;
+  }
+
+  if (Array.isArray(errors)) {
+    return errors.join(", ");
+  }
+
+  if (isObject(errors)) {
+    const firstError = Object.values(errors)
+      .flat()
+      .find((value) => typeof value === "string");
+
+    if (firstError) return firstError;
+  }
+
+  return (
+    responseData?.message ??
+    error?.payload?.message ??
+    error?.message ??
+    "Unable to load outstanding plot sales. Please try again."
+  );
+};
 
 /*
 |--------------------------------------------------------------------------
-| Stat Card
+| Statistic Card
 |--------------------------------------------------------------------------
 */
 
@@ -219,23 +414,49 @@ function StatCard({
   description,
   icon: Icon,
   iconClass = "bg-blue-50 text-blue-600",
+  wide = false,
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
+    <div
+      className={[
+        "flex min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm",
+        "transition duration-200 hover:border-gray-300 hover:shadow-md",
+        "min-h-[148px]",
+        wide ? "items-center" : "items-start",
+      ].join(" ")}
+    >
+      <div
+        className={[
+          "flex w-full gap-4",
+          wide
+            ? "flex-col justify-between sm:flex-row sm:items-center"
+            : "items-start justify-between",
+        ].join(" ")}
+      >
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="mt-2 break-words text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">
+
+          <p className="mt-3 break-words text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">
             {value}
           </p>
+
           {description && (
-            <p className="mt-2 text-xs text-gray-500">{description}</p>
+            <p className="mt-2 text-xs leading-5 text-gray-500">
+              {description}
+            </p>
           )}
         </div>
 
-        <div className={`rounded-xl p-3 ${iconClass}`}>
-          <Icon size={21} />
-        </div>
+        {Icon && (
+          <div
+            className={[
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+              iconClass,
+            ].join(" ")}
+          >
+            <Icon size={21} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -254,9 +475,7 @@ function StatusBadge({ status }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${getStatusClasses(
-        status
-      )}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${getStatusClasses(status)}`}
     >
       {label}
     </span>
@@ -265,28 +484,19 @@ function StatusBadge({ status }) {
 
 /*
 |--------------------------------------------------------------------------
-| Outstanding Plot Sales Page
+| Outstanding Plot Sales
 |--------------------------------------------------------------------------
 */
 
 export default function OutstandingPlotSales() {
   const navigate = useNavigate();
-
   const plotSalesHook = usePlotSales() ?? {};
 
   const {
-    loading: hookLoading = false,
-    error: hookError = null,
-    outstandingPlotSales,
-    outstandingSales,
-    plotSales,
-    sales,
+    outstandingLoading: hookOutstandingLoading = false,
+    outstandingError: hookOutstandingError = null,
+    outstandingSales = [],
     fetchOutstandingPlotSales,
-    fetchOutstandingSales,
-    fetchOutstanding,
-    fetchPlotSales,
-    fetchSales,
-    getOutstandingPlotSales,
   } = plotSalesHook;
 
   const [records, setRecords] = useState([]);
@@ -300,8 +510,48 @@ export default function OutstandingPlotSales() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Prevent a late response from overwriting newer results.
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Load Outstanding Records
+  |--------------------------------------------------------------------------
+  |
+  | Important:
+  | - Use the dedicated outstanding-sales API method only.
+  | - Do not depend on outstandingSales state here. Doing so can recreate
+  |   the callback after a state update and repeatedly trigger this effect.
+  | - Search and sorting are handled locally.
+  |--------------------------------------------------------------------------
+  */
+
   const loadOutstandingSales = useCallback(
     async ({ silent = false } = {}) => {
+      if (typeof fetchOutstandingPlotSales !== "function") {
+        if (mountedRef.current) {
+          setError(
+            "The outstanding-sales loader is unavailable. Check that usePlotSales exports fetchOutstandingPlotSales."
+          );
+          setLoading(false);
+          setRefreshing(false);
+        }
+
+        return;
+      }
+
+      const requestId = ++requestIdRef.current;
+
       if (silent) {
         setRefreshing(true);
       } else {
@@ -311,128 +561,146 @@ export default function OutstandingPlotSales() {
       setError("");
 
       try {
-        const loader =
-          fetchOutstandingPlotSales ??
-          fetchOutstandingSales ??
-          fetchOutstanding ??
-          getOutstandingPlotSales ??
-          fetchPlotSales ??
-          fetchSales;
-
-        if (typeof loader !== "function") {
-          // Use existing hook state if it already contains the records.
-          const existing =
-            outstandingPlotSales ??
-            outstandingSales ??
-            plotSales ??
-            sales;
-
-          if (Array.isArray(existing)) {
-            setRecords(existing);
-            setPaginationMeta({});
-            setError("");
-            return;
-          }
-
-          throw new Error(
-            "No outstanding-sales loader was found in usePlotSales. Add fetchOutstandingPlotSales() to the hook or connect the existing outstanding-sales API method."
-          );
-        }
-
-        // Dedicated outstanding endpoint is preferred. Generic loaders are
-        // retained as a compatibility fallback for existing hook versions.
-        const response = await loader({
-          page: currentPage,
-          per_page: PAGE_SIZE,
-          perPage: PAGE_SIZE,
-          status: statusFilter || undefined,
-          search: search.trim() || undefined,
-          sort_by: sortBy,
+        const response = await fetchOutstandingPlotSales({
+          page: 1,
+          per_page: API_PAGE_SIZE,
         });
 
-        const data = getSaleArray(response);
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        /*
+         * The API service returns the normalized envelope.
+         * For the supplied Laravel response, response.data is the
+         * array of plot sales.
+         */
+        let rows = getSaleArray(response);
         const meta = getPaginationMeta(response);
 
-        setRecords(data);
-        setPaginationMeta(meta);
-      } catch (requestError) {
-        const message = getErrorMessage(requestError);
+        /*
+         * Some hook implementations return no data directly but update
+         * outstandingSales. Use that state only as a fallback.
+         */
+        if (rows.length === 0) {
+          const fallbackRows = getSaleArray(outstandingSales);
 
-        setError(message);
-
-        if (!silent) {
-          console.error("Outstanding plot sales error:", requestError);
+          if (fallbackRows.length > 0) {
+            rows = fallbackRows;
+          }
         }
+
+        setRecords(rows);
+        setPaginationMeta(meta);
+
+        // A successful empty response is not an API error.
+        if (response?.status === false || response?.error) {
+          throw new Error(
+            response?.message ??
+            response?.payload?.message ??
+            "The outstanding-sales request failed."
+          );
+        }
+      } catch (requestError) {
+        if (
+          !mountedRef.current ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        setError(getErrorMessage(requestError));
+        setRecords([]);
+
+        console.error(
+          "Outstanding plot sales error:",
+          requestError
+        );
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (
+          mountedRef.current &&
+          requestId === requestIdRef.current
+        ) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    [
-      fetchOutstandingPlotSales,
-      fetchOutstandingSales,
-      fetchOutstanding,
-      getOutstandingPlotSales,
-      fetchPlotSales,
-      fetchSales,
-      outstandingPlotSales,
-      outstandingSales,
-      plotSales,
-      sales,
-      currentPage,
-      statusFilter,
-      search,
-      sortBy,
-    ]
+    [fetchOutstandingPlotSales, outstandingSales]
   );
 
+  /*
+   * Run once when the dedicated loader becomes available.
+   * The request callback deliberately does not depend on search,
+   * statusFilter, sortBy, or currentPage.
+   */
   useEffect(() => {
     loadOutstandingSales();
+
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [loadOutstandingSales]);
 
-  const outstandingRecords = useMemo(
-    () =>
-      records
-        .map((sale) => ({
-          ...sale,
-          _outstandingBalance: getOutstandingBalance(sale),
-          _effectivePrice: getEffectivePrice(sale),
-          _amountPaid: getAmountPaid(sale),
-        }))
-        .filter((sale) => {
-          const status = String(sale.status ?? "").toLowerCase();
+  /*
+  |--------------------------------------------------------------------------
+  | Normalize Outstanding Records
+  |--------------------------------------------------------------------------
+  */
 
-          return (
-            sale._outstandingBalance > 0 &&
-            !["cancelled", "completed"].includes(status)
-          );
+  const outstandingRecords = useMemo(() => {
+    return records
+      .map((sale) => ({
+        ...sale,
+        _outstandingBalance: getOutstandingBalance(sale),
+        _effectivePrice: getEffectivePrice(sale),
+        _amountPaid: getAmountPaid(sale),
+      }))
+      .filter((sale) => {
+        const status = normalizeStatus(sale.status);
+
+        return (
+          sale._outstandingBalance > 0 &&
+          !["cancelled", "completed"].includes(status)
+        );
+      });
+  }, [records]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Summary Cards
+  |--------------------------------------------------------------------------
+  */
+
+  const summary = useMemo(
+    () =>
+      outstandingRecords.reduce(
+        (total, sale) => ({
+          count: total.count + 1,
+          totalOutstanding:
+            total.totalOutstanding + sale._outstandingBalance,
+          totalPaid: total.totalPaid + sale._amountPaid,
+          totalSaleValue:
+            total.totalSaleValue + sale._effectivePrice,
         }),
-    [records]
+        {
+          count: 0,
+          totalOutstanding: 0,
+          totalPaid: 0,
+          totalSaleValue: 0,
+        }
+      ),
+    [outstandingRecords]
   );
 
-  const summary = useMemo(() => {
-    const totalOutstanding = outstandingRecords.reduce(
-      (total, sale) => total + sale._outstandingBalance,
-      0
-    );
-
-    const totalPaid = outstandingRecords.reduce(
-      (total, sale) => total + sale._amountPaid,
-      0
-    );
-
-    const totalSaleValue = outstandingRecords.reduce(
-      (total, sale) => total + sale._effectivePrice,
-      0
-    );
-
-    return {
-      count: outstandingRecords.length,
-      totalOutstanding,
-      totalPaid,
-      totalSaleValue,
-    };
-  }, [outstandingRecords]);
+  /*
+  |--------------------------------------------------------------------------
+  | Search, Filter, and Sort
+  |--------------------------------------------------------------------------
+  */
 
   const visibleRecords = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -464,74 +732,65 @@ export default function OutstandingPlotSales() {
     if (statusFilter) {
       result = result.filter(
         (sale) =>
-          String(sale.status ?? "").toLowerCase() ===
-          statusFilter.toLowerCase()
+          normalizeStatus(sale.status) ===
+          normalizeStatus(statusFilter)
       );
     }
 
     switch (sortBy) {
       case "balance_asc":
         result.sort(
-          (a, b) => a._outstandingBalance - b._outstandingBalance
+          (a, b) =>
+            a._outstandingBalance - b._outstandingBalance
         );
         break;
 
       case "date_desc":
         result.sort(
           (a, b) =>
-            new Date(b.sale_date ?? 0).getTime() -
-            new Date(a.sale_date ?? 0).getTime()
+            new Date(getSaleDate(b) ?? 0).getTime() -
+            new Date(getSaleDate(a) ?? 0).getTime()
         );
         break;
 
       case "date_asc":
         result.sort(
           (a, b) =>
-            new Date(a.sale_date ?? 0).getTime() -
-            new Date(b.sale_date ?? 0).getTime()
+            new Date(getSaleDate(a) ?? 0).getTime() -
+            new Date(getSaleDate(b) ?? 0).getTime()
         );
         break;
 
       default:
         result.sort(
-          (a, b) => b._outstandingBalance - a._outstandingBalance
+          (a, b) =>
+            b._outstandingBalance - a._outstandingBalance
         );
     }
 
     return result;
   }, [outstandingRecords, search, statusFilter, sortBy]);
 
-  const serverTotal = Number(
-    paginationMeta?.total ??
-    paginationMeta?.total_records ??
-    paginationMeta?.totalRecords ??
-    0
-  );
+  /*
+  |--------------------------------------------------------------------------
+  | Client-Side Pagination
+  |--------------------------------------------------------------------------
+  |
+  | We fetch up to API_PAGE_SIZE records and paginate the returned records
+  | locally. This avoids mixing Laravel's server page with the UI page.
+  |--------------------------------------------------------------------------
+  */
 
-  const serverLastPage = Number(
-    paginationMeta?.last_page ??
-    paginationMeta?.lastPage ??
-    paginationMeta?.total_pages ??
-    0
+  const totalPages = Math.max(
+    1,
+    Math.ceil(visibleRecords.length / PAGE_SIZE)
   );
-
-  const totalPages = serverLastPage
-    ? Math.max(1, serverLastPage)
-    : Math.max(1, Math.ceil(visibleRecords.length / PAGE_SIZE));
 
   const pageRecords = useMemo(() => {
-    // Laravel paginator responses contain the current page's data already.
-    const hasServerPagination =
-      serverLastPage > 0 ||
-      paginationMeta?.current_page !== undefined ||
-      paginationMeta?.currentPage !== undefined;
-
-    if (hasServerPagination) return visibleRecords;
-
     const start = (currentPage - 1) * PAGE_SIZE;
 
     return visibleRecords.slice(start, start + PAGE_SIZE);
-  }, [visibleRecords, currentPage, paginationMeta, serverLastPage]);
+  }, [visibleRecords, currentPage]);
 
   const startRecord =
     visibleRecords.length === 0
@@ -540,8 +799,14 @@ export default function OutstandingPlotSales() {
 
   const endRecord = Math.min(
     currentPage * PAGE_SIZE,
-    serverTotal || visibleRecords.length
+    visibleRecords.length
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Actions
+  |--------------------------------------------------------------------------
+  */
 
   const handleRefresh = useCallback(() => {
     loadOutstandingSales({ silent: true });
@@ -576,6 +841,7 @@ export default function OutstandingPlotSales() {
         title: "Unable to open sale",
         text: "This sale record does not have a valid ID.",
       });
+
       return;
     }
 
@@ -583,15 +849,30 @@ export default function OutstandingPlotSales() {
   };
 
   const handleRecordPayment = (sale) => {
-    if (!sale?.id) return;
+    if (!sale?.id) {
+      Swal.fire({
+        icon: "error",
+        title: "Unable to record payment",
+        text: "This sale record does not have a valid ID.",
+      });
 
-    // Update this route if your payment-entry page uses another URL.
+      return;
+    }
+
     navigate(
       `/super-admin/plots/payments/create?plot_sale_id=${sale.id}`
     );
   };
 
   const hasFilters = Boolean(search.trim() || statusFilter);
+  const displayedError = error || hookOutstandingError;
+  const isLoading = loading || hookOutstandingLoading;
+
+  /*
+  |--------------------------------------------------------------------------
+  | Render
+  |--------------------------------------------------------------------------
+  */
 
   return (
     <div className="min-h-screen bg-gray-50/70 pb-10">
@@ -599,15 +880,14 @@ export default function OutstandingPlotSales() {
         <PlotSaleHeader
           title="Outstanding Plot Sales"
           description="Monitor unpaid plot sale balances and follow up on pending payments."
-          loading={loading}
+          loading={isLoading}
           onRefresh={handleRefresh}
           showRefresh
           showCreate={false}
           showReports={false}
         />
 
-        {/* Error */}
-        {error && (
+        {displayedError && (
           <div
             role="alert"
             className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-start"
@@ -621,9 +901,11 @@ export default function OutstandingPlotSales() {
               <p className="font-semibold text-red-800">
                 Unable to load outstanding sales
               </p>
+
               <p className="mt-1 break-words text-sm text-red-700">
-                {error}
+                {displayedError}
               </p>
+
               <button
                 type="button"
                 onClick={() => loadOutstandingSales()}
@@ -636,50 +918,58 @@ export default function OutstandingPlotSales() {
           </div>
         )}
 
-        {/* Summary cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            title="Outstanding Sales"
-            value={formatNumber(summary.count)}
-            description="Sales with unpaid balances"
-            icon={FileText}
-            iconClass="bg-blue-50 text-blue-600"
-          />
+        {/* Statistics */}
+        <section
+          aria-label="Outstanding sales statistics"
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <StatCard
+              title="Outstanding Sales"
+              value={formatNumber(summary.count)}
+              description="Sales with unpaid balances"
+              icon={FileText}
+              iconClass="bg-blue-50 text-blue-600"
+            />
 
-          <StatCard
-            title="Total Outstanding"
-            value={formatCurrency(summary.totalOutstanding)}
-            description="Amount still due"
-            icon={Wallet}
-            iconClass="bg-red-50 text-red-600"
-          />
+            <StatCard
+              title="Total Outstanding"
+              value={formatCurrency(summary.totalOutstanding)}
+              description="Amount still due"
+              icon={Wallet}
+              iconClass="bg-red-50 text-red-600"
+            />
 
-          <StatCard
-            title="Amount Collected"
-            value={formatCurrency(summary.totalPaid)}
-            description="Payments received for listed sales"
-            icon={ArrowDownRight}
-            iconClass="bg-emerald-50 text-emerald-600"
-          />
+            <StatCard
+              title="Amount Collected"
+              value={formatCurrency(summary.totalPaid)}
+              description="Payments received for listed sales"
+              icon={ArrowDownRight}
+              iconClass="bg-emerald-50 text-emerald-600"
+            />
 
-          <StatCard
-            title="Net Sale Value"
-            value={formatCurrency(summary.totalSaleValue)}
-            description="Sale price less discounts"
-            icon={CircleDollarSign}
-            iconClass="bg-violet-50 text-violet-600"
-          />
-        </div>
+            <div className="md:col-span-3">
+              <StatCard
+                title="Net Sale Value"
+                value={formatCurrency(summary.totalSaleValue)}
+                description="Sale price less discounts"
+                icon={CircleDollarSign}
+                iconClass="bg-violet-50 text-violet-600"
+                wide
+              />
+            </div>
+          </div>
+        </section>
 
-        {/* Main table */}
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-          {/* Toolbar */}
+        {/* Outstanding transactions */}
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 p-4 sm:p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">
                   Outstanding Transactions
                 </h2>
+
                 <p className="mt-1 text-sm text-gray-500">
                   Review balances, buyers, sale status and payment progress.
                 </p>
@@ -691,6 +981,7 @@ export default function OutstandingPlotSales() {
                     size={18}
                     className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                   />
+
                   <input
                     type="search"
                     value={search}
@@ -701,6 +992,7 @@ export default function OutstandingPlotSales() {
                     aria-label="Search outstanding plot sales"
                     className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-10 pr-10 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
+
                   {search && (
                     <button
                       type="button"
@@ -717,15 +1009,17 @@ export default function OutstandingPlotSales() {
                   type="button"
                   onClick={() => setShowFilters((value) => !value)}
                   className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${showFilters || hasFilters
-                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                      : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    ? "border-blue-200 bg-blue-50 text-blue-700"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                     }`}
                 >
                   <SlidersHorizontal size={17} />
                   Filters
+
                   {hasFilters && (
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-xs text-white">
-                      {(search.trim() ? 1 : 0) + (statusFilter ? 1 : 0)}
+                      {(search.trim() ? 1 : 0) +
+                        (statusFilter ? 1 : 0)}
                     </span>
                   )}
                 </button>
@@ -733,7 +1027,7 @@ export default function OutstandingPlotSales() {
                 <button
                   type="button"
                   onClick={handleRefresh}
-                  disabled={refreshing || loading}
+                  disabled={refreshing || isLoading}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <RefreshCw
@@ -754,6 +1048,7 @@ export default function OutstandingPlotSales() {
                   >
                     Sale status
                   </label>
+
                   <select
                     id="outstanding-status"
                     value={statusFilter}
@@ -777,6 +1072,7 @@ export default function OutstandingPlotSales() {
                   >
                     Sort by
                   </label>
+
                   <select
                     id="outstanding-sort"
                     value={sortBy}
@@ -791,8 +1087,12 @@ export default function OutstandingPlotSales() {
                     <option value="balance_asc">
                       Lowest balance first
                     </option>
-                    <option value="date_desc">Newest sale first</option>
-                    <option value="date_asc">Oldest sale first</option>
+                    <option value="date_desc">
+                      Newest sale first
+                    </option>
+                    <option value="date_asc">
+                      Oldest sale first
+                    </option>
                   </select>
                 </div>
 
@@ -832,10 +1132,14 @@ export default function OutstandingPlotSales() {
             </div>
           </div>
 
-          {/* Table */}
-          {loading ? (
+          {/* Table loading state */}
+          {isLoading ? (
             <div className="flex min-h-72 flex-col items-center justify-center gap-3 px-4 py-12">
-              <Loader2 className="animate-spin text-blue-600" size={34} />
+              <Loader2
+                className="animate-spin text-blue-600"
+                size={34}
+              />
+
               <p className="text-sm font-medium text-gray-600">
                 Loading outstanding plot sales...
               </p>
@@ -843,7 +1147,7 @@ export default function OutstandingPlotSales() {
           ) : pageRecords.length === 0 ? (
             <div className="flex min-h-72 flex-col items-center justify-center px-5 py-12 text-center">
               <div className="mb-4 rounded-2xl bg-gray-100 p-4">
-                {error ? (
+                {displayedError ? (
                   <AlertCircle size={30} className="text-red-500" />
                 ) : (
                   <Banknote size={30} className="text-gray-400" />
@@ -851,7 +1155,7 @@ export default function OutstandingPlotSales() {
               </div>
 
               <h3 className="text-lg font-bold text-gray-900">
-                {error
+                {displayedError
                   ? "Outstanding sales unavailable"
                   : hasFilters
                     ? "No matching outstanding sales"
@@ -859,14 +1163,14 @@ export default function OutstandingPlotSales() {
               </h3>
 
               <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">
-                {error
-                  ? "Check your connection and try loading the records again."
+                {displayedError
+                  ? "Check the API response and try loading the records again."
                   : hasFilters
                     ? "Try changing your search terms or clearing the selected filters."
-                    : "There are no unpaid plot sale balances in the records returned by the API."}
+                    : "No unpaid sales with an outstanding balance were found."}
               </p>
 
-              {error ? (
+              {displayedError ? (
                 <button
                   type="button"
                   onClick={() => loadOutstandingSales()}
@@ -889,77 +1193,55 @@ export default function OutstandingPlotSales() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="min-w-[1050px] w-full divide-y divide-gray-200">
+                <table className="w-full min-w-[1050px] divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Sale / Plot
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Buyer
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Sale Date
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Sale Value
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Amount Paid
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Outstanding
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Status
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-gray-500"
-                      >
-                        Actions
-                      </th>
+                      {[
+                        ["Sale / Plot", "text-left"],
+                        ["Buyer", "text-left"],
+                        ["Sale Date", "text-left"],
+                        ["Sale Value", "text-right"],
+                        ["Amount Paid", "text-right"],
+                        ["Outstanding", "text-right"],
+                        ["Status", "text-left"],
+                        ["Actions", "text-right"],
+                      ].map(([heading, alignment]) => (
+                        <th
+                          key={heading}
+                          scope="col"
+                          className={`px-5 py-4 ${alignment} text-xs font-bold uppercase tracking-wider text-gray-500`}
+                        >
+                          {heading}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-gray-100 bg-white">
-                    {pageRecords.map((sale) => {
+                    {pageRecords.map((sale, index) => {
                       const currency = sale.currency || "KES";
                       const saleValue = sale._effectivePrice;
                       const amountPaid = sale._amountPaid;
                       const balance = sale._outstandingBalance;
+
                       const paymentProgress =
                         saleValue > 0
                           ? Math.min(
                             100,
-                            Math.max(0, (amountPaid / saleValue) * 100)
+                            Math.max(
+                              0,
+                              (amountPaid / saleValue) * 100
+                            )
                           )
                           : 0;
 
                       return (
                         <tr
-                          key={sale.id ?? getSaleNumber(sale)}
+                          key={
+                            sale.id ??
+                            sale.sale_number ??
+                            `sale-${index}`
+                          }
                           className="transition hover:bg-gray-50/80"
                         >
                           <td className="px-5 py-4">
@@ -971,9 +1253,11 @@ export default function OutstandingPlotSales() {
                               <span className="block font-semibold text-gray-900 transition hover:text-blue-700">
                                 {getSaleNumber(sale)}
                               </span>
+
                               <span className="mt-1 block text-sm text-gray-600">
                                 {getPlotTitle(sale)}
                               </span>
+
                               <span className="mt-1 block text-xs text-gray-400">
                                 Plot: {getPlotCode(sale)}
                               </span>
@@ -984,11 +1268,14 @@ export default function OutstandingPlotSales() {
                             <p className="font-medium text-gray-800">
                               {getBuyerName(sale)}
                             </p>
-                            {sale.buyer?.email && (
-                              <p className="mt-1 max-w-52 truncate text-xs text-gray-500">
-                                {sale.buyer.email}
-                              </p>
-                            )}
+
+                            {(sale.buyer?.email ||
+                              sale.customer?.email) && (
+                                <p className="mt-1 max-w-52 truncate text-xs text-gray-500">
+                                  {sale.buyer?.email ??
+                                    sale.customer?.email}
+                                </p>
+                              )}
                           </td>
 
                           <td className="whitespace-nowrap px-5 py-4">
@@ -997,8 +1284,9 @@ export default function OutstandingPlotSales() {
                                 size={15}
                                 className="shrink-0 text-gray-400"
                               />
-                              {formatDate(sale.sale_date)}
+                              {formatDate(getSaleDate(sale))}
                             </div>
+
                             {sale.due_date && (
                               <p className="mt-1 text-xs text-gray-500">
                                 Due: {formatDate(sale.due_date)}
@@ -1016,12 +1304,16 @@ export default function OutstandingPlotSales() {
                             <span className="font-medium text-emerald-700">
                               {formatCurrency(amountPaid, currency)}
                             </span>
-                            <div className="mt-2 ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
+
+                            <div className="ml-auto mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
                               <div
                                 className="h-full rounded-full bg-emerald-500 transition-all"
-                                style={{ width: `${paymentProgress}%` }}
+                                style={{
+                                  width: `${paymentProgress}%`,
+                                }}
                               />
                             </div>
+
                             <p className="mt-1 text-xs text-gray-400">
                               {paymentProgress.toFixed(0)}% paid
                             </p>
@@ -1079,20 +1371,14 @@ export default function OutstandingPlotSales() {
                   <span className="font-semibold text-gray-800">
                     {totalPages}
                   </span>
-                  {serverTotal > 0 && (
+                  {" "}·{" "}
+                  <span className="font-semibold text-gray-800">
+                    {formatNumber(visibleRecords.length)}
+                  </span>{" "}
+                  records
+                  {visibleRecords.length > 0 && (
                     <>
-                      {" "}
-                      ·{" "}
-                      <span className="font-semibold text-gray-800">
-                        {formatNumber(serverTotal)}
-                      </span>{" "}
-                      records
-                    </>
-                  )}
-                  {!serverLastPage && visibleRecords.length > 0 && (
-                    <>
-                      {" "}
-                      · Showing {formatNumber(startRecord)}–
+                      {" "}· Showing {formatNumber(startRecord)}–
                       {formatNumber(endRecord)}
                     </>
                   )}
@@ -1101,7 +1387,7 @@ export default function OutstandingPlotSales() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={currentPage <= 1 || loading}
+                    disabled={currentPage <= 1}
                     onClick={() =>
                       setCurrentPage((page) => Math.max(1, page - 1))
                     }
@@ -1113,7 +1399,7 @@ export default function OutstandingPlotSales() {
 
                   <button
                     type="button"
-                    disabled={currentPage >= totalPages || loading}
+                    disabled={currentPage >= totalPages}
                     onClick={() =>
                       setCurrentPage((page) =>
                         Math.min(totalPages, page + 1)
@@ -1128,28 +1414,32 @@ export default function OutstandingPlotSales() {
               </div>
             </>
           )}
-        </div>
+        </section>
 
-        {/* Footer note */}
-        {!loading && !error && outstandingRecords.length > 0 && (
-          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <ArrowUpRight
-              size={19}
-              className="mt-0.5 shrink-0 text-amber-700"
-            />
-            <div>
-              <p className="text-sm font-semibold text-amber-900">
-                Payment follow-up
-              </p>
-              <p className="mt-1 text-sm leading-6 text-amber-800">
-                Confirm payment records against the relevant plot sale before
-                marking any balance as settled. Outstanding amounts shown here
-                are calculated from the sale balance when available, otherwise
-                from the net sale value less the recorded amount paid.
-              </p>
+        {/* Payment follow-up note */}
+        {!isLoading &&
+          !displayedError &&
+          outstandingRecords.length > 0 && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <ArrowUpRight
+                size={19}
+                className="mt-0.5 shrink-0 text-amber-700"
+              />
+
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  Payment follow-up
+                </p>
+
+                <p className="mt-1 text-sm leading-6 text-amber-800">
+                  Confirm payment records against the relevant plot sale
+                  before marking any balance as settled. Outstanding
+                  amounts use the sale balance when available; otherwise,
+                  the net sale value less the recorded amount paid is used.
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
     </div>
   );

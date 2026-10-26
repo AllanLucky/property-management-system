@@ -14,50 +14,47 @@ const getErrorMessage = (
   error,
   fallback = "An unexpected error occurred. Please try again.",
 ) => {
-  const responseErrors = error?.response?.data?.errors;
+  const responseData = error?.response?.data;
+
+  const responseErrors =
+    responseData?.errors ??
+    error?.errors ??
+    null;
 
   if (typeof responseErrors === "string") {
     return responseErrors;
   }
 
-  if (responseErrors && typeof responseErrors === "object") {
-    const firstError = Object.values(responseErrors)
-      .flat()
-      .find(
+  if (
+    responseErrors &&
+    typeof responseErrors === "object"
+  ) {
+    const messages = Object.values(responseErrors)
+      .flat(Infinity)
+      .filter(
         (message) =>
           typeof message === "string" &&
           message.trim() !== "",
       );
 
-    if (firstError) {
-      return firstError;
+    if (messages.length > 0) {
+      return messages[0];
     }
   }
 
   return (
     error?.serviceMessage ||
-    error?.response?.data?.message ||
+    responseData?.message ||
     error?.message ||
     fallback
   );
 };
 
 /**
- * Execute an API operation.
+ * Execute an API operation and preserve the API response envelope.
  *
- * plotSalesApi already normalizes the Axios response.
- * Do not normalize the response a second time here.
- *
- * Successful responses retain this structure:
- * {
- *   status: true,
- *   code: 200,
- *   message: "...",
- *   data: { ... },
- *   meta: null,
- *   links: null,
- *   errors: null
- * }
+ * plotSalesApi is responsible for normalizing Axios responses.
+ * This service does not unwrap or normalize successful responses again.
  */
 const execute = async (
   operation,
@@ -78,10 +75,18 @@ const execute = async (
 };
 
 /**
- * Remove empty parameters while preserving 0 and false.
+ * Remove empty parameters while preserving valid 0 and false values.
  */
-const cleanParams = (params = {}) =>
-  Object.fromEntries(
+const cleanParams = (params = {}) => {
+  if (
+    !params ||
+    typeof params !== "object" ||
+    Array.isArray(params)
+  ) {
+    return {};
+  }
+
+  return Object.fromEntries(
     Object.entries(params).filter(
       ([, value]) =>
         value !== undefined &&
@@ -89,6 +94,7 @@ const cleanParams = (params = {}) =>
         value !== "",
     ),
   );
+};
 
 /**
  * Validate a positive integer identifier.
@@ -141,6 +147,17 @@ const validateRequiredString = (value, label) => {
   return normalizedValue;
 };
 
+/**
+ * Validate an optional cancellation reason.
+ */
+const normalizeReason = (reason) => {
+  if (reason === null || reason === undefined) {
+    return null;
+  }
+
+  return String(reason).trim() || null;
+};
+
 /*
 |--------------------------------------------------------------------------
 | PLOT SALES SERVICE
@@ -158,8 +175,10 @@ const plotSaleService = {
    * Fetch paginated plot sales.
    */
   async getAll(filters = {}) {
+    const params = cleanParams(filters);
+
     return execute(
-      () => plotSalesApi.getPlotSales(cleanParams(filters)),
+      () => plotSalesApi.getPlotSales(params),
       "Failed to fetch plot sales.",
     );
   },
@@ -168,7 +187,7 @@ const plotSaleService = {
    * Alias for getAll.
    */
   async getPlotSales(filters = {}) {
-    return this.getAll(filters);
+    return plotSaleService.getAll(filters);
   },
 
   /**
@@ -176,12 +195,13 @@ const plotSaleService = {
    */
   async search(search, filters = {}) {
     const searchTerm = String(search ?? "").trim();
+    const params = cleanParams(filters);
 
     return execute(
       () =>
         plotSalesApi.searchPlotSales(
           searchTerm,
-          cleanParams(filters),
+          params,
         ),
       "Failed to search plot sales.",
     );
@@ -260,7 +280,7 @@ const plotSaleService = {
    * Alias for getById.
    */
   async getPlotSaleById(id) {
-    return this.getById(id);
+    return plotSaleService.getById(id);
   },
 
   /*
@@ -288,7 +308,7 @@ const plotSaleService = {
    * Alias for create.
    */
   async createPlotSale(saleData) {
-    return this.create(saleData);
+    return plotSaleService.create(saleData);
   },
 
   /*
@@ -318,7 +338,7 @@ const plotSaleService = {
    * Alias for update.
    */
   async updatePlotSale(id, saleData) {
-    return this.update(id, saleData);
+    return plotSaleService.update(id, saleData);
   },
 
   /*
@@ -343,7 +363,7 @@ const plotSaleService = {
    * Alias for delete.
    */
   async deletePlotSale(id) {
-    return this.delete(id);
+    return plotSaleService.delete(id);
   },
 
   /*
@@ -368,7 +388,7 @@ const plotSaleService = {
    * Alias for approve.
    */
   async approvePlotSale(id) {
-    return this.approve(id);
+    return plotSaleService.approve(id);
   },
 
   /*
@@ -382,9 +402,14 @@ const plotSaleService = {
    */
   async cancel(id, reason = null) {
     const saleId = validateId(id, "Plot sale ID");
+    const cancellationReason = normalizeReason(reason);
 
     return execute(
-      () => plotSalesApi.cancelPlotSale(saleId, reason),
+      () =>
+        plotSalesApi.cancelPlotSale(
+          saleId,
+          cancellationReason,
+        ),
       "Failed to cancel plot sale.",
     );
   },
@@ -393,7 +418,7 @@ const plotSaleService = {
    * Alias for cancel.
    */
   async cancelPlotSale(id, reason = null) {
-    return this.cancel(id, reason);
+    return plotSaleService.cancel(id, reason);
   },
 
   /*
@@ -418,7 +443,7 @@ const plotSaleService = {
    * Alias for complete.
    */
   async completePlotSale(id) {
-    return this.complete(id);
+    return plotSaleService.complete(id);
   },
 
   /*
@@ -429,12 +454,32 @@ const plotSaleService = {
 
   /**
    * Fetch sales with outstanding balances.
+   *
+   * Expected response envelope:
+   * {
+   *   status: true,
+   *   code: 200,
+   *   message: "...",
+   *   data: [...],
+   *   meta: {
+   *     current_page: 1,
+   *     last_page: 1,
+   *     per_page: 15,
+   *     total: 1
+   *   },
+   *   links: {...},
+   *   errors: null
+   * }
+   *
+   * The returned value remains the normalized API envelope.
    */
   async getOutstanding(params = {}) {
+    const queryParams = cleanParams(params);
+
     return execute(
       () =>
         plotSalesApi.getOutstandingPlotSales(
-          cleanParams(params),
+          queryParams,
         ),
       "Failed to fetch outstanding plot sales.",
     );
@@ -444,7 +489,7 @@ const plotSaleService = {
    * Alias for getOutstanding.
    */
   async getOutstandingPlotSales(params = {}) {
-    return this.getOutstanding(params);
+    return plotSaleService.getOutstanding(params);
   },
 
   /*
@@ -454,18 +499,17 @@ const plotSaleService = {
   */
 
   /**
-   * Fetch plot sale statistics.
+   * Fetch plot sales statistics.
    *
-   * IMPORTANT:
-   * Returns the normalized API envelope.
-   * Statistics are available under response.data.
+   * Statistics are expected under response.data.
+   * The API envelope is preserved.
    */
   async getStatistics(filters = {}) {
+    const params = cleanParams(filters);
+
     return execute(
       () =>
-        plotSalesApi.getPlotSalesStatistics(
-          cleanParams(filters),
-        ),
+        plotSalesApi.getPlotSalesStatistics(params),
       "Failed to fetch plot sales statistics.",
     );
   },
@@ -474,7 +518,7 @@ const plotSaleService = {
    * Alias for getStatistics.
    */
   async getPlotSalesStatistics(filters = {}) {
-    return this.getStatistics(filters);
+    return plotSaleService.getStatistics(filters);
   },
 
   /*
@@ -487,11 +531,11 @@ const plotSaleService = {
    * Fetch plot sales report data.
    */
   async getReport(filters = {}) {
+    const params = cleanParams(filters);
+
     return execute(
       () =>
-        plotSalesApi.getPlotSalesReport(
-          cleanParams(filters),
-        ),
+        plotSalesApi.getPlotSalesReport(params),
       "Failed to generate plot sales report.",
     );
   },
@@ -500,7 +544,7 @@ const plotSaleService = {
    * Alias for getReport.
    */
   async getPlotSalesReport(filters = {}) {
-    return this.getReport(filters);
+    return plotSaleService.getReport(filters);
   },
 
   /*
@@ -525,7 +569,7 @@ const plotSaleService = {
    * Alias for restore.
    */
   async restorePlotSale(id) {
-    return this.restore(id);
+    return plotSaleService.restore(id);
   },
 
   /*
@@ -550,7 +594,7 @@ const plotSaleService = {
    * Alias for forceDelete.
    */
   async forceDeletePlotSale(id) {
-    return this.forceDelete(id);
+    return plotSaleService.forceDelete(id);
   },
 
   /*
