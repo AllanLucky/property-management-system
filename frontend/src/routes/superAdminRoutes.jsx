@@ -229,14 +229,68 @@ import {
   LeaseDetails,
   LeaseList,
 } from "../modules/super-admin/leases";
-import { BookingCalendar, BookingDetails, BookingList, BookingReport, CancelledBookings, CreateBooking, EditBooking } from "../modules/super-admin/bookings";
-import { AvailablePlots, CreatePlot, EditPlot, PlotDetails, PlotList, PlotReports, ReservedPlots } from "../modules/super-admin/plots";
-import { ApprovePlotSale, CancelPlotSale, CompletePlotSale, CreatePlotSale, EditPlotSale, OutstandingPlotSales, PlotSaleDetails, PlotSaleList, PlotSaleReports } from "../modules/super-admin/plotsales";
 
 /*
 |--------------------------------------------------------------------------
 | BOOKINGS
 |--------------------------------------------------------------------------
+*/
+import {
+  BookingCalendar,
+  BookingDetails,
+  BookingList,
+  BookingReport,
+  CancelledBookings,
+  CreateBooking,
+  EditBooking,
+} from "../modules/super-admin/bookings";
+
+/*
+|--------------------------------------------------------------------------
+| PLOT MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+import {
+  AvailablePlots,
+  CreatePlot,
+  EditPlot,
+  PlotDetails,
+  PlotList,
+  PlotReports,
+  ReservedPlots,
+} from "../modules/super-admin/plots";
+
+/*
+|--------------------------------------------------------------------------
+| PLOT SALES MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+import {
+  ApprovePlotSale,
+  CancelPlotSale,
+  CompletePlotSale,
+  CreatePlotSale,
+  EditPlotSale,
+  OutstandingPlotSales,
+  PlotSaleDetails,
+  PlotSaleList,
+  PlotSaleReports,
+} from "../modules/super-admin/plotsales";
+
+/*
+|--------------------------------------------------------------------------
+| PLOT PAYMENTS MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+import {
+  PlotPaymentList,
+  CreatePlotPayment,
+  EditPlotPayment,
+  PlotPaymentDetails,
+  PlotPaymentReceipt,
+  DeletePlotPayment,
+} from "../modules/super-admin/plot-payments";
+
 /*
 |--------------------------------------------------------------------------
 | SUPER ADMIN ROUTES
@@ -941,10 +995,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* IMPORTANT:
-          Specific routes must be declared before tenancies/:id
-      */}
-
       <Route
         path="tenancies/statistics"
         element={
@@ -1003,7 +1053,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Expired Leases */}
       <Route
         path="leases/expired"
         element={
@@ -1013,7 +1062,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Lease Edit */}
       <Route
         path="leases/:id/edit"
         element={
@@ -1023,7 +1071,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-      {/* Lease Details */}
       <Route
         path="leases/:id"
         element={
@@ -1035,7 +1082,7 @@ const SuperAdminRoutes = () => {
 
       {/* ==================================================================
           BOOKINGS
-          ================================================================== */}
+      ================================================================== */}
 
       <Route
         path="bookings"
@@ -1054,29 +1101,6 @@ const SuperAdminRoutes = () => {
           </PermissionGuard>
         }
       />
-
-      <Route
-        path="bookings/:id/edit"
-        element={
-          <PermissionGuard permission="bookings.edit">
-            <EditBooking />
-          </PermissionGuard>
-        }
-      />
-
-      <Route
-        path="bookings/:id"
-        element={
-          <PermissionGuard permission="bookings.view">
-            <BookingDetails />
-          </PermissionGuard>
-        }
-      />
-
-      {/* ==================================================================
-            CANCELLED BOOKINGS
-          ================================================================== 
-      */}
 
       <Route
         path="bookings/cancelled"
@@ -1105,12 +1129,27 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      <Route
+        path="bookings/:id/edit"
+        element={
+          <PermissionGuard permission="bookings.edit">
+            <EditBooking />
+          </PermissionGuard>
+        }
+      />
 
-      {/*
-       ==================================================================
+      <Route
+        path="bookings/:id"
+        element={
+          <PermissionGuard permission="bookings.view">
+            <BookingDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ==================================================================
           PLOT MANAGEMENT
-         ================================================================== 
-      */}
+      ================================================================== */}
 
       <Route
         path="plots"
@@ -1126,6 +1165,33 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="plots.create">
             <CreatePlot />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plots/available"
+        element={
+          <PermissionGuard permission="plots.view">
+            <AvailablePlots />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plots/reserved"
+        element={
+          <PermissionGuard permission="plots.view">
+            <ReservedPlots />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plots/reports"
+        element={
+          <PermissionGuard permission="plots.view">
+            <PlotReports />
           </PermissionGuard>
         }
       />
@@ -1149,52 +1215,9 @@ const SuperAdminRoutes = () => {
       />
 
       {/* ==================================================================
-    AVAILABLE PLOTS
-    ================================================================== */}
+          PLOT SALES MANAGEMENT
+      ================================================================== */}
 
-      <Route
-        path="plots/available"
-        element={
-          <PermissionGuard permission="plots.view">
-            <AvailablePlots />
-          </PermissionGuard>
-        }
-      />
-
-      {/* ==================================================================
-    RESERVED PLOTS
-    ================================================================== */}
-
-      <Route
-        path="plots/reserved"
-        element={
-          <PermissionGuard permission="plots.view">
-            <ReservedPlots />
-          </PermissionGuard>
-        }
-      />
-
-      {/* ==================================================================
-    PLOT REPORTS
-    ================================================================== */}
-
-      <Route
-        path="plots/reports"
-        element={
-          <PermissionGuard permission="plots.view">
-            <PlotReports />
-          </PermissionGuard>
-        }
-      />
-
-
-      {/*
-|--------------------------------------------------------------------------
-| PLOT SALES MANAGEMENT
-|--------------------------------------------------------------------------
-*/}
-
-// Plot Sales List
       <Route
         path="plot-sales"
         element={
@@ -1204,7 +1227,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Create Plot Sale
       <Route
         path="plot-sales/create"
         element={
@@ -1214,7 +1236,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Outstanding Plot Sales
       <Route
         path="plot-sales/outstanding"
         element={
@@ -1224,7 +1245,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Plot Sale Reports
       <Route
         path="plot-sales/reports"
         element={
@@ -1234,7 +1254,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Approve Plot Sale
       <Route
         path="plot-sales/:id/approve"
         element={
@@ -1244,7 +1263,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Cancel Plot Sale
       <Route
         path="plot-sales/:id/cancel"
         element={
@@ -1254,7 +1272,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Complete Plot Sale
       <Route
         path="plot-sales/:id/complete"
         element={
@@ -1264,7 +1281,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Edit Plot Sale
       <Route
         path="plot-sales/:id/edit"
         element={
@@ -1274,7 +1290,6 @@ const SuperAdminRoutes = () => {
         }
       />
 
-// Plot Sale Details
       <Route
         path="plot-sales/:id"
         element={
@@ -1284,6 +1299,63 @@ const SuperAdminRoutes = () => {
         }
       />
 
+      {/* ==================================================================
+          PLOT PAYMENTS MANAGEMENT
+      ================================================================== */}
+
+      <Route
+        path="plot-payments"
+        element={
+          <PermissionGuard permission="plot-payments.view">
+            <PlotPaymentList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plot-payments/create"
+        element={
+          <PermissionGuard permission="plot-payments.create">
+            <CreatePlotPayment />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plot-payments/:id/receipt"
+        element={
+          <PermissionGuard permission="plot-payments.view">
+            <PlotPaymentReceipt />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plot-payments/:id/delete"
+        element={
+          <PermissionGuard permission="plot-payments.delete">
+            <DeletePlotPayment />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plot-payments/:id/edit"
+        element={
+          <PermissionGuard permission="plot-payments.update">
+            <EditPlotPayment />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="plot-payments/:id"
+        element={
+          <PermissionGuard permission="plot-payments.view">
+            <PlotPaymentDetails />
+          </PermissionGuard>
+        }
+      />
     </>
   );
 };
