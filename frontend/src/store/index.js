@@ -1,4 +1,3 @@
-
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./authSlice";
 
@@ -98,6 +97,13 @@ import plotSalesReducer from "./plotSalesSlice";
 
 /*
 |--------------------------------------------------------------------------
+| PLOT PAYMENTS MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+import plotPaymentReducer from "./plotPaymentSlice";
+
+/*
+|--------------------------------------------------------------------------
 | REDUX STORE CONFIGURATION
 |--------------------------------------------------------------------------
 */
@@ -183,8 +189,16 @@ export const store = configureStore({
     /*
     |--------------------------------------------------------------------------
     | PLOT SALES MANAGEMENT
+    |--------------------------------------------------------------------------
     */
     plotSales: plotSalesReducer,
+
+    /*
+    |--------------------------------------------------------------------------
+    | PLOT PAYMENTS MANAGEMENT
+    |--------------------------------------------------------------------------
+    */
+    plotPayments: plotPaymentReducer,
   },
 
   /*
