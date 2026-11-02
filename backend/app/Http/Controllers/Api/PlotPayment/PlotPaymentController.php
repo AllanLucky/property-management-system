@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -46,10 +47,22 @@ class PlotPaymentController extends Controller
         return $this->execute(function () use ($request) {
             $this->authorize('viewAny', PlotPayment::class);
 
+            $filters = $this->validateFilters($request);
+
+            $perPage = $this->getPerPage($request);
+
             $payments = $this->plotPaymentService->paginate(
-                $this->getFilters($request),
-                (int) $request->input('per_page', 15)
+                $filters,
+                $perPage
             );
+
+            Log::info('Plot payment index retrieved.', [
+                'database' => DB::connection()->getDatabaseName(),
+                'filters' => $filters,
+                'total' => $payments->total(),
+                'current_page' => $payments->currentPage(),
+                'per_page' => $payments->perPage(),
+            ]);
 
             $payments->through(
                 fn (PlotPayment $payment) =>
@@ -134,7 +147,7 @@ class PlotPaymentController extends Controller
      * PUT/PATCH /api/plot-payments/{plotPayment}
      *
      * Updates ordinary payment details.
-     * Status changes must use the dedicated status workflow.
+     * Completion and refunds require dedicated workflows.
      */
     public function update(
         UpdatePlotPaymentRequest $request,
@@ -152,10 +165,6 @@ class PlotPaymentController extends Controller
 
             $data = $request->validated();
 
-            /*
-             * Do not allow ordinary payment editing to confirm
-             * or refund a payment.
-             */
             if (
                 isset($data['status'])
                 && in_array(
@@ -229,60 +238,40 @@ class PlotPaymentController extends Controller
             $this->authorize('viewAny', PlotPayment::class);
 
             $validator = Validator::make(
-                $request->all(),
-                [
-                    'search' => ['sometimes', 'nullable', 'string', 'max:255'],
-                    'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-                    'plot_sale_id' => ['sometimes', 'integer', 'min:1'],
-                    'payment_number' => ['sometimes', 'nullable', 'string', 'max:50'],
-                    'receipt_number' => ['sometimes', 'nullable', 'string', 'max:100'],
-                    'transaction_reference' => ['sometimes', 'nullable', 'string', 'max:150'],
-                    'payment_type' => [
-                        'sometimes',
-                        'nullable',
-                        'in:deposit,installment,balance,full_payment,other',
-                    ],
-                    'payment_method' => [
-                        'sometimes',
-                        'nullable',
-                        'in:mpesa,bank_transfer,cash,card,cheque,online,other',
-                    ],
-                    'status' => [
-                        'sometimes',
-                        'nullable',
-                        'in:pending,completed,failed,cancelled,refunded',
-                    ],
-                    'currency' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'size:3',
-                        'regex:/^[A-Z]{3}$/',
-                    ],
-                    'is_active' => ['sometimes', 'nullable', 'boolean'],
-                    'payer_name' => ['sometimes', 'nullable', 'string', 'max:150'],
-                    'payer_phone' => ['sometimes', 'nullable', 'string', 'max:30'],
-                    'payer_email' => ['sometimes', 'nullable', 'email:rfc', 'max:150'],
-                    'start_date' => ['sometimes', 'nullable', 'date'],
-                    'end_date' => [
-                        'sometimes',
-                        'nullable',
-                        'date',
-                        'after_or_equal:start_date',
-                    ],
-                    'min_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
-                    'max_amount' => ['sometimes', 'nullable', 'numeric', 'gte:min_amount'],
-                ]
+                $request->query(),
+                array_merge(
+                    $this->filterRules(),
+                    [
+                        'search' => [
+                            'sometimes',
+                            'nullable',
+                            'string',
+                            'max:255',
+                        ],
+                        'per_page' => [
+                            'sometimes',
+                            'integer',
+                            'min:1',
+                            'max:100',
+                        ],
+                    ]
+                )
             );
 
             if ($validator->fails()) {
                 throw new ValidationException($validator);
             }
 
+            $validated = $validator->validated();
+
+            $search = trim((string) ($validated['search'] ?? ''));
+
+            $filters = $this->extractValidatedFilters($validated);
+
             $payments = $this->plotPaymentService->search(
-                (string) $request->input('search', ''),
-                $this->getFilters($request),
-                (int) $request->input('per_page', 15)
+                $search,
+                $filters,
+                $this->getPerPage($request)
             );
 
             $payments->through(
@@ -311,8 +300,17 @@ class PlotPaymentController extends Controller
         return $this->execute(function () use ($request) {
             $this->authorize('viewAny', PlotPayment::class);
 
+            $filters = $this->validateFilters($request);
+
             $statistics = $this->plotPaymentService
-                ->dashboardStatistics($this->getFilters($request));
+                ->dashboardStatistics($filters);
+
+            Log::info('Plot payment statistics retrieved.', [
+                'database' => DB::connection()->getDatabaseName(),
+                'filters' => $filters,
+                'total_payments' => $statistics['total_payments'] ?? 0,
+                'total_amount' => $statistics['total_amount'] ?? 0,
+            ]);
 
             return ApiResponse::success(
                 $statistics,
@@ -340,10 +338,15 @@ class PlotPaymentController extends Controller
         ) {
             $this->authorize('viewAny', PlotPayment::class);
 
+            $filters = $this->validateFilters($request);
+
+            // The route parameter must take priority over query filters.
+            $filters['plot_sale_id'] = $plotSaleId;
+
             $payments = $this->plotPaymentService->getBySale(
                 $plotSaleId,
-                $this->getFilters($request),
-                (int) $request->input('per_page', 15)
+                $filters,
+                $this->getPerPage($request)
             );
 
             $payments->through(
@@ -377,10 +380,29 @@ class PlotPaymentController extends Controller
         ) {
             $this->authorize('viewAny', PlotPayment::class);
 
+            $statusValidator = Validator::make(
+                ['status' => $status],
+                [
+                    'status' => [
+                        'required',
+                        'in:pending,completed,failed,cancelled,refunded',
+                    ],
+                ]
+            );
+
+            if ($statusValidator->fails()) {
+                throw new ValidationException($statusValidator);
+            }
+
+            $filters = $this->validateFilters($request);
+
+            // The route status must take priority over query filters.
+            $filters['status'] = $status;
+
             $payments = $this->plotPaymentService->getByStatus(
                 $status,
-                $this->getFilters($request),
-                (int) $request->input('per_page', 15)
+                $filters,
+                $this->getPerPage($request)
             );
 
             $payments->through(
@@ -404,7 +426,7 @@ class PlotPaymentController extends Controller
     /**
      * PATCH /api/plot-payments/{plotPayment}/status
      *
-     * Status transitions:
+     * Allowed ordinary transitions:
      * pending -> failed/cancelled
      * failed -> pending
      *
@@ -481,8 +503,9 @@ class PlotPaymentController extends Controller
     /**
      * POST /api/plot-payments/{plotPayment}/confirm
      *
-     * Manual confirmation for cash, bank, or independently verified
-     * payment records. Requires the dedicated confirmation permission.
+     * Requires the dedicated confirmation permission.
+     * The reference and notes are validated but are not persisted
+     * unless a dedicated audit mechanism is implemented.
      */
     public function confirm(
         Request $request,
@@ -516,10 +539,6 @@ class PlotPaymentController extends Controller
                 $plotPayment
             );
 
-            /*
-             * Define this ability in your PlotPaymentPolicy.
-             * Do not replace it with a client-supplied role or flag.
-             */
             $this->authorize('confirm', $payment);
 
             $data = $validator->validated();
@@ -528,17 +547,32 @@ class PlotPaymentController extends Controller
                 $payment,
                 $data
             ) {
+                // Re-fetch and lock the payment inside the transaction.
+                $lockedPayment = PlotPayment::query()
+                    ->lockForUpdate()
+                    ->findOrFail($payment->id);
+
+                if ($lockedPayment->status === 'completed') {
+                    throw ValidationException::withMessages([
+                        'status' => [
+                            'This payment has already been completed.',
+                        ],
+                    ]);
+                }
+
                 $updated = $this->plotPaymentService->updateStatus(
-                    $payment->id,
+                    $lockedPayment->id,
                     'completed',
                     true
                 );
 
-                /*
-                 * Add verification audit persistence here if your
-                 * database has dedicated audit columns or a log table.
-                 * The verification reference must not be discarded.
-                 */
+                Log::info('Plot payment manually confirmed.', [
+                    'payment_id' => $updated->id,
+                    'payment_number' => $updated->payment_number,
+                    'verification_reference' => $data['verification_reference'],
+                    'verification_notes' => $data['verification_notes'] ?? null,
+                ]);
+
                 return $updated;
             });
 
@@ -633,34 +667,169 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Collect supported query filters.
+     * Validation rules shared by listing and filtering endpoints.
      */
-    private function getFilters(Request $request): array
+    private function filterRules(): array
     {
-        $filters = $request->only([
-            'plot_sale_id',
-            'payment_number',
-            'receipt_number',
-            'transaction_reference',
-            'payment_type',
-            'payment_method',
-            'status',
-            'currency',
-            'is_active',
-            'payer_name',
-            'payer_phone',
-            'payer_email',
-            'start_date',
-            'end_date',
-            'min_amount',
-            'max_amount',
-        ]);
+        return [
+            'plot_sale_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:1',
+            ],
+
+            'payment_number' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:50',
+            ],
+
+            'receipt_number' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'transaction_reference' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:150',
+            ],
+
+            'payment_type' => [
+                'sometimes',
+                'nullable',
+                'in:deposit,installment,balance,full_payment,other',
+            ],
+
+            'payment_method' => [
+                'sometimes',
+                'nullable',
+                'in:mpesa,bank_transfer,cash,card,cheque,online,other',
+            ],
+
+            'status' => [
+                'sometimes',
+                'nullable',
+                'in:pending,completed,failed,cancelled,refunded',
+            ],
+
+            'currency' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'size:3',
+                'regex:/^[A-Z]{3}$/',
+            ],
+
+            'is_active' => [
+                'sometimes',
+                'nullable',
+                'boolean',
+            ],
+
+            'payer_name' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:150',
+            ],
+
+            'payer_phone' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:30',
+            ],
+
+            'payer_email' => [
+                'sometimes',
+                'nullable',
+                'email:rfc',
+                'max:150',
+            ],
+
+            'start_date' => [
+                'sometimes',
+                'nullable',
+                'date',
+            ],
+
+            'end_date' => [
+                'sometimes',
+                'nullable',
+                'date',
+                'after_or_equal:start_date',
+            ],
+
+            'min_amount' => [
+                'sometimes',
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+
+            'max_amount' => [
+                'sometimes',
+                'nullable',
+                'numeric',
+                'gte:min_amount',
+            ],
+        ];
+    }
+
+    /**
+     * Validate query filters.
+     */
+    private function validateFilters(Request $request): array
+    {
+        $validator = Validator::make(
+            $request->query(),
+            $this->filterRules()
+        );
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
+        return $this->extractValidatedFilters(
+            $validator->validated()
+        );
+    }
+
+    /**
+     * Remove pagination and empty values from validated filters.
+     */
+    private function extractValidatedFilters(array $validated): array
+    {
+        unset($validated['per_page'], $validated['search']);
 
         return array_filter(
-            $filters,
+            $validated,
             fn ($value) => $value !== null && $value !== ''
         );
     }
+
+    /**
+     * Get a safe pagination size.
+     */
+    private function getPerPage(Request $request): int
+    {
+        return max(
+            1,
+            min((int) $request->input('per_page', 15), 100)
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Standard API Error Handling
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Execute an action using the standard API response format.
