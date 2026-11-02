@@ -13,6 +13,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -38,8 +39,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Display paginated plot payments.
-     *
      * GET /api/plot-payments
      */
     public function index(Request $request): JsonResponse
@@ -47,19 +46,14 @@ class PlotPaymentController extends Controller
         return $this->execute(function () use ($request) {
             $this->authorize('viewAny', PlotPayment::class);
 
-            $filters = $this->getFilters($request);
-
-            $perPage = (int) $request->input('per_page', 15);
-
             $payments = $this->plotPaymentService->paginate(
-                $filters,
-                $perPage
+                $this->getFilters($request),
+                (int) $request->input('per_page', 15)
             );
 
             $payments->through(
                 fn (PlotPayment $payment) =>
-                    (new PlotPaymentResource($payment))
-                        ->resolve($request)
+                    (new PlotPaymentResource($payment))->resolve($request)
             );
 
             return ApiResponse::paginated(
@@ -76,8 +70,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Create a plot payment.
-     *
      * POST /api/plot-payments
      */
     public function store(
@@ -91,8 +83,7 @@ class PlotPaymentController extends Controller
             );
 
             return ApiResponse::created(
-                (new PlotPaymentResource($payment))
-                    ->resolve($request),
+                (new PlotPaymentResource($payment))->resolve($request),
                 'Plot payment created successfully.'
             );
         });
@@ -105,8 +96,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Display a specific plot payment.
-     *
      * GET /api/plot-payments/{plotPayment}
      */
     public function show(
@@ -125,12 +114,11 @@ class PlotPaymentController extends Controller
 
             $payment = $this->plotPaymentService->loadRelations(
                 $payment,
-                ['plotSale']
+                ['plotSale.buyer']
             );
 
             return ApiResponse::success(
-                (new PlotPaymentResource($payment))
-                    ->resolve($request),
+                (new PlotPaymentResource($payment))->resolve($request),
                 'Plot payment retrieved successfully.'
             );
         });
@@ -143,9 +131,10 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Update an existing plot payment.
-     *
      * PUT/PATCH /api/plot-payments/{plotPayment}
+     *
+     * Updates ordinary payment details.
+     * Status changes must use the dedicated status workflow.
      */
     public function update(
         UpdatePlotPaymentRequest $request,
@@ -161,9 +150,30 @@ class PlotPaymentController extends Controller
 
             $this->authorize('update', $payment);
 
+            $data = $request->validated();
+
+            /*
+             * Do not allow ordinary payment editing to confirm
+             * or refund a payment.
+             */
+            if (
+                isset($data['status'])
+                && in_array(
+                    $data['status'],
+                    ['completed', 'refunded'],
+                    true
+                )
+            ) {
+                throw ValidationException::withMessages([
+                    'status' => [
+                        'Use the authorized payment verification workflow to complete or refund this payment.',
+                    ],
+                ]);
+            }
+
             $updatedPayment = $this->plotPaymentService->update(
                 $payment->id,
-                $request->validated()
+                $data
             );
 
             return ApiResponse::updated(
@@ -181,8 +191,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Soft-delete a plot payment.
-     *
      * DELETE /api/plot-payments/{plotPayment}
      */
     public function destroy(int $plotPayment): JsonResponse
@@ -213,8 +221,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Search and filter plot payments.
-     *
      * GET /api/plot-payments/search
      */
     public function search(Request $request): JsonResponse
@@ -225,41 +231,12 @@ class PlotPaymentController extends Controller
             $validator = Validator::make(
                 $request->all(),
                 [
-                    'search' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'max:255',
-                    ],
-                    'per_page' => [
-                        'sometimes',
-                        'integer',
-                        'min:1',
-                        'max:100',
-                    ],
-                    'plot_sale_id' => [
-                        'sometimes',
-                        'integer',
-                        'min:1',
-                    ],
-                    'payment_number' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'max:50',
-                    ],
-                    'receipt_number' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'max:100',
-                    ],
-                    'transaction_reference' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'max:150',
-                    ],
+                    'search' => ['sometimes', 'nullable', 'string', 'max:255'],
+                    'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+                    'plot_sale_id' => ['sometimes', 'integer', 'min:1'],
+                    'payment_number' => ['sometimes', 'nullable', 'string', 'max:50'],
+                    'receipt_number' => ['sometimes', 'nullable', 'string', 'max:100'],
+                    'transaction_reference' => ['sometimes', 'nullable', 'string', 'max:150'],
                     'payment_type' => [
                         'sometimes',
                         'nullable',
@@ -282,52 +259,19 @@ class PlotPaymentController extends Controller
                         'size:3',
                         'regex:/^[A-Z]{3}$/',
                     ],
-                    'is_active' => [
-                        'sometimes',
-                        'nullable',
-                        'boolean',
-                    ],
-                    'payer_name' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'max:150',
-                    ],
-                    'payer_phone' => [
-                        'sometimes',
-                        'nullable',
-                        'string',
-                        'max:30',
-                    ],
-                    'payer_email' => [
-                        'sometimes',
-                        'nullable',
-                        'email:rfc',
-                        'max:150',
-                    ],
-                    'start_date' => [
-                        'sometimes',
-                        'nullable',
-                        'date',
-                    ],
+                    'is_active' => ['sometimes', 'nullable', 'boolean'],
+                    'payer_name' => ['sometimes', 'nullable', 'string', 'max:150'],
+                    'payer_phone' => ['sometimes', 'nullable', 'string', 'max:30'],
+                    'payer_email' => ['sometimes', 'nullable', 'email:rfc', 'max:150'],
+                    'start_date' => ['sometimes', 'nullable', 'date'],
                     'end_date' => [
                         'sometimes',
                         'nullable',
                         'date',
                         'after_or_equal:start_date',
                     ],
-                    'min_amount' => [
-                        'sometimes',
-                        'nullable',
-                        'numeric',
-                        'min:0',
-                    ],
-                    'max_amount' => [
-                        'sometimes',
-                        'nullable',
-                        'numeric',
-                        'gte:min_amount',
-                    ],
+                    'min_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+                    'max_amount' => ['sometimes', 'nullable', 'numeric', 'gte:min_amount'],
                 ]
             );
 
@@ -335,18 +279,15 @@ class PlotPaymentController extends Controller
                 throw new ValidationException($validator);
             }
 
-            $filters = $this->getFilters($request);
-
             $payments = $this->plotPaymentService->search(
                 (string) $request->input('search', ''),
-                $filters,
+                $this->getFilters($request),
                 (int) $request->input('per_page', 15)
             );
 
             $payments->through(
                 fn (PlotPayment $payment) =>
-                    (new PlotPaymentResource($payment))
-                        ->resolve($request)
+                    (new PlotPaymentResource($payment))->resolve($request)
             );
 
             return ApiResponse::paginated(
@@ -363,8 +304,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Get plot payment statistics.
-     *
      * GET /api/plot-payments/statistics
      */
     public function statistics(Request $request): JsonResponse
@@ -372,10 +311,8 @@ class PlotPaymentController extends Controller
         return $this->execute(function () use ($request) {
             $this->authorize('viewAny', PlotPayment::class);
 
-            $filters = $this->getFilters($request);
-
             $statistics = $this->plotPaymentService
-                ->dashboardStatistics($filters);
+                ->dashboardStatistics($this->getFilters($request));
 
             return ApiResponse::success(
                 $statistics,
@@ -391,8 +328,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Get payments for a specific plot sale.
-     *
      * GET /api/plot-payments/sale/{plotSaleId}
      */
     public function bySale(
@@ -413,8 +348,7 @@ class PlotPaymentController extends Controller
 
             $payments->through(
                 fn (PlotPayment $payment) =>
-                    (new PlotPaymentResource($payment))
-                        ->resolve($request)
+                    (new PlotPaymentResource($payment))->resolve($request)
             );
 
             return ApiResponse::paginated(
@@ -431,8 +365,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Get payments by status.
-     *
      * GET /api/plot-payments/status/{status}
      */
     public function byStatus(
@@ -453,8 +385,7 @@ class PlotPaymentController extends Controller
 
             $payments->through(
                 fn (PlotPayment $payment) =>
-                    (new PlotPaymentResource($payment))
-                        ->resolve($request)
+                    (new PlotPaymentResource($payment))->resolve($request)
             );
 
             return ApiResponse::paginated(
@@ -471,13 +402,13 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Update a payment status through the authorized workflow.
-     *
      * PATCH /api/plot-payments/{plotPayment}/status
      *
-     * This endpoint does not accept a client-supplied verification flag.
-     * Completion and refund verification must come from a trusted backend
-     * payment integration or a separate verified administrative workflow.
+     * Status transitions:
+     * pending -> failed/cancelled
+     * failed -> pending
+     *
+     * Completion and refunds require a trusted verification workflow.
      */
     public function updateStatus(
         Request $request,
@@ -495,6 +426,18 @@ class PlotPaymentController extends Controller
                         'string',
                         'in:pending,completed,failed,cancelled,refunded',
                     ],
+                    'verification_reference' => [
+                        'sometimes',
+                        'nullable',
+                        'string',
+                        'max:150',
+                    ],
+                    'verification_notes' => [
+                        'sometimes',
+                        'nullable',
+                        'string',
+                        'max:1000',
+                    ],
                 ]
             );
 
@@ -510,11 +453,9 @@ class PlotPaymentController extends Controller
 
             $status = $validator->validated()['status'];
 
-            // Never trust a verification flag supplied by the client.
-            // This public API operation cannot complete or refund payments.
             if (in_array($status, ['completed', 'refunded'], true)) {
                 return ApiResponse::forbidden(
-                    'Payment completion and refunds require a trusted verification workflow.'
+                    'Payment completion and refunds must be performed through the authorized verification workflow.'
                 );
             }
 
@@ -533,13 +474,89 @@ class PlotPaymentController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | Manual Payment Confirmation
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * POST /api/plot-payments/{plotPayment}/confirm
+     *
+     * Manual confirmation for cash, bank, or independently verified
+     * payment records. Requires the dedicated confirmation permission.
+     */
+    public function confirm(
+        Request $request,
+        int $plotPayment
+    ): JsonResponse {
+        return $this->execute(function () use (
+            $request,
+            $plotPayment
+        ) {
+            $validator = Validator::make(
+                $request->all(),
+                [
+                    'verification_reference' => [
+                        'required',
+                        'string',
+                        'max:150',
+                    ],
+                    'verification_notes' => [
+                        'nullable',
+                        'string',
+                        'max:1000',
+                    ],
+                ]
+            );
+
+            if ($validator->fails()) {
+                throw new ValidationException($validator);
+            }
+
+            $payment = $this->plotPaymentService->findOrFail(
+                $plotPayment
+            );
+
+            /*
+             * Define this ability in your PlotPaymentPolicy.
+             * Do not replace it with a client-supplied role or flag.
+             */
+            $this->authorize('confirm', $payment);
+
+            $data = $validator->validated();
+
+            $updatedPayment = DB::transaction(function () use (
+                $payment,
+                $data
+            ) {
+                $updated = $this->plotPaymentService->updateStatus(
+                    $payment->id,
+                    'completed',
+                    true
+                );
+
+                /*
+                 * Add verification audit persistence here if your
+                 * database has dedicated audit columns or a log table.
+                 * The verification reference must not be discarded.
+                 */
+                return $updated;
+            });
+
+            return ApiResponse::updated(
+                (new PlotPaymentResource($updatedPayment))
+                    ->resolve($request),
+                'Plot payment confirmed successfully.'
+            );
+        });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Restore
     |--------------------------------------------------------------------------
     */
 
     /**
-     * Restore a soft-deleted payment.
-     *
      * POST /api/plot-payments/{plotPayment}/restore
      */
     public function restore(int $plotPayment): JsonResponse
@@ -579,8 +596,6 @@ class PlotPaymentController extends Controller
     */
 
     /**
-     * Permanently delete a payment.
-     *
      * DELETE /api/plot-payments/{plotPayment}/force
      */
     public function forceDelete(int $plotPayment): JsonResponse
@@ -619,8 +634,6 @@ class PlotPaymentController extends Controller
 
     /**
      * Collect supported query filters.
-     *
-     * Only recognized filters are passed to the repository.
      */
     private function getFilters(Request $request): array
     {
@@ -643,12 +656,6 @@ class PlotPaymentController extends Controller
             'max_amount',
         ]);
 
-        // Never let query parameters enable access to deleted records.
-        unset(
-            $filters['with_trashed'],
-            $filters['only_trashed']
-        );
-
         return array_filter(
             $filters,
             fn ($value) => $value !== null && $value !== ''
@@ -656,7 +663,7 @@ class PlotPaymentController extends Controller
     }
 
     /**
-     * Execute a controller action using the standard ApiResponse format.
+     * Execute an action using the standard API response format.
      */
     private function execute(callable $callback): JsonResponse
     {
