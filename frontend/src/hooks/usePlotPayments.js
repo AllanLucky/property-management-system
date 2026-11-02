@@ -34,6 +34,14 @@ const DEFAULT_LINKS = {
   next: null,
 };
 
+const PAYMENT_STATUSES = [
+  "pending",
+  "completed",
+  "failed",
+  "cancelled",
+  "refunded",
+];
+
 /*
 |--------------------------------------------------------------------------
 | RESPONSE HELPERS
@@ -71,7 +79,9 @@ const getErrorMessage = (
 };
 
 const getCollection = (response) => {
-  if (Array.isArray(response)) return response;
+  if (Array.isArray(response)) {
+    return response;
+  }
 
   if (Array.isArray(response?.data)) {
     return response.data;
@@ -193,9 +203,16 @@ const usePlotPayments = ({
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [statusUpdating, setStatusUpdating] = useState(false);
+
+  const [statusUpdating, setStatusUpdating] =
+    useState(false);
+
+  const [confirming, setConfirming] = useState(false);
+
   const [restoring, setRestoring] = useState(false);
-  const [forceDeleting, setForceDeleting] = useState(false);
+
+  const [forceDeleting, setForceDeleting] =
+    useState(false);
 
   /*
   |--------------------------------------------------------------------------
@@ -204,10 +221,17 @@ const usePlotPayments = ({
   */
 
   const [error, setError] = useState(null);
+
   const [detailsError, setDetailsError] = useState(null);
-  const [statisticsError, setStatisticsError] = useState(null);
-  const [salePaymentsError, setSalePaymentsError] = useState(null);
-  const [statusPaymentsError, setStatusPaymentsError] = useState(null);
+
+  const [statisticsError, setStatisticsError] =
+    useState(null);
+
+  const [salePaymentsError, setSalePaymentsError] =
+    useState(null);
+
+  const [statusPaymentsError, setStatusPaymentsError] =
+    useState(null);
 
   /*
   |--------------------------------------------------------------------------
@@ -264,6 +288,35 @@ const usePlotPayments = ({
       pagination.per_page,
     ],
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | UPDATE LOCAL PAYMENT RECORDS
+  |--------------------------------------------------------------------------
+  */
+
+  const updateLocalPayment = useCallback((payment) => {
+    if (!payment?.id) return;
+
+    const paymentId = Number(payment.id);
+
+    const mergePayment = (previous) =>
+      previous.map((item) =>
+        Number(item.id) === paymentId
+          ? { ...item, ...payment }
+          : item,
+      );
+
+    setPayments(mergePayment);
+    setSalePayments(mergePayment);
+    setStatusPayments(mergePayment);
+
+    setSelectedPayment((previous) =>
+      Number(previous?.id) === paymentId
+        ? { ...previous, ...payment }
+        : previous,
+    );
+  }, []);
 
   /*
   |--------------------------------------------------------------------------
@@ -343,10 +396,16 @@ const usePlotPayments = ({
   */
 
   const getPlotPaymentById = useCallback(async (id) => {
+    if (!id) {
+      throw new Error("A valid payment ID is required.");
+    }
+
     const requestId = ++detailsRequestRef.current;
 
-    setDetailsLoading(true);
-    setDetailsError(null);
+    if (mountedRef.current) {
+      setDetailsLoading(true);
+      setDetailsError(null);
+    }
 
     try {
       const response = await plotPaymentsApi.getById(id);
@@ -389,6 +448,207 @@ const usePlotPayments = ({
 
   /*
   |--------------------------------------------------------------------------
+  | PAYMENT STATISTICS
+  |--------------------------------------------------------------------------
+  |
+  | GET /plot-payments/statistics
+  |
+  | IMPORTANT:
+  | This callback is declared before create, update, delete,
+  | confirmation and other callbacks that depend on it.
+  |
+  */
+
+  const getPlotPaymentsStatistics = useCallback(
+    async (params = {}) => {
+      const requestId = ++statisticsRequestRef.current;
+
+      if (mountedRef.current) {
+        setStatisticsLoading(true);
+        setStatisticsError(null);
+      }
+
+      try {
+        const response =
+          await plotPaymentsApi.getStatistics(
+            cleanFilters({
+              ...filters,
+              ...params,
+            }),
+          );
+
+        if (
+          !mountedRef.current ||
+          requestId !== statisticsRequestRef.current
+        ) {
+          return response;
+        }
+
+        const result = getRecord(response) ?? {};
+
+        setStatistics(result);
+
+        return result;
+      } catch (err) {
+        if (
+          mountedRef.current &&
+          requestId === statisticsRequestRef.current
+        ) {
+          setStatisticsError(
+            getErrorMessage(
+              err,
+              "Failed to fetch plot payment statistics.",
+            ),
+          );
+        }
+
+        throw err;
+      } finally {
+        if (
+          mountedRef.current &&
+          requestId === statisticsRequestRef.current
+        ) {
+          setStatisticsLoading(false);
+        }
+      }
+    },
+    [filters],
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | PAYMENTS BY PLOT SALE
+  |--------------------------------------------------------------------------
+  |
+  | GET /plot-payments/sale/{plotSaleId}
+  |
+  */
+
+  const getPaymentsBySale = useCallback(
+    async (plotSaleId, params = {}) => {
+      if (!plotSaleId) {
+        throw new Error("A valid plot sale ID is required.");
+      }
+
+      const requestId = ++saleRequestRef.current;
+
+      if (mountedRef.current) {
+        setSalePaymentsLoading(true);
+        setSalePaymentsError(null);
+      }
+
+      try {
+        const response = await plotPaymentsApi.getBySale(
+          plotSaleId,
+          params,
+        );
+
+        if (
+          !mountedRef.current ||
+          requestId !== saleRequestRef.current
+        ) {
+          return response;
+        }
+
+        const records = getCollection(response);
+
+        setSalePayments(records);
+
+        return records;
+      } catch (err) {
+        if (
+          mountedRef.current &&
+          requestId === saleRequestRef.current
+        ) {
+          setSalePaymentsError(
+            getErrorMessage(
+              err,
+              "Failed to fetch payments for this plot sale.",
+            ),
+          );
+        }
+
+        throw err;
+      } finally {
+        if (
+          mountedRef.current &&
+          requestId === saleRequestRef.current
+        ) {
+          setSalePaymentsLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | PAYMENTS BY STATUS
+  |--------------------------------------------------------------------------
+  |
+  | GET /plot-payments/status/{status}
+  |
+  */
+
+  const getPaymentsByStatus = useCallback(
+    async (status, params = {}) => {
+      if (!status) {
+        throw new Error("Payment status is required.");
+      }
+
+      const requestId = ++statusRequestRef.current;
+
+      if (mountedRef.current) {
+        setStatusPaymentsLoading(true);
+        setStatusPaymentsError(null);
+      }
+
+      try {
+        const response = await plotPaymentsApi.getByStatus(
+          status,
+          params,
+        );
+
+        if (
+          !mountedRef.current ||
+          requestId !== statusRequestRef.current
+        ) {
+          return response;
+        }
+
+        const records = getCollection(response);
+
+        setStatusPayments(records);
+
+        return records;
+      } catch (err) {
+        if (
+          mountedRef.current &&
+          requestId === statusRequestRef.current
+        ) {
+          setStatusPaymentsError(
+            getErrorMessage(
+              err,
+              "Failed to fetch payments by status.",
+            ),
+          );
+        }
+
+        throw err;
+      } finally {
+        if (
+          mountedRef.current &&
+          requestId === statusRequestRef.current
+        ) {
+          setStatusPaymentsLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  /*
+  |--------------------------------------------------------------------------
   | CREATE PAYMENT
   |--------------------------------------------------------------------------
   |
@@ -398,6 +658,10 @@ const usePlotPayments = ({
 
   const createPlotPayment = useCallback(
     async (paymentData) => {
+      if (!paymentData || typeof paymentData !== "object") {
+        throw new Error("Valid payment data is required.");
+      }
+
       setCreating(true);
       setError(null);
 
@@ -409,7 +673,11 @@ const usePlotPayments = ({
 
         if (mountedRef.current) {
           setSelectedPayment(payment);
-          await getPlotPayments();
+
+          await Promise.allSettled([
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ]);
         }
 
         return payment;
@@ -430,7 +698,10 @@ const usePlotPayments = ({
         }
       }
     },
-    [getPlotPayments],
+    [
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+    ],
   );
 
   /*
@@ -444,6 +715,14 @@ const usePlotPayments = ({
 
   const updatePlotPayment = useCallback(
     async (id, paymentData) => {
+      if (!id) {
+        throw new Error("A valid payment ID is required.");
+      }
+
+      if (!paymentData || typeof paymentData !== "object") {
+        throw new Error("Valid payment data is required.");
+      }
+
       setUpdating(true);
       setError(null);
 
@@ -456,8 +735,14 @@ const usePlotPayments = ({
         const payment = getRecord(response);
 
         if (mountedRef.current) {
-          setSelectedPayment(payment);
-          await getPlotPayments();
+          if (payment) {
+            updateLocalPayment(payment);
+          }
+
+          await Promise.allSettled([
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ]);
         }
 
         return payment;
@@ -478,7 +763,11 @@ const usePlotPayments = ({
         }
       }
     },
-    [getPlotPayments],
+    [
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+      updateLocalPayment,
+    ],
   );
 
   /*
@@ -492,6 +781,10 @@ const usePlotPayments = ({
 
   const deletePlotPayment = useCallback(
     async (id) => {
+      if (!id) {
+        throw new Error("A valid payment ID is required.");
+      }
+
       setDeleting(true);
       setError(null);
 
@@ -505,13 +798,28 @@ const usePlotPayments = ({
             ),
           );
 
+          setSalePayments((previous) =>
+            previous.filter(
+              (payment) => Number(payment.id) !== Number(id),
+            ),
+          );
+
+          setStatusPayments((previous) =>
+            previous.filter(
+              (payment) => Number(payment.id) !== Number(id),
+            ),
+          );
+
           setSelectedPayment((previous) =>
             Number(previous?.id) === Number(id)
               ? null
               : previous,
           );
 
-          await getPlotPayments();
+          await Promise.allSettled([
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ]);
         }
 
         return getRecord(response);
@@ -532,7 +840,10 @@ const usePlotPayments = ({
         }
       }
     },
-    [getPlotPayments],
+    [
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+    ],
   );
 
   /*
@@ -630,13 +941,20 @@ const usePlotPayments = ({
     if (pagination.current_page < pagination.last_page) {
       goToPage(pagination.current_page + 1);
     }
-  }, [pagination.current_page, pagination.last_page, goToPage]);
+  }, [
+    pagination.current_page,
+    pagination.last_page,
+    goToPage,
+  ]);
 
   const previousPage = useCallback(() => {
     if (pagination.current_page > 1) {
       goToPage(pagination.current_page - 1);
     }
-  }, [pagination.current_page, goToPage]);
+  }, [
+    pagination.current_page,
+    goToPage,
+  ]);
 
   const changePerPage = useCallback((value) => {
     setPagination((previous) => ({
@@ -653,198 +971,32 @@ const usePlotPayments = ({
 
   /*
   |--------------------------------------------------------------------------
-  | PAYMENT STATISTICS
-  |--------------------------------------------------------------------------
-  |
-  | GET /plot-payments/statistics
-  |
-  */
-
-  const getPlotPaymentsStatistics = useCallback(
-    async (params = {}) => {
-      const requestId = ++statisticsRequestRef.current;
-
-      setStatisticsLoading(true);
-      setStatisticsError(null);
-
-      try {
-        const response =
-          await plotPaymentsApi.getStatistics(
-            cleanFilters({
-              ...filters,
-              ...params,
-            }),
-          );
-
-        if (
-          !mountedRef.current ||
-          requestId !== statisticsRequestRef.current
-        ) {
-          return response;
-        }
-
-        const result = getRecord(response) ?? {};
-
-        setStatistics(result);
-
-        return result;
-      } catch (err) {
-        if (
-          mountedRef.current &&
-          requestId === statisticsRequestRef.current
-        ) {
-          setStatisticsError(
-            getErrorMessage(
-              err,
-              "Failed to fetch plot payment statistics.",
-            ),
-          );
-        }
-
-        throw err;
-      } finally {
-        if (
-          mountedRef.current &&
-          requestId === statisticsRequestRef.current
-        ) {
-          setStatisticsLoading(false);
-        }
-      }
-    },
-    [filters],
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | PAYMENTS BY PLOT SALE
-  |--------------------------------------------------------------------------
-  |
-  | GET /plot-payments/sale/{plotSaleId}
-  |
-  */
-
-  const getPaymentsBySale = useCallback(
-    async (plotSaleId, params = {}) => {
-      const requestId = ++saleRequestRef.current;
-
-      setSalePaymentsLoading(true);
-      setSalePaymentsError(null);
-
-      try {
-        const response = await plotPaymentsApi.getBySale(
-          plotSaleId,
-          params,
-        );
-
-        if (
-          !mountedRef.current ||
-          requestId !== saleRequestRef.current
-        ) {
-          return response;
-        }
-
-        const records = getCollection(response);
-
-        setSalePayments(records);
-
-        return records;
-      } catch (err) {
-        if (
-          mountedRef.current &&
-          requestId === saleRequestRef.current
-        ) {
-          setSalePaymentsError(
-            getErrorMessage(
-              err,
-              "Failed to fetch payments for this plot sale.",
-            ),
-          );
-        }
-
-        throw err;
-      } finally {
-        if (
-          mountedRef.current &&
-          requestId === saleRequestRef.current
-        ) {
-          setSalePaymentsLoading(false);
-        }
-      }
-    },
-    [],
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | PAYMENTS BY STATUS
-  |--------------------------------------------------------------------------
-  |
-  | GET /plot-payments/status/{status}
-  |
-  */
-
-  const getPaymentsByStatus = useCallback(
-    async (status, params = {}) => {
-      const requestId = ++statusRequestRef.current;
-
-      setStatusPaymentsLoading(true);
-      setStatusPaymentsError(null);
-
-      try {
-        const response = await plotPaymentsApi.getByStatus(
-          status,
-          params,
-        );
-
-        if (
-          !mountedRef.current ||
-          requestId !== statusRequestRef.current
-        ) {
-          return response;
-        }
-
-        const records = getCollection(response);
-
-        setStatusPayments(records);
-
-        return records;
-      } catch (err) {
-        if (
-          mountedRef.current &&
-          requestId === statusRequestRef.current
-        ) {
-          setStatusPaymentsError(
-            getErrorMessage(
-              err,
-              "Failed to fetch payments by status.",
-            ),
-          );
-        }
-
-        throw err;
-      } finally {
-        if (
-          mountedRef.current &&
-          requestId === statusRequestRef.current
-        ) {
-          setStatusPaymentsLoading(false);
-        }
-      }
-    },
-    [],
-  );
-
-  /*
-  |--------------------------------------------------------------------------
   | UPDATE PAYMENT STATUS
   |--------------------------------------------------------------------------
   |
   | PATCH /plot-payments/{id}/status
   |
+  | Ordinary status changes only.
+  | completed/refunded must use their authorized workflows.
+  |
   */
 
   const updatePlotPaymentStatus = useCallback(
     async (id, status) => {
+      if (!id) {
+        throw new Error("A valid payment ID is required.");
+      }
+
+      if (!PAYMENT_STATUSES.includes(status)) {
+        throw new Error("Invalid payment status.");
+      }
+
+      if (["completed", "refunded"].includes(status)) {
+        throw new Error(
+          "Use the authorized payment verification or refund workflow for this status.",
+        );
+      }
+
       setStatusUpdating(true);
       setError(null);
 
@@ -855,13 +1007,14 @@ const usePlotPayments = ({
         const payment = getRecord(response);
 
         if (mountedRef.current) {
-          setSelectedPayment((previous) =>
-            Number(previous?.id) === Number(id)
-              ? payment
-              : previous,
-          );
+          if (payment) {
+            updateLocalPayment(payment);
+          }
 
-          await getPlotPayments();
+          await Promise.allSettled([
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ]);
         }
 
         return payment;
@@ -882,7 +1035,115 @@ const usePlotPayments = ({
         }
       }
     },
-    [getPlotPayments],
+    [
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+      updateLocalPayment,
+    ],
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | CONFIRM / VERIFY PAYMENT
+  |--------------------------------------------------------------------------
+  |
+  | POST /plot-payments/{id}/confirm
+  |
+  | Confirmation must be performed through the dedicated
+  | authorized backend workflow.
+  |
+  */
+
+  const confirmPlotPayment = useCallback(
+    async (id, verificationData = {}) => {
+      if (!id) {
+        throw new Error("A valid payment ID is required.");
+      }
+
+      const verificationReference =
+        verificationData.verification_reference?.trim();
+
+      if (!verificationReference) {
+        throw new Error(
+          "Verification reference is required.",
+        );
+      }
+
+      if (verificationReference.length > 150) {
+        throw new Error(
+          "Verification reference cannot exceed 150 characters.",
+        );
+      }
+
+      if (confirming) {
+        throw new Error(
+          "This payment confirmation is already being processed.",
+        );
+      }
+
+      setConfirming(true);
+      setError(null);
+
+      try {
+        const response = await plotPaymentsApi.confirm(
+          id,
+          {
+            verification_reference: verificationReference,
+            verification_notes:
+              verificationData.verification_notes?.trim() || null,
+          },
+        );
+
+        const payment = getRecord(response);
+
+        if (!payment) {
+          throw new Error(
+            "The server did not return the confirmed payment record.",
+          );
+        }
+
+        if (mountedRef.current) {
+          updateLocalPayment(payment);
+
+          const refreshTasks = [
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ];
+
+          if (payment.plot_sale_id) {
+            refreshTasks.push(
+              getPaymentsBySale(payment.plot_sale_id),
+            );
+          }
+
+          await Promise.allSettled(refreshTasks);
+        }
+
+        return payment;
+      } catch (err) {
+        const message = getErrorMessage(
+          err,
+          "Failed to confirm plot payment.",
+        );
+
+        if (mountedRef.current) {
+          setError(message);
+        }
+
+        throw err;
+      } finally {
+        if (mountedRef.current) {
+          setConfirming(false);
+        }
+      }
+    },
+    [
+      confirming,
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+      getPaymentsBySale,
+      updateLocalPayment,
+    ],
   );
 
   /*
@@ -890,12 +1151,16 @@ const usePlotPayments = ({
   | RESTORE PAYMENT
   |--------------------------------------------------------------------------
   |
-  | POST /plot-payments/{id}/restore
+  | PATCH /plot-payments/{id}/restore
   |
   */
 
   const restorePlotPayment = useCallback(
     async (id) => {
+      if (!id) {
+        throw new Error("A valid payment ID is required.");
+      }
+
       setRestoring(true);
       setError(null);
 
@@ -903,7 +1168,10 @@ const usePlotPayments = ({
         const response = await plotPaymentsApi.restore(id);
 
         if (mountedRef.current) {
-          await getPlotPayments();
+          await Promise.allSettled([
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ]);
         }
 
         return getRecord(response);
@@ -924,7 +1192,10 @@ const usePlotPayments = ({
         }
       }
     },
-    [getPlotPayments],
+    [
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+    ],
   );
 
   /*
@@ -938,6 +1209,10 @@ const usePlotPayments = ({
 
   const forceDeletePlotPayment = useCallback(
     async (id) => {
+      if (!id) {
+        throw new Error("A valid payment ID is required.");
+      }
+
       setForceDeleting(true);
       setError(null);
 
@@ -952,13 +1227,28 @@ const usePlotPayments = ({
             ),
           );
 
+          setSalePayments((previous) =>
+            previous.filter(
+              (payment) => Number(payment.id) !== Number(id),
+            ),
+          );
+
+          setStatusPayments((previous) =>
+            previous.filter(
+              (payment) => Number(payment.id) !== Number(id),
+            ),
+          );
+
           setSelectedPayment((previous) =>
             Number(previous?.id) === Number(id)
               ? null
               : previous,
           );
 
-          await getPlotPayments();
+          await Promise.allSettled([
+            getPlotPayments(),
+            getPlotPaymentsStatistics(),
+          ]);
         }
 
         return getRecord(response);
@@ -979,7 +1269,10 @@ const usePlotPayments = ({
         }
       }
     },
-    [getPlotPayments],
+    [
+      getPlotPayments,
+      getPlotPaymentsStatistics,
+    ],
   );
 
   /*
@@ -1002,15 +1295,6 @@ const usePlotPayments = ({
   |--------------------------------------------------------------------------
   | INITIAL FETCH AND FILTER/PAGINATION FETCH
   |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  | Do not call getPlotPayments() or getPlotPaymentsStatistics()
-  | from these effects because those functions synchronously set
-  | loading state before making their API requests.
-  |
-  | These effects perform the requests first and update state only
-  | after the asynchronous requests complete.
-  |
   */
 
   useEffect(() => {
@@ -1179,6 +1463,7 @@ const usePlotPayments = ({
     updating,
     deleting,
     statusUpdating,
+    confirming,
     restoring,
     forceDeleting,
 
@@ -1205,8 +1490,9 @@ const usePlotPayments = ({
     getPaymentsBySale,
     getPaymentsByStatus,
 
-    // Status
+    // Status and verification
     updatePlotPaymentStatus,
+    confirmPlotPayment,
 
     // Restore and permanent delete
     restorePlotPayment,
@@ -1217,12 +1503,18 @@ const usePlotPayments = ({
 
     // Selected payment
     setSelectedPayment,
-    clearSelectedPayment: () => setSelectedPayment(null),
+
+    clearSelectedPayment: () =>
+      setSelectedPayment(null),
 
     // Clear errors
     clearError: () => setError(null),
-    clearDetailsError: () => setDetailsError(null),
-    clearStatisticsError: () => setStatisticsError(null),
+
+    clearDetailsError: () =>
+      setDetailsError(null),
+
+    clearStatisticsError: () =>
+      setStatisticsError(null),
   };
 };
 
