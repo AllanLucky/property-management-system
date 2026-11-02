@@ -2183,6 +2183,12 @@ Route::middleware('auth:sanctum')->group(function () {
         )->whereNumber('id')
             ->name('update-status');
 
+        Route::post(
+         '{id}/confirm',
+         [PlotPaymentController::class, 'confirm']
+         )->whereNumber('id')
+         ->name('confirm');
+
 
         /*
         |--------------------------------------------------------------------------
