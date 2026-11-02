@@ -5,6 +5,7 @@ import {
   useState,
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import Swal from "sweetalert2";
 import {
   AlertCircle,
   ArrowLeft,
@@ -21,8 +22,10 @@ import {
   Phone,
   RefreshCw,
   Receipt,
+  ShieldCheck,
   User,
   Wallet,
+  X,
 } from "lucide-react";
 
 import PlotPaymentStatusBadge from "./PlotPaymentStatusBadge";
@@ -53,7 +56,7 @@ const extractRecord = (response) => {
         item &&
         typeof item === "object" &&
         !Array.isArray(item) &&
-        (item.id || item.payment_number)
+        (item.id || item.payment_number),
     ) || null
   );
 };
@@ -66,17 +69,19 @@ const getErrorMessage = (error) => {
   }
 
   if (errors && typeof errors === "object") {
-    const firstError = Object.values(errors)
+    const messages = Object.values(errors)
       .flat()
-      .find(Boolean);
+      .filter(Boolean);
 
-    if (firstError) return firstError;
+    if (messages.length) {
+      return messages.join("\n");
+    }
   }
 
   return (
     error?.response?.data?.message ||
     error?.message ||
-    "Unable to load payment details. Please try again."
+    "Unable to process your request. Please try again."
   );
 };
 
@@ -97,7 +102,13 @@ const formatCurrency = (amount, currency = "KES") => {
       maximumFractionDigits: 2,
     }).format(Number.isFinite(value) ? value : 0);
   } catch {
-    return `${currency || "KES"} ${Number.isFinite(value) ? value.toLocaleString("en-KE") : "0.00"}`;
+    return `${currency || "KES"} ${Number.isFinite(value)
+      ? value.toLocaleString("en-KE", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+      : "0.00"
+      }`;
   }
 };
 
@@ -143,27 +154,28 @@ const formatLabel = (value) => {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
-const getRelatedSale = (payment) => {
-  return (
-    payment?.plot_sale ||
-    payment?.plotSale ||
-    payment?.sale ||
-    null
-  );
-};
+const getRelatedSale = (payment) =>
+  payment?.plot_sale ||
+  payment?.plotSale ||
+  payment?.sale ||
+  null;
 
-const getSalePlot = (sale) => {
-  return sale?.plot || sale?.plot_details || null;
-};
+const getSalePlot = (sale) =>
+  sale?.plot || sale?.plot_details || null;
 
-const getSaleBuyer = (sale) => {
-  return (
-    sale?.buyer ||
-    sale?.customer ||
-    sale?.client ||
-    null
+const getSaleBuyer = (sale) =>
+  sale?.buyer ||
+  sale?.customer ||
+  sale?.client ||
+  null;
+
+const isPendingPayment = (status) =>
+  String(status ?? "").toLowerCase() === "pending";
+
+const isFinalPayment = (status) =>
+  ["completed", "refunded"].includes(
+    String(status ?? "").toLowerCase(),
   );
-};
 
 /*
 |--------------------------------------------------------------------------
@@ -266,6 +278,178 @@ const SummaryCard = ({
 
 /*
 |--------------------------------------------------------------------------
+| CONFIRMATION MODAL
+|--------------------------------------------------------------------------
+*/
+
+const ConfirmationModal = ({
+  open,
+  reference,
+  notes,
+  onReferenceChange,
+  onNotesChange,
+  onClose,
+  onConfirm,
+  confirming,
+  error,
+}) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-payment-title"
+    >
+      <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-emerald-100 p-2 text-emerald-700">
+              <ShieldCheck size={21} />
+            </div>
+
+            <div>
+              <h2
+                id="confirm-payment-title"
+                className="font-semibold text-gray-900"
+              >
+                Confirm Plot Payment
+              </h2>
+
+              <p className="mt-1 text-xs text-gray-500">
+                Verify that the funds have actually been received.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={confirming}
+            className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+            aria-label="Close confirmation dialog"
+          >
+            <X size={19} />
+          </button>
+        </div>
+
+        <form
+          onSubmit={onConfirm}
+          className="space-y-5 p-5"
+        >
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle
+                size={17}
+                className="mt-0.5 shrink-0 text-amber-700"
+              />
+
+              <p className="text-xs leading-5 text-amber-800">
+                Only confirm this payment after independently verifying
+                receipt of the funds. Entering a reference alone does
+                not establish that payment was received.
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="whitespace-pre-line text-sm text-red-700">
+                {error}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label
+              htmlFor="verification_reference"
+              className="mb-1.5 block text-sm font-semibold text-gray-700"
+            >
+              Verification Reference
+              <span className="ml-1 text-red-500">*</span>
+            </label>
+
+            <input
+              id="verification_reference"
+              name="verification_reference"
+              type="text"
+              maxLength={150}
+              required
+              value={reference}
+              onChange={(event) =>
+                onReferenceChange(event.target.value)
+              }
+              placeholder="Enter verified transaction or receipt reference"
+              disabled={confirming}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+            />
+
+            <p className="mt-1 text-xs text-gray-500">
+              Enter the reference confirmed against the actual payment record.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="verification_notes"
+              className="mb-1.5 block text-sm font-semibold text-gray-700"
+            >
+              Verification Notes
+              <span className="ml-1 text-gray-400">(Optional)</span>
+            </label>
+
+            <textarea
+              id="verification_notes"
+              name="verification_notes"
+              rows={3}
+              maxLength={2000}
+              value={notes}
+              onChange={(event) =>
+                onNotesChange(event.target.value)
+              }
+              placeholder="Add details about how the payment was verified..."
+              disabled={confirming}
+              className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={confirming}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={confirming || !reference.trim()}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {confirming ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Confirming...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={16} />
+                  Confirm Payment
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
 | PLOT PAYMENT DETAILS PAGE
 |--------------------------------------------------------------------------
 */
@@ -278,8 +462,15 @@ const PlotPaymentDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [verificationReference, setVerificationReference] = useState("");
+  const [verificationNotes, setVerificationNotes] = useState("");
+  const [confirmationError, setConfirmationError] = useState("");
+
   const {
     updating,
+    confirming,
+    confirmPlotPayment,
   } = usePlotPayments({
     autoFetch: false,
   });
@@ -311,7 +502,7 @@ const PlotPaymentDetails = () => {
         response = await plotPaymentService.getById(id);
       } else {
         throw new Error(
-          "Payment details method is missing from plotPayment.service.js."
+          "Payment details method is missing from plotPayment.service.js.",
         );
       }
 
@@ -381,7 +572,12 @@ const PlotPaymentDetails = () => {
     buyer?.full_name ||
     "Not provided";
 
-  const paymentStatus = payment?.status || "pending";
+  const paymentStatus = String(
+    payment?.status || "pending",
+  ).toLowerCase();
+
+  const canConfirmPayment = isPendingPayment(paymentStatus);
+  const finalizedPayment = isFinalPayment(paymentStatus);
 
   /*
   |--------------------------------------------------------------------------
@@ -390,11 +586,126 @@ const PlotPaymentDetails = () => {
   */
 
   const handleEdit = () => {
+    if (finalizedPayment) return;
+
     navigate(`/super-admin/plot-payments/${id}/edit`);
   };
 
   const handleBack = () => {
     navigate("/super-admin/plot-payments");
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | OPEN CONFIRMATION MODAL
+  |--------------------------------------------------------------------------
+  */
+
+  const openConfirmation = () => {
+    if (!canConfirmPayment) return;
+
+    setVerificationReference("");
+    setVerificationNotes("");
+    setConfirmationError("");
+    setConfirmationOpen(true);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | CLOSE CONFIRMATION MODAL
+  |--------------------------------------------------------------------------
+  */
+
+  const closeConfirmation = () => {
+    if (confirming) return;
+
+    setConfirmationOpen(false);
+    setVerificationReference("");
+    setVerificationNotes("");
+    setConfirmationError("");
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | CONFIRM PAYMENT
+  |--------------------------------------------------------------------------
+  */
+
+  const handleConfirmPayment = async (event) => {
+    event.preventDefault();
+
+    setConfirmationError("");
+
+    if (!payment?.id) {
+      setConfirmationError("Payment ID is missing.");
+      return;
+    }
+
+    if (!canConfirmPayment) {
+      setConfirmationError(
+        "Only pending payments can be confirmed.",
+      );
+      return;
+    }
+
+    const reference = verificationReference.trim();
+    const notes = verificationNotes.trim();
+
+    if (!reference) {
+      setConfirmationError(
+        "Please enter the verification reference.",
+      );
+      return;
+    }
+
+    if (reference.length > 150) {
+      setConfirmationError(
+        "The verification reference cannot exceed 150 characters.",
+      );
+      return;
+    }
+
+    if (typeof confirmPlotPayment !== "function") {
+      setConfirmationError(
+        "The confirmation action is not available. Update usePlotPayments.js and the payment service first.",
+      );
+      return;
+    }
+
+    try {
+      const result = await confirmPlotPayment(payment.id, {
+        verification_reference: reference,
+        verification_notes: notes || null,
+      });
+
+      if (result === false) {
+        throw new Error("The payment confirmation was unsuccessful.");
+      }
+
+      setConfirmationOpen(false);
+      setVerificationReference("");
+      setVerificationNotes("");
+
+      await fetchPayment();
+
+      await Swal.fire({
+        icon: "success",
+        title: "Payment Confirmed",
+        text: "The plot payment has been confirmed successfully.",
+        confirmButtonColor: "#2563eb",
+      });
+    } catch (confirmError) {
+      const message = getErrorMessage(confirmError);
+
+      setConfirmationError(message);
+
+      await Swal.fire({
+        icon: "error",
+        title: "Payment Confirmation Failed",
+        text: message,
+        confirmButtonColor: "#dc2626",
+      });
+    }
   };
 
   /*
@@ -471,7 +782,22 @@ const PlotPaymentDetails = () => {
 
   return (
     <div className="space-y-6">
+      {/* CONFIRMATION MODAL */}
+
+      <ConfirmationModal
+        open={confirmationOpen}
+        reference={verificationReference}
+        notes={verificationNotes}
+        onReferenceChange={setVerificationReference}
+        onNotesChange={setVerificationNotes}
+        onClose={closeConfirmation}
+        onConfirm={handleConfirmPayment}
+        confirming={Boolean(confirming)}
+        error={confirmationError}
+      />
+
       {/* PAGE HEADER */}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <button
@@ -510,7 +836,7 @@ const PlotPaymentDetails = () => {
           <button
             type="button"
             onClick={fetchPayment}
-            disabled={loading}
+            disabled={loading || confirming}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-50"
           >
             <RefreshCw
@@ -520,12 +846,25 @@ const PlotPaymentDetails = () => {
             Refresh
           </button>
 
+          {canConfirmPayment && (
+            <button
+              type="button"
+              onClick={openConfirmation}
+              disabled={confirming || updating}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ShieldCheck size={17} />
+              Confirm Payment
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleEdit}
             disabled={
               updating ||
-              ["completed", "refunded"].includes(paymentStatus)
+              confirming ||
+              finalizedPayment
             }
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -535,7 +874,63 @@ const PlotPaymentDetails = () => {
         </div>
       </div>
 
+      {/* PENDING PAYMENT NOTICE */}
+
+      {canConfirmPayment && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Clock3
+              size={21}
+              className="mt-0.5 shrink-0 text-amber-700"
+            />
+
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                Payment awaiting verification
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-amber-800">
+                Verify the receipt of funds before confirming this payment.
+                Confirmation updates the payment through the authorized workflow.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={openConfirmation}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+          >
+            <CheckCircle2 size={16} />
+            Verify and Confirm
+          </button>
+        </div>
+      )}
+
+      {/* FINALIZED PAYMENT NOTICE */}
+
+      {finalizedPayment && (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <CheckCircle2
+            size={21}
+            className="mt-0.5 shrink-0 text-emerald-700"
+          />
+
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">
+              Payment {formatLabel(paymentStatus)}
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-emerald-800">
+              This payment has reached a final status. It cannot be
+              confirmed again or edited through the ordinary payment form.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* PAYMENT SUMMARY */}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Payment Amount"
@@ -575,6 +970,7 @@ const PlotPaymentDetails = () => {
       </div>
 
       {/* PAYMENT INFORMATION */}
+
       <SectionCard
         title="Payment Information"
         description="General payment and receipt information."
@@ -650,6 +1046,7 @@ const PlotPaymentDetails = () => {
       </SectionCard>
 
       {/* PAYER INFORMATION */}
+
       <SectionCard
         title="Payer Information"
         description="Contact information associated with this payment."
@@ -677,6 +1074,7 @@ const PlotPaymentDetails = () => {
       </SectionCard>
 
       {/* RELATED PLOT SALE */}
+
       <SectionCard
         title="Related Plot Sale"
         description="Plot sale associated with this payment."
@@ -725,7 +1123,7 @@ const PlotPaymentDetails = () => {
               label="Sale Price"
               value={formatCurrency(
                 sale.sale_price,
-                sale.currency || currency
+                sale.currency || currency,
               )}
               icon={Banknote}
             />
@@ -740,7 +1138,7 @@ const PlotPaymentDetails = () => {
               label="Amount Paid"
               value={formatCurrency(
                 sale.amount_paid,
-                sale.currency || currency
+                sale.currency || currency,
               )}
               icon={Wallet}
             />
@@ -749,7 +1147,7 @@ const PlotPaymentDetails = () => {
               label="Outstanding Balance"
               value={formatCurrency(
                 sale.balance,
-                sale.currency || currency
+                sale.currency || currency,
               )}
               icon={Banknote}
             />
@@ -776,6 +1174,7 @@ const PlotPaymentDetails = () => {
       </SectionCard>
 
       {/* NOTES */}
+
       <SectionCard
         title="Payment Notes"
         description="Additional information recorded for this payment."
@@ -789,6 +1188,7 @@ const PlotPaymentDetails = () => {
       </SectionCard>
 
       {/* FOOTER ACTIONS */}
+
       <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:justify-between">
         <button
           type="button"
@@ -799,18 +1199,29 @@ const PlotPaymentDetails = () => {
           Back to Payments
         </button>
 
-        <button
-          type="button"
-          onClick={handleEdit}
-          disabled={
-            updating ||
-            ["completed", "refunded"].includes(paymentStatus)
-          }
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Pencil size={16} />
-          Edit Payment
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {canConfirmPayment && (
+            <button
+              type="button"
+              onClick={openConfirmation}
+              disabled={confirming}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ShieldCheck size={16} />
+              Confirm Payment
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleEdit}
+            disabled={updating || confirming || finalizedPayment}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Pencil size={16} />
+            Edit Payment
+          </button>
+        </div>
       </div>
     </div>
   );

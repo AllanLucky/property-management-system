@@ -17,7 +17,6 @@ import {
   Clock3,
   CheckCircle2,
   XCircle,
-  RotateCcw,
 } from "lucide-react";
 
 /*
@@ -52,20 +51,18 @@ const CURRENCIES = [
   { value: "NGN", label: "NGN - Nigerian Naira" },
 ];
 
-const PAYMENT_STATUSES = [
+/*
+ * Only statuses supported by the ordinary create/edit workflow.
+ *
+ * completed and refunded must use their dedicated backend workflows.
+ */
+const EDITABLE_PAYMENT_STATUSES = [
   {
     value: "pending",
     label: "Pending",
     description: "Payment is awaiting verification.",
     icon: Clock3,
     className: "text-amber-700 bg-amber-50 border-amber-200",
-  },
-  {
-    value: "completed",
-    label: "Completed",
-    description: "Payment has been verified and completed.",
-    icon: CheckCircle2,
-    className: "text-emerald-700 bg-emerald-50 border-emerald-200",
   },
   {
     value: "failed",
@@ -81,14 +78,9 @@ const PAYMENT_STATUSES = [
     icon: XCircle,
     className: "text-slate-700 bg-slate-100 border-slate-200",
   },
-  {
-    value: "refunded",
-    label: "Refunded",
-    description: "Payment amount has been refunded.",
-    icon: RotateCcw,
-    className: "text-violet-700 bg-violet-50 border-violet-200",
-  },
 ];
+
+const FINAL_PAYMENT_STATUSES = ["completed", "refunded"];
 
 const INITIAL_FORM = {
   plot_sale_id: "",
@@ -233,6 +225,11 @@ const getErrorMessage = (error) => {
   );
 };
 
+const isFinalPaymentStatus = (status) =>
+  FINAL_PAYMENT_STATUSES.includes(
+    String(status ?? "").toLowerCase(),
+  );
+
 /*
 |--------------------------------------------------------------------------
 | REUSABLE FORM FIELD
@@ -317,6 +314,8 @@ const PlotPaymentForm = ({
 
   const isEdit = Boolean(payment);
 
+  const isFinalizedPayment = isFinalPaymentStatus(payment?.status);
+
   const [formData, setFormData] = useState(() =>
     getInitialValues(payment),
   );
@@ -394,7 +393,7 @@ const PlotPaymentForm = ({
     currency ||
     "KES";
 
-  const selectedStatus = PAYMENT_STATUSES.find(
+  const selectedStatus = EDITABLE_PAYMENT_STATUSES.find(
     (item) => item.value === formData.status,
   );
 
@@ -431,8 +430,7 @@ const PlotPaymentForm = ({
     setFormData((previous) => ({
       ...previous,
       plot_sale_id: saleId,
-      currency:
-        sale?.currency || previous.currency || currency,
+      currency: sale?.currency || previous.currency || currency,
       payer_name: sale
         ? getBuyerName(sale)
         : previous.payer_name,
@@ -460,6 +458,11 @@ const PlotPaymentForm = ({
 
   const validateForm = () => {
     const validationErrors = {};
+
+    if (isFinalizedPayment) {
+      validationErrors.status =
+        "This payment has a final status and cannot be edited through the ordinary payment form.";
+    }
 
     if (!formData.plot_sale_id) {
       validationErrors.plot_sale_id =
@@ -534,11 +537,13 @@ const PlotPaymentForm = ({
 
     if (
       isEdit &&
-      !PAYMENT_STATUSES.some(
+      !isFinalizedPayment &&
+      !EDITABLE_PAYMENT_STATUSES.some(
         (item) => item.value === formData.status,
       )
     ) {
-      validationErrors.status = "Please select a valid payment status.";
+      validationErrors.status =
+        "Completed and refunded statuses must use their dedicated workflows.";
     }
 
     setErrors(validationErrors);
@@ -559,8 +564,24 @@ const PlotPaymentForm = ({
 
     if (submitting || loading) return;
 
+    if (isFinalizedPayment) {
+      const message =
+        "Completed or refunded payments cannot be changed through this form. Use the authorized payment workflow.";
+
+      setGeneralError(message);
+
+      await Swal.fire({
+        icon: "warning",
+        title: "Payment Is Finalized",
+        text: message,
+        confirmButtonColor: "#2563eb",
+      });
+
+      return;
+    }
+
     if (!validateForm()) {
-      Swal.fire({
+      await Swal.fire({
         icon: "warning",
         title: "Check the form",
         text: "Please correct the highlighted fields before continuing.",
@@ -584,8 +605,8 @@ const PlotPaymentForm = ({
       payer_email: formData.payer_email.trim() || null,
       notes: formData.notes.trim() || null,
 
-      // New payments always start as pending.
-      // Only edit mode can submit a changed status.
+      // New payments must always start as pending.
+      // Edit payments can only use ordinary editable statuses.
       status: isEdit ? formData.status : "pending",
 
       is_active: Boolean(formData.is_active),
@@ -613,7 +634,7 @@ const PlotPaymentForm = ({
 
       setGeneralError(message);
 
-      Swal.fire({
+      await Swal.fire({
         icon: "error",
         title: "Unable to Save Payment",
         text: message,
@@ -658,16 +679,18 @@ const PlotPaymentForm = ({
           </h2>
 
           <p className="mt-1 text-sm text-gray-500">
-            {isEdit
-              ? "Update the payment information and verification status."
-              : "Enter the details of the payment received for a plot sale."}
+            {isFinalizedPayment
+              ? "This payment has been finalized and cannot be edited here."
+              : isEdit
+                ? "Update payment information. Payment verification is handled separately."
+                : "Enter the details of the payment received for a plot sale."}
           </p>
         </div>
 
         <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-yellow-50 px-3 py-1.5 text-xs font-semibold text-yellow-700 ring-1 ring-yellow-600/20">
           <Clock3 size={14} />
           {isEdit
-            ? `Current status: ${formData.status.replace(/_/g, " ")}`
+            ? `Current status: ${String(payment?.status ?? formData.status).replace(/_/g, " ")}`
             : "Pending Verification"}
         </span>
       </div>
@@ -685,6 +708,29 @@ const PlotPaymentForm = ({
 
             <p className="mt-1 whitespace-pre-line">
               {generalError || getErrorMessage(error)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* FINALIZED PAYMENT NOTICE */}
+
+      {isFinalizedPayment && (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <CheckCircle2
+            size={20}
+            className="mt-0.5 shrink-0 text-emerald-700"
+          />
+
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">
+              Payment {payment?.status}
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-emerald-800">
+              This payment has already reached a final status. Its
+              verification outcome cannot be changed through the
+              ordinary create/edit form.
             </p>
           </div>
         </div>
@@ -770,7 +816,10 @@ const PlotPaymentForm = ({
             <>
               <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                  <p className="text-xs font-medium text-gray-500">Plot</p>
+                  <p className="text-xs font-medium text-gray-500">
+                    Plot
+                  </p>
+
                   <p className="mt-1 text-sm font-semibold text-gray-900">
                     {getPlotName(selectedSale)}
                   </p>
@@ -783,7 +832,10 @@ const PlotPaymentForm = ({
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-gray-500">Buyer</p>
+                  <p className="text-xs font-medium text-gray-500">
+                    Buyer
+                  </p>
+
                   <p className="mt-1 text-sm font-semibold text-gray-900">
                     {getBuyerName(selectedSale)}
                   </p>
@@ -793,6 +845,7 @@ const PlotPaymentForm = ({
                   <p className="text-xs font-medium text-gray-500">
                     Net Sale Value
                   </p>
+
                   <p className="mt-1 text-sm font-semibold text-gray-900">
                     {formatCurrency(netSalePrice, selectedCurrency)}
                   </p>
@@ -802,6 +855,7 @@ const PlotPaymentForm = ({
                   <p className="text-xs font-medium text-gray-500">
                     Amount Paid
                   </p>
+
                   <p className="mt-1 text-sm font-semibold text-green-700">
                     {formatCurrency(amountPaid, selectedCurrency)}
                   </p>
@@ -846,7 +900,8 @@ const PlotPaymentForm = ({
                   </p>
 
                   <p className="mt-1 text-xs leading-5">
-                    There are currently no plot sales with unpaid balances available for payment recording.
+                    There are currently no plot sales with unpaid
+                    balances available for payment recording.
                   </p>
                 </div>
               </div>
@@ -911,7 +966,7 @@ const PlotPaymentForm = ({
               value={formData.amount}
               onChange={handleChange}
               placeholder="Enter payment amount"
-              disabled={!selectedSale}
+              disabled={!selectedSale || isFinalizedPayment}
               className={`
                 ${iconInputClass}
                 ${errors.amount
@@ -928,7 +983,7 @@ const PlotPaymentForm = ({
               name="currency"
               value={selectedCurrency}
               onChange={handleChange}
-              disabled={Boolean(selectedSale)}
+              disabled={Boolean(selectedSale) || isFinalizedPayment}
               className={inputClass}
             >
               {CURRENCIES.map((item) => (
@@ -950,6 +1005,7 @@ const PlotPaymentForm = ({
               name="payment_type"
               value={formData.payment_type}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               className={`${inputClass} ${errors.payment_type ? "border-red-400" : ""
                 }`}
             >
@@ -972,6 +1028,7 @@ const PlotPaymentForm = ({
               name="payment_method"
               value={formData.payment_method}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               className={`${inputClass} ${errors.payment_method ? "border-red-400" : ""
                 }`}
             >
@@ -994,6 +1051,7 @@ const PlotPaymentForm = ({
               type="date"
               value={formData.payment_date}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               className={iconInputClass}
             />
           </FormField>
@@ -1011,6 +1069,7 @@ const PlotPaymentForm = ({
               maxLength={150}
               value={formData.transaction_reference}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               placeholder="e.g. QGH7X9ABC"
               className={inputClass}
             />
@@ -1038,7 +1097,11 @@ const PlotPaymentForm = ({
         </div>
 
         <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
-          <FormField label="Payer Name" name="payer_name" icon={User}>
+          <FormField
+            label="Payer Name"
+            name="payer_name"
+            icon={User}
+          >
             <input
               id="payer_name"
               name="payer_name"
@@ -1046,6 +1109,7 @@ const PlotPaymentForm = ({
               maxLength={150}
               value={formData.payer_name}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               placeholder="Enter payer name"
               className={iconInputClass}
             />
@@ -1059,6 +1123,7 @@ const PlotPaymentForm = ({
               maxLength={30}
               value={formData.payer_phone}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               placeholder="e.g. 0712345678"
               className={inputClass}
             />
@@ -1077,6 +1142,7 @@ const PlotPaymentForm = ({
                 maxLength={150}
                 value={formData.payer_email}
                 onChange={handleChange}
+                disabled={isFinalizedPayment}
                 placeholder="payer@example.com"
                 className={inputClass}
               />
@@ -1096,58 +1162,80 @@ const PlotPaymentForm = ({
 
             <div>
               <h3 className="font-semibold text-gray-900">
-                Payment Verification Status
+                Payment Status
               </h3>
 
               <p className="text-xs text-gray-500">
-                Update the verification status of this payment.
+                Manage ordinary payment statuses. Verification is separate.
               </p>
             </div>
           </div>
 
           <div className="space-y-4 p-5">
-            <FormField
-              label="Payment Status"
-              name="status"
-              required
-              error={errors.status}
-              icon={ShieldCheck}
-              hint="Choose the status that reflects the verified payment outcome."
-            >
-              <select
-                id="status"
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className={`
-                  ${iconInputClass}
-                  ${errors.status ? "border-red-400" : ""}
-                `}
-              >
-                {PAYMENT_STATUSES.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            {selectedStatus && (
-              <div
-                className={`flex items-start gap-3 rounded-lg border p-4 ${selectedStatus.className}`}
-              >
-                <selectedStatus.icon size={20} className="mt-0.5 shrink-0" />
-
-                <div>
+            {isFinalizedPayment ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 size={18} />
                   <p className="text-sm font-semibold">
-                    {selectedStatus.label}
-                  </p>
-
-                  <p className="mt-1 text-xs">
-                    {selectedStatus.description}
+                    {String(payment?.status).toUpperCase()}
                   </p>
                 </div>
+
+                <p className="mt-2 text-xs leading-5 text-emerald-700">
+                  This final status is managed through the dedicated
+                  confirmation or refund workflow. It cannot be changed
+                  from this form.
+                </p>
               </div>
+            ) : (
+              <>
+                <FormField
+                  label="Payment Status"
+                  name="status"
+                  required
+                  error={errors.status}
+                  icon={ShieldCheck}
+                  hint="Completed and refunded statuses are handled separately."
+                >
+                  <select
+                    id="status"
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    className={`
+                      ${iconInputClass}
+                      ${errors.status ? "border-red-400" : ""}
+                    `}
+                  >
+                    {EDITABLE_PAYMENT_STATUSES.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+
+                {selectedStatus && (
+                  <div
+                    className={`flex items-start gap-3 rounded-lg border p-4 ${selectedStatus.className}`}
+                  >
+                    <selectedStatus.icon
+                      size={20}
+                      className="mt-0.5 shrink-0"
+                    />
+
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {selectedStatus.label}
+                      </p>
+
+                      <p className="mt-1 text-xs">
+                        {selectedStatus.description}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>
@@ -1181,17 +1269,24 @@ const PlotPaymentForm = ({
               maxLength={5000}
               value={formData.notes}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               placeholder="Enter additional payment information..."
               className={`${inputClass} resize-y`}
             />
           </FormField>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-4 transition hover:bg-gray-50">
+          <label
+            className={`flex items-start gap-3 rounded-lg border border-gray-200 p-4 transition ${isFinalizedPayment
+                ? "cursor-not-allowed opacity-70"
+                : "cursor-pointer hover:bg-gray-50"
+              }`}
+          >
             <input
               type="checkbox"
               name="is_active"
               checked={Boolean(formData.is_active)}
               onChange={handleChange}
+              disabled={isFinalizedPayment}
               className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
 
@@ -1222,9 +1317,11 @@ const PlotPaymentForm = ({
           </p>
 
           <p className="mt-1 text-xs leading-5 text-blue-800">
-            {isEdit
-              ? "Status changes are submitted when you update this payment. Only mark a payment completed after verifying that the funds were received."
-              : "Newly recorded payments are always submitted with pending status. Payment completion, refunds, and other verified status changes can be updated later by an authorized user."}
+            {isFinalizedPayment
+              ? "This payment has already been finalized. Changes to its verification outcome must follow the authorized backend workflow."
+              : isEdit
+                ? "This form updates ordinary payment information and non-final statuses. To mark a payment completed, use the dedicated Confirm Payment action after verifying receipt of funds. Refunds must also use their authorized workflow."
+                : "New payments are always recorded as pending. An authorized user must separately verify receipt of funds before confirming the payment."}
           </p>
         </div>
       </div>
@@ -1252,6 +1349,7 @@ const PlotPaymentForm = ({
           disabled={
             submitting ||
             loading ||
+            isFinalizedPayment ||
             normalizedSales.length === 0 ||
             !selectedSale
           }
