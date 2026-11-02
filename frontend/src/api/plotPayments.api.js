@@ -8,8 +8,23 @@ import api from "./axios";
 */
 
 const BASE_URL = "/plot-payments";
+
 const DEFAULT_PER_PAGE = 15;
 const MAX_PER_PAGE = 100;
+
+/*
+|--------------------------------------------------------------------------
+| SUPPORTED PAYMENT STATUSES
+|--------------------------------------------------------------------------
+*/
+
+export const PLOT_PAYMENT_STATUSES = {
+  PENDING: "pending",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  CANCELLED: "cancelled",
+  REFUNDED: "refunded",
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -17,12 +32,8 @@ const MAX_PER_PAGE = 100;
 |--------------------------------------------------------------------------
 */
 
-/**
- * Remove empty query parameters while preserving valid values such as:
- * 0, false, and numeric values.
- */
-const cleanParams = (params = {}) => {
-  return Object.fromEntries(
+const cleanParams = (params = {}) =>
+  Object.fromEntries(
     Object.entries(params).filter(
       ([, value]) =>
         value !== undefined &&
@@ -30,11 +41,7 @@ const cleanParams = (params = {}) => {
         value !== "",
     ),
   );
-};
 
-/**
- * Normalize pagination parameters.
- */
 const normalizePagination = (params = {}) => {
   const perPage = Number(params.per_page);
 
@@ -42,9 +49,23 @@ const normalizePagination = (params = {}) => {
     ...params,
     per_page:
       Number.isFinite(perPage) && perPage > 0
-        ? Math.min(perPage, MAX_PER_PAGE)
+        ? Math.min(Math.floor(perPage), MAX_PER_PAGE)
         : DEFAULT_PER_PAGE,
   });
+};
+
+const validateId = (id) => {
+  if (
+    id === undefined ||
+    id === null ||
+    id === "" ||
+    !Number.isFinite(Number(id)) ||
+    Number(id) <= 0
+  ) {
+    throw new Error("A valid plot payment ID is required.");
+  }
+
+  return id;
 };
 
 /*
@@ -53,27 +74,9 @@ const normalizePagination = (params = {}) => {
 |--------------------------------------------------------------------------
 */
 
-/**
- * Extract the API response payload.
- *
- * Standard response:
- * {
- *   status: true,
- *   code: 200,
- *   message: "...",
- *   data: {},
- *   meta: {},
- *   links: {},
- *   errors: null
- * }
- */
-const getResponseData = (response) => {
-  return response?.data?.data ?? response?.data ?? null;
-};
+const getResponseData = (response) =>
+  response?.data?.data ?? response?.data ?? null;
 
-/**
- * Extract paginated response information.
- */
 const getPaginatedResponse = (response) => {
   const payload = response?.data ?? {};
 
@@ -109,6 +112,86 @@ const getPaginatedResponse = (response) => {
 
 /*
 |--------------------------------------------------------------------------
+| VALIDATION HELPERS
+|--------------------------------------------------------------------------
+*/
+
+const validatePaymentData = (paymentData) => {
+  if (
+    !paymentData ||
+    typeof paymentData !== "object" ||
+    Array.isArray(paymentData)
+  ) {
+    throw new Error("Valid plot payment data is required.");
+  }
+
+  return cleanParams(paymentData);
+};
+
+const validateStatus = (status) => {
+  const allowedStatuses = Object.values(
+    PLOT_PAYMENT_STATUSES,
+  );
+
+  if (!allowedStatuses.includes(status)) {
+    throw new Error(
+      `Invalid payment status. Allowed statuses: ${allowedStatuses.join(", ")}.`,
+    );
+  }
+
+  return status;
+};
+
+const validateVerificationData = (verificationData = {}) => {
+  if (
+    !verificationData ||
+    typeof verificationData !== "object" ||
+    Array.isArray(verificationData)
+  ) {
+    throw new Error("Valid payment verification data is required.");
+  }
+
+  const reference =
+    typeof verificationData.verification_reference === "string"
+      ? verificationData.verification_reference.trim()
+      : "";
+
+  if (!reference) {
+    throw new Error(
+      "A payment verification reference is required.",
+    );
+  }
+
+  return {
+    verification_reference: reference,
+    verification_notes:
+      typeof verificationData.verification_notes === "string"
+        ? verificationData.verification_notes.trim() || null
+        : null,
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| CONFIRM PAYMENT REQUEST
+|--------------------------------------------------------------------------
+*/
+
+const confirmPaymentRequest = async (id, verificationData = {}) => {
+  validateId(id);
+
+  const payload = validateVerificationData(verificationData);
+
+  const response = await api.post(
+    `${BASE_URL}/${id}/confirm`,
+    payload,
+  );
+
+  return getResponseData(response);
+};
+
+/*
+|--------------------------------------------------------------------------
 | PLOT PAYMENTS API
 |--------------------------------------------------------------------------
 */
@@ -118,9 +201,7 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | GET ALL PAYMENTS
   |--------------------------------------------------------------------------
-  |
   | GET /api/plot-payments
-  |
   */
 
   getAll: async (params = {}) => {
@@ -135,19 +216,13 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | GET SINGLE PAYMENT
   |--------------------------------------------------------------------------
-  |
   | GET /api/plot-payments/{id}
-  |
   */
 
   getById: async (id) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
 
-    const response = await api.get(
-      `${BASE_URL}/${id}`,
-    );
+    const response = await api.get(`${BASE_URL}/${id}`);
 
     return getResponseData(response);
   },
@@ -156,22 +231,13 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | CREATE PAYMENT
   |--------------------------------------------------------------------------
-  |
   | POST /api/plot-payments
-  |
   */
 
   create: async (paymentData) => {
-    if (!paymentData || typeof paymentData !== "object") {
-      throw new Error(
-        "Valid plot payment data is required.",
-      );
-    }
+    const payload = validatePaymentData(paymentData);
 
-    const response = await api.post(
-      BASE_URL,
-      cleanParams(paymentData),
-    );
+    const response = await api.post(BASE_URL, payload);
 
     return getResponseData(response);
   },
@@ -180,28 +246,29 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | UPDATE PAYMENT
   |--------------------------------------------------------------------------
-  |
   | PUT /api/plot-payments/{id}
   |
+  | General payment details only.
+  | Do not use this method to complete or refund payments.
   */
 
   update: async (id, paymentData) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
+
+    const payload = validatePaymentData(paymentData);
 
     if (
-      !paymentData ||
-      typeof paymentData !== "object"
+      payload.status === PLOT_PAYMENT_STATUSES.COMPLETED ||
+      payload.status === PLOT_PAYMENT_STATUSES.REFUNDED
     ) {
       throw new Error(
-        "Valid plot payment data is required.",
+        "Use the authorized payment verification workflow to complete or refund this payment.",
       );
     }
 
     const response = await api.put(
       `${BASE_URL}/${id}`,
-      cleanParams(paymentData),
+      payload,
     );
 
     return getResponseData(response);
@@ -211,28 +278,26 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | PARTIAL UPDATE PAYMENT
   |--------------------------------------------------------------------------
-  |
   | PATCH /api/plot-payments/{id}
-  |
   */
 
   patch: async (id, paymentData) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
+
+    const payload = validatePaymentData(paymentData);
 
     if (
-      !paymentData ||
-      typeof paymentData !== "object"
+      payload.status === PLOT_PAYMENT_STATUSES.COMPLETED ||
+      payload.status === PLOT_PAYMENT_STATUSES.REFUNDED
     ) {
       throw new Error(
-        "Valid plot payment data is required.",
+        "Use the authorized payment verification workflow to complete or refund this payment.",
       );
     }
 
     const response = await api.patch(
       `${BASE_URL}/${id}`,
-      cleanParams(paymentData),
+      payload,
     );
 
     return getResponseData(response);
@@ -242,21 +307,15 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | DELETE PAYMENT
   |--------------------------------------------------------------------------
-  |
   | DELETE /api/plot-payments/{id}
   |
   | Performs a soft delete.
-  |
   */
 
   delete: async (id) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
 
-    const response = await api.delete(
-      `${BASE_URL}/${id}`,
-    );
+    const response = await api.delete(`${BASE_URL}/${id}`);
 
     return getResponseData(response);
   },
@@ -265,9 +324,7 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | SEARCH AND FILTER PAYMENTS
   |--------------------------------------------------------------------------
-  |
   | GET /api/plot-payments/search
-  |
   */
 
   search: async (params = {}) => {
@@ -285,9 +342,7 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | PAYMENT STATISTICS
   |--------------------------------------------------------------------------
-  |
   | GET /api/plot-payments/statistics
-  |
   */
 
   getStatistics: async (params = {}) => {
@@ -303,22 +358,49 @@ const plotPaymentsApi = {
 
   /*
   |--------------------------------------------------------------------------
-  | GET PAYMENTS BY PLOT SALE
+  | PAYMENT REPORTS
   |--------------------------------------------------------------------------
-  |
-  | GET /api/plot-payments/sale/{plotSaleId}
-  |
+  | GET /api/plot-payments/reports
   */
 
-  getBySale: async (
-    plotSaleId,
-    params = {},
-  ) => {
-    if (!plotSaleId) {
-      throw new Error(
-        "Plot sale ID is required.",
-      );
-    }
+  getReports: async (params = {}) => {
+    const response = await api.get(
+      `${BASE_URL}/reports`,
+      {
+        params: cleanParams(params),
+      },
+    );
+
+    return getResponseData(response);
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | OUTSTANDING PAYMENTS
+  |--------------------------------------------------------------------------
+  | GET /api/plot-payments/outstanding
+  */
+
+  getOutstanding: async (params = {}) => {
+    const response = await api.get(
+      `${BASE_URL}/outstanding`,
+      {
+        params: normalizePagination(params),
+      },
+    );
+
+    return getPaginatedResponse(response);
+  },
+
+  /*
+  |--------------------------------------------------------------------------
+  | GET PAYMENTS BY PLOT SALE
+  |--------------------------------------------------------------------------
+  | GET /api/plot-payments/sale/{plotSaleId}
+  */
+
+  getBySale: async (plotSaleId, params = {}) => {
+    validateId(plotSaleId);
 
     const response = await api.get(
       `${BASE_URL}/sale/${plotSaleId}`,
@@ -334,20 +416,11 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | GET PAYMENTS BY STATUS
   |--------------------------------------------------------------------------
-  |
   | GET /api/plot-payments/status/{status}
-  |
   */
 
-  getByStatus: async (
-    status,
-    params = {},
-  ) => {
-    if (!status) {
-      throw new Error(
-        "Payment status is required.",
-      );
-    }
+  getByStatus: async (status, params = {}) => {
+    validateStatus(status);
 
     const response = await api.get(
       `${BASE_URL}/status/${status}`,
@@ -363,32 +436,28 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | UPDATE PAYMENT STATUS
   |--------------------------------------------------------------------------
-  |
   | PATCH /api/plot-payments/{id}/status
   |
-  | Supported statuses:
-  | pending, completed, failed, cancelled, refunded
-  |
-  | Backend verification rules still apply.
-  |
+  | Ordinary status transitions only.
+  | Completion and refund require authorized workflows.
   */
 
   updateStatus: async (id, status) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
+    validateStatus(status);
 
-    if (!status) {
+    if (
+      status === PLOT_PAYMENT_STATUSES.COMPLETED ||
+      status === PLOT_PAYMENT_STATUSES.REFUNDED
+    ) {
       throw new Error(
-        "Payment status is required.",
+        "Use the authorized payment verification workflow to complete or refund this payment.",
       );
     }
 
     const response = await api.patch(
       `${BASE_URL}/${id}/status`,
-      {
-        status,
-      },
+      { status },
     );
 
     return getResponseData(response);
@@ -396,19 +465,42 @@ const plotPaymentsApi = {
 
   /*
   |--------------------------------------------------------------------------
-  | RESTORE DELETED PAYMENT
+  | CONFIRM PAYMENT
+  |--------------------------------------------------------------------------
+  | POST /api/plot-payments/{id}/confirm
+  |
+  | Used by an authorized user to confirm actual payment receipt.
+  |
+  | Example payload:
+  | {
+  |   verification_reference: "CASH-EST-20261031-001",
+  |   verification_notes: "Cash received and verified."
+  | }
+  */
+
+  confirm: confirmPaymentRequest,
+
+  /*
+  |--------------------------------------------------------------------------
+  | BACKWARD-COMPATIBLE CONFIRMATION METHOD
   |--------------------------------------------------------------------------
   |
-  | POST /api/plot-payments/{id}/restore
-  |
+  | Retained for existing components using confirmPayment().
+  */
+
+  confirmPayment: confirmPaymentRequest,
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESTORE DELETED PAYMENT
+  |--------------------------------------------------------------------------
+  | PATCH /api/plot-payments/{id}/restore
   */
 
   restore: async (id) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
 
-    const response = await api.post(
+    const response = await api.patch(
       `${BASE_URL}/${id}/restore`,
     );
 
@@ -419,15 +511,11 @@ const plotPaymentsApi = {
   |--------------------------------------------------------------------------
   | PERMANENTLY DELETE PAYMENT
   |--------------------------------------------------------------------------
-  |
   | DELETE /api/plot-payments/{id}/force
-  |
   */
 
   forceDelete: async (id) => {
-    if (!id) {
-      throw new Error("Plot payment ID is required.");
-    }
+    validateId(id);
 
     const response = await api.delete(
       `${BASE_URL}/${id}/force`,
