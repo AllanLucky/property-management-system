@@ -84,6 +84,8 @@ class PlotPayment extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const STATUS_CANCELLED = 'cancelled';
+
     public const STATUS_REFUNDED = 'refunded';
 
     public const DEFAULT_CURRENCY = 'KES';
@@ -94,6 +96,7 @@ class PlotPayment extends Model
         self::STATUS_PENDING,
         self::STATUS_COMPLETED,
         self::STATUS_FAILED,
+        self::STATUS_CANCELLED,
         self::STATUS_REFUNDED,
     ];
 
@@ -216,6 +219,14 @@ class PlotPayment extends Model
     }
 
     /**
+     * Scope cancelled payments.
+     */
+    public function scopeCancelled(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_CANCELLED);
+    }
+
+    /**
      * Scope refunded payments.
      */
     public function scopeRefunded(Builder $query): Builder
@@ -317,6 +328,14 @@ class PlotPayment extends Model
     }
 
     /**
+     * Determine whether the payment is cancelled.
+     */
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
+    }
+
+    /**
      * Determine whether the payment has been refunded.
      */
     public function isRefunded(): bool
@@ -324,11 +343,32 @@ class PlotPayment extends Model
         return $this->status === self::STATUS_REFUNDED;
     }
 
+    /**
+     * Determine whether the payment contributes to completed totals.
+     */
+    public function contributesToSaleBalance(): bool
+    {
+        return $this->exists
+            && ! $this->trashed()
+            && $this->is_active
+            && $this->isCompleted();
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Payment Status Actions
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * Mark the payment as pending.
+     */
+    public function markAsPending(): bool
+    {
+        return $this->update([
+            'status' => self::STATUS_PENDING,
+        ]);
+    }
 
     /**
      * Mark the payment as completed.
@@ -352,17 +392,25 @@ class PlotPayment extends Model
     }
 
     /**
+     * Mark the payment as cancelled.
+     */
+    public function markAsCancelled(): bool
+    {
+        return $this->update([
+            'status' => self::STATUS_CANCELLED,
+        ]);
+    }
+
+    /**
      * Mark the payment as refunded.
      *
-     * The refunded status excludes the payment from completed
-     * payment totals. This does not itself transfer money back
-     * to the payer or create a separate refund transaction.
+     * This changes the payment record status. It does not itself
+     * transfer money back or create a separate refund transaction.
      */
     public function markAsRefunded(): bool
     {
         return $this->update([
             'status' => self::STATUS_REFUNDED,
-            'is_active' => false,
         ]);
     }
 
@@ -410,7 +458,7 @@ class PlotPayment extends Model
         });
 
         /*
-         * Completed payments contribute to the sale balance.
+         * Recalculate the sale when a completed payment is created.
          */
         static::created(function (PlotPayment $payment): void {
             if ($payment->isCompleted()) {
@@ -420,7 +468,8 @@ class PlotPayment extends Model
 
         /*
          * Recalculate both sales if a payment is reassigned.
-         * Recalculate the current sale after amount or status changes.
+         * Recalculate the current sale after amount, status,
+         * activation, or sale assignment changes.
          */
         static::updated(function (PlotPayment $payment): void {
             if (! $payment->wasChanged([
@@ -434,8 +483,10 @@ class PlotPayment extends Model
 
             $previousSaleId = $payment->previousPlotSaleId;
 
-            if ($previousSaleId !== null
-                && $previousSaleId !== (int) $payment->plot_sale_id) {
+            if (
+                $previousSaleId !== null
+                && $previousSaleId !== (int) $payment->plot_sale_id
+            ) {
                 self::recalculateSaleBalanceById($previousSaleId);
             }
 
@@ -445,15 +496,14 @@ class PlotPayment extends Model
         });
 
         /*
-         * Soft deletion and force deletion both remove this payment
-         * from the sale's ordinary payment totals.
+         * Recalculate the sale after payment deletion.
          */
         static::deleted(function (PlotPayment $payment): void {
             $payment->updatePlotSaleBalance();
         });
 
         /*
-         * Restoring a completed payment adds it back to the totals.
+         * Recalculate the sale after payment restoration.
          */
         static::restored(function (PlotPayment $payment): void {
             $payment->updatePlotSaleBalance();
@@ -480,9 +530,11 @@ class PlotPayment extends Model
                 now()->format('YmdHis'),
                 Str::upper(Str::random(6))
             );
-        } while (static::withTrashed()
-            ->where('payment_number', $number)
-            ->exists());
+        } while (
+            static::withTrashed()
+                ->where('payment_number', $number)
+                ->exists()
+        );
 
         return $number;
     }
@@ -496,20 +548,30 @@ class PlotPayment extends Model
     /**
      * Recalculate the related sale's payment totals.
      *
-     * PlotSale must provide a completedPayments() relationship
-     * or query returning only completed plot payments.
+     * Only active, non-deleted, completed payments contribute.
      */
     public function updatePlotSaleBalance(): void
     {
+        if (! $this->plot_sale_id) {
+            return;
+        }
+
         $sale = $this->plotSale;
 
         if (! $sale) {
             return;
         }
 
-        $amountPaid = (float) $sale->completedPayments()->sum('amount');
+        $amountPaid = (float) $sale->completedPayments()
+            ->where('is_active', true)
+            ->sum('amount');
 
-        $sale->amount_paid = number_format($amountPaid, 2, '.', '');
+        $sale->amount_paid = number_format(
+            $amountPaid,
+            2,
+            '.',
+            ''
+        );
 
         $sale->recalculateBalance();
 
@@ -529,9 +591,16 @@ class PlotPayment extends Model
             return;
         }
 
-        $amountPaid = (float) $sale->completedPayments()->sum('amount');
+        $amountPaid = (float) $sale->completedPayments()
+            ->where('is_active', true)
+            ->sum('amount');
 
-        $sale->amount_paid = number_format($amountPaid, 2, '.', '');
+        $sale->amount_paid = number_format(
+            $amountPaid,
+            2,
+            '.',
+            ''
+        );
 
         $sale->recalculateBalance();
 
