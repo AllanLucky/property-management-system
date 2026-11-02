@@ -23,9 +23,6 @@ class PlotPayment extends Model
 
     protected $table = 'plot_payments';
 
-    /**
-     * Attributes that can be mass assigned.
-     */
     protected $fillable = [
         'plot_sale_id',
         'payment_number',
@@ -44,9 +41,6 @@ class PlotPayment extends Model
         'is_active',
     ];
 
-    /**
-     * Attribute casting.
-     */
     protected function casts(): array
     {
         return [
@@ -60,9 +54,6 @@ class PlotPayment extends Model
         ];
     }
 
-    /**
-     * Attributes appended to serialized model output.
-     */
     protected $appends = [
         'formatted_amount',
     ];
@@ -79,18 +70,15 @@ class PlotPayment extends Model
     */
 
     public const STATUS_PENDING = 'pending';
-
     public const STATUS_COMPLETED = 'completed';
-
     public const STATUS_FAILED = 'failed';
-
     public const STATUS_CANCELLED = 'cancelled';
-
     public const STATUS_REFUNDED = 'refunded';
 
     public const DEFAULT_CURRENCY = 'KES';
 
     public const PAYMENT_NUMBER_PREFIX = 'PAY';
+    public const RECEIPT_NUMBER_PREFIX = 'RCP';
 
     public const PAYMENT_STATUSES = [
         self::STATUS_PENDING,
@@ -106,17 +94,11 @@ class PlotPayment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Get the sale associated with this payment.
-     */
     public function plotSale(): BelongsTo
     {
         return $this->belongsTo(PlotSale::class, 'plot_sale_id');
     }
 
-    /**
-     * Get the plot associated with this payment through its sale.
-     */
     public function plot(): HasOneThrough
     {
         return $this->hasOneThrough(
@@ -129,9 +111,6 @@ class PlotPayment extends Model
         );
     }
 
-    /**
-     * Get the buyer associated with this payment through its sale.
-     */
     public function buyer(): HasOneThrough
     {
         return $this->hasOneThrough(
@@ -150,9 +129,6 @@ class PlotPayment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Get the formatted payment amount.
-     */
     public function getFormattedAmountAttribute(): string
     {
         return sprintf(
@@ -168,25 +144,16 @@ class PlotPayment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Scope active payments.
-     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
-    /**
-     * Scope inactive payments.
-     */
     public function scopeInactive(Builder $query): Builder
     {
         return $query->where('is_active', false);
     }
 
-    /**
-     * Scope payments by status.
-     */
     public function scopeStatus(
         Builder $query,
         string $status
@@ -194,49 +161,31 @@ class PlotPayment extends Model
         return $query->where('status', $status);
     }
 
-    /**
-     * Scope completed payments.
-     */
     public function scopeCompleted(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_COMPLETED);
     }
 
-    /**
-     * Scope pending payments.
-     */
     public function scopePending(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_PENDING);
     }
 
-    /**
-     * Scope failed payments.
-     */
     public function scopeFailed(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_FAILED);
     }
 
-    /**
-     * Scope cancelled payments.
-     */
     public function scopeCancelled(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_CANCELLED);
     }
 
-    /**
-     * Scope refunded payments.
-     */
     public function scopeRefunded(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_REFUNDED);
     }
 
-    /**
-     * Scope payments by payment method.
-     */
     public function scopePaymentMethod(
         Builder $query,
         string $method
@@ -244,9 +193,6 @@ class PlotPayment extends Model
         return $query->where('payment_method', $method);
     }
 
-    /**
-     * Scope payments by payment type.
-     */
     public function scopePaymentType(
         Builder $query,
         string $type
@@ -254,9 +200,6 @@ class PlotPayment extends Model
         return $query->where('payment_type', $type);
     }
 
-    /**
-     * Scope payments within a date range.
-     */
     public function scopeBetweenDates(
         Builder $query,
         DateTimeInterface|string $startDate,
@@ -268,9 +211,6 @@ class PlotPayment extends Model
         ]);
     }
 
-    /**
-     * Search payments and their related sale numbers.
-     */
     public function scopeSearch(
         Builder $query,
         string $search
@@ -303,49 +243,31 @@ class PlotPayment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether the payment is pending.
-     */
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;
     }
 
-    /**
-     * Determine whether the payment is completed.
-     */
     public function isCompleted(): bool
     {
         return $this->status === self::STATUS_COMPLETED;
     }
 
-    /**
-     * Determine whether the payment has failed.
-     */
     public function isFailed(): bool
     {
         return $this->status === self::STATUS_FAILED;
     }
 
-    /**
-     * Determine whether the payment is cancelled.
-     */
     public function isCancelled(): bool
     {
         return $this->status === self::STATUS_CANCELLED;
     }
 
-    /**
-     * Determine whether the payment has been refunded.
-     */
     public function isRefunded(): bool
     {
         return $this->status === self::STATUS_REFUNDED;
     }
 
-    /**
-     * Determine whether the payment contributes to completed totals.
-     */
     public function contributesToSaleBalance(): bool
     {
         return $this->exists
@@ -360,9 +282,6 @@ class PlotPayment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Mark the payment as pending.
-     */
     public function markAsPending(): bool
     {
         return $this->update([
@@ -370,9 +289,6 @@ class PlotPayment extends Model
         ]);
     }
 
-    /**
-     * Mark the payment as completed.
-     */
     public function markAsCompleted(): bool
     {
         return $this->update([
@@ -381,9 +297,6 @@ class PlotPayment extends Model
         ]);
     }
 
-    /**
-     * Mark the payment as failed.
-     */
     public function markAsFailed(): bool
     {
         return $this->update([
@@ -391,9 +304,6 @@ class PlotPayment extends Model
         ]);
     }
 
-    /**
-     * Mark the payment as cancelled.
-     */
     public function markAsCancelled(): bool
     {
         return $this->update([
@@ -401,12 +311,6 @@ class PlotPayment extends Model
         ]);
     }
 
-    /**
-     * Mark the payment as refunded.
-     *
-     * This changes the payment record status. It does not itself
-     * transfer money back or create a separate refund transaction.
-     */
     public function markAsRefunded(): bool
     {
         return $this->update([
@@ -420,18 +324,19 @@ class PlotPayment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Register model lifecycle events.
-     */
     protected static function booted(): void
     {
         /*
-         * Prepare defaults and capture the previous sale before
-         * updating the payment.
+         * Generate identifiers and set defaults.
          */
         static::creating(function (PlotPayment $payment): void {
+
             if (blank($payment->payment_number)) {
                 $payment->payment_number = self::generatePaymentNumber();
+            }
+
+            if (blank($payment->receipt_number)) {
+                $payment->receipt_number = self::generateReceiptNumber();
             }
 
             if (blank($payment->currency)) {
@@ -451,6 +356,9 @@ class PlotPayment extends Model
             }
         });
 
+        /*
+         * Capture previous sale before updating.
+         */
         static::updating(function (PlotPayment $payment): void {
             $payment->previousPlotSaleId = $payment->isDirty('plot_sale_id')
                 ? (int) $payment->getOriginal('plot_sale_id')
@@ -458,7 +366,7 @@ class PlotPayment extends Model
         });
 
         /*
-         * Recalculate the sale when a completed payment is created.
+         * Recalculate sale after payment creation.
          */
         static::created(function (PlotPayment $payment): void {
             if ($payment->isCompleted()) {
@@ -467,11 +375,10 @@ class PlotPayment extends Model
         });
 
         /*
-         * Recalculate both sales if a payment is reassigned.
-         * Recalculate the current sale after amount, status,
-         * activation, or sale assignment changes.
+         * Recalculate sale balances after payment changes.
          */
         static::updated(function (PlotPayment $payment): void {
+
             if (! $payment->wasChanged([
                 'amount',
                 'status',
@@ -496,14 +403,14 @@ class PlotPayment extends Model
         });
 
         /*
-         * Recalculate the sale after payment deletion.
+         * Recalculate after deletion.
          */
         static::deleted(function (PlotPayment $payment): void {
             $payment->updatePlotSaleBalance();
         });
 
         /*
-         * Recalculate the sale after payment restoration.
+         * Recalculate after restoration.
          */
         static::restored(function (PlotPayment $payment): void {
             $payment->updatePlotSaleBalance();
@@ -517,11 +424,11 @@ class PlotPayment extends Model
     */
 
     /**
-     * Generate a payment identifier.
+     * Generate a unique payment number.
      *
-     * A database unique constraint on payment_number is recommended.
+     * Example: PAY-20261102194530-RTI8ML
      */
-    protected static function generatePaymentNumber(): string
+    public static function generatePaymentNumber(): string
     {
         do {
             $number = sprintf(
@@ -533,6 +440,35 @@ class PlotPayment extends Model
         } while (
             static::withTrashed()
                 ->where('payment_number', $number)
+                ->exists()
+        );
+
+        return $number;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Receipt Number Generation
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Generate a unique payment receipt number.
+     *
+     * Example: RCP-20261102-K8M4XP
+     */
+    public static function generateReceiptNumber(): string
+    {
+        do {
+            $number = sprintf(
+                '%s-%s-%s',
+                self::RECEIPT_NUMBER_PREFIX,
+                now()->format('Ymd'),
+                Str::upper(Str::random(6))
+            );
+        } while (
+            static::withTrashed()
+                ->where('receipt_number', $number)
                 ->exists()
         );
 
@@ -580,8 +516,6 @@ class PlotPayment extends Model
 
     /**
      * Recalculate a sale by its ID.
-     *
-     * Used when a payment moves from one sale to another.
      */
     protected static function recalculateSaleBalanceById(int $saleId): void
     {
