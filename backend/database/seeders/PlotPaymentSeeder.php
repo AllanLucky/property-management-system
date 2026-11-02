@@ -6,7 +6,6 @@ use App\Models\PlotPayment;
 use App\Models\PlotSale;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class PlotPaymentSeeder extends Seeder
 {
@@ -19,6 +18,9 @@ class PlotPaymentSeeder extends Seeder
         |--------------------------------------------------------------------------
         | LOAD PLOT SALES WITH BUYERS
         |--------------------------------------------------------------------------
+        |
+        | Plot sales must be seeded before plot payments.
+        |
         */
 
         $saleNumbers = collect(range(1, 8))
@@ -50,11 +52,17 @@ class PlotPaymentSeeder extends Seeder
         |--------------------------------------------------------------------------
         | PAYMENT DATA
         |--------------------------------------------------------------------------
+        |
+        | All payment fields match the plot_payments migration.
+        |
         */
 
         $payments = [
+
+            // Sale 1
             [
                 'sale_number' => 'PS-20261005-000001',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000001',
@@ -69,8 +77,10 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
+            // Sale 2
             [
                 'sale_number' => 'PS-20261005-000002',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000002',
@@ -85,8 +95,10 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
+            // Sale 3
             [
                 'sale_number' => 'PS-20261005-000003',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000003',
@@ -98,6 +110,7 @@ class PlotPaymentSeeder extends Seeder
                         'payment_date' => now()->subDays(14),
                         'notes' => 'Initial plot reservation deposit paid through M-Pesa.',
                     ],
+
                     [
                         'payment_number' => 'PAY-20261005-000004',
                         'receipt_number' => 'RCP-20261005-000004',
@@ -111,8 +124,10 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
+            // Sale 4
             [
                 'sale_number' => 'PS-20261005-000004',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000005',
@@ -124,6 +139,7 @@ class PlotPaymentSeeder extends Seeder
                         'payment_date' => now()->subMonths(3),
                         'notes' => 'Initial deposit for the Juja commercial plot.',
                     ],
+
                     [
                         'payment_number' => 'PAY-20261005-000006',
                         'receipt_number' => 'RCP-20261005-000006',
@@ -134,6 +150,7 @@ class PlotPaymentSeeder extends Seeder
                         'payment_date' => now()->subMonths(2)->addDays(10),
                         'notes' => 'Second payment toward the Juja commercial plot.',
                     ],
+
                     [
                         'payment_number' => 'PAY-20261005-000007',
                         'receipt_number' => 'RCP-20261005-000007',
@@ -147,8 +164,10 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
+            // Sale 5
             [
                 'sale_number' => 'PS-20261005-000005',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000008',
@@ -163,8 +182,10 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
+            // Sale 6
             [
                 'sale_number' => 'PS-20261005-000006',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000009',
@@ -176,6 +197,7 @@ class PlotPaymentSeeder extends Seeder
                         'payment_date' => now()->subDays(14),
                         'notes' => 'Initial deposit for the Athi River development plot.',
                     ],
+
                     [
                         'payment_number' => 'PAY-20261005-000010',
                         'receipt_number' => 'RCP-20261005-000010',
@@ -189,8 +211,10 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
+            // Sale 7
             [
                 'sale_number' => 'PS-20261005-000007',
+
                 'payments' => [
                     [
                         'payment_number' => 'PAY-20261005-000011',
@@ -202,6 +226,7 @@ class PlotPaymentSeeder extends Seeder
                         'payment_date' => now()->subMonths(2),
                         'notes' => 'Initial deposit for the Ruaka premium plot.',
                     ],
+
                     [
                         'payment_number' => 'PAY-20261005-000012',
                         'receipt_number' => 'RCP-20261005-000012',
@@ -212,6 +237,7 @@ class PlotPaymentSeeder extends Seeder
                         'payment_date' => now()->subMonth(),
                         'notes' => 'Second installment for the Ruaka premium plot.',
                     ],
+
                     [
                         'payment_number' => 'PAY-20261005-000013',
                         'receipt_number' => 'RCP-20261005-000013',
@@ -225,18 +251,21 @@ class PlotPaymentSeeder extends Seeder
                 ],
             ],
 
-            // Sale #8 is cancelled; no payment is seeded for it.
+            // Sale 8 is cancelled; no payment is seeded.
         ];
 
         /*
         |--------------------------------------------------------------------------
-        | CREATE / UPDATE PAYMENTS AND RECALCULATE BALANCES
+        | CREATE / UPDATE PAYMENTS
         |--------------------------------------------------------------------------
         */
 
         DB::transaction(function () use ($payments, $sales): void {
+
             foreach ($payments as $salePaymentData) {
+
                 $saleNumber = $salePaymentData['sale_number'];
+
                 $sale = $sales->get($saleNumber);
 
                 if (!$sale) {
@@ -259,7 +288,7 @@ class PlotPaymentSeeder extends Seeder
 
                 /*
                 |--------------------------------------------------------------------------
-                | RESOLVE BUYER DETAILS
+                | RESOLVE PAYER INFORMATION
                 |--------------------------------------------------------------------------
                 */
 
@@ -275,42 +304,100 @@ class PlotPaymentSeeder extends Seeder
                         ?? 'Unknown payer';
                 }
 
+                /*
+                |--------------------------------------------------------------------------
+                | PROCESS INDIVIDUAL PAYMENTS
+                |--------------------------------------------------------------------------
+                */
+
                 foreach ($salePaymentData['payments'] as $payment) {
-                    PlotPayment::updateOrCreate(
-                        [
-                            'payment_number' => $payment['payment_number'],
-                        ],
-                        [
-                            'plot_sale_id' => $sale->id,
-                            'receipt_number' => $payment['receipt_number'],
-                            'transaction_reference' => $payment['transaction_reference'],
-                            'amount' => $payment['amount'],
-                            'currency' => $sale->currency ?: 'KES',
-                            'payment_type' => $payment['payment_type'],
-                            'payment_method' => $payment['payment_method'],
-                            'payment_date' => $payment['payment_date'],
-                            'payer_name' => $payerName,
-                            'payer_phone' => $buyer->phone,
-                            'payer_email' => $buyer->email,
-                            'notes' => $payment['notes'],
-                            'status' => 'completed',
-                            'is_active' => true,
-                        ]
-                    );
+
+                    $paymentAttributes = [
+                        'plot_sale_id' => $sale->id,
+
+                        'receipt_number' => $payment['receipt_number'],
+
+                        'transaction_reference' => $payment['transaction_reference'],
+
+                        'amount' => $payment['amount'],
+
+                        'currency' => $sale->currency ?: 'KES',
+
+                        'payment_type' => $payment['payment_type'],
+
+                        'payment_method' => $payment['payment_method'],
+
+                        'payment_date' => $payment['payment_date'],
+
+                        'payer_name' => $payerName,
+
+                        'payer_phone' => $buyer->phone,
+
+                        'payer_email' => $buyer->email,
+
+                        'notes' => $payment['notes'],
+
+                        'status' => 'completed',
+
+                        'is_active' => true,
+                    ];
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | FIND EXISTING PAYMENT INCLUDING SOFT DELETED
+                    |--------------------------------------------------------------------------
+                    |
+                    | This prevents duplicate payment numbers when
+                    | the seeder is executed more than once.
+                    |
+                    */
+
+                    $plotPayment = PlotPayment::withTrashed()
+                        ->where(
+                            'payment_number',
+                            $payment['payment_number']
+                        )
+                        ->first();
+
+                    if ($plotPayment) {
+
+                        // Restore previously soft-deleted payment.
+                        if ($plotPayment->trashed()) {
+                            $plotPayment->restore();
+                        }
+
+                        $plotPayment->fill($paymentAttributes);
+
+                        $plotPayment->save();
+
+                    } else {
+
+                        PlotPayment::create(array_merge(
+                            $paymentAttributes,
+                            [
+                                'payment_number' => $payment['payment_number'],
+                            ]
+                        ));
+                    }
 
                     $this->command?->line(
-                        "Payment {$payment['payment_number']} created or updated for {$saleNumber}."
+                        "Payment {$payment['payment_number']} processed for {$saleNumber}."
                     );
                 }
             }
 
             /*
             |--------------------------------------------------------------------------
-            | RECALCULATE SEEDED SALE BALANCES
+            | RECALCULATE SALE PAYMENT TOTALS
             |--------------------------------------------------------------------------
+            |
+            | Only active, completed, non-deleted payments
+            | contribute to the sale's paid amount.
+            |
             */
 
             foreach ($sales as $sale) {
+
                 $totalPaid = PlotPayment::query()
                     ->where('plot_sale_id', $sale->id)
                     ->where('status', 'completed')
@@ -324,6 +411,7 @@ class PlotPaymentSeeder extends Seeder
                 );
 
                 $sale->amount_paid = $totalPaid;
+
                 $sale->balance = max(
                     0,
                     $netSalePrice - (float) $totalPaid
@@ -335,7 +423,7 @@ class PlotPaymentSeeder extends Seeder
 
         /*
         |--------------------------------------------------------------------------
-        | SUMMARY
+        | PAYMENT SUMMARY
         |--------------------------------------------------------------------------
         */
 
@@ -360,5 +448,7 @@ class PlotPaymentSeeder extends Seeder
             'Total active completed plot payments: KES ' .
             number_format((float) $totalPaid, 2)
         );
+
+        $this->command?->newLine();
     }
 }

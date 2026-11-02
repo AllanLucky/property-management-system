@@ -54,6 +54,18 @@ class PlotPaymentService
         'refunded' => [],
     ];
 
+    protected const PAYMENT_NUMBER_PREFIX = 'PAY';
+
+    protected const RECEIPT_NUMBER_PREFIX = 'RCP';
+
+    protected const DEFAULT_CURRENCY = 'KES';
+
+    protected const DEFAULT_PER_PAGE = 15;
+
+    protected const MAX_PER_PAGE = 100;
+
+    protected const IDENTIFIER_ATTEMPTS = 10;
+
     /*
     |--------------------------------------------------------------------------
     | Retrieve Payments
@@ -73,7 +85,7 @@ class PlotPaymentService
      */
     public function paginate(
         array $filters = [],
-        int $perPage = 15
+        int $perPage = self::DEFAULT_PER_PAGE
     ): LengthAwarePaginator {
         return $this->paymentRepository->paginate(
             $filters,
@@ -143,7 +155,7 @@ class PlotPaymentService
     public function search(
         string $search,
         array $filters = [],
-        int $perPage = 15
+        int $perPage = self::DEFAULT_PER_PAGE
     ): LengthAwarePaginator {
         return $this->paymentRepository->search(
             trim($search),
@@ -158,7 +170,7 @@ class PlotPaymentService
     public function getBySale(
         int $plotSaleId,
         array $filters = [],
-        int $perPage = 15
+        int $perPage = self::DEFAULT_PER_PAGE
     ): LengthAwarePaginator {
         $this->ensureSaleExists($plotSaleId);
 
@@ -175,7 +187,7 @@ class PlotPaymentService
     public function getByStatus(
         string $status,
         array $filters = [],
-        int $perPage = 15
+        int $perPage = self::DEFAULT_PER_PAGE
     ): LengthAwarePaginator {
         $status = strtolower(trim($status));
 
@@ -197,35 +209,58 @@ class PlotPaymentService
     /**
      * Create a new pending plot payment.
      *
+     * Payment and receipt numbers are generated automatically.
      * New payments always start as pending.
+     *
      * Completion must happen through a trusted verification workflow.
      */
     public function create(array $data): PlotPayment
     {
         return DB::transaction(function () use ($data) {
+
             $plotSaleId = (int) ($data['plot_sale_id'] ?? 0);
 
             $this->ensureSaleExists($plotSaleId);
 
+            /*
+             * Normalize incoming creation data.
+             */
             $data = $this->prepareCreateData($data);
 
-            $data['payment_number'] = $this->resolvePaymentNumber(
-                $data['payment_number'] ?? null
-            );
+            /*
+             * Always generate payment and receipt numbers
+             * on the backend.
+             *
+             * Client-supplied identifiers are never trusted.
+             */
+            $data['payment_number'] = $this->generatePaymentNumber();
 
-            $data['status'] = 'pending';
+            $data['receipt_number'] = $this->generateReceiptNumber();
+
+            /*
+             * New payments must always start pending.
+             */
+            $data['status'] = PlotPayment::STATUS_PENDING;
 
             $data['currency'] = strtoupper(
-                $data['currency'] ?? 'KES'
+                $data['currency'] ?? self::DEFAULT_CURRENCY
             );
 
-            $data['payment_date'] = $data['payment_date']
-                ?? now()->toDateString();
+            $data['payment_date'] = $data['payment_date'] ?? now();
 
             $data['is_active'] = $data['is_active'] ?? true;
 
+            /*
+             * Create payment.
+             *
+             * PlotPayment model events provide an additional
+             * safeguard for automatic identifier generation.
+             */
             $payment = $this->paymentRepository->create($data);
 
+            /*
+             * Retrieve the latest saved payment.
+             */
             $payment = $this->paymentRepository->findOrFail(
                 $payment->id
             );
@@ -243,6 +278,7 @@ class PlotPaymentService
     /**
      * Update payment details.
      *
+     * Payment numbers and receipt numbers are immutable.
      * Status changes are handled through updateStatus().
      *
      * Completed and refunded payments cannot be edited through
@@ -258,7 +294,13 @@ class PlotPaymentService
             $data,
             $verifiedByTrustedSource
         ) {
-            $payment = $this->paymentRepository->findOrFail($id);
+
+            /*
+             * Lock payment to prevent concurrent modifications.
+             */
+            $payment = PlotPayment::query()
+                ->lockForUpdate()
+                ->findOrFail($id);
 
             $this->ensurePaymentIsEditable($payment);
 
@@ -285,14 +327,21 @@ class PlotPaymentService
                 : null;
 
             /*
-             * These fields cannot be changed through ordinary editing.
+             * Payment identifiers are immutable.
+             *
+             * They must never be regenerated or manually changed
+             * during ordinary payment updates.
              */
             unset(
                 $data['plot_sale_id'],
                 $data['payment_number'],
+                $data['receipt_number'],
                 $data['status']
             );
 
+            /*
+             * Normalize currency.
+             */
             if (isset($data['currency'])) {
                 $data['currency'] = strtoupper($data['currency']);
             }
@@ -348,7 +397,10 @@ class PlotPaymentService
         $this->validateStatus($status);
 
         if (
-            in_array($status, ['completed', 'refunded'], true)
+            in_array($status, [
+                PlotPayment::STATUS_COMPLETED,
+                PlotPayment::STATUS_REFUNDED,
+            ], true)
             && ! $verifiedByTrustedSource
         ) {
             throw ValidationException::withMessages([
@@ -359,6 +411,7 @@ class PlotPaymentService
         }
 
         return DB::transaction(function () use ($id, $status) {
+
             /*
              * Lock the record to prevent concurrent status changes.
              */
@@ -397,16 +450,16 @@ class PlotPaymentService
             }
 
             /*
-             * Persist the status.
+             * Persist status.
              *
-             * Using the model instance ensures the update event hooks
-             * on PlotPayment are executed.
+             * Using the model instance ensures PlotPayment
+             * lifecycle events execute correctly.
              */
             $payment->status = $status;
             $payment->save();
 
             /*
-             * Reload from the database to avoid returning stale data.
+             * Reload latest database record.
              */
             $payment->refresh();
 
@@ -473,6 +526,7 @@ class PlotPaymentService
     public function delete(int $id): bool
     {
         return DB::transaction(function () use ($id) {
+
             $payment = $this->paymentRepository->findOrFail($id);
 
             $this->ensurePaymentCanBeDeleted($payment);
@@ -497,6 +551,7 @@ class PlotPaymentService
     public function forceDelete(int $id): bool
     {
         return DB::transaction(function () use ($id) {
+
             $payment = $this->paymentRepository->findOrFail($id);
 
             $this->ensurePaymentCanBeDeleted($payment);
@@ -534,56 +589,80 @@ class PlotPaymentService
      * Generate a unique payment number.
      *
      * Format: PAY-YYYYMMDD-XXXXXX
+     *
+     * Example: PAY-20261102-RTI8ML
      */
     public function generatePaymentNumber(): string
     {
-        return $this->resolvePaymentNumber(null);
+        return $this->generateUniqueIdentifier(
+            self::PAYMENT_NUMBER_PREFIX,
+            'payment_number'
+        );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Receipt Number Generation
+    |--------------------------------------------------------------------------
+    */
+
     /**
-     * Resolve a supplied or generated payment number.
+     * Generate a unique payment receipt number.
+     *
+     * Format: RCP-YYYYMMDD-XXXXXX
+     *
+     * Example: RCP-20261102-K8M4XP
      */
-    protected function resolvePaymentNumber(
-        ?string $paymentNumber
+    public function generateReceiptNumber(): string
+    {
+        return $this->generateUniqueIdentifier(
+            self::RECEIPT_NUMBER_PREFIX,
+            'receipt_number'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Unique Identifier Generator
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Generate a unique identifier and check all payment records.
+     *
+     * Includes soft-deleted records to prevent identifier reuse.
+     *
+     * A database unique index remains necessary to protect
+     * against simultaneous creation requests.
+     */
+    protected function generateUniqueIdentifier(
+        string $prefix,
+        string $column
     ): string {
-        if (
-            $paymentNumber !== null
-            && trim($paymentNumber) !== ''
+        for (
+            $attempt = 0;
+            $attempt < self::IDENTIFIER_ATTEMPTS;
+            $attempt++
         ) {
-            $paymentNumber = trim($paymentNumber);
-
-            if (
-                $this->paymentRepository
-                    ->findByPaymentNumber($paymentNumber)
-            ) {
-                throw ValidationException::withMessages([
-                    'payment_number' => [
-                        'This payment number has already been used.',
-                    ],
-                ]);
-            }
-
-            return $paymentNumber;
-        }
-
-        for ($attempt = 0; $attempt < 10; $attempt++) {
             $number = sprintf(
-                'PAY-%s-%s',
+                '%s-%s-%s',
+                $prefix,
                 now()->format('Ymd'),
-                strtoupper(Str::random(6))
+                Str::upper(Str::random(6))
             );
 
-            if (
-                ! $this->paymentRepository
-                    ->findByPaymentNumber($number)
-            ) {
+            $exists = PlotPayment::withTrashed()
+                ->where($column, $number)
+                ->exists();
+
+            if (! $exists) {
                 return $number;
             }
         }
 
         throw ValidationException::withMessages([
-            'payment_number' => [
-                'Unable to generate a unique payment number. Please try again.',
+            $column => [
+                "Unable to generate a unique {$column}. Please try again.",
             ],
         ]);
     }
@@ -637,7 +716,10 @@ class PlotPaymentService
     ): void {
         if (in_array(
             $payment->status,
-            ['completed', 'refunded'],
+            [
+                PlotPayment::STATUS_COMPLETED,
+                PlotPayment::STATUS_REFUNDED,
+            ],
             true
         )) {
             throw ValidationException::withMessages([
@@ -656,7 +738,10 @@ class PlotPaymentService
     ): void {
         if (in_array(
             $payment->status,
-            ['completed', 'refunded'],
+            [
+                PlotPayment::STATUS_COMPLETED,
+                PlotPayment::STATUS_REFUNDED,
+            ],
             true
         )) {
             throw ValidationException::withMessages([
@@ -672,28 +757,47 @@ class PlotPaymentService
      */
     protected function prepareCreateData(array $data): array
     {
-        if (
-            isset($data['payment_number'])
-            && trim($data['payment_number']) === ''
-        ) {
-            $data['payment_number'] = null;
-        }
+        /*
+         * Remove client-supplied identifiers.
+         *
+         * The service is responsible for generating these values.
+         */
+        unset(
+            $data['payment_number'],
+            $data['receipt_number']
+        );
 
+        /*
+         * Normalize currency.
+         */
         if (isset($data['currency'])) {
-            $data['currency'] = strtoupper($data['currency']);
+            $data['currency'] = strtoupper(
+                trim($data['currency'])
+            );
         }
 
-        // New payments must always start pending.
-        $data['status'] = 'pending';
+        /*
+         * New payments must always start pending.
+         */
+        $data['status'] = PlotPayment::STATUS_PENDING;
 
         return $data;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Pagination Helpers
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Normalize pagination limits.
      */
     protected function normalizePerPage(int $perPage): int
     {
-        return max(1, min($perPage, 100));
+        return max(
+            1,
+            min($perPage, self::MAX_PER_PAGE)
+        );
     }
 }
