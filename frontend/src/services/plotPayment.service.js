@@ -48,35 +48,38 @@ const PAYMENT_METHODS = [
  * Extract the standard API response payload.
  *
  * Supports:
- * {
- *   status,
- *   code,
- *   message,
- *   data,
- *   meta,
- *   links,
- *   errors
- * }
+ * 1. Axios response containing an API envelope.
+ * 2. Already-unwrapped API response data.
+ * 3. Service-level response objects.
  */
 const extractData = (response) => {
   if (response === null || response === undefined) {
     return null;
   }
 
+  // Already-unwrapped API envelope:
+  // { status, code, message, data, meta, links }
   if (
     response?.data !== undefined &&
-    response?.meta !== undefined
+    (response?.meta !== undefined ||
+      response?.links !== undefined)
   ) {
     return response.data;
   }
 
+  // Axios response containing an API envelope:
+  // { data: { status, code, message, data, meta, links } }
   if (
     response?.data?.data !== undefined &&
-    response?.data?.meta !== undefined
+    (
+      response?.data?.meta !== undefined ||
+      response?.data?.links !== undefined
+    )
   ) {
     return response.data.data;
   }
 
+  // Axios response containing a regular payload.
   if (response?.data !== undefined) {
     return response.data;
   }
@@ -125,17 +128,27 @@ const extractPagination = (response) => {
     response?.data?.meta ??
     {};
 
+  const currentPage = Number(
+    meta.current_page ?? 1,
+  );
+
+  const lastPage = Number(
+    meta.last_page ?? 1,
+  );
+
   return {
-    current_page: Number(meta.current_page ?? 1),
-    last_page: Number(meta.last_page ?? 1),
-    per_page: Number(meta.per_page ?? DEFAULT_PER_PAGE),
+    current_page: currentPage,
+    last_page: lastPage,
+    per_page: Number(
+      meta.per_page ?? DEFAULT_PER_PAGE,
+    ),
     total: Number(meta.total ?? 0),
     from: meta.from ?? null,
     to: meta.to ?? null,
+
     has_more_pages:
       meta.has_more_pages ??
-      Number(meta.current_page ?? 1) <
-        Number(meta.last_page ?? 1),
+      currentPage < lastPage,
   };
 };
 
@@ -178,6 +191,29 @@ const extractMessage = (
   );
 };
 
+/**
+ * Normalize paginated service responses.
+ */
+const normalizePaginatedResponse = (
+  response,
+  fallbackMessage = "Plot payments retrieved successfully.",
+) => ({
+  data: normalizePlotPayments(
+    extractCollection(response),
+  ),
+
+  meta: extractPagination(response),
+
+  links: extractLinks(response),
+
+  message: extractMessage(
+    response,
+    fallbackMessage,
+  ),
+
+  status: response?.status ?? true,
+});
+
 /*
 |--------------------------------------------------------------------------
 | ERROR HANDLING
@@ -209,7 +245,9 @@ export const getPlotPaymentErrorMessage = (
   ) {
     const firstError = Object.values(validationErrors)
       .flat()
-      .find((message) => typeof message === "string");
+      .find(
+        (message) => typeof message === "string",
+      );
 
     if (firstError) {
       return firstError;
@@ -226,10 +264,7 @@ export const getPlotPaymentErrorMessage = (
 /**
  * Normalize errors before passing them to components.
  */
-const handleServiceError = (
-  error,
-  fallback,
-) => {
+const handleServiceError = (error, fallback) => {
   const message = getPlotPaymentErrorMessage(
     error,
     fallback,
@@ -248,14 +283,49 @@ const handleServiceError = (
 
 /*
 |--------------------------------------------------------------------------
+| VALIDATION HELPERS
+|--------------------------------------------------------------------------
+*/
+
+const validateId = (id, label = "Payment ID") => {
+  if (
+    id === undefined ||
+    id === null ||
+    id === "" ||
+    !Number.isFinite(Number(id)) ||
+    Number(id) <= 0
+  ) {
+    throw new Error(`${label} is required.`);
+  }
+
+  return id;
+};
+
+const validateStatus = (status) => {
+  if (!PAYMENT_STATUSES.includes(status)) {
+    throw new Error(
+      `Invalid payment status. Allowed statuses: ${PAYMENT_STATUSES.join(", ")}.`,
+    );
+  }
+
+  return status;
+};
+
+/*
+|--------------------------------------------------------------------------
 | FILTER HELPERS
 |--------------------------------------------------------------------------
 */
 
 /**
  * Remove empty filter values.
+ *
+ * Preserves valid values such as:
+ * 0, false, and numeric values.
  */
-export const cleanPlotPaymentFilters = (filters = {}) => {
+export const cleanPlotPaymentFilters = (
+  filters = {},
+) => {
   return Object.fromEntries(
     Object.entries(filters).filter(
       ([, value]) =>
@@ -274,23 +344,34 @@ export const normalizePlotPaymentParams = (
 ) => {
   const normalized = cleanPlotPaymentFilters(params);
 
+  const page = Number(normalized.page);
+
+  const perPage = Number(normalized.per_page);
+
   return {
     ...normalized,
-    page: Math.max(1, Number(normalized.page) || 1),
-    per_page: Math.min(
-      MAX_PER_PAGE,
-      Math.max(
-        1,
-        Number(normalized.per_page) || DEFAULT_PER_PAGE,
-      ),
-    ),
+
+    page:
+      Number.isFinite(page) && page > 0
+        ? Math.floor(page)
+        : 1,
+
+    per_page:
+      Number.isFinite(perPage) && perPage > 0
+        ? Math.min(
+          Math.floor(perPage),
+          MAX_PER_PAGE,
+        )
+        : DEFAULT_PER_PAGE,
   };
 };
 
 /**
  * Normalize a payment search term.
  */
-export const normalizePlotPaymentSearch = (search) => {
+export const normalizePlotPaymentSearch = (
+  search,
+) => {
   return typeof search === "string"
     ? search.trim()
     : "";
@@ -322,8 +403,14 @@ export const toPlotPaymentNumber = (value) => {
 /**
  * Normalize a payment record without changing backend fields.
  */
-export const normalizePlotPayment = (payment = {}) => {
-  if (!payment || typeof payment !== "object") {
+export const normalizePlotPayment = (
+  payment = {},
+) => {
+  if (
+    !payment ||
+    typeof payment !== "object" ||
+    Array.isArray(payment)
+  ) {
     return null;
   }
 
@@ -332,15 +419,21 @@ export const normalizePlotPayment = (payment = {}) => {
 
     id: payment.id ?? null,
 
-    amount: toPlotPaymentNumber(payment.amount),
+    amount: toPlotPaymentNumber(
+      payment.amount,
+    ),
 
-    currency: payment.currency || DEFAULT_CURRENCY,
+    currency:
+      payment.currency || DEFAULT_CURRENCY,
 
-    payment_type: payment.payment_type || "other",
+    payment_type:
+      payment.payment_type || "other",
 
-    payment_method: payment.payment_method || "other",
+    payment_method:
+      payment.payment_method || "other",
 
-    status: payment.status || "pending",
+    status:
+      payment.status || "pending",
 
     is_active:
       payment.is_active === undefined
@@ -358,11 +451,13 @@ export const normalizePlotPayment = (payment = {}) => {
 /**
  * Normalize a collection of payment records.
  */
-export const normalizePlotPayments = (payments) => {
+export const normalizePlotPayments = (
+  payments,
+) => {
   return Array.isArray(payments)
     ? payments
-        .map(normalizePlotPayment)
-        .filter(Boolean)
+      .map(normalizePlotPayment)
+      .filter(Boolean)
     : [];
 };
 
@@ -377,22 +472,16 @@ export const normalizePlotPayments = (payments) => {
 
 const getAll = async (params = {}) => {
   try {
-    const query = normalizePlotPaymentParams(params);
+    const query =
+      normalizePlotPaymentParams(params);
 
-    const response = await plotPaymentsApi.getAll(query);
+    const response =
+      await plotPaymentsApi.getAll(query);
 
-    return {
-      data: normalizePlotPayments(
-        extractCollection(response),
-      ),
-      meta: extractPagination(response),
-      links: extractLinks(response),
-      message: extractMessage(
-        response,
-        "Plot payments fetched successfully.",
-      ),
-      status: true,
-    };
+    return normalizePaginatedResponse(
+      response,
+      "Plot payments fetched successfully.",
+    );
   } catch (error) {
     handleServiceError(
       error,
@@ -412,11 +501,10 @@ const getAll = async (params = {}) => {
 
 const getById = async (id) => {
   try {
-    if (!id) {
-      throw new Error("Payment ID is required.");
-    }
+    validateId(id);
 
-    const response = await plotPaymentsApi.getById(id);
+    const response =
+      await plotPaymentsApi.getById(id);
 
     return normalizePlotPayment(
       extractRecord(response),
@@ -440,25 +528,35 @@ const getById = async (id) => {
 
 const create = async (paymentData) => {
   try {
-    if (!paymentData || typeof paymentData !== "object") {
-      throw new Error("Payment information is required.");
+    if (
+      !paymentData ||
+      typeof paymentData !== "object" ||
+      Array.isArray(paymentData)
+    ) {
+      throw new Error(
+        "Payment information is required.",
+      );
     }
 
     if (!paymentData.plot_sale_id) {
-      throw new Error("Please select a plot sale.");
+      throw new Error(
+        "Please select a plot sale.",
+      );
     }
 
     if (
       toPlotPaymentNumber(paymentData.amount) <= 0
     ) {
-      throw new Error("Payment amount must be greater than zero.");
+      throw new Error(
+        "Payment amount must be greater than zero.",
+      );
     }
 
-    const payload = cleanPlotPaymentFilters({
-      ...paymentData,
-    });
+    const payload =
+      cleanPlotPaymentFilters(paymentData);
 
-    const response = await plotPaymentsApi.create(payload);
+    const response =
+      await plotPaymentsApi.create(payload);
 
     return normalizePlotPayment(
       extractRecord(response),
@@ -482,22 +580,35 @@ const create = async (paymentData) => {
 
 const update = async (id, paymentData) => {
   try {
-    if (!id) {
-      throw new Error("Payment ID is required.");
+    validateId(id);
+
+    if (
+      !paymentData ||
+      typeof paymentData !== "object" ||
+      Array.isArray(paymentData)
+    ) {
+      throw new Error(
+        "Payment information is required.",
+      );
     }
 
-    if (!paymentData || typeof paymentData !== "object") {
-      throw new Error("Payment information is required.");
+    const payload =
+      cleanPlotPaymentFilters(paymentData);
+
+    if (
+      payload.status === "completed" ||
+      payload.status === "refunded"
+    ) {
+      throw new Error(
+        "Use the authorized payment verification workflow to complete or refund this payment.",
+      );
     }
 
-    const payload = cleanPlotPaymentFilters({
-      ...paymentData,
-    });
-
-    const response = await plotPaymentsApi.update(
-      id,
-      payload,
-    );
+    const response =
+      await plotPaymentsApi.update(
+        id,
+        payload,
+      );
 
     return normalizePlotPayment(
       extractRecord(response),
@@ -517,22 +628,27 @@ const update = async (id, paymentData) => {
 |
 | DELETE /plot-payments/{id}
 |
+| Performs a soft delete.
+|
 */
 
 const remove = async (id) => {
   try {
-    if (!id) {
-      throw new Error("Payment ID is required.");
-    }
+    validateId(id);
 
-    const response = await plotPaymentsApi.delete(id);
+    const response =
+      await plotPaymentsApi.delete(id);
 
     return {
-      data: extractRecord(response),
+      data: normalizePlotPayment(
+        extractRecord(response),
+      ),
+
       message: extractMessage(
         response,
         "Plot payment deleted successfully.",
       ),
+
       status: true,
     };
   } catch (error) {
@@ -552,29 +668,27 @@ const remove = async (id) => {
 |
 */
 
-const search = async (searchTerm, filters = {}) => {
+const search = async (
+  searchTerm,
+  filters = {},
+) => {
   try {
-    const term = normalizePlotPaymentSearch(searchTerm);
+    const term =
+      normalizePlotPaymentSearch(searchTerm);
 
-    const params = normalizePlotPaymentParams({
-      ...filters,
-      search: term || undefined,
-    });
+    const params =
+      normalizePlotPaymentParams({
+        ...filters,
+        search: term || undefined,
+      });
 
-    const response = await plotPaymentsApi.search(params);
+    const response =
+      await plotPaymentsApi.search(params);
 
-    return {
-      data: normalizePlotPayments(
-        extractCollection(response),
-      ),
-      meta: extractPagination(response),
-      links: extractLinks(response),
-      message: extractMessage(
-        response,
-        "Plot payment search completed successfully.",
-      ),
-      status: true,
-    };
+    return normalizePaginatedResponse(
+      response,
+      "Plot payment search completed successfully.",
+    );
   } catch (error) {
     handleServiceError(
       error,
@@ -594,7 +708,8 @@ const search = async (searchTerm, filters = {}) => {
 
 const getStatistics = async (filters = {}) => {
   try {
-    const params = cleanPlotPaymentFilters(filters);
+    const params =
+      cleanPlotPaymentFilters(filters);
 
     const response =
       await plotPaymentsApi.getStatistics(params);
@@ -610,6 +725,61 @@ const getStatistics = async (filters = {}) => {
 
 /*
 |--------------------------------------------------------------------------
+| PLOT PAYMENT REPORTS
+|--------------------------------------------------------------------------
+|
+| GET /plot-payments/reports
+|
+*/
+
+const getReports = async (filters = {}) => {
+  try {
+    const params =
+      cleanPlotPaymentFilters(filters);
+
+    const response =
+      await plotPaymentsApi.getReports(params);
+
+    return extractData(response) ?? {};
+  } catch (error) {
+    handleServiceError(
+      error,
+      "Failed to fetch plot payment reports.",
+    );
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| OUTSTANDING PLOT PAYMENTS
+|--------------------------------------------------------------------------
+|
+| GET /plot-payments/outstanding
+|
+*/
+
+const getOutstanding = async (params = {}) => {
+  try {
+    const query =
+      normalizePlotPaymentParams(params);
+
+    const response =
+      await plotPaymentsApi.getOutstanding(query);
+
+    return normalizePaginatedResponse(
+      response,
+      "Outstanding plot payments fetched successfully.",
+    );
+  } catch (error) {
+    handleServiceError(
+      error,
+      "Failed to fetch outstanding plot payments.",
+    );
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | PAYMENTS BY PLOT SALE
 |--------------------------------------------------------------------------
 |
@@ -617,29 +787,26 @@ const getStatistics = async (filters = {}) => {
 |
 */
 
-const getBySale = async (plotSaleId, params = {}) => {
+const getBySale = async (
+  plotSaleId,
+  params = {},
+) => {
   try {
-    if (!plotSaleId) {
-      throw new Error("Plot sale ID is required.");
-    }
-
-    const response = await plotPaymentsApi.getBySale(
+    validateId(
       plotSaleId,
-      normalizePlotPaymentParams(params),
+      "Plot sale ID",
     );
 
-    return {
-      data: normalizePlotPayments(
-        extractCollection(response),
-      ),
-      meta: extractPagination(response),
-      links: extractLinks(response),
-      message: extractMessage(
-        response,
-        "Plot sale payments fetched successfully.",
-      ),
-      status: true,
-    };
+    const response =
+      await plotPaymentsApi.getBySale(
+        plotSaleId,
+        normalizePlotPaymentParams(params),
+      );
+
+    return normalizePaginatedResponse(
+      response,
+      "Plot sale payments fetched successfully.",
+    );
   } catch (error) {
     handleServiceError(
       error,
@@ -657,29 +824,23 @@ const getBySale = async (plotSaleId, params = {}) => {
 |
 */
 
-const getByStatus = async (status, params = {}) => {
+const getByStatus = async (
+  status,
+  params = {},
+) => {
   try {
-    if (!PAYMENT_STATUSES.includes(status)) {
-      throw new Error("Invalid payment status.");
-    }
+    validateStatus(status);
 
-    const response = await plotPaymentsApi.getByStatus(
-      status,
-      normalizePlotPaymentParams(params),
+    const response =
+      await plotPaymentsApi.getByStatus(
+        status,
+        normalizePlotPaymentParams(params),
+      );
+
+    return normalizePaginatedResponse(
+      response,
+      "Plot payments fetched successfully.",
     );
-
-    return {
-      data: normalizePlotPayments(
-        extractCollection(response),
-      ),
-      meta: extractPagination(response),
-      links: extractLinks(response),
-      message: extractMessage(
-        response,
-        "Plot payments fetched successfully.",
-      ),
-      status: true,
-    };
   } catch (error) {
     handleServiceError(
       error,
@@ -695,27 +856,41 @@ const getByStatus = async (status, params = {}) => {
 |
 | PATCH /plot-payments/{id}/status
 |
+| Ordinary status transitions only.
+|
+| Completed and refunded payments must use their
+| authorized verification workflows.
+|
 */
 
-const updateStatus = async (id, statusData) => {
+const updateStatus = async (
+  id,
+  statusData,
+) => {
   try {
-    if (!id) {
-      throw new Error("Payment ID is required.");
-    }
+    validateId(id);
 
     const status =
       typeof statusData === "string"
         ? statusData
         : statusData?.status;
 
-    if (!PAYMENT_STATUSES.includes(status)) {
-      throw new Error("Invalid payment status.");
+    validateStatus(status);
+
+    if (
+      status === "completed" ||
+      status === "refunded"
+    ) {
+      throw new Error(
+        "Use the authorized payment verification workflow to complete or refund this payment.",
+      );
     }
 
-    const response = await plotPaymentsApi.updateStatus(
-      id,
-      statusData,
-    );
+    const response =
+      await plotPaymentsApi.updateStatus(
+        id,
+        status,
+      );
 
     return normalizePlotPayment(
       extractRecord(response),
@@ -730,27 +905,114 @@ const updateStatus = async (id, statusData) => {
 
 /*
 |--------------------------------------------------------------------------
+| CONFIRM PAYMENT
+|--------------------------------------------------------------------------
+|
+| POST /plot-payments/{id}/confirm
+|
+| Confirms payment through the authorized backend workflow.
+|
+| Expected payload:
+| {
+|   verification_reference: "CASH-EST-20261031-001",
+|   verification_notes: "Cash received and verified."
+| }
+|
+*/
+
+const confirmPayment = async (
+  id,
+  verificationData = {},
+) => {
+  try {
+    validateId(id);
+
+    if (
+      !verificationData ||
+      typeof verificationData !== "object" ||
+      Array.isArray(verificationData)
+    ) {
+      throw new Error(
+        "Payment verification information is required.",
+      );
+    }
+
+    const verificationReference =
+      typeof verificationData.verification_reference === "string"
+        ? verificationData.verification_reference.trim()
+        : "";
+
+    const verificationNotes =
+      typeof verificationData.verification_notes === "string"
+        ? verificationData.verification_notes.trim()
+        : "";
+
+    if (!verificationReference) {
+      throw new Error(
+        "A payment verification reference is required.",
+      );
+    }
+
+    const payload = {
+      verification_reference: verificationReference,
+      ...(verificationNotes
+        ? {
+          verification_notes: verificationNotes,
+        }
+        : {}),
+    };
+
+    const response =
+      await plotPaymentsApi.confirmPayment(
+        id,
+        payload,
+      );
+
+    const payment = normalizePlotPayment(
+      extractRecord(response),
+    );
+
+    if (!payment) {
+      throw new Error(
+        "Payment confirmation succeeded but no payment record was returned.",
+      );
+    }
+
+    return payment;
+  } catch (error) {
+    handleServiceError(
+      error,
+      "Failed to confirm plot payment.",
+    );
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | RESTORE PAYMENT
 |--------------------------------------------------------------------------
 |
-| POST /plot-payments/{id}/restore
+| PATCH /plot-payments/{id}/restore
 |
 */
 
 const restore = async (id) => {
   try {
-    if (!id) {
-      throw new Error("Payment ID is required.");
-    }
+    validateId(id);
 
-    const response = await plotPaymentsApi.restore(id);
+    const response =
+      await plotPaymentsApi.restore(id);
 
     return {
-      data: extractRecord(response),
+      data: normalizePlotPayment(
+        extractRecord(response),
+      ),
+
       message: extractMessage(
         response,
         "Plot payment restored successfully.",
       ),
+
       status: true,
     };
   } catch (error) {
@@ -772,19 +1034,21 @@ const restore = async (id) => {
 
 const forceDelete = async (id) => {
   try {
-    if (!id) {
-      throw new Error("Payment ID is required.");
-    }
+    validateId(id);
 
     const response =
       await plotPaymentsApi.forceDelete(id);
 
     return {
-      data: extractRecord(response),
+      data: normalizePlotPayment(
+        extractRecord(response),
+      ),
+
       message: extractMessage(
         response,
         "Plot payment permanently deleted.",
       ),
+
       status: true,
     };
   } catch (error) {
@@ -808,7 +1072,8 @@ export const formatPlotPaymentAmount = (
   amount,
   currency = DEFAULT_CURRENCY,
 ) => {
-  const value = toPlotPaymentNumber(amount);
+  const value =
+    toPlotPaymentNumber(amount);
 
   try {
     return new Intl.NumberFormat("en-KE", {
@@ -831,7 +1096,9 @@ export const formatPlotPaymentDate = (
   date,
   options = {},
 ) => {
-  if (!date) return "—";
+  if (!date) {
+    return "—";
+  }
 
   const parsedDate = new Date(date);
 
@@ -850,10 +1117,14 @@ export const formatPlotPaymentDate = (
 /**
  * Format payment status.
  */
-export const formatPlotPaymentStatus = (status) => {
-  if (!status) return "Unknown";
+export const formatPlotPaymentStatus = (
+  status,
+) => {
+  if (!status) {
+    return "Unknown";
+  }
 
-  return status
+  return String(status)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) =>
       character.toUpperCase(),
@@ -864,7 +1135,9 @@ export const formatPlotPaymentStatus = (status) => {
  * Format payment type.
  */
 export const formatPlotPaymentType = (type) => {
-  if (!type) return "Other";
+  if (!type) {
+    return "Other";
+  }
 
   const labels = {
     deposit: "Deposit",
@@ -874,14 +1147,21 @@ export const formatPlotPaymentType = (type) => {
     other: "Other",
   };
 
-  return labels[type] || formatPlotPaymentStatus(type);
+  return (
+    labels[type] ||
+    formatPlotPaymentStatus(type)
+  );
 };
 
 /**
  * Format payment method.
  */
-export const formatPlotPaymentMethod = (method) => {
-  if (!method) return "Other";
+export const formatPlotPaymentMethod = (
+  method,
+) => {
+  if (!method) {
+    return "Other";
+  }
 
   const labels = {
     mpesa: "M-Pesa",
@@ -893,48 +1173,66 @@ export const formatPlotPaymentMethod = (method) => {
     other: "Other",
   };
 
-  return labels[method] || formatPlotPaymentStatus(method);
+  return (
+    labels[method] ||
+    formatPlotPaymentStatus(method)
+  );
 };
 
 /*
 |--------------------------------------------------------------------------
-| VALIDATION HELPERS
+| PAYMENT VALIDATION
 |--------------------------------------------------------------------------
 */
 
-export const validatePlotPayment = (payment = {}) => {
+export const validatePlotPayment = (
+  payment = {},
+) => {
   const errors = {};
 
   if (!payment.plot_sale_id) {
-    errors.plot_sale_id = "Please select a plot sale.";
+    errors.plot_sale_id =
+      "Please select a plot sale.";
   }
 
   if (
-    !payment.amount ||
+    payment.amount === undefined ||
+    payment.amount === null ||
+    payment.amount === "" ||
     toPlotPaymentNumber(payment.amount) <= 0
   ) {
-    errors.amount = "Enter a valid payment amount.";
+    errors.amount =
+      "Enter a valid payment amount.";
   }
 
   if (
     payment.payment_type &&
-    !PAYMENT_TYPES.includes(payment.payment_type)
+    !PAYMENT_TYPES.includes(
+      payment.payment_type,
+    )
   ) {
-    errors.payment_type = "Select a valid payment type.";
+    errors.payment_type =
+      "Select a valid payment type.";
   }
 
   if (
     payment.payment_method &&
-    !PAYMENT_METHODS.includes(payment.payment_method)
+    !PAYMENT_METHODS.includes(
+      payment.payment_method,
+    )
   ) {
-    errors.payment_method = "Select a valid payment method.";
+    errors.payment_method =
+      "Select a valid payment method.";
   }
 
   if (
     payment.status &&
-    !PAYMENT_STATUSES.includes(payment.status)
+    !PAYMENT_STATUSES.includes(
+      payment.status,
+    )
   ) {
-    errors.status = "Select a valid payment status.";
+    errors.status =
+      "Select a valid payment status.";
   }
 
   if (
@@ -943,7 +1241,42 @@ export const validatePlotPayment = (payment = {}) => {
       payment.payer_email,
     )
   ) {
-    errors.payer_email = "Enter a valid email address.";
+    errors.payer_email =
+      "Enter a valid email address.";
+  }
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| PAYMENT CONFIRMATION VALIDATION
+|--------------------------------------------------------------------------
+*/
+
+export const validatePlotPaymentConfirmation = (
+  verificationData = {},
+) => {
+  const errors = {};
+
+  if (
+    !verificationData.verification_reference ||
+    typeof verificationData.verification_reference !== "string" ||
+    !verificationData.verification_reference.trim()
+  ) {
+    errors.verification_reference =
+      "A payment verification reference is required.";
+  }
+
+  if (
+    verificationData.verification_notes !== undefined &&
+    typeof verificationData.verification_notes !== "string"
+  ) {
+    errors.verification_notes =
+      "Verification notes must be valid text.";
   }
 
   return {
@@ -959,67 +1292,145 @@ export const validatePlotPayment = (payment = {}) => {
 */
 
 const plotPaymentService = {
-  // Constants
+  /*
+  |--------------------------------------------------------------------------
+  | CONSTANTS
+  |--------------------------------------------------------------------------
+  */
+
   DEFAULT_PER_PAGE,
   MAX_PER_PAGE,
   DEFAULT_CURRENCY,
+
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   PAYMENT_METHODS,
 
-  // List and details
+  /*
+  |--------------------------------------------------------------------------
+  | LIST AND DETAILS
+  |--------------------------------------------------------------------------
+  */
+
   getAll,
   getById,
 
-  // CRUD
+  /*
+  |--------------------------------------------------------------------------
+  | CRUD
+  |--------------------------------------------------------------------------
+  */
+
   create,
   update,
   delete: remove,
 
-  // Search
+  /*
+  |--------------------------------------------------------------------------
+  | SEARCH
+  |--------------------------------------------------------------------------
+  */
+
   search,
 
-  // Statistics
-  getStatistics,
+  /*
+  |--------------------------------------------------------------------------
+  | STATISTICS AND REPORTS
+  |--------------------------------------------------------------------------
+  */
 
-  // Related payments
+  getStatistics,
+  getReports,
+  getOutstanding,
+
+  /*
+  |--------------------------------------------------------------------------
+  | RELATED PAYMENTS
+  |--------------------------------------------------------------------------
+  */
+
   getBySale,
   getByStatus,
 
-  // Status
-  updateStatus,
+  /*
+  |--------------------------------------------------------------------------
+  | PAYMENT STATUS AND CONFIRMATION
+  |--------------------------------------------------------------------------
+  */
 
-  // Restore and permanent delete
+  updateStatus,
+  confirmPayment,
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESTORE AND PERMANENT DELETE
+  |--------------------------------------------------------------------------
+  */
+
   restore,
   forceDelete,
 
-  // Response helpers
+  /*
+  |--------------------------------------------------------------------------
+  | RESPONSE HELPERS
+  |--------------------------------------------------------------------------
+  */
+
   extractData,
   extractCollection,
   extractRecord,
   extractPagination,
   extractLinks,
+  extractMessage,
 
-  // Filter helpers
+  /*
+  |--------------------------------------------------------------------------
+  | FILTER HELPERS
+  |--------------------------------------------------------------------------
+  */
+
   cleanFilters: cleanPlotPaymentFilters,
   normalizeParams: normalizePlotPaymentParams,
+  normalizeSearch: normalizePlotPaymentSearch,
 
-  // Payment helpers
+  /*
+  |--------------------------------------------------------------------------
+  | PAYMENT HELPERS
+  |--------------------------------------------------------------------------
+  */
+
   normalizePayment: normalizePlotPayment,
   normalizePayments: normalizePlotPayments,
   toNumber: toPlotPaymentNumber,
 
-  // Formatting
+  /*
+  |--------------------------------------------------------------------------
+  | FORMATTING
+  |--------------------------------------------------------------------------
+  */
+
   formatAmount: formatPlotPaymentAmount,
   formatDate: formatPlotPaymentDate,
   formatStatus: formatPlotPaymentStatus,
   formatType: formatPlotPaymentType,
   formatMethod: formatPlotPaymentMethod,
 
-  // Validation
-  validate: validatePlotPayment,
+  /*
+  |--------------------------------------------------------------------------
+  | VALIDATION
+  |--------------------------------------------------------------------------
+  */
 
-  // Error handling
+  validate: validatePlotPayment,
+  validateConfirmation:
+    validatePlotPaymentConfirmation,
+
+  /*
+  |--------------------------------------------------------------------------
+  | ERROR HANDLING
+  |--------------------------------------------------------------------------
+  */
+
   getErrorMessage: getPlotPaymentErrorMessage,
 };
 
