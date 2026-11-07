@@ -34,7 +34,7 @@ use App\Repositories\Interfaces\RoleRequestRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| ACTIVITY LOG REPOSITORIES (🔥 FIXED)
+| ACTIVITY LOG REPOSITORIES
 |--------------------------------------------------------------------------
 */
 use App\Repositories\Eloquent\ActivityLogRepository;
@@ -63,14 +63,14 @@ use App\Repositories\Interfaces\PropertyAmenityRepositoryInterface;
 use App\Repositories\Eloquent\EloquentPropertyReviewRepository;
 use App\Repositories\Interfaces\PropertyReviewRepositoryInterface;
 
-
-use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
 use App\Repositories\Eloquent\PropertyFavoriteRepository;
-use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
-use App\Repositories\Eloquent\PropertyVisitRepository;
-use App\Repositories\Interfaces\PropertyAnalyticsRepositoryInterface;
-use App\Repositories\Eloquent\PropertyAnalyticsRepository;
+use App\Repositories\Interfaces\PropertyFavoriteRepositoryInterface;
 
+use App\Repositories\Eloquent\PropertyVisitRepository;
+use App\Repositories\Interfaces\PropertyVisitRepositoryInterface;
+
+use App\Repositories\Eloquent\PropertyAnalyticsRepository;
+use App\Repositories\Interfaces\PropertyAnalyticsRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
@@ -96,8 +96,8 @@ use App\Repositories\Interfaces\UnitRepositoryInterface;
 use App\Repositories\Eloquent\CountryRepository;
 use App\Repositories\Interfaces\CountryRepositoryInterface;
 
-use App\Repositories\Eloquent\StateRepository;
-use App\Repositories\Interfaces\StateRepositoryInterface;
+use App\Repositories\Eloquent\RegionRepository;
+use App\Repositories\Interfaces\RegionRepositoryInterface;
 
 use App\Repositories\Eloquent\CountyRepository;
 use App\Repositories\Interfaces\CountyRepositoryInterface;
@@ -118,51 +118,41 @@ use App\Repositories\Interfaces\AmenityRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| Dashboard REPOSITORY
+| DASHBOARD REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\DashboardRepository;
 use App\Repositories\Interfaces\DashboardRepositoryInterface;
-
 
 /*
 |--------------------------------------------------------------------------
 | TENANT REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\TenantRepository;
 use App\Repositories\Interfaces\TenantRepositoryInterface;
 
-
-
 /*
 |--------------------------------------------------------------------------
-| TENANCIES REPOSITORY
+| TENANCY REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\TenancyRepository;
 use App\Repositories\Interfaces\TenancyRepositoryInterface;
-
 
 /*
 |--------------------------------------------------------------------------
 | LEASE REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\LeaseRepository;
 use App\Repositories\Interfaces\LeaseRepositoryInterface;
-
 
 /*
 |--------------------------------------------------------------------------
 | BOOKING REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\BookingRepository;
 use App\Repositories\Interfaces\BookingRepositoryInterface;
 
@@ -171,34 +161,30 @@ use App\Repositories\Interfaces\BookingRepositoryInterface;
 | PLOT REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\PlotRepository;
 use App\Repositories\Interfaces\PlotRepositoryInterface;
 
-
-
 /*
 |--------------------------------------------------------------------------
-| PLOTSALE REPOSITORY
+| PLOT SALE REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\PlotSaleRepository;
 use App\Repositories\Interfaces\PlotSaleRepositoryInterface;
 
-
 /*
 |--------------------------------------------------------------------------
-| PLOTPAYMENT REPOSITORY
+| PLOT PAYMENT REPOSITORY
 |--------------------------------------------------------------------------
 */
-
 use App\Repositories\Eloquent\PlotPaymentRepository;
 use App\Repositories\Interfaces\PlotPaymentRepositoryInterface;
 
-
 class AppServiceProvider extends ServiceProvider
 {
+    /**
+     * Register application services.
+     */
     public function register(): void
     {
         /*
@@ -213,7 +199,7 @@ class AppServiceProvider extends ServiceProvider
 
         /*
         |--------------------------------------------------------------------------
-        | ACTIVITY LOG (🔥 FIX APPLIED HERE)
+        | ACTIVITY LOG
         |--------------------------------------------------------------------------
         */
         $this->app->bind(
@@ -223,7 +209,7 @@ class AppServiceProvider extends ServiceProvider
 
         /*
         |--------------------------------------------------------------------------
-        | ROLES
+        | RBAC
         |--------------------------------------------------------------------------
         */
         $this->app->bind(
@@ -231,21 +217,11 @@ class AppServiceProvider extends ServiceProvider
             RoleRepository::class
         );
 
-        /*
-        |--------------------------------------------------------------------------
-        | PERMISSIONS
-        |--------------------------------------------------------------------------
-        */
         $this->app->bind(
             PermissionRepositoryInterface::class,
             PermissionRepository::class
         );
 
-        /*
-        |--------------------------------------------------------------------------
-        | ROLE REQUEST
-        |--------------------------------------------------------------------------
-        */
         $this->app->bind(
             RoleRequestRepositoryInterface::class,
             RoleRequestRepository::class
@@ -286,14 +262,12 @@ class AppServiceProvider extends ServiceProvider
             EloquentPropertyReviewRepository::class
         );
 
-
-    
         $this->app->bind(
-           PropertyFavoriteRepositoryInterface::class,
-           PropertyFavoriteRepository::class
-       );
-    
-         $this->app->bind(
+            PropertyFavoriteRepositoryInterface::class,
+            PropertyFavoriteRepository::class
+        );
+
+        $this->app->bind(
             PropertyVisitRepositoryInterface::class,
             PropertyVisitRepository::class
         );
@@ -334,8 +308,8 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->bind(
-            StateRepositoryInterface::class,
-            StateRepository::class
+            RegionRepositoryInterface::class,
+            RegionRepository::class
         );
 
         $this->app->bind(
@@ -363,8 +337,7 @@ class AppServiceProvider extends ServiceProvider
             AmenityRepository::class
         );
 
-
-         /*
+        /*
         |--------------------------------------------------------------------------
         | DASHBOARD
         |--------------------------------------------------------------------------
@@ -374,9 +347,7 @@ class AppServiceProvider extends ServiceProvider
             DashboardRepository::class
         );
 
-
-        
-         /*
+        /*
         |--------------------------------------------------------------------------
         | TENANT
         |--------------------------------------------------------------------------
@@ -386,8 +357,7 @@ class AppServiceProvider extends ServiceProvider
             TenantRepository::class
         );
 
-
-          /*
+        /*
         |--------------------------------------------------------------------------
         | TENANCY
         |--------------------------------------------------------------------------
@@ -397,8 +367,7 @@ class AppServiceProvider extends ServiceProvider
             TenancyRepository::class
         );
 
-
-          /*
+        /*
         |--------------------------------------------------------------------------
         | LEASE
         |--------------------------------------------------------------------------
@@ -408,32 +377,62 @@ class AppServiceProvider extends ServiceProvider
             LeaseRepository::class
         );
 
-         $this->app->bind(
+        /*
+        |--------------------------------------------------------------------------
+        | BOOKING
+        |--------------------------------------------------------------------------
+        */
+        $this->app->bind(
             BookingRepositoryInterface::class,
             BookingRepository::class
         );
 
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT
+        |--------------------------------------------------------------------------
+        */
         $this->app->bind(
-             PlotRepositoryInterface::class,
-             PlotRepository::class
+            PlotRepositoryInterface::class,
+            PlotRepository::class
         );
 
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT SALE
+        |--------------------------------------------------------------------------
+        */
         $this->app->bind(
-             PlotSaleRepositoryInterface::class,
-             PlotSaleRepository::class
+            PlotSaleRepositoryInterface::class,
+            PlotSaleRepository::class
         );
 
+        /*
+        |--------------------------------------------------------------------------
+        | PLOT PAYMENT
+        |--------------------------------------------------------------------------
+        */
         $this->app->bind(
-             PlotPaymentRepositoryInterface::class,
-             PlotPaymentRepository::class
+            PlotPaymentRepositoryInterface::class,
+            PlotPaymentRepository::class
         );
-
     }
 
+    /**
+     * Bootstrap application services.
+     */
     public function boot(): void
     {
+        /*
+        |--------------------------------------------------------------------------
+        | SUPER ADMIN GLOBAL PERMISSION BYPASS
+        |--------------------------------------------------------------------------
+        */
         Gate::before(function ($user, $ability) {
-            if (method_exists($user, 'hasRole') && $user->hasRole('super-admin')) {
+            if (
+                method_exists($user, 'hasRole') &&
+                $user->hasRole('super-admin')
+            ) {
                 return true;
             }
 
