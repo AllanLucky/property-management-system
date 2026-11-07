@@ -6,41 +6,60 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::create('countries', function (Blueprint $table) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRIMARY KEY
+            |--------------------------------------------------------------------------
+            */
 
             $table->id();
 
             /*
             |--------------------------------------------------------------------------
-            | BASIC INFO
+            | COUNTRY INFORMATION
             |--------------------------------------------------------------------------
             */
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->string('code', 10)->unique(); // KE, US, UG
+
+            $table->string('name', 100);
+
+            $table->string('slug', 120)->unique();
+
+            // ISO 3166-1 alpha-2 country code (KE, UG, TZ).
+            $table->string('code', 2)->unique();
 
             /*
             |--------------------------------------------------------------------------
-            | EXTRA FIELDS USED IN MODEL
+            | CONTACT AND CURRENCY INFORMATION
             |--------------------------------------------------------------------------
             */
-            $table->string('phone_code')->nullable();   // +254, +1 etc
-            $table->string('currency')->nullable();     // KES, USD etc
+
+            // International dialing code (+254, +256, +255).
+            $table->string('phone_code', 10)->nullable();
+
+            // ISO 4217 currency code (KES, UGX, TZS).
+            $table->string('currency', 3)->nullable();
 
             /*
             |--------------------------------------------------------------------------
             | STATUS
             |--------------------------------------------------------------------------
             */
+
             $table->boolean('is_active')->default(true);
 
             /*
             |--------------------------------------------------------------------------
-            | SOFT DELETES (REQUIRED by your model)
+            | SOFT DELETES
             |--------------------------------------------------------------------------
             */
+
             $table->softDeletes();
 
             /*
@@ -48,6 +67,7 @@ return new class extends Migration
             | TIMESTAMPS
             |--------------------------------------------------------------------------
             */
+
             $table->timestamps();
 
             /*
@@ -55,13 +75,27 @@ return new class extends Migration
             | INDEXES
             |--------------------------------------------------------------------------
             */
-            $table->index('name');
-            $table->index('code');
-            $table->index('is_active');
-            $table->index('slug');
+
+            $table->index(
+                'name',
+                'countries_name_index'
+            );
+
+            $table->index(
+                'is_active',
+                'countries_is_active_index'
+            );
+
+            $table->index(
+                ['is_active', 'name'],
+                'countries_active_name_index'
+            );
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::dropIfExists('countries');
