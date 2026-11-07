@@ -1,3 +1,4 @@
+
 <?php
 
 use Illuminate\Http\Request;
@@ -70,14 +71,13 @@ use App\Http\Controllers\Api\Tenancy\TenancyController;
 
 use App\Http\Controllers\Api\Lease\LeaseController;
 
-
 /*
 |--------------------------------------------------------------------------
 | BOOKING
 |--------------------------------------------------------------------------
 */
-use App\Http\Controllers\Api\Booking\BookingController;
 
+use App\Http\Controllers\Api\Booking\BookingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -89,18 +89,19 @@ use App\Http\Controllers\Api\Plot\PlotController;
 
 /*
 |--------------------------------------------------------------------------
-| PLOT-SALE
+| PLOT SALE
 |--------------------------------------------------------------------------
 */
+
 use App\Http\Controllers\Api\PlotSales\PlotSalesController;
 
 /*
 |--------------------------------------------------------------------------
-| PLOT-PAYMENT
+| PLOT PAYMENT
 |--------------------------------------------------------------------------
 */
-use App\Http\Controllers\Api\PlotPayment\PlotPaymentController;
 
+use App\Http\Controllers\Api\PlotPayment\PlotPaymentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -109,6 +110,25 @@ use App\Http\Controllers\Api\PlotPayment\PlotPaymentController;
 */
 
 use App\Http\Controllers\Api\UserActivity\UserActivityController;
+
+/*
+|--------------------------------------------------------------------------
+| COUNTRY
+|--------------------------------------------------------------------------
+*/
+
+use App\Http\Controllers\Api\Location\CountryController;
+
+
+/*
+|--------------------------------------------------------------------------
+| COUNTY
+|--------------------------------------------------------------------------
+*/
+
+use App\Http\Controllers\Api\Location\CountyController;
+use App\Http\Controllers\Api\Location\RegionController;
+
 
 
 /*
@@ -548,83 +568,35 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('tenants.')
         ->group(function () {
 
-            /*
-            |--------------------------------------------------------------------------
-            | TENANT USERS
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'users',
                 [TenantController::class, 'tenantUsers']
             )->name('users');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | ALL TENANT USERS
-            |--------------------------------------------------------------------------
-            */
 
             Route::get(
                 'all-users',
                 [TenantController::class, 'allTenantUsers']
             )->name('all-users');
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | AVAILABLE TENANT USERS
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'available-users',
                 [TenantController::class, 'availableUsers']
             )->name('available-users');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | TENANT SEARCH
-            |--------------------------------------------------------------------------
-            */
 
             Route::get(
                 'search',
                 [TenantController::class, 'search']
             )->name('search');
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | TENANT STATISTICS
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'statistics',
                 [TenantController::class, 'statistics']
             )->name('statistics');
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | TENANT REPORTS
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'reports',
                 [TenantController::class, 'reports']
             )->name('reports');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | TENANT STATUS LISTS
-            |--------------------------------------------------------------------------
-            */
 
             Route::get(
                 'active',
@@ -646,7 +618,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 [TenantController::class, 'blacklisted']
             )->name('blacklisted');
 
-
             /*
             |--------------------------------------------------------------------------
             | TENANT CRUD
@@ -662,7 +633,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 '/',
                 [TenantController::class, 'store']
             )->name('store');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -698,7 +668,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('tenant')
                 ->name('blacklist');
 
-
             /*
             |--------------------------------------------------------------------------
             | TENANT VERIFICATION
@@ -718,7 +687,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenant')
                 ->name('unverify');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -747,7 +715,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('tenant')
                 ->name('id-back.upload');
 
-
             /*
             |--------------------------------------------------------------------------
             | TENANT RESTORE
@@ -760,7 +727,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenant')
                 ->name('restore');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -775,7 +741,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('tenant')
                 ->name('force-delete');
 
-
             /*
             |--------------------------------------------------------------------------
             | TENANT SHOW
@@ -788,7 +753,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenant')
                 ->name('show');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -809,7 +773,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenant')
                 ->name('patch');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -836,35 +799,15 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('tenancies.')
         ->group(function () {
 
-            /*
-            |--------------------------------------------------------------------------
-            | TENANCY SEARCH
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'search',
                 [TenancyController::class, 'index']
             )->name('search');
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | TENANCY STATISTICS
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'statistics',
                 [TenancyController::class, 'statistics']
             )->name('statistics');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | TENANCY STATUS LISTS
-            |--------------------------------------------------------------------------
-            */
 
             Route::get(
                 'active',
@@ -901,7 +844,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->defaults('status', 'cancelled')
                 ->name('cancelled');
 
-
             /*
             |--------------------------------------------------------------------------
             | TENANCY CRUD
@@ -918,7 +860,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 [TenancyController::class, 'store']
             )->name('store');
 
-
             /*
             |--------------------------------------------------------------------------
             | ASSIGN UNIT
@@ -929,7 +870,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 'assign-unit',
                 [TenancyController::class, 'assignUnit']
             )->name('assign-unit');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -944,7 +884,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('tenancy')
                 ->name('restore');
 
-
             /*
             |--------------------------------------------------------------------------
             | FORCE DELETE
@@ -957,7 +896,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenancy')
                 ->name('force-delete');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1000,7 +938,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('tenancy')
                 ->name('cancel');
 
-
             /*
             |--------------------------------------------------------------------------
             | TENANCY SHOW
@@ -1013,7 +950,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenancy')
                 ->name('show');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1034,7 +970,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('tenancy')
                 ->name('patch');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1061,35 +996,15 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('leases.')
         ->group(function () {
 
-            /*
-            |--------------------------------------------------------------------------
-            | LEASE SEARCH
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'search',
                 [LeaseController::class, 'search']
             )->name('search');
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | LEASE STATISTICS
-            |--------------------------------------------------------------------------
-            */
-
             Route::get(
                 'statistics',
                 [LeaseController::class, 'statistics']
             )->name('statistics');
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | LEASE STATUS LISTS
-            |--------------------------------------------------------------------------
-            */
 
             Route::get(
                 'active',
@@ -1121,7 +1036,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 [LeaseController::class, 'cancelled']
             )->name('cancelled');
 
-
             /*
             |--------------------------------------------------------------------------
             | LEASE DATE FILTERS
@@ -1138,7 +1052,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 [LeaseController::class, 'upcoming']
             )->name('upcoming');
 
-
             /*
             |--------------------------------------------------------------------------
             | LEASES BY TENANCY
@@ -1152,7 +1065,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('tenancyId')
                 ->name('by-tenancy');
 
-
             /*
             |--------------------------------------------------------------------------
             | LEASE BY LEASE NUMBER
@@ -1163,7 +1075,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 'number/{leaseNumber}',
                 [LeaseController::class, 'showByLeaseNumber']
             )->name('by-number');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1180,7 +1091,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 '/',
                 [LeaseController::class, 'store']
             )->name('store');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1230,7 +1140,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('id')
                 ->name('cancel');
 
-
             /*
             |--------------------------------------------------------------------------
             | EXPIRE ENDED LEASES
@@ -1241,7 +1150,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 'expire-ended',
                 [LeaseController::class, 'expireEnded']
             )->name('expire-ended');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1256,7 +1164,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('id')
                 ->name('restore');
 
-
             /*
             |--------------------------------------------------------------------------
             | LEASE FORCE DELETE
@@ -1270,7 +1177,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('id')
                 ->name('force-delete');
 
-
             /*
             |--------------------------------------------------------------------------
             | LEASE SHOW
@@ -1283,7 +1189,6 @@ Route::middleware('auth:sanctum')->group(function () {
             )
                 ->whereNumber('id')
                 ->name('show');
-
 
             /*
             |--------------------------------------------------------------------------
@@ -1305,7 +1210,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('id')
                 ->name('patch');
 
-
             /*
             |--------------------------------------------------------------------------
             | LEASE DELETE
@@ -1321,754 +1225,663 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
 
-        /*
-|--------------------------------------------------------------------------
-| BOOKINGS
-|--------------------------------------------------------------------------
-*/
-
-    Route::prefix('bookings')
-       ->name('bookings.')
-        ->group(function () {
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING SEARCH
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'search',
-            [BookingController::class, 'search']
-        )->name('search');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING STATISTICS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'statistics',
-            [BookingController::class, 'statistics']
-        )->name('statistics');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING REPORTS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'reports',
-            [BookingController::class, 'reports']
-        )->name('reports');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | AVAILABLE UNITS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'available-units',
-            [BookingController::class, 'availableUnits']
-        )->name('available-units');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | AVAILABLE USERS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'available-users',
-            [BookingController::class, 'availableUsers']
-        )->name('available-users');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING STATUS LISTS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'pending',
-            [BookingController::class, 'pending']
-        )->name('pending');
-
-        Route::get(
-            'confirmed',
-            [BookingController::class, 'confirmed']
-        )->name('confirmed');
-
-        Route::get(
-            'active',
-            [BookingController::class, 'active']
-        )->name('active');
-
-        Route::get(
-            'completed',
-            [BookingController::class, 'completed']
-        )->name('completed');
-
-        Route::get(
-            'cancelled',
-            [BookingController::class, 'cancelled']
-        )->name('cancelled');
-
-        Route::get(
-            'rejected',
-            [BookingController::class, 'rejected']
-        )->name('rejected');
-
-        Route::get(
-            'expired',
-            [BookingController::class, 'expired']
-        )->name('expired');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING CRUD
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '/',
-            [BookingController::class, 'index']
-        )->name('index');
-
-        Route::post(
-            '/',
-            [BookingController::class, 'store']
-        )->name('store');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING WORKFLOW ACTIONS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post(
-            '{booking}/confirm',
-            [BookingController::class, 'confirm']
-        )
-            ->whereNumber('booking')
-            ->name('confirm');
-
-        Route::post(
-            '{booking}/approve',
-            [BookingController::class, 'approve']
-        )
-            ->whereNumber('booking')
-            ->name('approve');
-
-        Route::post(
-            '{booking}/check-in',
-            [BookingController::class, 'checkIn']
-        )
-            ->whereNumber('booking')
-            ->name('check-in');
-
-        Route::post(
-            '{booking}/complete',
-            [BookingController::class, 'complete']
-        )
-            ->whereNumber('booking')
-            ->name('complete');
-
-        Route::post(
-            '{booking}/cancel',
-            [BookingController::class, 'cancel']
-        )
-            ->whereNumber('booking')
-            ->name('cancel');
-
-        Route::post(
-            '{booking}/reject',
-            [BookingController::class, 'reject']
-        )
-            ->whereNumber('booking')
-            ->name('reject');
-
-        Route::post(
-            '{booking}/expire',
-            [BookingController::class, 'expire']
-        )
-            ->whereNumber('booking')
-            ->name('expire');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING RESTORE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{booking}/restore',
-            [BookingController::class, 'restore']
-        )
-            ->whereNumber('booking')
-            ->name('restore');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING FORCE DELETE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{booking}/force',
-            [BookingController::class, 'forceDelete']
-        )
-            ->whereNumber('booking')
-            ->name('force-delete');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING SHOW
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '{booking}',
-            [BookingController::class, 'show']
-        )
-            ->whereNumber('booking')
-            ->name('show');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING UPDATE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::put(
-            '{booking}',
-            [BookingController::class, 'update']
-        )
-            ->whereNumber('booking')
-            ->name('update');
-
-        Route::patch(
-            '{booking}',
-            [BookingController::class, 'update']
-        )
-            ->whereNumber('booking')
-            ->name('patch');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | BOOKING DELETE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{booking}',
-            [BookingController::class, 'destroy']
-        )
-            ->whereNumber('booking')
-            ->name('destroy');
-       });
-
-
-
-     /*
-     |--------------------------------------------------------------------------
-     | PLOTS
-     |--------------------------------------------------------------------------
+    /*
+    |--------------------------------------------------------------------------
+    | BOOKINGS
+    |--------------------------------------------------------------------------
     */
 
-     Route::prefix('plots')
-           ->name('plots.')
-           ->group(function () {
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SEARCH
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'search',
-            [PlotController::class, 'search']
-        )->name('search');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT STATISTICS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'statistics',
-            [PlotController::class, 'statistics']
-        )->name('statistics');
-
-        Route::get(
-            'statistics/inventory',
-            [PlotController::class, 'inventoryStatistics']
-        )->name('statistics.inventory');
-
-        Route::get(
-            'statistics/sales',
-            [PlotController::class, 'salesStatistics']
-        )->name('statistics.sales');
-
-        Route::get(
-            'statistics/payments',
-            [PlotController::class, 'paymentStatistics']
-        )->name('statistics.payments');
-
-        Route::get(
-            'statistics/locations',
-            [PlotController::class, 'locationStatistics']
-        )->name('statistics.locations');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT REPORTS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'reports/inventory',
-            [PlotController::class, 'inventoryReport']
-        )->name('reports.inventory');
-
-        Route::get(
-            'reports/sales',
-            [PlotController::class, 'salesReport']
-        )->name('reports.sales');
-
-        Route::get(
-            'reports/payments',
-            [PlotController::class, 'paymentReport']
-        )->name('reports.payments');
-
-        Route::get(
-            'reports/outstanding',
-            [PlotController::class, 'outstandingReport']
-        )->name('reports.outstanding');
-
-        Route::get(
-            'reports/agents',
-            [PlotController::class, 'agentReport']
-        )->name('reports.agents');
-
-        Route::get(
-            'reports/locations',
-            [PlotController::class, 'locationReport']
-        )->name('reports.locations');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | AVAILABLE PLOTS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'available',
-            [PlotController::class, 'available']
-        )->name('available');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOTS BY LOCATION
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'county/{county}',
-            [PlotController::class, 'byCounty']
-        )
-            ->whereNumber('county')
-            ->name('by-county');
-
-        Route::get(
-            'city/{city}',
-            [PlotController::class, 'byCity']
-        )
-            ->whereNumber('city')
-            ->name('by-city');
-
-        Route::get(
-            'area/{area}',
-            [PlotController::class, 'byArea']
-        )
-            ->whereNumber('area')
-            ->name('by-area');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT CRUD
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '/',
-            [PlotController::class, 'index']
-        )->name('index');
-
-        Route::post(
-            '/',
-            [PlotController::class, 'store']
-        )->name('store');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT STATUS / ACTIONS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{plot}/status',
-            [PlotController::class, 'updateStatus']
-        )
-            ->whereNumber('plot')
-            ->name('status.update');
-
-        /*
-        |--------------------------------------------------------------------------
-        | RESERVE PLOT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{plot}/reserve',
-            [PlotController::class, 'reserve']
-        )
-            ->whereNumber('plot')
-            ->name('reserve');
-
-        /*
-        |--------------------------------------------------------------------------
-        | SELL PLOT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{plot}/sell',
-            [PlotController::class, 'sell']
-        )
-            ->whereNumber('plot')
-            ->name('sell');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT AVAILABILITY
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '{plot}/availability',
-            [PlotController::class, 'availability']
-        )
-            ->whereNumber('plot')
-            ->name('availability');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT RESTORE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{plot}/restore',
-            [PlotController::class, 'restore']
-        )
-            ->whereNumber('plot')
-            ->name('restore');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT FORCE DELETE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{plot}/force',
-            [PlotController::class, 'forceDelete']
-        )
-            ->whereNumber('plot')
-            ->name('force-delete');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SHOW
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '{plot}',
-            [PlotController::class, 'show']
-        )
-            ->whereNumber('plot')
-            ->name('show');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT UPDATE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::put(
-            '{plot}',
-            [PlotController::class, 'update']
-        )
-            ->whereNumber('plot')
-            ->name('update');
-
-        Route::patch(
-            '{plot}',
-            [PlotController::class, 'update']
-        )
-            ->whereNumber('plot')
-            ->name('patch');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT DELETE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{plot}',
-            [PlotController::class, 'destroy']
-        )
-            ->whereNumber('plot')
-            ->name('destroy');
-    });
-
-
-       /*
-       |--------------------------------------------------------------------------
-       | PLOT SALES
-       |--------------------------------------------------------------------------
-      */
-      Route::prefix('plot-sales')
-         ->name('plot-sales.')
-           ->group(function () {
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALE STATISTICS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'statistics',
-            [PlotSalesController::class, 'statistics']
-        )->name('statistics');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALE REPORTS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'reports',
-            [PlotSalesController::class, 'reports']
-        )->name('reports');
-
-        Route::get(
-            'outstanding',
-            [PlotSalesController::class, 'outstanding']
-        )->name('outstanding');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALES BY STATUS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'status/{status}',
-            [PlotSalesController::class, 'getByStatus']
-        )->where('status', '[A-Za-z_-]+')
-            ->name('by-status');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALES BY PLOT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'plot/{plotId}',
-            [PlotSalesController::class, 'getByPlot']
-        )->whereNumber('plotId')
-            ->name('by-plot');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALES BY BUYER
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            'buyer/{buyerId}',
-            [PlotSalesController::class, 'getByBuyer']
-        )->whereNumber('buyerId')
-            ->name('by-buyer');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALE CRUD - LIST AND CREATE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '/',
-            [PlotSalesController::class, 'index']
-        )->name('index');
-
-        Route::post(
-            '/',
-            [PlotSalesController::class, 'store']
-        )->name('store');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALE APPROVAL
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post(
-            '{id}/approve',
-            [PlotSalesController::class, 'approve']
-        )->whereNumber('id')
-            ->name('approve');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT SALE CANCELLATION
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post(
-            '{id}/cancel',
-            [PlotSalesController::class, 'cancel']
-        )->whereNumber('id')
-            ->name('cancel');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | COMPLETE PLOT SALE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::post(
-            '{id}/complete',
-            [PlotSalesController::class, 'complete']
-        )->whereNumber('id')
-            ->name('complete');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | RESTORE PLOT SALE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{id}/restore',
-            [PlotSalesController::class, 'restore']
-        )->whereNumber('id')
-            ->name('restore');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PERMANENTLY DELETE PLOT SALE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{id}/force',
-            [PlotSalesController::class, 'forceDelete']
-        )->whereNumber('id')
-            ->name('force-delete');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | SHOW PLOT SALE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '{id}',
-            [PlotSalesController::class, 'show']
-        )->whereNumber('id')
-            ->name('show');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | UPDATE PLOT SALE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::put(
-            '{id}',
-            [PlotSalesController::class, 'update']
-        )->whereNumber('id')
-            ->name('update');
-
-        Route::patch(
-            '{id}',
-            [PlotSalesController::class, 'update']
-        )->whereNumber('id')
-            ->name('patch');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | DELETE PLOT SALE
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{id}',
-            [PlotSalesController::class, 'destroy']
-        )->whereNumber('id')
-            ->name('destroy');
-
-    });
+    Route::prefix('bookings')
+        ->name('bookings.')
+        ->group(function () {
+
+            Route::get(
+                'search',
+                [BookingController::class, 'search']
+            )->name('search');
+
+            Route::get(
+                'statistics',
+                [BookingController::class, 'statistics']
+            )->name('statistics');
+
+            Route::get(
+                'reports',
+                [BookingController::class, 'reports']
+            )->name('reports');
+
+            Route::get(
+                'available-units',
+                [BookingController::class, 'availableUnits']
+            )->name('available-units');
+
+            Route::get(
+                'available-users',
+                [BookingController::class, 'availableUsers']
+            )->name('available-users');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING STATUS LISTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'pending',
+                [BookingController::class, 'pending']
+            )->name('pending');
+
+            Route::get(
+                'confirmed',
+                [BookingController::class, 'confirmed']
+            )->name('confirmed');
+
+            Route::get(
+                'active',
+                [BookingController::class, 'active']
+            )->name('active');
+
+            Route::get(
+                'completed',
+                [BookingController::class, 'completed']
+            )->name('completed');
+
+            Route::get(
+                'cancelled',
+                [BookingController::class, 'cancelled']
+            )->name('cancelled');
+
+            Route::get(
+                'rejected',
+                [BookingController::class, 'rejected']
+            )->name('rejected');
+
+            Route::get(
+                'expired',
+                [BookingController::class, 'expired']
+            )->name('expired');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING CRUD
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [BookingController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [BookingController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING WORKFLOW ACTIONS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{booking}/confirm',
+                [BookingController::class, 'confirm']
+            )
+                ->whereNumber('booking')
+                ->name('confirm');
+
+            Route::post(
+                '{booking}/approve',
+                [BookingController::class, 'approve']
+            )
+                ->whereNumber('booking')
+                ->name('approve');
+
+            Route::post(
+                '{booking}/check-in',
+                [BookingController::class, 'checkIn']
+            )
+                ->whereNumber('booking')
+                ->name('check-in');
+
+            Route::post(
+                '{booking}/complete',
+                [BookingController::class, 'complete']
+            )
+                ->whereNumber('booking')
+                ->name('complete');
+
+            Route::post(
+                '{booking}/cancel',
+                [BookingController::class, 'cancel']
+            )
+                ->whereNumber('booking')
+                ->name('cancel');
+
+            Route::post(
+                '{booking}/reject',
+                [BookingController::class, 'reject']
+            )
+                ->whereNumber('booking')
+                ->name('reject');
+
+            Route::post(
+                '{booking}/expire',
+                [BookingController::class, 'expire']
+            )
+                ->whereNumber('booking')
+                ->name('expire');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING RESTORE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{booking}/restore',
+                [BookingController::class, 'restore']
+            )
+                ->whereNumber('booking')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING FORCE DELETE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{booking}/force',
+                [BookingController::class, 'forceDelete']
+            )
+                ->whereNumber('booking')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING SHOW
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{booking}',
+                [BookingController::class, 'show']
+            )
+                ->whereNumber('booking')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING UPDATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{booking}',
+                [BookingController::class, 'update']
+            )
+                ->whereNumber('booking')
+                ->name('update');
+
+            Route::patch(
+                '{booking}',
+                [BookingController::class, 'update']
+            )
+                ->whereNumber('booking')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | BOOKING DELETE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{booking}',
+                [BookingController::class, 'destroy']
+            )
+                ->whereNumber('booking')
+                ->name('destroy');
+        });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PLOTS
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('plots')
+        ->name('plots.')
+        ->group(function () {
+
+            Route::get(
+                'search',
+                [PlotController::class, 'search']
+            )->name('search');
+
+            Route::get(
+                'statistics',
+                [PlotController::class, 'statistics']
+            )->name('statistics');
+
+            Route::get(
+                'statistics/inventory',
+                [PlotController::class, 'inventoryStatistics']
+            )->name('statistics.inventory');
+
+            Route::get(
+                'statistics/sales',
+                [PlotController::class, 'salesStatistics']
+            )->name('statistics.sales');
+
+            Route::get(
+                'statistics/payments',
+                [PlotController::class, 'paymentStatistics']
+            )->name('statistics.payments');
+
+            Route::get(
+                'statistics/locations',
+                [PlotController::class, 'locationStatistics']
+            )->name('statistics.locations');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT REPORTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'reports/inventory',
+                [PlotController::class, 'inventoryReport']
+            )->name('reports.inventory');
+
+            Route::get(
+                'reports/sales',
+                [PlotController::class, 'salesReport']
+            )->name('reports.sales');
+
+            Route::get(
+                'reports/payments',
+                [PlotController::class, 'paymentReport']
+            )->name('reports.payments');
+
+            Route::get(
+                'reports/outstanding',
+                [PlotController::class, 'outstandingReport']
+            )->name('reports.outstanding');
+
+            Route::get(
+                'reports/agents',
+                [PlotController::class, 'agentReport']
+            )->name('reports.agents');
+
+            Route::get(
+                'reports/locations',
+                [PlotController::class, 'locationReport']
+            )->name('reports.locations');
+
+            /*
+            |--------------------------------------------------------------------------
+            | AVAILABLE PLOTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'available',
+                [PlotController::class, 'available']
+            )->name('available');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOTS BY LOCATION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'county/{county}',
+                [PlotController::class, 'byCounty']
+            )
+                ->whereNumber('county')
+                ->name('by-county');
+
+            Route::get(
+                'city/{city}',
+                [PlotController::class, 'byCity']
+            )
+                ->whereNumber('city')
+                ->name('by-city');
+
+            Route::get(
+                'area/{area}',
+                [PlotController::class, 'byArea']
+            )
+                ->whereNumber('area')
+                ->name('by-area');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT CRUD
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [PlotController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [PlotController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT STATUS / ACTIONS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{plot}/status',
+                [PlotController::class, 'updateStatus']
+            )
+                ->whereNumber('plot')
+                ->name('status.update');
+
+            Route::patch(
+                '{plot}/reserve',
+                [PlotController::class, 'reserve']
+            )
+                ->whereNumber('plot')
+                ->name('reserve');
+
+            Route::patch(
+                '{plot}/sell',
+                [PlotController::class, 'sell']
+            )
+                ->whereNumber('plot')
+                ->name('sell');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT AVAILABILITY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{plot}/availability',
+                [PlotController::class, 'availability']
+            )
+                ->whereNumber('plot')
+                ->name('availability');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT RESTORE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{plot}/restore',
+                [PlotController::class, 'restore']
+            )
+                ->whereNumber('plot')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT FORCE DELETE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{plot}/force',
+                [PlotController::class, 'forceDelete']
+            )
+                ->whereNumber('plot')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SHOW
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{plot}',
+                [PlotController::class, 'show']
+            )
+                ->whereNumber('plot')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT UPDATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{plot}',
+                [PlotController::class, 'update']
+            )
+                ->whereNumber('plot')
+                ->name('update');
+
+            Route::patch(
+                '{plot}',
+                [PlotController::class, 'update']
+            )
+                ->whereNumber('plot')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT DELETE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{plot}',
+                [PlotController::class, 'destroy']
+            )
+                ->whereNumber('plot')
+                ->name('destroy');
+        });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PLOT SALES
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('plot-sales')
+        ->name('plot-sales.')
+        ->group(function () {
+
+            Route::get(
+                'statistics',
+                [PlotSalesController::class, 'statistics']
+            )->name('statistics');
+
+            Route::get(
+                'reports',
+                [PlotSalesController::class, 'reports']
+            )->name('reports');
+
+            Route::get(
+                'outstanding',
+                [PlotSalesController::class, 'outstanding']
+            )->name('outstanding');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SALES BY STATUS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'status/{status}',
+                [PlotSalesController::class, 'getByStatus']
+            )
+                ->where('status', '[A-Za-z_-]+')
+                ->name('by-status');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SALES BY PLOT
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'plot/{plotId}',
+                [PlotSalesController::class, 'getByPlot']
+            )
+                ->whereNumber('plotId')
+                ->name('by-plot');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SALES BY BUYER
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'buyer/{buyerId}',
+                [PlotSalesController::class, 'getByBuyer']
+            )
+                ->whereNumber('buyerId')
+                ->name('by-buyer');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SALE CRUD
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [PlotSalesController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [PlotSalesController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SALE APPROVAL
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{id}/approve',
+                [PlotSalesController::class, 'approve']
+            )
+                ->whereNumber('id')
+                ->name('approve');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT SALE CANCELLATION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{id}/cancel',
+                [PlotSalesController::class, 'cancel']
+            )
+                ->whereNumber('id')
+                ->name('cancel');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COMPLETE PLOT SALE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{id}/complete',
+                [PlotSalesController::class, 'complete']
+            )
+                ->whereNumber('id')
+                ->name('complete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | RESTORE PLOT SALE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{id}/restore',
+                [PlotSalesController::class, 'restore']
+            )
+                ->whereNumber('id')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | PERMANENTLY DELETE PLOT SALE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}/force',
+                [PlotSalesController::class, 'forceDelete']
+            )
+                ->whereNumber('id')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | SHOW PLOT SALE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{id}',
+                [PlotSalesController::class, 'show']
+            )
+                ->whereNumber('id')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE PLOT SALE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{id}',
+                [PlotSalesController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('update');
+
+            Route::patch(
+                '{id}',
+                [PlotSalesController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DELETE PLOT SALE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}',
+                [PlotSalesController::class, 'destroy']
+            )
+                ->whereNumber('id')
+                ->name('destroy');
+        });
+
 
     /*
     |--------------------------------------------------------------------------
@@ -2076,191 +1889,164 @@ Route::middleware('auth:sanctum')->group(function () {
     |--------------------------------------------------------------------------
     */
 
-      Route::prefix('plot-payments')
+    Route::prefix('plot-payments')
         ->name('plot-payments.')
-         ->group(function () {
+        ->group(function () {
 
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT PAYMENT STATISTICS
-        |--------------------------------------------------------------------------
-        */
+            Route::get(
+                'statistics',
+                [PlotPaymentController::class, 'statistics']
+            )->name('statistics');
 
-        Route::get(
-            'statistics',
-            [PlotPaymentController::class, 'statistics']
-        )->name('statistics');
+            Route::get(
+                'reports',
+                [PlotPaymentController::class, 'reports']
+            )->name('reports');
 
+            Route::get(
+                'outstanding',
+                [PlotPaymentController::class, 'outstanding']
+            )->name('outstanding');
 
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT PAYMENT REPORTS
-        |--------------------------------------------------------------------------
-        */
+            Route::get(
+                'search',
+                [PlotPaymentController::class, 'search']
+            )->name('search');
 
-        Route::get(
-            'reports',
-            [PlotPaymentController::class, 'reports']
-        )->name('reports');
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENTS BY STATUS
+            |--------------------------------------------------------------------------
+            */
 
+            Route::get(
+                'status/{status}',
+                [PlotPaymentController::class, 'getByStatus']
+            )
+                ->where('status', '[A-Za-z_-]+')
+                ->name('by-status');
 
-        /*
-        |--------------------------------------------------------------------------
-        | OUTSTANDING PLOT PAYMENTS
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | PAYMENTS BY PLOT SALE
+            |--------------------------------------------------------------------------
+            */
 
-        Route::get(
-            'outstanding',
-            [PlotPaymentController::class, 'outstanding']
-        )->name('outstanding');
+            Route::get(
+                'sale/{plotSaleId}',
+                [PlotPaymentController::class, 'getBySale']
+            )
+                ->whereNumber('plotSaleId')
+                ->name('by-sale');
 
+            /*
+            |--------------------------------------------------------------------------
+            | PLOT PAYMENT CRUD
+            |--------------------------------------------------------------------------
+            */
 
-        /*
-        |--------------------------------------------------------------------------
-        | SEARCH PLOT PAYMENTS
-        |--------------------------------------------------------------------------
-        */
+            Route::get(
+                '/',
+                [PlotPaymentController::class, 'index']
+            )->name('index');
 
-        Route::get(
-            'search',
-            [PlotPaymentController::class, 'search']
-        )->name('search');
+            Route::post(
+                '/',
+                [PlotPaymentController::class, 'store']
+            )->name('store');
 
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE PAYMENT STATUS
+            |--------------------------------------------------------------------------
+            */
 
-        /*
-        |--------------------------------------------------------------------------
-        | PAYMENTS BY STATUS
-        |--------------------------------------------------------------------------
-        */
+            Route::patch(
+                '{id}/status',
+                [PlotPaymentController::class, 'updateStatus']
+            )
+                ->whereNumber('id')
+                ->name('update-status');
 
-        Route::get(
-            'status/{status}',
-            [PlotPaymentController::class, 'getByStatus']
-        )->where('status', '[A-Za-z_-]+')
-            ->name('by-status');
+            Route::post(
+                '{id}/confirm',
+                [PlotPaymentController::class, 'confirm']
+            )
+                ->whereNumber('id')
+                ->name('confirm');
 
+            /*
+            |--------------------------------------------------------------------------
+            | RESTORE SOFT-DELETED PAYMENT
+            |--------------------------------------------------------------------------
+            */
 
-        /*
-        |--------------------------------------------------------------------------
-        | PAYMENTS BY PLOT SALE
-        |--------------------------------------------------------------------------
-        */
+            Route::patch(
+                '{id}/restore',
+                [PlotPaymentController::class, 'restore']
+            )
+                ->whereNumber('id')
+                ->name('restore');
 
-        Route::get(
-            'sale/{plotSaleId}',
-            [PlotPaymentController::class, 'getBySale']
-        )->whereNumber('plotSaleId')
-            ->name('by-sale');
+            /*
+            |--------------------------------------------------------------------------
+            | PERMANENTLY DELETE PAYMENT
+            |--------------------------------------------------------------------------
+            */
 
+            Route::delete(
+                '{id}/force',
+                [PlotPaymentController::class, 'forceDelete']
+            )
+                ->whereNumber('id')
+                ->name('force-delete');
 
-        /*
-        |--------------------------------------------------------------------------
-        | PLOT PAYMENT CRUD - LIST AND CREATE
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | SHOW PAYMENT DETAILS
+            |--------------------------------------------------------------------------
+            */
 
-        Route::get(
-            '/',
-            [PlotPaymentController::class, 'index']
-        )->name('index');
+            Route::get(
+                '{id}',
+                [PlotPaymentController::class, 'show']
+            )
+                ->whereNumber('id')
+                ->name('show');
 
-        Route::post(
-            '/',
-            [PlotPaymentController::class, 'store']
-        )->name('store');
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE PAYMENT
+            |--------------------------------------------------------------------------
+            */
 
+            Route::put(
+                '{id}',
+                [PlotPaymentController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('update');
 
-        /*
-        |--------------------------------------------------------------------------
-        | UPDATE PAYMENT STATUS
-        |--------------------------------------------------------------------------
-        */
+            Route::patch(
+                '{id}',
+                [PlotPaymentController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('patch');
 
-        Route::patch(
-            '{id}/status',
-            [PlotPaymentController::class, 'updateStatus']
-        )->whereNumber('id')
-            ->name('update-status');
+            /*
+            |--------------------------------------------------------------------------
+            | SOFT-DELETE PAYMENT
+            |--------------------------------------------------------------------------
+            */
 
-        Route::post(
-         '{id}/confirm',
-         [PlotPaymentController::class, 'confirm']
-         )->whereNumber('id')
-         ->name('confirm');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | RESTORE SOFT-DELETED PAYMENT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::patch(
-            '{id}/restore',
-            [PlotPaymentController::class, 'restore']
-        )->whereNumber('id')
-            ->name('restore');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | PERMANENTLY DELETE PAYMENT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{id}/force',
-            [PlotPaymentController::class, 'forceDelete']
-        )->whereNumber('id')
-            ->name('force-delete');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | SHOW PAYMENT DETAILS
-        |--------------------------------------------------------------------------
-        */
-
-        Route::get(
-            '{id}',
-            [PlotPaymentController::class, 'show']
-        )->whereNumber('id')
-            ->name('show');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | UPDATE PAYMENT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::put(
-            '{id}',
-            [PlotPaymentController::class, 'update']
-        )->whereNumber('id')
-            ->name('update');
-
-        Route::patch(
-            '{id}',
-            [PlotPaymentController::class, 'update']
-        )->whereNumber('id')
-            ->name('patch');
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | SOFT-DELETE PAYMENT
-        |--------------------------------------------------------------------------
-        */
-
-        Route::delete(
-            '{id}',
-            [PlotPaymentController::class, 'destroy']
-        )->whereNumber('id')
-            ->name('destroy');
-
-    });
+            Route::delete(
+                '{id}',
+                [PlotPaymentController::class, 'destroy']
+            )
+                ->whereNumber('id')
+                ->name('destroy');
+        });
 
 
     /*
@@ -2530,6 +2316,604 @@ Route::middleware('auth:sanctum')->group(function () {
 
     /*
     |--------------------------------------------------------------------------
+    | COUNTRIES
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('countries')
+        ->name('countries.')
+        ->group(function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTRY STATISTICS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'statistics',
+                [CountryController::class, 'statistics']
+            )->name('statistics');
+
+            /*
+            |--------------------------------------------------------------------------
+            | ACTIVE COUNTRIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'active',
+                [CountryController::class, 'active']
+            )->name('active');
+
+            /*
+            |--------------------------------------------------------------------------
+            | INACTIVE COUNTRIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'inactive',
+                [CountryController::class, 'inactive']
+            )->name('inactive');
+
+            /*
+            |--------------------------------------------------------------------------
+            | TRASHED COUNTRIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'trashed',
+                [CountryController::class, 'trashed']
+            )->name('trashed');
+
+            Route::get(
+                'trashed/{country}',
+                [CountryController::class, 'showTrashed']
+            )
+                ->whereNumber('country')
+                ->name('trashed.show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTRY CRUD - LIST AND CREATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [CountryController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [CountryController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTRY STATUS MANAGEMENT
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{country}/activate',
+                [CountryController::class, 'activate']
+            )
+                ->whereNumber('country')
+                ->name('activate');
+
+            Route::patch(
+                '{country}/deactivate',
+                [CountryController::class, 'deactivate']
+            )
+                ->whereNumber('country')
+                ->name('deactivate');
+
+            Route::patch(
+                '{country}/toggle-status',
+                [CountryController::class, 'toggleStatus']
+            )
+                ->whereNumber('country')
+                ->name('toggle-status');
+
+            /*
+            |--------------------------------------------------------------------------
+            | RESTORE COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{country}/restore',
+                [CountryController::class, 'restore']
+            )
+                ->whereNumber('country')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | FORCE DELETE COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{country}/force-delete',
+                [CountryController::class, 'forceDelete']
+            )
+                ->whereNumber('country')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | SHOW COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{country}',
+                [CountryController::class, 'show']
+            )
+                ->whereNumber('country')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{country}',
+                [CountryController::class, 'update']
+            )
+                ->whereNumber('country')
+                ->name('update');
+
+            Route::patch(
+                '{country}',
+                [CountryController::class, 'update']
+            )
+                ->whereNumber('country')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DELETE COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{country}',
+                [CountryController::class, 'destroy']
+            )
+                ->whereNumber('country')
+                ->name('destroy');
+        });
+
+
+        
+    /*
+    |--------------------------------------------------------------------------
+    | COUNTIES
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('counties')
+        ->name('counties.')
+        ->group(function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTY STATISTICS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'statistics',
+                [CountyController::class, 'statistics']
+            )->name('statistics');
+
+            /*
+            |--------------------------------------------------------------------------
+            | ACTIVE COUNTIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'active',
+                [CountyController::class, 'active']
+            )->name('active');
+
+            /*
+            |--------------------------------------------------------------------------
+            | INACTIVE COUNTIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'inactive',
+                [CountyController::class, 'inactive']
+            )->name('inactive');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTY SEARCH
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'search',
+                [CountyController::class, 'search']
+            )->name('search');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTIES BY COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'country/{country}',
+                [CountyController::class, 'byCountry']
+            )
+                ->whereNumber('country')
+                ->name('by-country');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTIES BY REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'region/{region}',
+                [CountyController::class, 'byRegion']
+            )
+                ->whereNumber('region')
+                ->name('by-region');
+
+            /*
+            |--------------------------------------------------------------------------
+            | TRASHED COUNTIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'trashed',
+                [CountyController::class, 'trashed']
+            )->name('trashed');
+
+            Route::get(
+                'trashed/{county}',
+                [CountyController::class, 'showTrashed']
+            )
+                ->whereNumber('county')
+                ->name('trashed.show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTY LIST AND CREATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [CountyController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [CountyController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNTY STATUS MANAGEMENT
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{county}/activate',
+                [CountyController::class, 'activate']
+            )
+                ->whereNumber('county')
+                ->name('activate');
+
+            Route::patch(
+                '{county}/deactivate',
+                [CountyController::class, 'deactivate']
+            )
+                ->whereNumber('county')
+                ->name('deactivate');
+
+            Route::patch(
+                '{county}/toggle-status',
+                [CountyController::class, 'toggleStatus']
+            )
+                ->whereNumber('county')
+                ->name('toggle-status');
+
+            /*
+            |--------------------------------------------------------------------------
+            | RESTORE COUNTY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{county}/restore',
+                [CountyController::class, 'restore']
+            )
+                ->whereNumber('county')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | FORCE DELETE COUNTY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{county}/force-delete',
+                [CountyController::class, 'forceDelete']
+            )
+                ->whereNumber('county')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | SHOW COUNTY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{county}',
+                [CountyController::class, 'show']
+            )
+                ->whereNumber('county')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE COUNTY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{county}',
+                [CountyController::class, 'update']
+            )
+                ->whereNumber('county')
+                ->name('update');
+
+            Route::patch(
+                '{county}',
+                [CountyController::class, 'update']
+            )
+                ->whereNumber('county')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DELETE COUNTY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{county}',
+                [CountyController::class, 'destroy']
+            )
+                ->whereNumber('county')
+                ->name('destroy');
+        });
+
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | REGIONS
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('regions')
+        ->name('regions.')
+        ->group(function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGION STATISTICS AND REPORTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'statistics',
+                [RegionController::class, 'statistics']
+            )->name('statistics');
+
+            Route::get(
+                'reports',
+                [RegionController::class, 'reports']
+            )->name('reports');
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGION STATUS LISTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'active',
+                [RegionController::class, 'active']
+            )->name('active');
+
+            Route::get(
+                'inactive',
+                [RegionController::class, 'inactive']
+            )->name('inactive');
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGION SEARCH
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'search',
+                [RegionController::class, 'search']
+            )->name('search');
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGIONS BY COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'country/{countryId}',
+                [RegionController::class, 'byCountry']
+            )
+                ->whereNumber('countryId')
+                ->name('by-country');
+
+            /*
+            |--------------------------------------------------------------------------
+            | TRASHED REGIONS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'trashed',
+                [RegionController::class, 'trashed']
+            )->name('trashed');
+
+            Route::get(
+                'trashed/{id}',
+                [RegionController::class, 'showTrashed']
+            )
+                ->whereNumber('id')
+                ->name('trashed.show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGION LIST AND CREATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [RegionController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [RegionController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | REGION STATUS MANAGEMENT
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{region}/activate',
+                [RegionController::class, 'activate']
+            )
+                ->whereNumber('region')
+                ->name('activate');
+
+            Route::patch(
+                '{region}/deactivate',
+                [RegionController::class, 'deactivate']
+            )
+                ->whereNumber('region')
+                ->name('deactivate');
+
+            Route::patch(
+                '{region}/toggle-status',
+                [RegionController::class, 'toggleStatus']
+            )
+                ->whereNumber('region')
+                ->name('toggle-status');
+
+            /*
+            |--------------------------------------------------------------------------
+            | RESTORE REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{id}/restore',
+                [RegionController::class, 'restore']
+            )
+                ->whereNumber('id')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | FORCE DELETE REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}/force-delete',
+                [RegionController::class, 'forceDelete']
+            )
+                ->whereNumber('id')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | SHOW REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{region}',
+                [RegionController::class, 'show']
+            )
+                ->whereNumber('region')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{region}',
+                [RegionController::class, 'update']
+            )
+                ->whereNumber('region')
+                ->name('update');
+
+            Route::patch(
+                '{region}',
+                [RegionController::class, 'update']
+            )
+                ->whereNumber('region')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DELETE REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{region}',
+                [RegionController::class, 'destroy']
+            )
+                ->whereNumber('region')
+                ->name('destroy');
+        });
+
+
+
+    /*
+    |--------------------------------------------------------------------------
     | MASTER DATA
     |--------------------------------------------------------------------------
     */
@@ -2602,7 +2986,6 @@ Route::middleware('auth:sanctum')->group(function () {
                         RoleController::class
                     );
 
-
                     /*
                     |--------------------------------------------------------------------------
                     | ROLE PERMISSIONS
@@ -2618,7 +3001,6 @@ Route::middleware('auth:sanctum')->group(function () {
                         'roles/{role}/permissions',
                         [RoleController::class, 'assignPermissions']
                     )->name('roles.assign-permissions');
-
 
                     /*
                     |--------------------------------------------------------------------------

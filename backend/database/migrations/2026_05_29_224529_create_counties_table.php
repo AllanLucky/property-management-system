@@ -6,9 +6,21 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /*
+    |--------------------------------------------------------------------------
+    | RUN MIGRATIONS
+    |--------------------------------------------------------------------------
+    */
+
     public function up(): void
     {
         Schema::create('counties', function (Blueprint $table) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRIMARY KEY
+            |--------------------------------------------------------------------------
+            */
 
             $table->id();
 
@@ -17,35 +29,42 @@ return new class extends Migration
             | RELATIONSHIPS
             |--------------------------------------------------------------------------
             */
+
             $table->foreignId('country_id')
                 ->constrained('countries')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             $table->foreignId('region_id')
                 ->constrained('regions')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             /*
             |--------------------------------------------------------------------------
             | CORE DATA
             |--------------------------------------------------------------------------
             */
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->string('code')->nullable();
+
+            $table->string('name', 150);
+
+            $table->string('slug', 180)->unique();
+
+            $table->string('code', 20)->nullable();
 
             /*
             |--------------------------------------------------------------------------
             | STATUS
             |--------------------------------------------------------------------------
             */
-            $table->boolean('is_active')->default(true);
+
+            $table->boolean('is_active')
+                ->default(true);
 
             /*
             |--------------------------------------------------------------------------
-            | SOFT DELETES (REQUIRED by your model)
+            | SOFT DELETES
             |--------------------------------------------------------------------------
             */
+
             $table->softDeletes();
 
             /*
@@ -53,6 +72,7 @@ return new class extends Migration
             | TIMESTAMPS
             |--------------------------------------------------------------------------
             */
+
             $table->timestamps();
 
             /*
@@ -60,11 +80,40 @@ return new class extends Migration
             | INDEXES
             |--------------------------------------------------------------------------
             */
-            $table->index(['country_id', 'region_id', 'name']);
-            $table->index('slug');
-            $table->index('is_active');
+
+            $table->index(
+                ['country_id', 'region_id'],
+                'counties_country_region_index'
+            );
+
+            $table->index(
+                ['country_id', 'name'],
+                'counties_country_name_index'
+            );
+
+            $table->index(
+                ['region_id', 'name'],
+                'counties_region_name_index'
+            );
+
+            $table->index(
+                'is_active',
+                'counties_is_active_index'
+            );
+
+            $table->index(
+                'deleted_at',
+                'counties_deleted_at_index'
+            );
+
         });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | ROLLBACK MIGRATIONS
+    |--------------------------------------------------------------------------
+    */
 
     public function down(): void
     {

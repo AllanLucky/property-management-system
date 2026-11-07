@@ -4,7 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
-
+use Illuminate\Support\Facades\DB;
 use App\Models\Country;
 use App\Models\Region;
 use App\Models\County;
@@ -881,221 +881,232 @@ class LocationSeeder extends Seeder
         |--------------------------------------------------------------------------
         | SEED LOCATION HIERARCHY
         |--------------------------------------------------------------------------
+        |
+        | The hierarchy is:
+        |
+        | Country
+        |   └── Region
+        |       └── County
+        |           └── City
+        |               └── Area
+        |
+        | Slugs are generated from their parent hierarchy to prevent global
+        | unique-key collisions such as "central-region", "nairobi", or
+        | "westlands" appearing under different parents.
+        |
         */
 
-        foreach ($locations as $countryData) {
+        DB::transaction(function () use ($locations): void {
+            $countryCount = 0;
+            $regionCount = 0;
+            $countyCount = 0;
+            $cityCount = 0;
+            $areaCount = 0;
 
-            /*
-            |--------------------------------------------------------------------------
-            | COUNTRY
-            |--------------------------------------------------------------------------
-            */
+            foreach ($locations as $countryData) {
+                /*
+                |--------------------------------------------------------------------------
+                | COUNTRY
+                |--------------------------------------------------------------------------
+                */
 
-            $countrySlug = Str::slug($countryData['country']);
+                $countryName = trim($countryData['country']);
+                $countryCode = Str::upper(trim($countryData['code']));
+                $countrySlug = Str::slug($countryName);
 
-            $country = Country::updateOrCreate(
-                [
-                    'code' => $countryData['code'],
-                ],
-                [
-                    'name' => $countryData['country'],
-                    'code' => $countryData['code'],
-                    'slug' => $countrySlug,
-                    'phone_code' => $countryData['phone_code'],
-                    'currency' => $countryData['currency'],
-                    'is_active' => true,
-                ]
-            );
-
-            /*
-            |--------------------------------------------------------------------------
-            | REGIONS
-            |--------------------------------------------------------------------------
-            |
-            | IMPORTANT:
-            |
-            | regions.slug is globally unique in the database.
-            |
-            | Therefore:
-            |
-            | Kenya + Central Region
-            |     => kenya-central-region
-            |
-            | Uganda + Central Region
-            |     => uganda-central-region
-            |
-            | This prevents duplicate slug errors between countries.
-            |
-            */
-
-            foreach ($countryData['regions'] as $regionData) {
-
-                $regionSlug = $countrySlug . '-' . Str::slug(
-                    $regionData['name']
-                );
-
-                $region = Region::updateOrCreate(
+                $country = Country::updateOrCreate(
+                    ['code' => $countryCode],
                     [
-                        'country_id' => $country->id,
-                        'code' => $regionData['code'],
-                    ],
-                    [
-                        'country_id' => $country->id,
-                        'name' => $regionData['name'],
-                        'code' => $regionData['code'],
-                        'slug' => $regionSlug,
+                        'name' => $countryName,
+                        'code' => $countryCode,
+                        'slug' => $countrySlug,
+                        'phone_code' => $countryData['phone_code'],
+                        'currency' => Str::upper($countryData['currency']),
                         'is_active' => true,
                     ]
                 );
 
+                $countryCount++;
+
                 /*
                 |--------------------------------------------------------------------------
-                | COUNTIES
+                | REGIONS
                 |--------------------------------------------------------------------------
                 */
 
-                foreach ($regionData['counties'] as $countyData) {
+                foreach ($countryData['regions'] as $regionData) {
+                    $regionName = trim($regionData['name']);
+                    $regionCode = Str::upper(trim($regionData['code']));
 
-                    $county = County::updateOrCreate(
+                    $regionSlug = Str::slug(
+                        $countrySlug . '-' . $regionName
+                    );
+
+                    $region = Region::updateOrCreate(
                         [
                             'country_id' => $country->id,
-                            'region_id' => $region->id,
-                            'code' => $countyData['code'],
+                            'code' => $regionCode,
                         ],
                         [
                             'country_id' => $country->id,
-                            'region_id' => $region->id,
-                            'name' => $countyData['name'],
-                            'code' => $countyData['code'],
-                            'slug' => Str::slug($countyData['name']),
+                            'name' => $regionName,
+                            'code' => $regionCode,
+                            'slug' => $regionSlug,
                             'is_active' => true,
                         ]
                     );
 
+                    $regionCount++;
+
                     /*
                     |--------------------------------------------------------------------------
-                    | CITIES
+                    | COUNTIES
                     |--------------------------------------------------------------------------
                     */
 
-                    foreach ($countyData['cities'] as $cityData) {
+                    foreach ($regionData['counties'] as $countyData) {
+                        $countyName = trim($countyData['name']);
+                        $countyCode = Str::upper(trim($countyData['code']));
 
-                        $city = City::updateOrCreate(
+                        $countySlug = Str::slug(
+                            $regionSlug . '-' . $countyName
+                        );
+
+                        $county = County::updateOrCreate(
                             [
                                 'country_id' => $country->id,
                                 'region_id' => $region->id,
-                                'county_id' => $county->id,
-                                'code' => $cityData['code'],
+                                'code' => $countyCode,
                             ],
                             [
                                 'country_id' => $country->id,
                                 'region_id' => $region->id,
-                                'county_id' => $county->id,
-                                'name' => $cityData['name'],
-                                'code' => $cityData['code'],
-                                'slug' => Str::slug($cityData['name']),
+                                'name' => $countyName,
+                                'code' => $countyCode,
+                                'slug' => $countySlug,
                                 'is_active' => true,
                             ]
                         );
 
+                        $countyCount++;
+
                         /*
                         |--------------------------------------------------------------------------
-                        | AREAS
+                        | CITIES
                         |--------------------------------------------------------------------------
                         */
 
-                        foreach ($cityData['areas'] as $areaData) {
+                        foreach ($countyData['cities'] as $cityData) {
+                            $cityName = trim($cityData['name']);
+                            $cityCode = Str::upper(trim($cityData['code']));
 
-                            $areaName = $areaData['name'];
-
-                            $areaSlug = Str::slug($areaName);
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | AREA CODE
-                            |--------------------------------------------------------------------------
-                            */
-
-                            $areaPrefix = Str::upper(
-                                Str::substr(
-                                    Str::replace(
-                                        '-',
-                                        '',
-                                        $areaSlug
-                                    ),
-                                    0,
-                                    3
-                                )
+                            $citySlug = Str::slug(
+                                $countySlug . '-' . $cityName
                             );
 
-                            $areaCode = $cityData['code'] . '-' . $areaPrefix;
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | PREVENT DUPLICATE AREA CODES
-                            |--------------------------------------------------------------------------
-                            */
-
-                            $existingArea = Area::query()
-                                ->where('code', $areaCode)
-                                ->where('city_id', '!=', $city->id)
-                                ->exists();
-
-                            if ($existingArea) {
-
-                                $areaCode .= '-' . Str::upper(
-                                    Str::substr(
-                                        md5($areaSlug),
-                                        0,
-                                        4
-                                    )
-                                );
-                            }
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | AREA
-                            |--------------------------------------------------------------------------
-                            */
-
-                            Area::updateOrCreate(
+                            $city = City::updateOrCreate(
                                 [
                                     'country_id' => $country->id,
                                     'region_id' => $region->id,
                                     'county_id' => $county->id,
-                                    'city_id' => $city->id,
-                                    'slug' => $areaSlug,
+                                    'code' => $cityCode,
                                 ],
                                 [
                                     'country_id' => $country->id,
                                     'region_id' => $region->id,
                                     'county_id' => $county->id,
-                                    'city_id' => $city->id,
-
-                                    'name' => $areaName,
-                                    'slug' => $areaSlug,
-                                    'code' => $areaCode,
-
-                                    'latitude' => $areaData['latitude'],
-                                    'longitude' => $areaData['longitude'],
-
+                                    'name' => $cityName,
+                                    'code' => $cityCode,
+                                    'slug' => $citySlug,
                                     'is_active' => true,
                                 ]
                             );
+
+                            $cityCount++;
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | AREAS
+                            |--------------------------------------------------------------------------
+                            */
+
+                            foreach ($cityData['areas'] as $areaData) {
+                                $areaName = trim($areaData['name']);
+
+                                $areaSlug = Str::slug(
+                                    $citySlug . '-' . $areaName
+                                );
+
+                                /*
+                                |--------------------------------------------------------------------------
+                                | AREA CODE
+                                |--------------------------------------------------------------------------
+                                |
+                                | The city code is included in the area code.
+                                | A short deterministic hash is appended to make
+                                | codes unique even when two areas have the same
+                                | first three characters.
+                                |
+                                */
+
+                                $areaPrefix = Str::upper(
+                                    Str::substr(
+                                        Str::replace('-', '', Str::slug($areaName)),
+                                        0,
+                                        3
+                                    )
+                                );
+
+                                $areaCodeBase = $cityCode . '-' . $areaPrefix;
+
+                                $areaCode = $areaCodeBase . '-' . Str::upper(
+                                    Str::substr(
+                                        hash('sha256', $areaSlug),
+                                        0,
+                                        4
+                                    )
+                                );
+
+                                Area::updateOrCreate(
+                                    [
+                                        'country_id' => $country->id,
+                                        'region_id' => $region->id,
+                                        'county_id' => $county->id,
+                                        'city_id' => $city->id,
+                                        'slug' => $areaSlug,
+                                    ],
+                                    [
+                                        'country_id' => $country->id,
+                                        'region_id' => $region->id,
+                                        'county_id' => $county->id,
+                                        'city_id' => $city->id,
+                                        'name' => $areaName,
+                                        'slug' => $areaSlug,
+                                        'code' => $areaCode,
+                                        'latitude' => $areaData['latitude'] ?? null,
+                                        'longitude' => $areaData['longitude'] ?? null,
+                                        'is_active' => true,
+                                    ]
+                                );
+
+                                $areaCount++;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        /*
-        |--------------------------------------------------------------------------
-        | SUCCESS MESSAGE
-        |--------------------------------------------------------------------------
-        */
-
-        $this->command?->info(
-            'Countries, regions, counties, cities and areas seeded successfully with globally unique region slugs, codes, phone codes, currencies and coordinates.'
-        );
+            $this->command?->info('Location seeding completed successfully.');
+            $this->command?->table(
+                ['Location Type', 'Processed'],
+                [
+                    ['Countries', $countryCount],
+                    ['Regions', $regionCount],
+                    ['Counties', $countyCount],
+                    ['Cities', $cityCount],
+                    ['Areas', $areaCount],
+                ]
+            );
+        });
     }
 }
