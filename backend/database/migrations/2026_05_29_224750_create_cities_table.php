@@ -6,9 +6,18 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::create('cities', function (Blueprint $table) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | PRIMARY KEY
+            |--------------------------------------------------------------------------
+            */
 
             $table->id();
 
@@ -17,25 +26,29 @@ return new class extends Migration
             | RELATIONSHIPS
             |--------------------------------------------------------------------------
             */
+
             $table->foreignId('country_id')
                 ->constrained('countries')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             $table->foreignId('region_id')
                 ->constrained('regions')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             $table->foreignId('county_id')
                 ->constrained('counties')
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             /*
             |--------------------------------------------------------------------------
             | CORE DATA
             |--------------------------------------------------------------------------
             */
+
             $table->string('name');
+
             $table->string('slug')->unique();
+
             $table->string('code')->nullable();
 
             /*
@@ -43,13 +56,15 @@ return new class extends Migration
             | STATUS
             |--------------------------------------------------------------------------
             */
+
             $table->boolean('is_active')->default(true);
 
             /*
             |--------------------------------------------------------------------------
-            | SOFT DELETES (REQUIRED by your model)
+            | SOFT DELETES
             |--------------------------------------------------------------------------
             */
+
             $table->softDeletes();
 
             /*
@@ -57,6 +72,7 @@ return new class extends Migration
             | TIMESTAMPS
             |--------------------------------------------------------------------------
             */
+
             $table->timestamps();
 
             /*
@@ -64,12 +80,22 @@ return new class extends Migration
             | INDEXES
             |--------------------------------------------------------------------------
             */
-            $table->index(['country_id', 'region_id', 'county_id', 'name']);
-            $table->index('slug');
-            $table->index('is_active');
+
+            $table->index(
+                ['country_id', 'region_id', 'county_id', 'name'],
+                'cities_location_name_index'
+            );
+
+            $table->index(
+                'is_active',
+                'cities_is_active_index'
+            );
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::dropIfExists('cities');

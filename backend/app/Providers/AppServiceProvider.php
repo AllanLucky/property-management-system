@@ -105,8 +105,8 @@ use App\Repositories\Interfaces\CountyRepositoryInterface;
 use App\Repositories\Eloquent\CityRepository;
 use App\Repositories\Interfaces\CityRepositoryInterface;
 
-use App\Repositories\Eloquent\StreetRepository;
-use App\Repositories\Interfaces\StreetRepositoryInterface;
+use App\Repositories\Eloquent\AreaRepository;
+use App\Repositories\Interfaces\AreaRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
@@ -323,8 +323,8 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->bind(
-            StreetRepositoryInterface::class,
-            StreetRepository::class
+            AreaRepositoryInterface::class,
+            AreaRepository::class
         );
 
         /*
