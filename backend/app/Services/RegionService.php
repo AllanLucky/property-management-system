@@ -48,7 +48,6 @@ class RegionService
         int $perPage = 25,
         array $filters = []
     ): LengthAwarePaginator {
-
         return $this->regionRepository->paginate(
             $perPage,
             $filters
@@ -121,12 +120,6 @@ class RegionService
     {
         return DB::transaction(function () use ($data) {
 
-            /*
-            |--------------------------------------------------------------------------
-            | NORMALIZE INPUT
-            |--------------------------------------------------------------------------
-            */
-
             $data = $this->normalizeData($data);
 
             /*
@@ -195,19 +188,7 @@ class RegionService
     {
         return DB::transaction(function () use ($id, $data) {
 
-            /*
-            |--------------------------------------------------------------------------
-            | FIND REGION
-            |--------------------------------------------------------------------------
-            */
-
             $region = $this->findById($id);
-
-            /*
-            |--------------------------------------------------------------------------
-            | NORMALIZE INPUT
-            |--------------------------------------------------------------------------
-            */
 
             $data = $this->normalizeData($data);
 
@@ -293,7 +274,39 @@ class RegionService
 
     public function delete(int $id): bool
     {
+        return $this->deleteRegion($id);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORCE DELETE REGION
+    |--------------------------------------------------------------------------
+    | Region does not use SoftDeletes.
+    | This method permanently deletes the region.
+    | Kept to support the existing force-delete route.
+    |--------------------------------------------------------------------------
+    */
+
+    public function forceDelete(int $id): bool
+    {
+        return $this->deleteRegion($id);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SHARED REGION DELETION
+    |--------------------------------------------------------------------------
+    */
+
+    protected function deleteRegion(int $id): bool
+    {
         return DB::transaction(function () use ($id) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | FIND REGION
+            |--------------------------------------------------------------------------
+            */
 
             $region = $this->findById($id);
 
@@ -303,7 +316,7 @@ class RegionService
             |--------------------------------------------------------------------------
             */
 
-            if ($this->regionRepository->hasDependencies($id)) {
+            if ($this->regionRepository->hasDependencies($region->id)) {
                 throw ValidationException::withMessages([
                     'region' => [
                         'This region cannot be deleted because it has associated counties.',
@@ -313,11 +326,21 @@ class RegionService
 
             /*
             |--------------------------------------------------------------------------
-            | DELETE REGION
+            | PERMANENTLY DELETE REGION
             |--------------------------------------------------------------------------
             */
 
-            return $this->regionRepository->delete($region->id);
+            $deleted = $this->regionRepository->delete($region->id);
+
+            if (!$deleted) {
+                throw ValidationException::withMessages([
+                    'region' => [
+                        'Unable to delete this region.',
+                    ],
+                ]);
+            }
+
+            return true;
         });
     }
 
@@ -449,7 +472,6 @@ class RegionService
         string $code,
         ?int $ignoreId = null
     ): bool {
-
         return $this->regionRepository->codeExists(
             strtoupper(trim($code)),
             $ignoreId
@@ -466,133 +488,10 @@ class RegionService
         string $slug,
         ?int $ignoreId = null
     ): bool {
-
         return $this->regionRepository->slugExists(
             Str::slug($slug),
             $ignoreId
         );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | RESTORE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function restore(int $id): Region
-    {
-        return DB::transaction(function () use ($id) {
-
-            $region = $this->regionRepository
-                ->findTrashedById($id);
-
-            if (!$region) {
-                throw (new ModelNotFoundException())
-                    ->setModel(Region::class, [$id]);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | RESTORE REGION
-            |--------------------------------------------------------------------------
-            */
-
-            if (!$this->regionRepository->restore($id)) {
-                throw ValidationException::withMessages([
-                    'region' => [
-                        'Unable to restore this region.',
-                    ],
-                ]);
-            }
-
-            return $this->findById($id);
-        });
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FORCE DELETE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function forceDelete(int $id): bool
-    {
-        return DB::transaction(function () use ($id) {
-
-            $region = $this->regionRepository
-                ->findTrashedById($id);
-
-            if (!$region) {
-                throw (new ModelNotFoundException())
-                    ->setModel(Region::class, [$id]);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | CHECK DEPENDENCIES
-            |--------------------------------------------------------------------------
-            */
-
-            if ($this->regionRepository->hasDependencies($id)) {
-                throw ValidationException::withMessages([
-                    'region' => [
-                        'This region cannot be permanently deleted because it has associated counties.',
-                    ],
-                ]);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | PERMANENT DELETE
-            |--------------------------------------------------------------------------
-            */
-
-            if (!$this->regionRepository->forceDelete($id)) {
-                throw ValidationException::withMessages([
-                    'region' => [
-                        'Unable to permanently delete this region.',
-                    ],
-                ]);
-            }
-
-            return true;
-        });
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | GET DELETED REGIONS
-    |--------------------------------------------------------------------------
-    */
-
-    public function getTrashed(
-        int $perPage = 25,
-        array $filters = []
-    ): LengthAwarePaginator {
-
-        return $this->regionRepository->getTrashed(
-            $perPage,
-            $filters
-        );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FIND DELETED REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function findTrashedById(int $id): Region
-    {
-        $region = $this->regionRepository
-            ->findTrashedById($id);
-
-        if (!$region) {
-            throw (new ModelNotFoundException())
-                ->setModel(Region::class, [$id]);
-        }
-
-        return $region;
     }
 
     /*
