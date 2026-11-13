@@ -7,10 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Builder;
 
 class Area extends Model
 {
     use HasFactory;
+
+    /*
+    |--------------------------------------------------------------------------
+    | TABLE
+    |--------------------------------------------------------------------------
+    */
 
     protected $table = 'areas';
 
@@ -19,6 +26,7 @@ class Area extends Model
     | FILLABLE
     |--------------------------------------------------------------------------
     */
+
     protected $fillable = [
         'country_id',
         'region_id',
@@ -37,29 +45,42 @@ class Area extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | HIDDEN
+    |--------------------------------------------------------------------------
+    */
+
+    protected $hidden = [];
+
+    /*
+    |--------------------------------------------------------------------------
     | CASTS
     |--------------------------------------------------------------------------
     */
-    protected $casts = [
-        'country_id' => 'integer',
-        'region_id' => 'integer',
-        'county_id' => 'integer',
-        'city_id' => 'integer',
 
-        'latitude' => 'decimal:7',
-        'longitude' => 'decimal:7',
+    protected function casts(): array
+    {
+        return [
+            'country_id' => 'integer',
+            'region_id' => 'integer',
+            'county_id' => 'integer',
+            'city_id' => 'integer',
 
-        'is_active' => 'boolean',
+            'latitude' => 'float',
+            'longitude' => 'float',
 
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-    ];
+            'is_active' => 'boolean',
+
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+        ];
+    }
 
     /*
     |--------------------------------------------------------------------------
     | APPENDS
     |--------------------------------------------------------------------------
     */
+
     protected $appends = [
         'full_location',
         'status_label',
@@ -70,19 +91,35 @@ class Area extends Model
     | BOOT
     |--------------------------------------------------------------------------
     */
-    protected static function boot()
-    {
-        parent::boot();
 
-        static::creating(function ($area) {
-            if (empty($area->slug)) {
-                $area->slug = static::generateUniqueSlug($area->name);
+    protected static function booted(): void
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | GENERATE SLUG WHEN CREATING
+        |--------------------------------------------------------------------------
+        */
+
+        static::creating(function (Area $area) {
+            if (empty($area->slug) && !empty($area->name)) {
+                $area->slug = static::generateUniqueSlug(
+                    $area->name
+                );
             }
         });
 
-        static::updating(function ($area) {
-            if ($area->isDirty('name')) {
-                $area->slug = static::generateUniqueSlug($area->name, $area->id);
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE SLUG WHEN NAME CHANGES
+        |--------------------------------------------------------------------------
+        */
+
+        static::updating(function (Area $area) {
+            if ($area->isDirty('name') && !empty($area->name)) {
+                $area->slug = static::generateUniqueSlug(
+                    $area->name,
+                    $area->id
+                );
             }
         });
     }
@@ -92,6 +129,7 @@ class Area extends Model
     | ROUTE MODEL BINDING
     |--------------------------------------------------------------------------
     */
+
     public function getRouteKeyName(): string
     {
         return 'slug';
@@ -103,26 +141,41 @@ class Area extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Area belongs to a country.
+     */
     public function country(): BelongsTo
     {
         return $this->belongsTo(Country::class);
     }
 
+    /**
+     * Area belongs to a region.
+     */
     public function region(): BelongsTo
     {
         return $this->belongsTo(Region::class);
     }
 
+    /**
+     * Area belongs to a county.
+     */
     public function county(): BelongsTo
     {
         return $this->belongsTo(County::class);
     }
 
+    /**
+     * Area belongs to a city.
+     */
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class);
     }
 
+    /**
+     * Area has many properties.
+     */
     public function properties(): HasMany
     {
         return $this->hasMany(Property::class);
@@ -130,45 +183,76 @@ class Area extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | SCOPES
+    | QUERY SCOPES
     |--------------------------------------------------------------------------
     */
 
-    public function scopeActive($query)
+    /**
+     * Retrieve active areas.
+     */
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
-    public function scopeInactive($query)
+    /**
+     * Retrieve inactive areas.
+     */
+    public function scopeInactive(Builder $query): Builder
     {
         return $query->where('is_active', false);
     }
 
-    public function scopeByCountry($query, int $countryId)
-    {
+    /**
+     * Filter areas by country.
+     */
+    public function scopeByCountry(
+        Builder $query,
+        int $countryId
+    ): Builder {
         return $query->where('country_id', $countryId);
     }
 
-    public function scopeByRegion($query, int $regionId)
-    {
+    /**
+     * Filter areas by region.
+     */
+    public function scopeByRegion(
+        Builder $query,
+        int $regionId
+    ): Builder {
         return $query->where('region_id', $regionId);
     }
 
-    public function scopeByCounty($query, int $countyId)
-    {
+    /**
+     * Filter areas by county.
+     */
+    public function scopeByCounty(
+        Builder $query,
+        int $countyId
+    ): Builder {
         return $query->where('county_id', $countyId);
     }
 
-    public function scopeByCity($query, int $cityId)
-    {
+    /**
+     * Filter areas by city.
+     */
+    public function scopeByCity(
+        Builder $query,
+        int $cityId
+    ): Builder {
         return $query->where('city_id', $cityId);
     }
 
-    public function scopeSearch($query, string $search)
-    {
-        return $query->where(function ($q) use ($search) {
+    /**
+     * Search areas by name or code.
+     */
+    public function scopeSearch(
+        Builder $query,
+        string $search
+    ): Builder {
+        return $query->where(function (Builder $q) use ($search) {
             $q->where('name', 'LIKE', "%{$search}%")
-              ->orWhere('code', 'LIKE', "%{$search}%");
+                ->orWhere('code', 'LIKE', "%{$search}%");
         });
     }
 
@@ -178,36 +262,71 @@ class Area extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Get the complete geographical location.
+     *
+     * Only uses relationships that have already been loaded.
+     * This prevents unexpected database queries during serialization.
+     */
     public function getFullLocationAttribute(): string
     {
+        $city = $this->relationLoaded('city')
+            ? $this->getRelation('city')
+            : null;
+
+        $county = $this->relationLoaded('county')
+            ? $this->getRelation('county')
+            : null;
+
+        $region = $this->relationLoaded('region')
+            ? $this->getRelation('region')
+            : null;
+
+        $country = $this->relationLoaded('country')
+            ? $this->getRelation('country')
+            : null;
+
         return collect([
             $this->name,
-            $this->city?->name,
-            $this->county?->name,
-            $this->region?->name,
-            $this->country?->name,
-        ])->filter()->implode(', ');
+            $city?->name,
+            $county?->name,
+            $region?->name,
+            $country?->name,
+        ])
+            ->filter()
+            ->implode(', ');
     }
 
+    /**
+     * Get the human-readable area status.
+     */
     public function getStatusLabelAttribute(): string
     {
-        return $this->is_active ? 'Active' : 'Inactive';
+        return $this->is_active
+            ? 'Active'
+            : 'Inactive';
     }
 
     /*
     |--------------------------------------------------------------------------
-    | HELPERS
+    | HELPER METHODS
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Determine whether the area is active.
+     */
     public function isActive(): bool
     {
         return (bool) $this->is_active;
     }
 
+    /**
+     * Determine whether the area is inactive.
+     */
     public function isInactive(): bool
     {
-        return !$this->is_active;
+        return !$this->isActive();
     }
 
     /*
@@ -215,15 +334,30 @@ class Area extends Model
     | SLUG GENERATOR
     |--------------------------------------------------------------------------
     */
-    protected static function generateUniqueSlug(string $name, ?int $ignoreId = null): string
-    {
+
+    /**
+     * Generate a unique slug for an area.
+     */
+    protected static function generateUniqueSlug(
+        string $name,
+        ?int $ignoreId = null
+    ): string {
         $base = Str::slug($name);
+
         $slug = $base;
         $count = 1;
 
         while (
-            static::where('slug', $slug)
-                ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            static::query()
+                ->where('slug', $slug)
+                ->when(
+                    $ignoreId !== null,
+                    fn (Builder $query) => $query->where(
+                        'id',
+                        '!=',
+                        $ignoreId
+                    )
+                )
                 ->exists()
         ) {
             $slug = $base . '-' . $count++;

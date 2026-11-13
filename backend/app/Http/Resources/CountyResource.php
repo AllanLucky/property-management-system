@@ -22,8 +22,11 @@ class CountyResource extends JsonResource
             */
 
             'id' => $this->id,
+
             'name' => $this->name,
+
             'slug' => $this->slug,
+
             'code' => $this->code,
 
             /*
@@ -36,12 +39,29 @@ class CountyResource extends JsonResource
 
             'country' => $this->whenLoaded(
                 'country',
-                fn () => [
-                    'id' => $this->country?->id,
-                    'name' => $this->country?->name,
-                    'code' => $this->country?->code,
-                    'slug' => $this->country?->slug,
-                ]
+                fn () => $this->country ? [
+                    'id' => $this->country->id,
+
+                    'name' => $this->country->name,
+
+                    'slug' => $this->country->slug,
+
+                    'code' => $this->country->code,
+
+                    'phone_code' => $this->country->phone_code,
+
+                    'currency' => $this->country->currency,
+
+                    'is_active' => (bool) $this->country->is_active,
+
+                    'status_label' => $this->country->is_active
+                        ? 'Active'
+                        : 'Inactive',
+
+                    'display_name' => $this->country->display_name,
+
+                    'name_with_code' => $this->country->name_with_code,
+                ] : null
             ),
 
             /*
@@ -54,12 +74,43 @@ class CountyResource extends JsonResource
 
             'region' => $this->whenLoaded(
                 'region',
-                fn () => [
-                    'id' => $this->region?->id,
-                    'name' => $this->region?->name,
-                    'slug' => $this->region?->slug,
-                    'code' => $this->region?->code,
-                ]
+                fn () => $this->region ? [
+                    'id' => $this->region->id,
+
+                    'country_id' => $this->region->country_id,
+
+                    'name' => $this->region->name,
+
+                    'slug' => $this->region->slug,
+
+                    'code' => $this->region->code,
+
+                    'is_active' => (bool) $this->region->is_active,
+
+                    'is_active_label' => $this->region->is_active
+                        ? 'Active'
+                        : 'Inactive',
+                ] : null
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | FULL LOCATION
+            |--------------------------------------------------------------------------
+            */
+
+            'full_location' => $this->when(
+                $this->relationLoaded('country')
+                && $this->relationLoaded('region'),
+
+                fn () => collect([
+                    $this->name,
+                    $this->region?->name,
+                    $this->country?->name,
+                ])
+                    ->filter()
+                    ->unique()
+                    ->implode(', ')
             ),
 
             /*
@@ -68,11 +119,38 @@ class CountyResource extends JsonResource
             |--------------------------------------------------------------------------
             */
 
-            'cities_count' => $this->whenCounted('cities'),
+            'cities_count' => $this->whenCounted(
+                'cities'
+            ),
 
-            'areas_count' => $this->whenCounted('areas'),
+            'areas_count' => $this->whenCounted(
+                'areas'
+            ),
 
-            'properties_count' => $this->whenCounted('properties'),
+            'properties_count' => $this->whenCounted(
+                'properties'
+            ),
+
+            /*
+            |--------------------------------------------------------------------------
+            | DEPENDENCY INFORMATION
+            |--------------------------------------------------------------------------
+            */
+
+            'has_cities' => $this->whenCounted(
+                'cities',
+                fn () => (int) $this->cities_count > 0
+            ),
+
+            'has_areas' => $this->whenCounted(
+                'areas',
+                fn () => (int) $this->areas_count > 0
+            ),
+
+            'has_properties' => $this->whenCounted(
+                'properties',
+                fn () => (int) $this->properties_count > 0
+            ),
 
             /*
             |--------------------------------------------------------------------------
@@ -86,28 +164,9 @@ class CountyResource extends JsonResource
                 ? 'active'
                 : 'inactive',
 
-            'status_label' => $this->status_label,
-
-            /*
-            |--------------------------------------------------------------------------
-            | DEPENDENCIES
-            |--------------------------------------------------------------------------
-            */
-
-            'has_cities' => $this->whenCounted(
-                'cities',
-                fn () => $this->cities_count > 0
-            ),
-
-            'has_areas' => $this->whenCounted(
-                'areas',
-                fn () => $this->areas_count > 0
-            ),
-
-            'has_properties' => $this->whenCounted(
-                'properties',
-                fn () => $this->properties_count > 0
-            ),
+            'status_label' => $this->is_active
+                ? 'Active'
+                : 'Inactive',
 
             /*
             |--------------------------------------------------------------------------
@@ -119,8 +178,16 @@ class CountyResource extends JsonResource
 
             'updated_at' => $this->updated_at?->toISOString(),
 
+            /*
+            |--------------------------------------------------------------------------
+            | SOFT DELETE INFORMATION
+            |--------------------------------------------------------------------------
+            */
+
             'deleted_at' => $this->when(
-                $this->resource->trashed(),
+                method_exists($this->resource, 'trashed')
+                && $this->resource->trashed(),
+
                 fn () => $this->deleted_at?->toISOString()
             ),
         ];
