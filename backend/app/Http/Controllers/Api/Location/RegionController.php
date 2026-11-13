@@ -9,6 +9,7 @@ use App\Http\Requests\Location\UpdateRegionRequest;
 use App\Http\Resources\RegionResource;
 use App\Models\Region;
 use App\Services\RegionService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,48 @@ class RegionController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | CLEAN REGION FILTERS
+    |--------------------------------------------------------------------------
+    */
+
+    protected function cleanFilters(array $filters): array
+    {
+        $cleaned = [];
+
+        foreach ($filters as $key => $value) {
+
+            // Ignore empty values.
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            // Normalize boolean filters.
+            if ($key === 'is_active') {
+                $cleaned[$key] = filter_var(
+                    $value,
+                    FILTER_VALIDATE_BOOLEAN
+                );
+
+                continue;
+            }
+
+            // Normalize numeric filters.
+            if ($key === 'country_id') {
+                $cleaned[$key] = (int) $value;
+
+                continue;
+            }
+
+            $cleaned[$key] = is_string($value)
+                ? trim($value)
+                : $value;
+        }
+
+        return $cleaned;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | GET ALL REGIONS
     |--------------------------------------------------------------------------
     */
@@ -62,23 +105,121 @@ class RegionController extends Controller
         try {
             $this->authorize('viewAny', Region::class);
 
-            $perPage = (int) $request->input('per_page', 25);
+            $validated = $request->validate([
+                'per_page' => [
+                    'sometimes',
+                    'integer',
+                    'min:1',
+                    'max:100',
+                ],
+
+                'country_id' => [
+                    'sometimes',
+                    'nullable',
+                    'integer',
+                    'exists:countries,id',
+                ],
+
+                'search' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'max:150',
+                ],
+
+                'code' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'max:10',
+                ],
+
+                'name' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'max:100',
+                ],
+
+                'is_active' => [
+                    'sometimes',
+                    'nullable',
+                    'boolean',
+                ],
+
+                'status' => [
+                    'sometimes',
+                    'nullable',
+                    'in:active,inactive',
+                ],
+
+                'date_from' => [
+                    'sometimes',
+                    'nullable',
+                    'date',
+                ],
+
+                'date_to' => [
+                    'sometimes',
+                    'nullable',
+                    'date',
+                    'after_or_equal:date_from',
+                ],
+
+                'sort_by' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'in:id,name,code,created_at,updated_at',
+                ],
+
+                'sort_direction' => [
+                    'sometimes',
+                    'nullable',
+                    'in:asc,desc',
+                ],
+            ]);
+
+            $perPage = (int) ($validated['per_page'] ?? 25);
+
+            unset($validated['per_page']);
+
+            $filters = $this->cleanFilters($validated);
+
+            /*
+            |--------------------------------------------------------------------------
+            | FETCH REGIONS
+            |--------------------------------------------------------------------------
+            */
 
             $regions = $this->regionService->paginate(
                 $perPage,
-                $request->only([
-                    'search',
-                    'country_id',
-                    'code',
-                    'name',
-                    'is_active',
-                    'status',
-                    'date_from',
-                    'date_to',
-                    'sort_by',
-                    'sort_direction',
-                ])
+                $filters
             );
+
+            /*
+            |--------------------------------------------------------------------------
+            | DEBUG LOG
+            |--------------------------------------------------------------------------
+            */
+
+            \Log::info('REGION INDEX PAGINATION', [
+                'request_query' => $request->query(),
+                'filters' => $filters,
+                'per_page' => $perPage,
+                'total' => $regions->total(),
+                'count' => $regions->count(),
+                'region_ids' => $regions->getCollection()
+                    ->pluck('id')
+                    ->values()
+                    ->toArray(),
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | RESPONSE
+            |--------------------------------------------------------------------------
+            */
 
             return ApiResponse::paginated(
                 RegionResource::collection($regions),
@@ -158,14 +299,38 @@ class RegionController extends Controller
         try {
             $this->authorize('statistics', Region::class);
 
-            $statistics = $this->regionService->statistics(
-                $request->only([
-                    'country_id',
-                    'search',
-                    'date_from',
-                    'date_to',
-                ])
-            );
+            $validated = $request->validate([
+                'country_id' => [
+                    'sometimes',
+                    'nullable',
+                    'integer',
+                    'exists:countries,id',
+                ],
+
+                'search' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'max:150',
+                ],
+
+                'date_from' => [
+                    'sometimes',
+                    'nullable',
+                    'date',
+                ],
+
+                'date_to' => [
+                    'sometimes',
+                    'nullable',
+                    'date',
+                    'after_or_equal:date_from',
+                ],
+            ]);
+
+            $filters = $this->cleanFilters($validated);
+
+            $statistics = $this->regionService->statistics($filters);
 
             return ApiResponse::success(
                 $statistics,
@@ -191,18 +356,62 @@ class RegionController extends Controller
         try {
             $this->authorize('reports', Region::class);
 
-            $reports = $this->regionService->reports(
-                $request->only([
-                    'search',
-                    'country_id',
-                    'is_active',
-                    'status',
-                    'date_from',
-                    'date_to',
-                    'sort_by',
-                    'sort_direction',
-                ])
-            );
+            $validated = $request->validate([
+                'search' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'max:150',
+                ],
+
+                'country_id' => [
+                    'sometimes',
+                    'nullable',
+                    'integer',
+                    'exists:countries,id',
+                ],
+
+                'is_active' => [
+                    'sometimes',
+                    'nullable',
+                    'boolean',
+                ],
+
+                'status' => [
+                    'sometimes',
+                    'nullable',
+                    'in:active,inactive',
+                ],
+
+                'date_from' => [
+                    'sometimes',
+                    'nullable',
+                    'date',
+                ],
+
+                'date_to' => [
+                    'sometimes',
+                    'nullable',
+                    'date',
+                    'after_or_equal:date_from',
+                ],
+
+                'sort_by' => [
+                    'sometimes',
+                    'nullable',
+                    'in:id,name,code,created_at,updated_at',
+                ],
+
+                'sort_direction' => [
+                    'sometimes',
+                    'nullable',
+                    'in:asc,desc',
+                ],
+            ]);
+
+            $filters = $this->cleanFilters($validated);
+
+            $reports = $this->regionService->reports($filters);
 
             if (isset($reports['regions'])) {
                 $reports['regions'] = RegionResource::collection(
@@ -260,30 +469,56 @@ class RegionController extends Controller
         try {
             $this->authorize('viewAny', Region::class);
 
-            $request->validate([
+            $validated = $request->validate([
                 'search' => [
                     'required',
                     'string',
                     'min:1',
                     'max:150',
                 ],
+
                 'per_page' => [
                     'sometimes',
                     'integer',
                     'min:1',
                     'max:100',
                 ],
+
+                'country_id' => [
+                    'sometimes',
+                    'nullable',
+                    'integer',
+                    'exists:countries,id',
+                ],
+
+                'is_active' => [
+                    'sometimes',
+                    'nullable',
+                    'boolean',
+                ],
+
+                'sort_by' => [
+                    'sometimes',
+                    'nullable',
+                    'in:id,name,code,created_at,updated_at',
+                ],
+
+                'sort_direction' => [
+                    'sometimes',
+                    'nullable',
+                    'in:asc,desc',
+                ],
             ]);
 
+            $perPage = (int) ($validated['per_page'] ?? 25);
+
+            unset($validated['per_page']);
+
+            $filters = $this->cleanFilters($validated);
+
             $regions = $this->regionService->paginate(
-                (int) $request->input('per_page', 25),
-                $request->only([
-                    'search',
-                    'country_id',
-                    'is_active',
-                    'sort_by',
-                    'sort_direction',
-                ])
+                $perPage,
+                $filters
             );
 
             return ApiResponse::paginated(
@@ -361,7 +596,6 @@ class RegionController extends Controller
         UpdateRegionRequest $request,
         string $region
     ): JsonResponse {
-
         try {
             $region = $this->resolveRegion($region);
 
@@ -403,7 +637,15 @@ class RegionController extends Controller
 
             $this->authorize('delete', $region);
 
-            $this->regionService->delete($region->id);
+            $deleted = $this->regionService->delete($region->id);
+
+            if (!$deleted) {
+                return ApiResponse::error(
+                    'Unable to delete region. It may have associated counties.',
+                    null,
+                    409
+                );
+            }
 
             return ApiResponse::deleted(
                 null,
@@ -414,6 +656,44 @@ class RegionController extends Controller
             return $this->handleException(
                 $e,
                 'Unable to delete region.'
+            );
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORCE DELETE REGION
+    |--------------------------------------------------------------------------
+    */
+
+    public function forceDelete(string $region): JsonResponse
+    {
+        try {
+            $region = $this->resolveRegion($region);
+
+            $this->authorize('delete', $region);
+
+            $deleted = $this->regionService->forceDelete(
+                $region->id
+            );
+
+            if (!$deleted) {
+                return ApiResponse::error(
+                    'Unable to permanently delete region. It may have associated counties.',
+                    null,
+                    409
+                );
+            }
+
+            return ApiResponse::deleted(
+                null,
+                'Region permanently deleted successfully.'
+            );
+
+        } catch (Throwable $e) {
+            return $this->handleException(
+                $e,
+                'Unable to permanently delete region.'
             );
         }
     }
@@ -551,8 +831,13 @@ class RegionController extends Controller
             );
         }
 
-        if ($e instanceof HttpExceptionInterface) {
+        if ($e instanceof AuthorizationException) {
+            return ApiResponse::forbidden(
+                'You are not authorized to perform this action.'
+            );
+        }
 
+        if ($e instanceof HttpExceptionInterface) {
             $statusCode = $e->getStatusCode();
 
             if ($statusCode === 404) {

@@ -12,6 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('plots', function (Blueprint $table) {
+
             /*
             |--------------------------------------------------------------------------
             | Primary Key
@@ -24,9 +25,6 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Property Relationship
             |--------------------------------------------------------------------------
-            |
-            | A plot may optionally belong to an existing property/project.
-            |
             */
 
             $table->foreignId('property_id')
@@ -131,10 +129,11 @@ return new class extends Migration
             | Status
             |--------------------------------------------------------------------------
             |
-            | available  = available for sale
-            | reserved   = temporarily reserved
-            | sold       = sale completed
-            | withdrawn  = removed from sale
+            | available   = available for sale
+            | reserved    = temporarily reserved
+            | sold        = sale completed
+            | withdrawn  = legacy status retained for compatibility
+            | unavailable = unavailable for sale
             |
             */
 
@@ -143,7 +142,10 @@ return new class extends Migration
                 'reserved',
                 'sold',
                 'withdrawn',
-            ])->default('available')->index();
+                'unavailable',
+            ])
+                ->default('available')
+                ->index();
 
             /*
             |--------------------------------------------------------------------------

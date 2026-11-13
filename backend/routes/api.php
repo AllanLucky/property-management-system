@@ -113,21 +113,16 @@ use App\Http\Controllers\Api\UserActivity\UserActivityController;
 
 /*
 |--------------------------------------------------------------------------
-| COUNTRY
+| GEOGRAPHICAL-LOCATIONS
 |--------------------------------------------------------------------------
 */
 
 use App\Http\Controllers\Api\Location\CountryController;
-
-
-/*
-|--------------------------------------------------------------------------
-| COUNTY
-|--------------------------------------------------------------------------
-*/
-
 use App\Http\Controllers\Api\Location\CountyController;
 use App\Http\Controllers\Api\Location\RegionController;
+use App\Http\Controllers\Api\Location\CityController;
+use App\Http\Controllers\Api\Location\AreaController;
+
 
 
 
@@ -2707,14 +2702,11 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->name('destroy');
         });
 
-
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | REGIONS
-    |--------------------------------------------------------------------------
-    */
+        /*
+          |--------------------------------------------------------------------------
+          | REGIONS
+          |--------------------------------------------------------------------------
+        */
 
     Route::prefix('regions')
         ->name('regions.')
@@ -2909,8 +2901,571 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('region')
                 ->name('destroy');
         });
+        
+    /*
+    |--------------------------------------------------------------------------
+    | CITIES
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('cities')
+        ->name('cities.')
+        ->group(function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY STATISTICS AND REPORTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'statistics',
+                [CityController::class, 'statistics']
+            )->name('statistics');
+
+            Route::get(
+                'reports',
+                [CityController::class, 'reports']
+            )->name('reports');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY STATUS LISTS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'active',
+                [CityController::class, 'active']
+            )->name('active');
+
+            Route::get(
+                'inactive',
+                [CityController::class, 'inactive']
+            )->name('inactive');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY LIST
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'all',
+                [CityController::class, 'all']
+            )->name('all');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY SEARCH
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'search',
+                [CityController::class, 'index']
+            )->name('search');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITIES BY COUNTRY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'country/{countryId}',
+                [CityController::class, 'byCountry']
+            )
+                ->whereNumber('countryId')
+                ->name('by-country');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITIES BY REGION
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'region/{regionId}',
+                [CityController::class, 'byRegion']
+            )
+                ->whereNumber('regionId')
+                ->name('by-region');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITIES BY COUNTY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'county/{countyId}',
+                [CityController::class, 'byCounty']
+            )
+                ->whereNumber('countyId')
+                ->name('by-county');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY LOOKUP
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'slug/{slug}',
+                [CityController::class, 'showBySlug']
+            )->name('by-slug');
+
+            Route::get(
+                'code/{code}',
+                [CityController::class, 'showByCode']
+            )->name('by-code');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY EXISTENCE CHECKS
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'check-exists',
+                [CityController::class, 'checkExists']
+            )->name('check-exists');
+
+            Route::get(
+                'check-code',
+                [CityController::class, 'checkCode']
+            )->name('check-code');
+
+            Route::get(
+                'check-slug',
+                [CityController::class, 'checkSlug']
+            )->name('check-slug');
+
+            /*
+            |--------------------------------------------------------------------------
+            | TRASHED CITIES
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                'trashed',
+                [CityController::class, 'trashed']
+            )->name('trashed');
+
+            Route::get(
+                'trashed/{id}',
+                [CityController::class, 'showTrashed']
+            )
+                ->whereNumber('id')
+                ->name('trashed.show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY LIST AND CREATE
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '/',
+                [CityController::class, 'index']
+            )->name('index');
+
+            Route::post(
+                '/',
+                [CityController::class, 'store']
+            )->name('store');
+
+            /*
+            |--------------------------------------------------------------------------
+            | CITY STATUS MANAGEMENT
+            |--------------------------------------------------------------------------
+            */
+
+            Route::patch(
+                '{id}/activate',
+                [CityController::class, 'activate']
+            )
+                ->whereNumber('id')
+                ->name('activate');
+
+            Route::patch(
+                '{id}/deactivate',
+                [CityController::class, 'deactivate']
+            )
+                ->whereNumber('id')
+                ->name('deactivate');
+
+            Route::patch(
+                '{id}/toggle-status',
+                [CityController::class, 'toggleStatus']
+            )
+                ->whereNumber('id')
+                ->name('toggle-status');
+
+            /*
+            |--------------------------------------------------------------------------
+            | RESTORE CITY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post(
+                '{id}/restore',
+                [CityController::class, 'restore']
+            )
+                ->whereNumber('id')
+                ->name('restore');
+
+            /*
+            |--------------------------------------------------------------------------
+            | FORCE DELETE CITY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}/force-delete',
+                [CityController::class, 'forceDelete']
+            )
+                ->whereNumber('id')
+                ->name('force-delete');
+
+            /*
+            |--------------------------------------------------------------------------
+            | SHOW CITY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get(
+                '{id}',
+                [CityController::class, 'show']
+            )
+                ->whereNumber('id')
+                ->name('show');
+
+            /*
+            |--------------------------------------------------------------------------
+            | UPDATE CITY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::put(
+                '{id}',
+                [CityController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('update');
+
+            Route::patch(
+                '{id}',
+                [CityController::class, 'update']
+            )
+                ->whereNumber('id')
+                ->name('patch');
+
+            /*
+            |--------------------------------------------------------------------------
+            | DELETE CITY
+            |--------------------------------------------------------------------------
+            */
+
+            Route::delete(
+                '{id}',
+                [CityController::class, 'destroy']
+            )
+                ->whereNumber('id')
+                ->name('destroy');
+        });
 
 
+     Route::prefix('areas')
+    ->name('areas.')
+    ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA STATISTICS AND REPORTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [AreaController::class, 'statistics']
+        )->name('statistics');
+
+        Route::get(
+            'reports',
+            [AreaController::class, 'reports']
+        )->name('reports');
+
+        Route::get(
+            'reports/status-breakdown',
+            [AreaController::class, 'statusBreakdown']
+        )->name('reports.status-breakdown');
+
+        Route::get(
+            'reports/country-breakdown',
+            [AreaController::class, 'countryBreakdown']
+        )->name('reports.country-breakdown');
+
+        Route::get(
+            'reports/region-breakdown',
+            [AreaController::class, 'regionBreakdown']
+        )->name('reports.region-breakdown');
+
+        Route::get(
+            'reports/county-breakdown',
+            [AreaController::class, 'countyBreakdown']
+        )->name('reports.county-breakdown');
+
+        Route::get(
+            'reports/city-breakdown',
+            [AreaController::class, 'cityBreakdown']
+        )->name('reports.city-breakdown');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA COUNTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'count/total',
+            [AreaController::class, 'totalCount']
+        )->name('count.total');
+
+        Route::get(
+            'count/active',
+            [AreaController::class, 'activeCount']
+        )->name('count.active');
+
+        Route::get(
+            'count/inactive',
+            [AreaController::class, 'inactiveCount']
+        )->name('count.inactive');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA COUNTS BY LOCATION
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'count-by-country',
+            [AreaController::class, 'countByCountry']
+        )->name('count-by-country');
+
+        Route::get(
+            'count-by-region',
+            [AreaController::class, 'countByRegion']
+        )->name('count-by-region');
+
+        Route::get(
+            'count-by-county',
+            [AreaController::class, 'countByCounty']
+        )->name('count-by-county');
+
+        Route::get(
+            'count-by-city',
+            [AreaController::class, 'countByCity']
+        )->name('count-by-city');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREAS WITH AND WITHOUT PROPERTIES
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'with-properties/count',
+            [AreaController::class, 'withPropertiesCount']
+        )->name('with-properties.count');
+
+        Route::get(
+            'without-properties/count',
+            [AreaController::class, 'withoutPropertiesCount']
+        )->name('without-properties.count');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA LIST
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'all',
+            [AreaController::class, 'all']
+        )->name('all');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA SEARCH
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'search',
+            [AreaController::class, 'search']
+        )->name('search');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREAS BY COUNTRY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'country/{countryId}',
+            [AreaController::class, 'byCountry']
+        )
+            ->whereNumber('countryId')
+            ->name('by-country');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREAS BY REGION
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'region/{regionId}',
+            [AreaController::class, 'byRegion']
+        )
+            ->whereNumber('regionId')
+            ->name('by-region');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREAS BY COUNTY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'county/{countyId}',
+            [AreaController::class, 'byCounty']
+        )
+            ->whereNumber('countyId')
+            ->name('by-county');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREAS BY CITY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'city/{cityId}',
+            [AreaController::class, 'byCity']
+        )
+            ->whereNumber('cityId')
+            ->name('by-city');
+
+        Route::get(
+            'city/{cityId}/active',
+            [AreaController::class, 'activeByCity']
+        )
+            ->whereNumber('cityId')
+            ->name('city.active');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA LOOKUP
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'slug/{slug}',
+            [AreaController::class, 'showBySlug']
+        )->name('by-slug');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA LIST AND CREATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [AreaController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [AreaController::class, 'store']
+        )->name('store');
+
+        /*
+        |--------------------------------------------------------------------------
+        | AREA STATUS MANAGEMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/activate',
+            [AreaController::class, 'activate']
+        )
+            ->whereNumber('id')
+            ->name('activate');
+
+        Route::patch(
+            '{id}/deactivate',
+            [AreaController::class, 'deactivate']
+        )
+            ->whereNumber('id')
+            ->name('deactivate');
+
+        Route::patch(
+            '{id}/status',
+            [AreaController::class, 'updateStatus']
+        )
+            ->whereNumber('id')
+            ->name('update-status');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW AREA
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{id}',
+            [AreaController::class, 'show']
+        )
+            ->whereNumber('id')
+            ->name('show');
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE AREA
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{id}',
+            [AreaController::class, 'update']
+        )
+            ->whereNumber('id')
+            ->name('update');
+
+        Route::patch(
+            '{id}',
+            [AreaController::class, 'update']
+        )
+            ->whereNumber('id')
+            ->name('patch');
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE AREA
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}',
+            [AreaController::class, 'destroy']
+        )
+            ->whereNumber('id')
+            ->name('destroy');
+    });
 
     /*
     |--------------------------------------------------------------------------

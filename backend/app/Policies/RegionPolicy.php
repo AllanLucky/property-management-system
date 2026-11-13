@@ -2,201 +2,135 @@
 
 namespace App\Policies;
 
+use App\Models\City;
 use App\Models\User;
-use App\Models\Region;
 
-class RegionPolicy
+class CityPolicy
 {
-    /*
-    |--------------------------------------------------------------------------
-    | SUPER ADMIN BYPASS
-    |--------------------------------------------------------------------------
-    */
-
-    protected function isSuperAdmin(User $user): bool
+    /**
+     * Determine whether the user can perform any action.
+     *
+     * Super-admin bypasses all policy checks.
+     */
+    public function before(User $user, string $ability): ?bool
     {
-        return $user->hasRole('super-admin');
+        if ($user->hasRole('super-admin')) {
+            return true;
+        }
+
+        return null;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VIEW ANY REGIONS
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether the user can view any cities.
+     */
     public function viewAny(User $user): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.view');
+        return $user->can('cities.view');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VIEW REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function view(User $user, Region $region): bool
+    /**
+     * Determine whether the user can view a city.
+     */
+    public function view(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.view');
+        return $user->can('cities.view');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | CREATE REGION
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Determine whether the user can create cities.
+     */
     public function create(User $user): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.create');
+        return $user->can('cities.create');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | UPDATE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function update(User $user, Region $region): bool
+    /**
+     * Determine whether the user can update a city.
+     */
+    public function update(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.update');
+        return $user->can('cities.update');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | DELETE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function delete(User $user, Region $region): bool
+    /**
+     * Determine whether the user can delete a city.
+     */
+    public function delete(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        if (!$user->can('regions.delete')) {
-            return false;
-        }
-
-        // Prevent deletion when region has dependent records.
-        return !$region->hasDependencies();
+        return $user->can('cities.delete');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | ACTIVATE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function activate(User $user, Region $region): bool
+    /**
+     * Determine whether the user can restore a deleted city.
+     */
+    public function restore(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.activate');
+        return $user->can('cities.restore');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | DEACTIVATE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function deactivate(User $user, Region $region): bool
+    /**
+     * Determine whether the user can permanently delete a city.
+     */
+    public function forceDelete(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.deactivate');
+        return $user->can('cities.force-delete');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | TOGGLE REGION STATUS
-    |--------------------------------------------------------------------------
-    */
-
-    public function toggleStatus(User $user, Region $region): bool
+    /**
+     * Determine whether the user can activate a city.
+     */
+    public function activate(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.update');
+        return $user->can('cities.activate');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VIEW REGION STATISTICS
-    |--------------------------------------------------------------------------
-    */
-
-    public function statistics(User $user): bool
+    /**
+     * Determine whether the user can deactivate a city.
+     */
+    public function deactivate(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.view');
+        return $user->can('cities.deactivate');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VIEW REGION REPORTS
-    |--------------------------------------------------------------------------
-    */
-
-    public function reports(User $user): bool
+    /**
+     * Determine whether the user can toggle city status.
+     */
+    public function toggleStatus(User $user, City $city): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.reports');
+        return $user->can('cities.update');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | RESTORE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function restore(User $user, Region $region): bool
+    /**
+     * Determine whether the user can view city statistics.
+     */
+    public function viewStatistics(User $user): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
-        return $user->can('regions.restore');
+        return $user->can('cities.view');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | FORCE DELETE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function forceDelete(User $user, Region $region): bool
+    /**
+     * Determine whether the user can view city reports.
+     */
+    public function viewReports(User $user): bool
     {
-        // Permanent deletion is restricted to super-admin.
-        return $this->isSuperAdmin($user);
+        return $user->can('cities.view');
+    }
+
+    /**
+     * Determine whether the user can view trashed cities.
+     */
+    public function viewTrashed(User $user): bool
+    {
+        return $user->can('cities.restore')
+            || $user->can('cities.force-delete');
+    }
+
+    /**
+     * Determine whether the user can check city records.
+     */
+    public function checkExists(User $user): bool
+    {
+        return $user->can('cities.view');
     }
 }

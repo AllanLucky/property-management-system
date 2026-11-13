@@ -66,10 +66,11 @@ class RegionRepository implements RegionRepositoryInterface
         }
 
         // Filter by active/inactive status.
-        if (array_key_exists('is_active', $filters)
-            && $filters['is_active'] !== null
-            && $filters['is_active'] !== '') {
-
+        if (
+            array_key_exists('is_active', $filters) &&
+            $filters['is_active'] !== null &&
+            $filters['is_active'] !== ''
+        ) {
             $query->where(
                 'is_active',
                 filter_var(
@@ -276,13 +277,28 @@ class RegionRepository implements RegionRepositoryInterface
                 return false;
             }
 
-            // Prevent deletion when dependent records exist.
+            // Prevent deletion when dependent counties exist.
             if ($this->hasDependencies($id)) {
                 return false;
             }
 
+            // Regions do not use SoftDeletes.
             return (bool) $region->delete();
         });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORCE DELETE REGION
+    |--------------------------------------------------------------------------
+    | Regions do not use SoftDeletes.
+    | Permanent deletion is handled by the normal delete operation.
+    |--------------------------------------------------------------------------
+    */
+
+    public function forceDelete(int $id): bool
+    {
+        return $this->delete($id);
     }
 
     /*
@@ -517,96 +533,13 @@ class RegionRepository implements RegionRepositoryInterface
 
     /*
     |--------------------------------------------------------------------------
-    | RESTORE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function restore(int $id): bool
-    {
-        return DB::transaction(function () use ($id) {
-
-            $region = Region::withTrashed()->find($id);
-
-            if (!$region || !$region->trashed()) {
-                return false;
-            }
-
-            return (bool) $region->restore();
-        });
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FORCE DELETE REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function forceDelete(int $id): bool
-    {
-        return DB::transaction(function () use ($id) {
-
-            $region = Region::withTrashed()->find($id);
-
-            if (!$region) {
-                return false;
-            }
-
-            // Never permanently delete regions with dependencies.
-            if ($this->hasDependencies($id)) {
-                return false;
-            }
-
-            return (bool) $region->forceDelete();
-        });
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | GET DELETED REGIONS
-    |--------------------------------------------------------------------------
-    */
-
-    public function getTrashed(
-        int $perPage = 25,
-        array $filters = []
-    ): LengthAwarePaginator {
-
-        $perPage = max(1, min($perPage, 100));
-
-        $query = Region::onlyTrashed()
-            ->with('country')
-            ->withCount('counties');
-
-        $this->applyFilters($query, $filters);
-
-        $this->applySorting($query, $filters);
-
-        return $query->paginate($perPage)->withQueryString();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | FIND DELETED REGION
-    |--------------------------------------------------------------------------
-    */
-
-    public function findTrashedById(int $id): ?Region
-    {
-        return Region::onlyTrashed()
-            ->with('country')
-            ->withCount('counties')
-            ->find($id);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
     | CHECK REGION DEPENDENCIES
     |--------------------------------------------------------------------------
     */
 
     public function hasDependencies(int $id): bool
     {
-        $region = Region::withTrashed()->find($id);
+        $region = Region::find($id);
 
         if (!$region) {
             return false;
