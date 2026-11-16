@@ -36,6 +36,11 @@ import {
   Handshake,
   Landmark,
 
+  // LOCATION MANAGEMENT
+  Globe,
+  Map,
+  MapPin,
+
   Wrench,
   ListChecks,
   CheckCircle,
@@ -49,7 +54,6 @@ import {
   Key,
   LogOut,
 
-
   Link2,
 } from "lucide-react";
 
@@ -61,9 +65,21 @@ const superAdminSidebar = [
     icon: LayoutDashboard,
     children: [
       { title: "Overview", path: "/super-admin/dashboard" },
-      { title: "Analytics", path: "/super-admin/dashboard/analytics", icon: BarChart3 },
-      { title: "Reports", path: "/super-admin/dashboard/reports", icon: FileBarChart },
-      { title: "Activity Logs", path: "/super-admin/activities", icon: Activity },
+      {
+        title: "Analytics",
+        path: "/super-admin/dashboard/analytics",
+        icon: BarChart3,
+      },
+      {
+        title: "Reports",
+        path: "/super-admin/dashboard/reports",
+        icon: FileBarChart,
+      },
+      {
+        title: "Activity Logs",
+        path: "/super-admin/activities",
+        icon: Activity,
+      },
     ],
   },
 
@@ -74,9 +90,21 @@ const superAdminSidebar = [
     children: [
       { title: "Users", path: "/super-admin/users" },
       { title: "Roles", path: "/super-admin/roles", icon: Shield },
-      { title: "Permissions", path: "/super-admin/permissions", icon: KeyRound },
-      { title: "Role Requests", path: "/super-admin/role-requests", icon: FileText },
-      { title: "User Activity", path: "/super-admin/activities", icon: Activity },
+      {
+        title: "Permissions",
+        path: "/super-admin/permissions",
+        icon: KeyRound,
+      },
+      {
+        title: "Role Requests",
+        path: "/super-admin/role-requests",
+        icon: FileText,
+      },
+      {
+        title: "User Activity",
+        path: "/super-admin/activities",
+        icon: Activity,
+      },
     ],
   },
 
@@ -86,31 +114,89 @@ const superAdminSidebar = [
     icon: Building2,
     children: [
       { title: "Properties", path: "/super-admin/properties" },
-      { title: "Property Types", path: "/super-admin/property-types", icon: Home },
-      { title: "Property Categories", path: "/super-admin/property-categories", icon: Grid3X3 },
-
-      /* CORE MASTER DATA */
-      { title: "Property Features", path: "/super-admin/property-features", icon: Layers },
-      { title: "Property Amenities", path: "/super-admin/property-amenities", icon: Sparkles },
-
-      /* 🔥 NEW (IMPORTANT FOR YOUR SYSTEM) */
+      {
+        title: "Property Types",
+        path: "/super-admin/property-types",
+        icon: Home,
+      },
+      {
+        title: "Property Categories",
+        path: "/super-admin/property-categories",
+        icon: Grid3X3,
+      },
+      {
+        title: "Property Features",
+        path: "/super-admin/property-features",
+        icon: Layers,
+      },
+      {
+        title: "Property Amenities",
+        path: "/super-admin/property-amenities",
+        icon: Sparkles,
+      },
       {
         title: "Feature Assignments",
         path: "/super-admin/property-feature-assignments",
         icon: Link2,
       },
-
       {
         title: "Amenity Assignments",
         path: "/super-admin/property-amenity-assignments",
         icon: Link2,
       },
+      {
+        title: "Property Reviews",
+        path: "/super-admin/property-reviews",
+        icon: Star,
+      },
+      {
+        title: "Property Visits",
+        path: "/super-admin/property-visits",
+        icon: Eye,
+      },
+      {
+        title: "Property Favorites",
+        path: "/super-admin/property-favorites",
+        icon: Heart,
+      },
+      {
+        title: "Property Analytics",
+        path: "/super-admin/property-analytics",
+        icon: BarChart3,
+      },
+    ],
+  },
 
-      /* MEDIA & ANALYTICS */
-      { title: "Property Reviews", path: "/super-admin/property-reviews", icon: Star },
-      { title: "Property Visits", path: "/super-admin/property-visits", icon: Eye },
-      { title: "property-favorites", path: "/super-admin/property-favorites", icon: Heart },
-      { title: "Property Analytics", path: "/super-admin/property-analytics", icon: BarChart3 },
+  /* ---------------- LOCATION MANAGEMENT ---------------- */
+  {
+    title: "Location Management",
+    icon: Globe,
+    children: [
+      {
+        title: "Countries",
+        path: "/super-admin/countries",
+        icon: Globe,
+      },
+      {
+        title: "Regions",
+        path: "/super-admin/regions",
+        icon: Map,
+      },
+      {
+        title: "Counties",
+        path: "/super-admin/counties",
+        icon: MapPinned,
+      },
+      {
+        title: "Cities",
+        path: "/super-admin/cities",
+        icon: Building2,
+      },
+      {
+        title: "Areas",
+        path: "/super-admin/areas",
+        icon: MapPin,
+      },
     ],
   },
 
@@ -120,9 +206,21 @@ const superAdminSidebar = [
     icon: MapPinned,
     children: [
       { title: "Plots", path: "/super-admin/plots" },
-      { title: "Plot Sales", path: "/super-admin/plot-sales", icon: Handshake },
-      { title: "Plot Payments", path: "/super-admin/plot-payments", icon: Landmark },
-      { title: "Sales Reports", path: "/super-admin/plot-sales/reports", icon: FileBarChart },
+      {
+        title: "Plot Sales",
+        path: "/super-admin/plot-sales",
+        icon: Handshake,
+      },
+      {
+        title: "Plot Payments",
+        path: "/super-admin/plot-payments",
+        icon: Landmark,
+      },
+      {
+        title: "Sales Reports",
+        path: "/super-admin/plot-sales/reports",
+        icon: FileBarChart,
+      },
     ],
   },
 
@@ -132,8 +230,16 @@ const superAdminSidebar = [
     icon: Building,
     children: [
       { title: "Apartments", path: "/super-admin/apartments" },
-      { title: "Units", path: "/super-admin/units", icon: Square },
-      { title: "Vacant Units", path: "/super-admin/units/vacant", icon: AlertTriangle },
+      {
+        title: "Units",
+        path: "/super-admin/units",
+        icon: Square,
+      },
+      {
+        title: "Vacant Units",
+        path: "/super-admin/units/vacant",
+        icon: AlertTriangle,
+      },
     ],
   },
 
@@ -143,8 +249,16 @@ const superAdminSidebar = [
     icon: UserCheck,
     children: [
       { title: "Tenants", path: "/super-admin/tenants" },
-      { title: "Tenancies", path: "/super-admin/tenancies", icon: FileText },
-      { title: "Leases", path: "/super-admin/leases", icon: CalendarDays }
+      {
+        title: "Tenancies",
+        path: "/super-admin/tenancies",
+        icon: FileText,
+      },
+      {
+        title: "Leases",
+        path: "/super-admin/leases",
+        icon: CalendarDays,
+      },
     ],
   },
 
@@ -154,8 +268,16 @@ const superAdminSidebar = [
     icon: CalendarDays,
     children: [
       { title: "Bookings", path: "/super-admin/bookings" },
-      { title: "Calendar", path: "/super-admin/bookings/calendar", icon: Calendar },
-      { title: "Reports", path: "/super-admin/bookings/reports", icon: FileBarChart },
+      {
+        title: "Calendar",
+        path: "/super-admin/bookings/calendar",
+        icon: Calendar,
+      },
+      {
+        title: "Reports",
+        path: "/super-admin/bookings/reports",
+        icon: FileBarChart,
+      },
     ],
   },
 
@@ -165,13 +287,41 @@ const superAdminSidebar = [
     icon: Wallet,
     children: [
       { title: "Payments", path: "/super-admin/payments" },
-      { title: "Invoices", path: "/super-admin/invoices", icon: Receipt },
-      { title: "Expenses", path: "/super-admin/expenses", icon: Banknote },
-      { title: "Utility Bills", path: "/super-admin/utilities", icon: DollarSign },
-      { title: "Revenue Reports", path: "/super-admin/revenue", icon: TrendingUp },
-      { title: "Expense Reports", path: "/super-admin/expense-reports", icon: TrendingDown },
-      { title: "Payment Analytics", path: "/super-admin/payment-analytics", icon: PieChart },
-      { title: "Financial Reports", path: "/super-admin/financial-reports", icon: FileBarChart },
+      {
+        title: "Invoices",
+        path: "/super-admin/invoices",
+        icon: Receipt,
+      },
+      {
+        title: "Expenses",
+        path: "/super-admin/expenses",
+        icon: Banknote,
+      },
+      {
+        title: "Utility Bills",
+        path: "/super-admin/utilities",
+        icon: DollarSign,
+      },
+      {
+        title: "Revenue Reports",
+        path: "/super-admin/revenue",
+        icon: TrendingUp,
+      },
+      {
+        title: "Expense Reports",
+        path: "/super-admin/expense-reports",
+        icon: TrendingDown,
+      },
+      {
+        title: "Payment Analytics",
+        path: "/super-admin/payment-analytics",
+        icon: PieChart,
+      },
+      {
+        title: "Financial Reports",
+        path: "/super-admin/financial-reports",
+        icon: FileBarChart,
+      },
     ],
   },
 
@@ -181,10 +331,26 @@ const superAdminSidebar = [
     icon: Wrench,
     children: [
       { title: "Requests", path: "/super-admin/maintenance" },
-      { title: "Categories", path: "/super-admin/maintenance/categories", icon: ListChecks },
-      { title: "Ongoing", path: "/super-admin/maintenance/ongoing", icon: Activity },
-      { title: "Completed", path: "/super-admin/maintenance/completed", icon: CheckCircle },
-      { title: "Reports", path: "/super-admin/maintenance/reports", icon: FileBarChart },
+      {
+        title: "Categories",
+        path: "/super-admin/maintenance/categories",
+        icon: ListChecks,
+      },
+      {
+        title: "Ongoing",
+        path: "/super-admin/maintenance/ongoing",
+        icon: Activity,
+      },
+      {
+        title: "Completed",
+        path: "/super-admin/maintenance/completed",
+        icon: CheckCircle,
+      },
+      {
+        title: "Reports",
+        path: "/super-admin/maintenance/reports",
+        icon: FileBarChart,
+      },
     ],
   },
 
@@ -194,9 +360,21 @@ const superAdminSidebar = [
     icon: Server,
     children: [
       { title: "Logs", path: "/super-admin/system/logs" },
-      { title: "Jobs", path: "/super-admin/system/jobs", icon: Activity },
-      { title: "Cache", path: "/super-admin/system/cache", icon: Cpu },
-      { title: "Backup", path: "/super-admin/system/backup", icon: HardDrive },
+      {
+        title: "Jobs",
+        path: "/super-admin/system/jobs",
+        icon: Activity,
+      },
+      {
+        title: "Cache",
+        path: "/super-admin/system/cache",
+        icon: Cpu,
+      },
+      {
+        title: "Backup",
+        path: "/super-admin/system/backup",
+        icon: HardDrive,
+      },
     ],
   },
 
@@ -206,7 +384,11 @@ const superAdminSidebar = [
     icon: User,
     children: [
       { title: "My Profile", path: "/super-admin/profile" },
-      { title: "Change Password", path: "/super-admin/profile/password", icon: Key },
+      {
+        title: "Change Password",
+        path: "/super-admin/profile/password",
+        icon: Key,
+      },
       {
         title: "Logout",
         icon: LogOut,

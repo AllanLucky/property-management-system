@@ -1,10 +1,10 @@
 <?php
 
-
 namespace App\Models;
 
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -43,13 +43,19 @@ class City extends Model
         'country_id',
         'region_id',
         'county_id',
-
         'name',
         'slug',
         'code',
-
         'is_active',
     ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | HIDDEN
+    |--------------------------------------------------------------------------
+    */
+
+    protected $hidden = [];
 
     /*
     |--------------------------------------------------------------------------
@@ -61,9 +67,7 @@ class City extends Model
         'country_id' => 'integer',
         'region_id' => 'integer',
         'county_id' => 'integer',
-
         'is_active' => 'boolean',
-
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -86,23 +90,64 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
-    protected static function boot(): void
+    protected static function booted(): void
     {
-        parent::boot();
+        static::saving(function (City $city) {
 
-        static::saving(function ($city) {
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE DATA
+            |--------------------------------------------------------------------------
+            */
+
+            if (! empty($city->name)) {
+                $city->name = trim($city->name);
+            }
+
+            if (! empty($city->code)) {
+                $city->code = strtoupper(trim($city->code));
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | AUTOMATIC SLUG GENERATION
+            |--------------------------------------------------------------------------
+            */
 
             if (
                 empty($city->slug) ||
                 $city->isDirty('name')
             ) {
-                $baseSlug = Str::slug($city->name);
+                $baseSlug = Str::slug($city->name ?? '');
+
+                if (empty($baseSlug)) {
+                    $baseSlug = 'city';
+                }
+
                 $slug = $baseSlug;
                 $count = 1;
 
+                /*
+                |--------------------------------------------------------------------------
+                | ENSURE SLUG UNIQUENESS
+                |--------------------------------------------------------------------------
+                |
+                | Include soft-deleted cities when checking uniqueness.
+                | Exclude the current city during updates.
+                |
+                */
+
                 while (
-                    static::where('slug', $slug)
-                        ->where('id', '!=', $city->id)
+                    static::withTrashed()
+                        ->where('slug', $slug)
+                        ->when(
+                            $city->exists,
+                            fn (Builder $query) => $query->where(
+                                $city->getKeyName(),
+                                '!=',
+                                $city->getKey()
+                            )
+                        )
                         ->exists()
                 ) {
                     $slug = $baseSlug . '-' . $count++;
@@ -130,9 +175,6 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * City belongs to Country.
-     */
     public function country(): BelongsTo
     {
         return $this->belongsTo(
@@ -141,9 +183,6 @@ class City extends Model
         );
     }
 
-    /**
-     * City belongs to Region.
-     */
     public function region(): BelongsTo
     {
         return $this->belongsTo(
@@ -152,9 +191,6 @@ class City extends Model
         );
     }
 
-    /**
-     * City belongs to County.
-     */
     public function county(): BelongsTo
     {
         return $this->belongsTo(
@@ -163,9 +199,6 @@ class City extends Model
         );
     }
 
-    /**
-     * City has many Areas.
-     */
     public function areas(): HasMany
     {
         return $this->hasMany(
@@ -174,9 +207,6 @@ class City extends Model
         );
     }
 
-    /**
-     * City has many Properties.
-     */
     public function properties(): HasMany
     {
         return $this->hasMany(
@@ -191,86 +221,48 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Scope active cities.
-     */
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
-        return $query->where(
-            'is_active',
-            true
-        );
+        return $query->where('is_active', true);
     }
 
-    /**
-     * Scope inactive cities.
-     */
-    public function scopeInactive($query)
+    public function scopeInactive(Builder $query): Builder
     {
-        return $query->where(
-            'is_active',
-            false
-        );
+        return $query->where('is_active', false);
     }
 
-    /**
-     * Scope cities by country.
-     */
     public function scopeByCountry(
-        $query,
+        Builder $query,
         int $countryId
-    ) {
-        return $query->where(
-            'country_id',
-            $countryId
-        );
+    ): Builder {
+        return $query->where('country_id', $countryId);
     }
 
-    /**
-     * Scope cities by region.
-     */
     public function scopeByRegion(
-        $query,
+        Builder $query,
         int $regionId
-    ) {
-        return $query->where(
-            'region_id',
-            $regionId
-        );
+    ): Builder {
+        return $query->where('region_id', $regionId);
     }
 
-    /**
-     * Scope cities by county.
-     */
     public function scopeByCounty(
-        $query,
+        Builder $query,
         int $countyId
-    ) {
-        return $query->where(
-            'county_id',
-            $countyId
-        );
+    ): Builder {
+        return $query->where('county_id', $countyId);
     }
 
-    /**
-     * Search cities.
-     */
     public function scopeSearch(
-        $query,
+        Builder $query,
         string $search
-    ) {
-        return $query->where(function ($q) use ($search) {
+    ): Builder {
+        $search = trim($search);
 
-            $q->where(
-                'name',
-                'like',
-                "%{$search}%"
-            )
-            ->orWhere(
-                'code',
-                'like',
-                "%{$search}%"
-            );
+        return $query->where(function (Builder $query) use ($search) {
+
+            $query->where('name', 'like', "%{$search}%")
+                ->orWhere('code', 'like', "%{$search}%")
+                ->orWhere('slug', 'like', "%{$search}%");
 
         });
     }
@@ -282,7 +274,7 @@ class City extends Model
     */
 
     /**
-     * Get status label.
+     * Get city status label.
      */
     public function getStatusLabelAttribute(): string
     {
@@ -296,14 +288,28 @@ class City extends Model
      *
      * Example:
      * Nairobi, Nairobi County, Nairobi Region, Kenya
+     *
+     * Uses only already-loaded relationships to prevent N+1 queries.
      */
     public function getFullLocationAttribute(): string
     {
+        $county = $this->relationLoaded('county')
+            ? $this->getRelation('county')
+            : null;
+
+        $region = $this->relationLoaded('region')
+            ? $this->getRelation('region')
+            : null;
+
+        $country = $this->relationLoaded('country')
+            ? $this->getRelation('country')
+            : null;
+
         return collect([
             $this->name,
-            $this->county?->name,
-            $this->region?->name,
-            $this->country?->name,
+            $county?->name,
+            $region?->name,
+            $country?->name,
         ])
             ->filter()
             ->implode(', ');
@@ -315,20 +321,28 @@ class City extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether city is active.
-     */
     public function isActive(): bool
     {
         return (bool) $this->is_active;
     }
 
-    /**
-     * Determine whether city is inactive.
-     */
     public function isInactive(): bool
     {
-        return ! $this->is_active;
+        return ! $this->isActive();
+    }
+
+    public function hasAreas(): bool
+    {
+        return $this->areas()->exists();
+    }
+
+    public function hasProperties(): bool
+    {
+        return $this->properties()->exists();
+    }
+
+    public function hasDependencies(): bool
+    {
+        return $this->hasAreas() || $this->hasProperties();
     }
 }
-

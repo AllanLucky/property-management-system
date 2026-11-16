@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,13 +19,15 @@ class County extends Model
     | TABLE
     |--------------------------------------------------------------------------
     */
+
     protected $table = 'counties';
 
     /*
     |--------------------------------------------------------------------------
-    | AUTO LOAD COUNTS
+    | AUTO LOAD RELATIONSHIP COUNTS
     |--------------------------------------------------------------------------
     */
+
     protected $withCount = [
         'cities',
         'areas',
@@ -36,6 +39,7 @@ class County extends Model
     | FILLABLE
     |--------------------------------------------------------------------------
     */
+
     protected $fillable = [
         'country_id',
         'region_id',
@@ -47,10 +51,21 @@ class County extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | HIDDEN
+    |--------------------------------------------------------------------------
+    */
+
+    protected $hidden = [];
+
+    /*
+    |--------------------------------------------------------------------------
     | CASTS
     |--------------------------------------------------------------------------
     */
+
     protected $casts = [
+        'country_id' => 'integer',
+        'region_id' => 'integer',
         'is_active' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -62,20 +77,20 @@ class County extends Model
     | APPENDS
     |--------------------------------------------------------------------------
     */
+
     protected $appends = [
         'status_label',
     ];
 
     /*
     |--------------------------------------------------------------------------
-    | BOOT
+    | MODEL BOOTED
     |--------------------------------------------------------------------------
     */
-    protected static function boot()
-    {
-        parent::boot();
 
-        static::saving(function ($county) {
+    protected static function booted(): void
+    {
+        static::saving(function (County $county) {
 
             if (
                 empty($county->slug) ||
@@ -86,8 +101,17 @@ class County extends Model
                 $count = 1;
 
                 while (
-                    static::where('slug', $slug)
-                        ->where('id', '!=', $county->id)
+                    static::withTrashed()
+                        ->where('slug', $slug)
+                        ->when(
+                            $county->exists,
+                            fn (Builder $query) =>
+                                $query->where(
+                                    $county->getKeyName(),
+                                    '!=',
+                                    $county->getKey()
+                                )
+                        )
                         ->exists()
                 ) {
                     $slug = $baseSlug . '-' . $count++;
@@ -103,6 +127,7 @@ class County extends Model
     | ROUTE MODEL BINDING
     |--------------------------------------------------------------------------
     */
+
     public function getRouteKeyName(): string
     {
         return 'slug';
@@ -115,7 +140,7 @@ class County extends Model
     */
 
     /**
-     * County belongs to Country
+     * County belongs to Country.
      */
     public function country(): BelongsTo
     {
@@ -126,7 +151,7 @@ class County extends Model
     }
 
     /**
-     * County belongs to Region
+     * County belongs to Region.
      */
     public function region(): BelongsTo
     {
@@ -137,7 +162,7 @@ class County extends Model
     }
 
     /**
-     * County has many Cities
+     * County has many Cities.
      */
     public function cities(): HasMany
     {
@@ -148,7 +173,7 @@ class County extends Model
     }
 
     /**
-     * County has many Areas
+     * County has many Areas.
      */
     public function areas(): HasMany
     {
@@ -159,7 +184,7 @@ class County extends Model
     }
 
     /**
-     * County has many Properties
+     * County has many Properties.
      */
     public function properties(): HasMany
     {
@@ -175,30 +200,60 @@ class County extends Model
     |--------------------------------------------------------------------------
     */
 
-    public function scopeActive($query)
+    /**
+     * Get active counties.
+     */
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
-    public function scopeInactive($query)
+    /**
+     * Get inactive counties.
+     */
+    public function scopeInactive(Builder $query): Builder
     {
         return $query->where('is_active', false);
     }
 
-    public function scopeByCountry($query, int $countryId)
-    {
+    /**
+     * Filter counties by country.
+     */
+    public function scopeByCountry(
+        Builder $query,
+        int $countryId
+    ): Builder {
         return $query->where(
             'country_id',
             $countryId
         );
     }
 
-    public function scopeByRegion($query, int $regionId)
-    {
+    /**
+     * Filter counties by region.
+     */
+    public function scopeByRegion(
+        Builder $query,
+        int $regionId
+    ): Builder {
         return $query->where(
             'region_id',
             $regionId
         );
+    }
+
+    /**
+     * Search counties by name, slug or code.
+     */
+    public function scopeSearch(
+        Builder $query,
+        string $search
+    ): Builder {
+        return $query->where(function (Builder $builder) use ($search) {
+            $builder->where('name', 'like', "%{$search}%")
+                ->orWhere('slug', 'like', "%{$search}%")
+                ->orWhere('code', 'like', "%{$search}%");
+        });
     }
 
     /*
@@ -207,6 +262,9 @@ class County extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Get human-readable status.
+     */
     public function getStatusLabelAttribute(): string
     {
         return $this->is_active
@@ -220,13 +278,53 @@ class County extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Check whether county is active.
+     */
     public function isActive(): bool
     {
         return (bool) $this->is_active;
     }
 
+    /**
+     * Check whether county is inactive.
+     */
     public function isInactive(): bool
     {
         return ! $this->is_active;
+    }
+
+    /**
+     * Check whether county has cities.
+     */
+    public function hasCities(): bool
+    {
+        return $this->cities()->exists();
+    }
+
+    /**
+     * Check whether county has areas.
+     */
+    public function hasAreas(): bool
+    {
+        return $this->areas()->exists();
+    }
+
+    /**
+     * Check whether county has properties.
+     */
+    public function hasProperties(): bool
+    {
+        return $this->properties()->exists();
+    }
+
+    /**
+     * Check whether county has dependent records.
+     */
+    public function hasDependencies(): bool
+    {
+        return $this->hasCities()
+            || $this->hasAreas()
+            || $this->hasProperties();
     }
 }

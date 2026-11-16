@@ -15,9 +15,6 @@ class UpdatePlotPaymentRequest extends FormRequest
 
     /**
      * Determine whether the authenticated user can update plot payments.
-     *
-     * Route middleware and policies should enforce the application's
-     * actual payment permissions.
      */
     public function authorize(): bool
     {
@@ -40,6 +37,45 @@ class UpdatePlotPaymentRequest extends FormRequest
 
     /*
     |--------------------------------------------------------------------------
+    | Payment Resolution
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Resolve the existing payment from the route.
+     *
+     * Supports Laravel route model binding and regular route IDs.
+     */
+    protected function getPaymentId(): ?int
+    {
+        $payment = $this->route('plotPayment')
+            ?? $this->route('plot_payment')
+            ?? $this->route('payment')
+            ?? $this->route('id');
+
+        if ($payment === null) {
+            return null;
+        }
+
+        // Route model binding.
+        if (is_object($payment)) {
+            if (method_exists($payment, 'getKey')) {
+                $payment = $payment->getKey();
+            } else {
+                return null;
+            }
+        }
+
+        // Validate the resolved identifier.
+        if (! is_numeric($payment) || (int) $payment < 1) {
+            return null;
+        }
+
+        return (int) $payment;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Validation Rules
     |--------------------------------------------------------------------------
     */
@@ -53,16 +89,10 @@ class UpdatePlotPaymentRequest extends FormRequest
      */
     public function rules(): array
     {
-        $payment = $this->route('plotPayment')
-            ?? $this->route('plot_payment')
-            ?? $this->route('payment')
-            ?? $this->route('id');
-
-        $paymentId = is_object($payment)
-            ? $payment->getKey()
-            : $payment;
+        $paymentId = $this->getPaymentId();
 
         return [
+
             /*
             |--------------------------------------------------------------------------
             | Sale
@@ -90,7 +120,7 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'string',
                 'max:50',
                 Rule::unique('plot_payments', 'payment_number')
-                    ->ignore($paymentId),
+                    ->ignore($paymentId, 'id'),
             ],
 
             'receipt_number' => [
@@ -99,7 +129,7 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'string',
                 'max:100',
                 Rule::unique('plot_payments', 'receipt_number')
-                    ->ignore($paymentId),
+                    ->ignore($paymentId, 'id'),
             ],
 
             'transaction_reference' => [
@@ -108,7 +138,7 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'string',
                 'max:150',
                 Rule::unique('plot_payments', 'transaction_reference')
-                    ->ignore($paymentId),
+                    ->ignore($paymentId, 'id'),
             ],
 
             /*
@@ -212,16 +242,27 @@ class UpdatePlotPaymentRequest extends FormRequest
             |--------------------------------------------------------------------------
             | Payment Status
             |--------------------------------------------------------------------------
+            |
+            | Allows authorized users to update payment status.
+            |
+            | pending   - Payment is awaiting confirmation.
+            | completed - Payment has been successfully received.
+            | failed    - Payment transaction failed.
+            | cancelled - Payment was cancelled.
+            | refunded  - Payment was refunded.
+            |
             */
 
-            // Only allow pending status through this request.
-            // Completion, failure, cancellation, and refunds should be
-            // handled through authorized backend payment workflows.
             'status' => [
                 'sometimes',
-                'nullable',
+                'required',
+                'string',
                 Rule::in([
                     'pending',
+                    'completed',
+                    'failed',
+                    'cancelled',
+                    'refunded',
                 ]),
             ],
 
@@ -252,8 +293,11 @@ class UpdatePlotPaymentRequest extends FormRequest
     public function messages(): array
     {
         return [
+
             /*
+            |--------------------------------------------------------------------------
             | Sale
+            |--------------------------------------------------------------------------
             */
 
             'plot_sale_id.required' =>
@@ -269,7 +313,9 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'The selected plot sale does not exist or is unavailable.',
 
             /*
+            |--------------------------------------------------------------------------
             | Payment Identification
+            |--------------------------------------------------------------------------
             */
 
             'payment_number.unique' =>
@@ -291,7 +337,9 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'The transaction reference cannot exceed 150 characters.',
 
             /*
+            |--------------------------------------------------------------------------
             | Amount and Currency
+            |--------------------------------------------------------------------------
             */
 
             'amount.required' =>
@@ -316,7 +364,9 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'The currency must contain three uppercase letters, such as KES.',
 
             /*
+            |--------------------------------------------------------------------------
             | Payment Type and Method
+            |--------------------------------------------------------------------------
             */
 
             'payment_type.required' =>
@@ -332,14 +382,18 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'The selected payment method is invalid.',
 
             /*
+            |--------------------------------------------------------------------------
             | Payment Date
+            |--------------------------------------------------------------------------
             */
 
             'payment_date.date' =>
                 'Please provide a valid payment date.',
 
             /*
+            |--------------------------------------------------------------------------
             | Payer Information
+            |--------------------------------------------------------------------------
             */
 
             'payer_name.max' =>
@@ -355,18 +409,28 @@ class UpdatePlotPaymentRequest extends FormRequest
                 'The payer email cannot exceed 150 characters.',
 
             /*
+            |--------------------------------------------------------------------------
             | Additional Information
+            |--------------------------------------------------------------------------
             */
 
             'notes.max' =>
                 'Payment notes cannot exceed 5,000 characters.',
 
             /*
+            |--------------------------------------------------------------------------
             | Status and Activation
+            |--------------------------------------------------------------------------
             */
 
+            'status.required' =>
+                'Please select a payment status.',
+
+            'status.string' =>
+                'The payment status must be a valid text value.',
+
             'status.in' =>
-                'Only pending status is allowed through this update request.',
+                'The selected payment status is invalid. Allowed statuses are pending, completed, failed, cancelled, and refunded.',
 
             'is_active.boolean' =>
                 'The active status must be true or false.',
@@ -387,20 +451,35 @@ class UpdatePlotPaymentRequest extends FormRequest
     public function attributes(): array
     {
         return [
+
             'plot_sale_id' => 'plot sale',
+
             'payment_number' => 'payment number',
+
             'receipt_number' => 'receipt number',
+
             'transaction_reference' => 'transaction reference',
+
             'amount' => 'payment amount',
+
             'currency' => 'currency',
+
             'payment_type' => 'payment type',
+
             'payment_method' => 'payment method',
+
             'payment_date' => 'payment date',
+
             'payer_name' => 'payer name',
+
             'payer_phone' => 'payer phone number',
+
             'payer_email' => 'payer email',
+
             'notes' => 'payment notes',
+
             'status' => 'payment status',
+
             'is_active' => 'active status',
         ];
     }

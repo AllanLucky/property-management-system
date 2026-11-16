@@ -2,11 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Support\Str;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Country extends Model
 {
@@ -14,37 +15,17 @@ class Country extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | TABLE
+    | TABLE CONFIGURATION
     |--------------------------------------------------------------------------
     */
 
     protected $table = 'countries';
 
-    /*
-    |--------------------------------------------------------------------------
-    | PRIMARY KEY
-    |--------------------------------------------------------------------------
-    */
-
     protected $primaryKey = 'id';
 
     /*
     |--------------------------------------------------------------------------
-    | AUTO LOAD COUNTS
-    |--------------------------------------------------------------------------
-    */
-
-    protected $withCount = [
-        'regions',
-        'counties',
-        'cities',
-        'areas',
-        'properties',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | FILLABLE
+    | MASS ASSIGNMENT
     |--------------------------------------------------------------------------
     */
 
@@ -59,7 +40,7 @@ class Country extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | HIDDEN
+    | HIDDEN ATTRIBUTES
     |--------------------------------------------------------------------------
     */
 
@@ -69,45 +50,57 @@ class Country extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | CASTS
+    | ATTRIBUTE CASTING
     |--------------------------------------------------------------------------
     */
 
-    protected $casts = [
-        'is_active' => 'boolean',
-
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-        'deleted_at' => 'datetime',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+            'deleted_at' => 'datetime',
+        ];
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | APPENDS
+    | APPENDED ATTRIBUTES
     |--------------------------------------------------------------------------
     */
 
     protected $appends = [
         'status_label',
+        'display_name',
+        'name_with_code',
     ];
 
     /*
     |--------------------------------------------------------------------------
-    | BOOT
+    | MODEL BOOT
     |--------------------------------------------------------------------------
     */
 
-    protected static function boot()
+    protected static function booted(): void
     {
-        parent::boot();
+        static::saving(function (Country $country): void {
 
-        /*
-        |--------------------------------------------------------------------------
-        | GENERATE SLUG
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE COUNTRY NAME
+            |--------------------------------------------------------------------------
+            */
 
-        static::saving(function (Country $country) {
+            if ($country->name !== null) {
+                $country->name = trim($country->name);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | GENERATE UNIQUE SLUG
+            |--------------------------------------------------------------------------
+            */
 
             if (
                 empty($country->slug) ||
@@ -116,14 +109,15 @@ class Country extends Model
                 $baseSlug = Str::slug($country->name);
 
                 $slug = $baseSlug;
-                $count = 1;
+                $counter = 1;
 
                 while (
-                    static::where('slug', $slug)
-                        ->whereKeyNot($country->getKey())
+                    static::withTrashed()
+                        ->where('slug', $slug)
+                        ->where('id', '!=', $country->id ?? 0)
                         ->exists()
                 ) {
-                    $slug = $baseSlug . '-' . $count++;
+                    $slug = $baseSlug . '-' . $counter++;
                 }
 
                 $country->slug = $slug;
@@ -131,13 +125,37 @@ class Country extends Model
 
             /*
             |--------------------------------------------------------------------------
-            | NORMALIZE CODE
+            | NORMALIZE COUNTRY CODE
             |--------------------------------------------------------------------------
             */
 
-            if (!empty($country->code)) {
+            if ($country->code !== null) {
                 $country->code = strtoupper(
                     trim($country->code)
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE PHONE CODE
+            |--------------------------------------------------------------------------
+            */
+
+            if ($country->phone_code !== null) {
+                $country->phone_code = trim(
+                    $country->phone_code
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALIZE CURRENCY
+            |--------------------------------------------------------------------------
+            */
+
+            if ($country->currency !== null) {
+                $country->currency = strtoupper(
+                    trim($country->currency)
                 );
             }
         });
@@ -165,11 +183,7 @@ class Country extends Model
      */
     public function regions(): HasMany
     {
-        return $this->hasMany(
-            Region::class,
-            'country_id',
-            'id'
-        );
+        return $this->hasMany(Region::class, 'country_id');
     }
 
     /**
@@ -177,11 +191,7 @@ class Country extends Model
      */
     public function counties(): HasMany
     {
-        return $this->hasMany(
-            County::class,
-            'country_id',
-            'id'
-        );
+        return $this->hasMany(County::class, 'country_id');
     }
 
     /**
@@ -189,11 +199,7 @@ class Country extends Model
      */
     public function cities(): HasMany
     {
-        return $this->hasMany(
-            City::class,
-            'country_id',
-            'id'
-        );
+        return $this->hasMany(City::class, 'country_id');
     }
 
     /**
@@ -201,11 +207,7 @@ class Country extends Model
      */
     public function areas(): HasMany
     {
-        return $this->hasMany(
-            Area::class,
-            'country_id',
-            'id'
-        );
+        return $this->hasMany(Area::class, 'country_id');
     }
 
     /**
@@ -213,80 +215,79 @@ class Country extends Model
      */
     public function properties(): HasMany
     {
-        return $this->hasMany(
-            Property::class,
-            'country_id',
-            'id'
-        );
+        return $this->hasMany(Property::class, 'country_id');
     }
 
     /*
     |--------------------------------------------------------------------------
-    | SCOPES
+    | QUERY SCOPES
     |--------------------------------------------------------------------------
     */
 
     /**
-     * Only active countries.
+     * Retrieve active countries.
      */
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
-        return $query->where(
-            'is_active',
-            true
-        );
+        return $query->where('is_active', true);
     }
 
     /**
-     * Only inactive countries.
+     * Retrieve inactive countries.
      */
-    public function scopeInactive($query)
+    public function scopeInactive(Builder $query): Builder
     {
-        return $query->where(
-            'is_active',
-            false
-        );
+        return $query->where('is_active', false);
     }
 
     /**
      * Search countries.
      */
     public function scopeSearch(
-        $query,
-        string $search
-    ) {
-        $search = trim($search);
+        Builder $query,
+        ?string $search
+    ): Builder {
+
+        $search = trim($search ?? '');
 
         if ($search === '') {
             return $query;
         }
 
-        return $query->where(function ($q) use ($search) {
+        return $query->where(function (Builder $q) use ($search) {
 
-            $q->where(
-                'name',
-                'like',
-                "%{$search}%"
-            )
-
-            ->orWhere(
-                'code',
-                'like',
-                "%{$search}%"
-            )
-
-            ->orWhere(
-                'currency',
-                'like',
-                "%{$search}%"
-            )
-
-            ->orWhere(
-                'phone_code',
-                'like',
-                "%{$search}%"
-            );
+            $q->where('name', 'like', "%{$search}%")
+                ->orWhere('slug', 'like', "%{$search}%")
+                ->orWhere('code', 'like', "%{$search}%")
+                ->orWhere('currency', 'like', "%{$search}%")
+                ->orWhere('phone_code', 'like', "%{$search}%");
         });
+    }
+
+    /**
+     * Filter by ISO country code.
+     */
+    public function scopeByCode(
+        Builder $query,
+        string $code
+    ): Builder {
+        return $query->where(
+            'code',
+            strtoupper(trim($code))
+        );
+    }
+
+    /**
+     * Filter by currency.
+     */
+    public function scopeByCurrency(
+        Builder $query,
+        string $currency
+    ): Builder {
+        return $query->where(
+            'currency',
+            strtoupper(trim($currency))
+        );
     }
 
     /*
@@ -296,23 +297,39 @@ class Country extends Model
     */
 
     /**
-     * Return human-readable status.
+     * Human-readable status.
      */
     public function getStatusLabelAttribute(): string
     {
-        return $this->is_active
-            ? 'Active'
-            : 'Inactive';
+        return $this->is_active ? 'Active' : 'Inactive';
+    }
+
+    /**
+     * Country name with ISO code.
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        return $this->code
+            ? "{$this->name} ({$this->code})"
+            : $this->name;
+    }
+
+    /**
+     * Country name with code.
+     */
+    public function getNameWithCodeAttribute(): string
+    {
+        return $this->display_name;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | HELPERS
+    | MODEL HELPERS
     |--------------------------------------------------------------------------
     */
 
     /**
-     * Determine whether country is active.
+     * Check whether country is active.
      */
     public function isActive(): bool
     {
@@ -320,31 +337,10 @@ class Country extends Model
     }
 
     /**
-     * Determine whether country is inactive.
+     * Check whether country is inactive.
      */
     public function isInactive(): bool
     {
         return ! $this->is_active;
     }
-
-    /**
-     * Return country display name.
-     */
-    public function getDisplayNameAttribute(): string
-    {
-        if (!empty($this->code)) {
-            return "{$this->name} ({$this->code})";
-        }
-
-        return $this->name;
-    }
-
-    /**
-     * Return country name and code.
-     */
-    public function getNameWithCodeAttribute(): string
-    {
-        return $this->display_name;
-    }
 }
-

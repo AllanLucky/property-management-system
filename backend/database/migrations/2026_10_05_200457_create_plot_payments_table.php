@@ -12,6 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('plot_payments', function (Blueprint $table) {
+
             /*
             |--------------------------------------------------------------------------
             | Primary Key
@@ -37,6 +38,16 @@ return new class extends Migration
             |--------------------------------------------------------------------------
             | Payment Identification
             |--------------------------------------------------------------------------
+            |
+            | payment_number:
+            | PAY-20261102-RTI8ML
+            |
+            | receipt_number:
+            | RCP-20261102-K8M4XP
+            |
+            | transaction_reference:
+            | M-Pesa transaction confirmation code.
+            |
             */
 
             $table->string('payment_number', 50)
@@ -86,7 +97,7 @@ return new class extends Migration
             | Payment Method
             |--------------------------------------------------------------------------
             |
-            | Supports the EstateKenya financial payment methods.
+            | Supports EstateKenya financial payment methods.
             |
             */
 
@@ -146,6 +157,7 @@ return new class extends Migration
             | pending   = payment initiated but not confirmed
             | completed = payment successfully received
             | failed    = payment failed
+            | cancelled = payment cancelled
             | refunded  = completed payment was refunded
             |
             */
@@ -154,6 +166,7 @@ return new class extends Migration
                 'pending',
                 'completed',
                 'failed',
+                'cancelled',
                 'refunded',
             ])->default('pending')->index();
 
@@ -185,7 +198,7 @@ return new class extends Migration
 
             /*
             |--------------------------------------------------------------------------
-            | Indexes
+            | Composite Indexes
             |--------------------------------------------------------------------------
             */
 
