@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useState } from "react";
+
 import {
   MapPin,
   Home,
@@ -36,7 +37,6 @@ import useCities from "../../../hooks/useCities";
 */
 
 const DEFAULT_FORM = {
-  // General Information
   title: "",
   description: "",
   property_type_id: "",
@@ -44,14 +44,12 @@ const DEFAULT_FORM = {
   listing_type: "rent",
   status: "draft",
 
-  // Location IDs
   country_id: "",
   region_id: "",
   county_id: "",
   city_id: "",
   area_id: "",
 
-  // Location Names
   country_name: "Kenya",
   region_name: "",
   county_name: "",
@@ -61,7 +59,6 @@ const DEFAULT_FORM = {
   latitude: "",
   longitude: "",
 
-  // Features
   bedrooms: "",
   bathrooms: "",
   toilets: "",
@@ -69,18 +66,15 @@ const DEFAULT_FORM = {
   size: "",
   size_unit: "sqm",
 
-  // Pricing
   price: "",
   monthly_rent: "",
   service_charge: "",
   currency: "KES",
 
-  // Flags
   is_featured: false,
   is_verified: false,
   is_published: false,
 
-  // Media
   image_url: "",
   thumbnail_url: "",
   video_url: "",
@@ -113,27 +107,17 @@ const sectionHeaderClasses =
 |--------------------------------------------------------------------------
 */
 
-const getValue = (value, fallback = "") => {
-  if (value === null || value === undefined) {
-    return fallback;
-  }
+const getValue = (value, fallback = "") =>
+  value === null || value === undefined ? fallback : value;
 
-  return value;
-};
-
-const normalizeBoolean = (value) => {
-  return (
-    value === true ||
-    value === 1 ||
-    value === "1" ||
-    value === "true"
-  );
-};
+const normalizeBoolean = (value) =>
+  value === true ||
+  value === 1 ||
+  value === "1" ||
+  value === "true";
 
 const normalizeId = (value) => {
-  if (value === null || value === undefined) {
-    return "";
-  }
+  if (value === null || value === undefined) return "";
 
   if (typeof value === "object") {
     return value?.id ?? value?.value ?? "";
@@ -143,41 +127,82 @@ const normalizeId = (value) => {
 };
 
 const normalizeStatus = (value, fallback = "draft") => {
-  if (value === null || value === undefined || value === "") {
-    return fallback;
-  }
+  if (!value) return fallback;
 
   if (typeof value === "object") {
-    return (
-      value?.value ??
-      value?.status ??
-      value?.key ??
-      fallback
-    );
+    return value?.value ?? value?.status ?? value?.key ?? fallback;
   }
 
   return value;
 };
 
-const normalizeCollection = (collection) => {
-  if (Array.isArray(collection)) {
-    return collection;
-  }
+const normalizeName = (value) =>
+  String(value ?? "").trim().toLowerCase();
 
-  if (Array.isArray(collection?.data)) {
-    return collection.data;
+/*
+|--------------------------------------------------------------------------
+| Normalize API Collections
+|--------------------------------------------------------------------------
+|
+| Supports:
+|
+| [ ... ]
+| { data: [ ... ] }
+| { data: { data: [ ... ] } }
+| { countries: [ ... ] }
+| { regions: [ ... ] }
+| { counties: [ ... ] }
+| { cities: [ ... ] }
+| { areas: [ ... ] }
+|
+*/
+
+const normalizeCollection = (collection, depth = 0) => {
+  if (depth > 6 || collection == null) return [];
+
+  if (Array.isArray(collection)) return collection;
+
+  if (typeof collection !== "object") return [];
+
+  const collectionKeys = [
+    "data",
+    "countries",
+    "regions",
+    "counties",
+    "cities",
+    "areas",
+    "items",
+    "results",
+  ];
+
+  for (const key of collectionKeys) {
+    if (collection[key] !== undefined && collection[key] !== null) {
+      const result = normalizeCollection(
+        collection[key],
+        depth + 1
+      );
+
+      if (result.length || Array.isArray(collection[key])) {
+        return result;
+      }
+    }
   }
 
   return [];
 };
 
-const normalizeName = (value) =>
-  String(value ?? "").trim().toLowerCase();
+/*
+|--------------------------------------------------------------------------
+| Active Location Records
+|--------------------------------------------------------------------------
+*/
 
-const getActiveLocations = (items) => {
+const getActiveLocations = (items = []) => {
   return items.filter((item) => {
-    // Keep records when the API does not return is_active.
-    if (item?.is_active === undefined || item?.is_active === null) {
+    if (
+      item?.is_active === undefined ||
+      item?.is_active === null
+    ) {
       return true;
     }
 
@@ -185,18 +210,63 @@ const getActiveLocations = (items) => {
   });
 };
 
-const findLocationByName = (items, name) => {
-  return items.find(
-    (item) =>
-      normalizeName(item?.name) === normalizeName(name)
+/*
+|--------------------------------------------------------------------------
+| Location Relationship Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getRelationId = (item, relation, foreignKey) => {
+  if (!item) return "";
+
+  const directValue = item?.[foreignKey];
+
+  if (directValue !== undefined && directValue !== null) {
+    return normalizeId(directValue);
+  }
+
+  const relationValue = item?.[relation];
+
+  if (relationValue !== undefined && relationValue !== null) {
+    return normalizeId(relationValue);
+  }
+
+  return "";
+};
+
+const belongsToParent = (
+  item,
+  relation,
+  foreignKey,
+  parentId
+) => {
+  if (!parentId) return false;
+
+  const itemParentId = getRelationId(
+    item,
+    relation,
+    foreignKey
+  );
+
+  return (
+    itemParentId !== "" &&
+    String(itemParentId) === String(parentId)
   );
 };
 
-const getParentId = (item, relation, foreignKey) => {
+const findLocationByName = (items, name) => {
+  return items.find(
+    (item) => normalizeName(item?.name) === normalizeName(name)
+  );
+};
+
+const findKenya = (countries) => {
   return (
-    item?.[foreignKey] ??
-    item?.[relation]?.id ??
-    ""
+    countries.find(
+      (country) =>
+        normalizeName(country?.name) === "kenya" ||
+        String(country?.code ?? "").toUpperCase() === "KE"
+    ) || null
   );
 };
 
@@ -213,29 +283,25 @@ const normalizeProperty = (property = {}) => {
   const flags = property?.flags || {};
   const media = property?.media || {};
 
-  const propertyTypeId =
-    property?.property_type_id ??
-    property?.property_type?.id ??
-    property?.propertyType?.id ??
-    "";
-
-  const propertyCategoryId =
-    property?.property_category_id ??
-    property?.property_category?.id ??
-    property?.propertyCategory?.id ??
-    "";
-
   return {
-    // General Information
     title: getValue(property?.title),
     description: getValue(property?.description),
-    property_type_id: normalizeId(propertyTypeId),
-    property_category_id: normalizeId(propertyCategoryId),
+
+    property_type_id: normalizeId(
+      property?.property_type_id ??
+      property?.property_type?.id ??
+      property?.propertyType?.id
+    ),
+
+    property_category_id: normalizeId(
+      property?.property_category_id ??
+      property?.property_category?.id ??
+      property?.propertyCategory?.id
+    ),
 
     listing_type: getValue(property?.listing_type, "rent"),
-    status: normalizeStatus(property?.status, "draft"),
+    status: normalizeStatus(property?.status),
 
-    // Location IDs
     country_id: normalizeId(
       location?.country_id ??
       property?.country_id ??
@@ -266,7 +332,6 @@ const normalizeProperty = (property = {}) => {
       property?.area?.id
     ),
 
-    // Location Names
     country_name: getValue(
       location?.country_name ??
       property?.country_name ??
@@ -305,15 +370,16 @@ const normalizeProperty = (property = {}) => {
 
     latitude: getValue(
       location?.latitude ??
-      property?.latitude
+      property?.latitude ??
+      property?.lat
     ),
 
     longitude: getValue(
       location?.longitude ??
-      property?.longitude
+      property?.longitude ??
+      property?.long
     ),
 
-    // Features
     bedrooms: getValue(features?.bedrooms ?? property?.bedrooms),
     bathrooms: getValue(features?.bathrooms ?? property?.bathrooms),
     toilets: getValue(features?.toilets ?? property?.toilets),
@@ -325,7 +391,6 @@ const normalizeProperty = (property = {}) => {
       "sqm"
     ),
 
-    // Pricing
     price: getValue(pricing?.price ?? property?.price),
 
     monthly_rent: getValue(
@@ -341,7 +406,6 @@ const normalizeProperty = (property = {}) => {
       "KES"
     ),
 
-    // Flags
     is_featured: normalizeBoolean(
       flags?.is_featured ?? property?.is_featured
     ),
@@ -354,12 +418,14 @@ const normalizeProperty = (property = {}) => {
       flags?.is_published ?? property?.is_published
     ),
 
-    // Media
     image_url: getValue(media?.image_url ?? property?.image_url),
+
     thumbnail_url: getValue(
       media?.thumbnail_url ?? property?.thumbnail_url
     ),
+
     video_url: getValue(media?.video_url ?? property?.video_url),
+
     virtual_tour_url: getValue(
       media?.virtual_tour_url ?? property?.virtual_tour_url
     ),
@@ -376,29 +442,27 @@ const SectionHeader = ({
   icon: Icon,
   title,
   description,
-}) => {
-  return (
-    <div className={sectionHeaderClasses}>
-      {Icon && (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-          <Icon size={18} />
-        </div>
-      )}
-
-      <div>
-        <h2 className="text-sm font-semibold text-gray-900">
-          {title}
-        </h2>
-
-        {description && (
-          <p className="mt-0.5 text-xs text-gray-500">
-            {description}
-          </p>
-        )}
+}) => (
+  <div className={sectionHeaderClasses}>
+    {Icon && (
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+        <Icon size={18} />
       </div>
+    )}
+
+    <div>
+      <h2 className="text-sm font-semibold text-gray-900">
+        {title}
+      </h2>
+
+      {description && (
+        <p className="mt-0.5 text-xs text-gray-500">
+          {description}
+        </p>
+      )}
     </div>
-  );
-};
+  </div>
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -407,16 +471,12 @@ const SectionHeader = ({
 */
 
 const FieldError = ({ error }) => {
-  if (!error) {
-    return null;
-  }
+  if (!error) return null;
 
   const message = Array.isArray(error)
     ? error[0]
     : typeof error === "object"
-      ? error?.message ||
-      error?.error ||
-      "Invalid value."
+      ? error?.message || error?.error || "Invalid value."
       : error;
 
   return (
@@ -450,10 +510,6 @@ const PropertyForm = ({
   |--------------------------------------------------------------------------
   | Location Hooks
   |--------------------------------------------------------------------------
-  |
-  | These hooks load the location records from the existing Redux/API
-  | location modules.
-  |
   */
 
   const {
@@ -518,15 +574,11 @@ const PropertyForm = ({
   */
 
   const [form, setForm] = useState(() =>
-    property
-      ? normalizeProperty(property)
-      : { ...DEFAULT_FORM }
+    property ? normalizeProperty(property) : { ...DEFAULT_FORM }
   );
 
   const [imagePreview, setImagePreview] = useState(
-    property?.media?.image_url ||
-    property?.image_url ||
-    ""
+    property?.media?.image_url || property?.image_url || ""
   );
 
   /*
@@ -536,42 +588,27 @@ const PropertyForm = ({
   */
 
   const countries = useMemo(
-    () =>
-      getActiveLocations(
-        normalizeCollection(countryRecords)
-      ),
+    () => getActiveLocations(normalizeCollection(countryRecords)),
     [countryRecords]
   );
 
   const regions = useMemo(
-    () =>
-      getActiveLocations(
-        normalizeCollection(regionRecords)
-      ),
+    () => getActiveLocations(normalizeCollection(regionRecords)),
     [regionRecords]
   );
 
   const counties = useMemo(
-    () =>
-      getActiveLocations(
-        normalizeCollection(countyRecords)
-      ),
+    () => getActiveLocations(normalizeCollection(countyRecords)),
     [countyRecords]
   );
 
   const cities = useMemo(
-    () =>
-      getActiveLocations(
-        normalizeCollection(cityRecords)
-      ),
+    () => getActiveLocations(normalizeCollection(cityRecords)),
     [cityRecords]
   );
 
   const areas = useMemo(
-    () =>
-      getActiveLocations(
-        normalizeCollection(areaRecords)
-      ),
+    () => getActiveLocations(normalizeCollection(areaRecords)),
     [areaRecords]
   );
 
@@ -588,45 +625,57 @@ const PropertyForm = ({
   |--------------------------------------------------------------------------
   */
 
-  const filteredRegions = useMemo(
-    () =>
-      regions.filter(
-        (region) =>
-          String(getParentId(region, "country", "country_id")) ===
-          String(form.country_id)
-      ),
-    [regions, form.country_id]
-  );
+  const filteredRegions = useMemo(() => {
+    if (!form.country_id) return [];
 
-  const filteredCounties = useMemo(
-    () =>
-      counties.filter(
-        (county) =>
-          String(getParentId(county, "region", "region_id")) ===
-          String(form.region_id)
-      ),
-    [counties, form.region_id]
-  );
+    return regions.filter((region) =>
+      belongsToParent(
+        region,
+        "country",
+        "country_id",
+        form.country_id
+      )
+    );
+  }, [regions, form.country_id]);
 
-  const filteredCities = useMemo(
-    () =>
-      cities.filter(
-        (city) =>
-          String(getParentId(city, "county", "county_id")) ===
-          String(form.county_id)
-      ),
-    [cities, form.county_id]
-  );
+  const filteredCounties = useMemo(() => {
+    if (!form.region_id) return [];
 
-  const filteredAreas = useMemo(
-    () =>
-      areas.filter(
-        (area) =>
-          String(getParentId(area, "city", "city_id")) ===
-          String(form.city_id)
-      ),
-    [areas, form.city_id]
-  );
+    return counties.filter((county) =>
+      belongsToParent(
+        county,
+        "region",
+        "region_id",
+        form.region_id
+      )
+    );
+  }, [counties, form.region_id]);
+
+  const filteredCities = useMemo(() => {
+    if (!form.county_id) return [];
+
+    return cities.filter((city) =>
+      belongsToParent(
+        city,
+        "county",
+        "county_id",
+        form.county_id
+      )
+    );
+  }, [cities, form.county_id]);
+
+  const filteredAreas = useMemo(() => {
+    if (!form.city_id) return [];
+
+    return areas.filter((area) =>
+      belongsToParent(
+        area,
+        "city",
+        "city_id",
+        form.city_id
+      )
+    );
+  }, [areas, form.city_id]);
 
   /*
   |--------------------------------------------------------------------------
@@ -635,17 +684,10 @@ const PropertyForm = ({
   */
 
   const [mapSearch, setMapSearch] = useState("");
-
   const [searchResults, setSearchResults] = useState([]);
-
-  const [searchingLocation, setSearchingLocation] =
-    useState(false);
-
+  const [searchingLocation, setSearchingLocation] = useState(false);
   const [searchError, setSearchError] = useState("");
-
-  const [showSearchResults, setShowSearchResults] =
-    useState(false);
-
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [locatingUser, setLocatingUser] = useState(false);
 
   /*
@@ -655,23 +697,18 @@ const PropertyForm = ({
   */
 
   useEffect(() => {
-    if (locationsLoading || !countries.length) {
-      return;
-    }
+    if (!countries.length) return;
 
     setForm((previous) => {
-      if (previous.country_id) {
-        return previous;
-      }
+      if (previous.country_id) return previous;
 
-      const defaultCountry = findLocationByName(
-        countries,
-        previous.country_name || "Kenya"
-      );
+      const defaultCountry =
+        findLocationByName(
+          countries,
+          previous.country_name || "Kenya"
+        ) || findKenya(countries);
 
-      if (!defaultCountry) {
-        return previous;
-      }
+      if (!defaultCountry) return previous;
 
       return {
         ...previous,
@@ -679,7 +716,7 @@ const PropertyForm = ({
         country_name: defaultCountry.name,
       };
     });
-  }, [countries, locationsLoading]);
+  }, [countries]);
 
   /*
   |--------------------------------------------------------------------------
@@ -705,6 +742,7 @@ const PropertyForm = ({
       setImagePreview("");
       setMapSearch("");
       setSearchResults([]);
+      setSearchError("");
     }
   }, [property]);
 
@@ -715,28 +753,19 @@ const PropertyForm = ({
   */
 
   const submitText = useMemo(() => {
-    if (submitLabel) {
-      return submitLabel;
-    }
+    if (submitLabel) return submitLabel;
 
-    return isEditMode
-      ? "Update Property"
-      : "Create Property";
+    return isEditMode ? "Update Property" : "Create Property";
   }, [submitLabel, isEditMode]);
 
   /*
   |--------------------------------------------------------------------------
-  | Handle Normal Form Change
+  | Form Change
   |--------------------------------------------------------------------------
   */
 
   const handleChange = (event) => {
-    const {
-      name,
-      value,
-      type,
-      checked,
-    } = event.target;
+    const { name, value, type, checked } = event.target;
 
     setForm((previous) => ({
       ...previous,
@@ -746,7 +775,7 @@ const PropertyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Handle Cascading Location Changes
+  | Cascading Location Changes
   |--------------------------------------------------------------------------
   */
 
@@ -762,6 +791,7 @@ const PropertyForm = ({
         ...previous,
         country_id: value,
         country_name: selected?.name || "",
+        currency: selected?.currency || previous.currency,
         region_id: "",
         region_name: "",
         county_id: "",
@@ -844,12 +874,8 @@ const PropertyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Apply Map Coordinates
+  | Map Coordinates
   |--------------------------------------------------------------------------
-  |
-  | The map updates coordinates and street address.
-  | The dropdown selections remain authoritative for location IDs/names.
-  |
   */
 
   const applyLocationToForm = ({
@@ -880,16 +906,8 @@ const PropertyForm = ({
     }));
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | Handle Map Location
-  |--------------------------------------------------------------------------
-  */
-
   const handleMapLocationChange = (location) => {
-    if (!location) {
-      return;
-    }
+    if (!location) return;
 
     const latitude = location?.latitude ?? "";
     const longitude = location?.longitude ?? "";
@@ -912,6 +930,28 @@ const PropertyForm = ({
 
   /*
   |--------------------------------------------------------------------------
+  | Selected Country Map Search Configuration
+  |--------------------------------------------------------------------------
+  */
+
+  const selectedCountry = useMemo(
+    () =>
+      countries.find(
+        (country) =>
+          String(country.id) === String(form.country_id)
+      ) || null,
+    [countries, form.country_id]
+  );
+
+  const countryCode = String(
+    selectedCountry?.code || ""
+  ).toLowerCase();
+
+  const countryName =
+    selectedCountry?.name || form.country_name || "";
+
+  /*
+  |--------------------------------------------------------------------------
   | Search Places
   |--------------------------------------------------------------------------
   */
@@ -930,13 +970,20 @@ const PropertyForm = ({
     setShowSearchResults(true);
 
     try {
+      const searchQuery = countryName
+        ? `${query}, ${countryName}`
+        : query;
+
       const params = new URLSearchParams({
-        q: `${query}, Kenya`,
+        q: searchQuery,
         format: "jsonv2",
         addressdetails: "1",
         limit: "8",
-        countrycodes: "ke",
       });
+
+      if (countryCode) {
+        params.set("countrycodes", countryCode);
+      }
 
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?${params.toString()}`,
@@ -948,16 +995,12 @@ const PropertyForm = ({
       );
 
       if (!response.ok) {
-        throw new Error(
-          "Unable to search for this location."
-        );
+        throw new Error("Unable to search for this location.");
       }
 
       const data = await response.json();
 
-      setSearchResults(
-        Array.isArray(data) ? data : []
-      );
+      setSearchResults(Array.isArray(data) ? data : []);
 
       if (!data?.length) {
         setSearchError(
@@ -968,7 +1011,6 @@ const PropertyForm = ({
       console.error("Location search error:", error);
 
       setSearchResults([]);
-
       setSearchError(
         "Unable to search for this location. Please try again."
       );
@@ -979,7 +1021,7 @@ const PropertyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Search On Enter
+  | Search Keyboard
   |--------------------------------------------------------------------------
   */
 
@@ -1001,9 +1043,7 @@ const PropertyForm = ({
   */
 
   const handleSearchResultSelect = (result) => {
-    if (!result) {
-      return;
-    }
+    if (!result) return;
 
     applyLocationToForm({
       latitude: result?.lat,
@@ -1019,7 +1059,7 @@ const PropertyForm = ({
 
   /*
   |--------------------------------------------------------------------------
-  | Use Current Location
+  | Current Location
   |--------------------------------------------------------------------------
   */
 
@@ -1057,9 +1097,7 @@ const PropertyForm = ({
           );
 
           if (!response.ok) {
-            throw new Error(
-              "Unable to detect your address."
-            );
+            throw new Error("Unable to detect your address.");
           }
 
           const data = await response.json();
@@ -1071,14 +1109,10 @@ const PropertyForm = ({
           });
 
           setMapSearch(
-            data?.display_name ||
-            `${latitude}, ${longitude}`
+            data?.display_name || `${latitude}, ${longitude}`
           );
         } catch (error) {
-          console.error(
-            "Reverse geocoding error:",
-            error
-          );
+          console.error("Reverse geocoding error:", error);
 
           setForm((previous) => ({
             ...previous,
@@ -1153,22 +1187,12 @@ const PropertyForm = ({
   const handleSubmit = (event) => {
     event.preventDefault();
 
-    if (typeof onSubmit !== "function") {
-      return;
-    }
+    if (typeof onSubmit !== "function") return;
 
     onSubmit(form);
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | Get Error
-  |--------------------------------------------------------------------------
-  */
-
-  const getError = (field) => {
-    return errors?.[field] || null;
-  };
+  const getError = (field) => errors?.[field] || null;
 
   /*
   |--------------------------------------------------------------------------
@@ -1200,13 +1224,8 @@ const PropertyForm = ({
   */
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="space-y-6"
-    >
-      {/* ============================================================
-          GENERAL INFORMATION
-      ============================================================ */}
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* GENERAL INFORMATION */}
 
       <section className={sectionClasses}>
         <SectionHeader
@@ -1350,9 +1369,7 @@ const PropertyForm = ({
         </div>
       </section>
 
-      {/* ============================================================
-          LOCATION
-      ============================================================ */}
+      {/* LOCATION */}
 
       <section className={sectionClasses}>
         <SectionHeader
@@ -1362,8 +1379,6 @@ const PropertyForm = ({
         />
 
         <div className="space-y-5 p-5">
-          {/* LOCATION LOADING */}
-
           {locationsLoading && (
             <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
               <div className="flex items-center gap-2">
@@ -1372,10 +1387,6 @@ const PropertyForm = ({
               </div>
             </div>
           )}
-
-          {/* ========================================================
-              CASCADING LOCATION DROPDOWNS
-          ======================================================== */}
 
           <div>
             <div className="mb-3">
@@ -1389,7 +1400,7 @@ const PropertyForm = ({
             </div>
 
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {/* Country */}
+              {/* COUNTRY */}
 
               <div>
                 <label htmlFor="country_id" className={labelClasses}>
@@ -1416,7 +1427,7 @@ const PropertyForm = ({
                 <FieldError error={getError("country_id")} />
               </div>
 
-              {/* Region */}
+              {/* REGION */}
 
               <div>
                 <label htmlFor="region_id" className={labelClasses}>
@@ -1447,7 +1458,7 @@ const PropertyForm = ({
                 <FieldError error={getError("region_id")} />
               </div>
 
-              {/* County */}
+              {/* COUNTY */}
 
               <div>
                 <label htmlFor="county_id" className={labelClasses}>
@@ -1478,7 +1489,7 @@ const PropertyForm = ({
                 <FieldError error={getError("county_id")} />
               </div>
 
-              {/* City */}
+              {/* CITY */}
 
               <div>
                 <label htmlFor="city_id" className={labelClasses}>
@@ -1509,7 +1520,7 @@ const PropertyForm = ({
                 <FieldError error={getError("city_id")} />
               </div>
 
-              {/* Area */}
+              {/* AREA */}
 
               <div>
                 <label htmlFor="area_id" className={labelClasses}>
@@ -1540,11 +1551,18 @@ const PropertyForm = ({
                 <FieldError error={getError("area_id")} />
               </div>
             </div>
+
+            {!locationsLoading && form.country_id && (
+              <div className="mt-3 text-xs text-gray-500">
+                {filteredRegions.length} regions,{" "}
+                {filteredCounties.length} counties,{" "}
+                {filteredCities.length} cities and{" "}
+                {filteredAreas.length} areas available for the current selections.
+              </div>
+            )}
           </div>
 
-          {/* ========================================================
-              LOCATION SEARCH
-          ======================================================== */}
+          {/* LOCATION SEARCH */}
 
           <div className="border-t border-gray-100 pt-5">
             <label htmlFor="map-search" className={labelClasses}>
@@ -1578,7 +1596,11 @@ const PropertyForm = ({
                         setShowSearchResults(true);
                       }
                     }}
-                    placeholder="Search Westlands, Nairobi, Kilimani, Two Rivers..."
+                    placeholder={
+                      countryName
+                        ? `Search a location in ${countryName}...`
+                        : "Search an estate, street, town or landmark..."
+                    }
                     className={`${inputClasses} pl-10`}
                     disabled={submitting}
                     autoComplete="off"
@@ -1608,8 +1630,6 @@ const PropertyForm = ({
                   )}
                 </button>
               </div>
-
-              {/* SEARCH RESULTS */}
 
               {showSearchResults && searchResults.length > 0 && (
                 <div className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
@@ -1695,9 +1715,7 @@ const PropertyForm = ({
             </div>
           </div>
 
-          {/* ========================================================
-              MAP
-          ======================================================== */}
+          {/* MAP */}
 
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -1740,9 +1758,7 @@ const PropertyForm = ({
             </div>
           </div>
 
-          {/* ========================================================
-              SELECTED COORDINATES
-          ======================================================== */}
+          {/* COORDINATES */}
 
           <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
             <div className="mb-3 flex items-center gap-2">
@@ -1816,9 +1832,7 @@ const PropertyForm = ({
             )}
           </div>
 
-          {/* ========================================================
-              STREET ADDRESS
-          ======================================================== */}
+          {/* STREET ADDRESS */}
 
           <div>
             <label htmlFor="street_address" className={labelClasses}>
@@ -1841,9 +1855,7 @@ const PropertyForm = ({
         </div>
       </section>
 
-      {/* ============================================================
-          PROPERTY FEATURES
-      ============================================================ */}
+      {/* PROPERTY FEATURES */}
 
       <section className={sectionClasses}>
         <SectionHeader
@@ -1853,106 +1865,34 @@ const PropertyForm = ({
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <label htmlFor="bedrooms" className={labelClasses}>
-              Bedrooms
-            </label>
+          {[
+            ["bedrooms", "Bedrooms", "3"],
+            ["bathrooms", "Bathrooms", "2"],
+            ["toilets", "Toilets", "3"],
+            ["floors", "Floors", "10"],
+            ["size", "Property Size", "500"],
+          ].map(([name, label, placeholder]) => (
+            <div key={name}>
+              <label htmlFor={name} className={labelClasses}>
+                {label}
+              </label>
 
-            <input
-              id="bedrooms"
-              name="bedrooms"
-              type="number"
-              min="0"
-              value={form.bedrooms}
-              onChange={handleChange}
-              placeholder="3"
-              className={inputClasses}
-              disabled={submitting}
-            />
+              <input
+                id={name}
+                name={name}
+                type="number"
+                min="0"
+                step={name === "size" ? "0.01" : "1"}
+                value={form[name]}
+                onChange={handleChange}
+                placeholder={placeholder}
+                className={inputClasses}
+                disabled={submitting}
+              />
 
-            <FieldError error={getError("bedrooms")} />
-          </div>
-
-          <div>
-            <label htmlFor="bathrooms" className={labelClasses}>
-              Bathrooms
-            </label>
-
-            <input
-              id="bathrooms"
-              name="bathrooms"
-              type="number"
-              min="0"
-              value={form.bathrooms}
-              onChange={handleChange}
-              placeholder="2"
-              className={inputClasses}
-              disabled={submitting}
-            />
-
-            <FieldError error={getError("bathrooms")} />
-          </div>
-
-          <div>
-            <label htmlFor="toilets" className={labelClasses}>
-              Toilets
-            </label>
-
-            <input
-              id="toilets"
-              name="toilets"
-              type="number"
-              min="0"
-              value={form.toilets}
-              onChange={handleChange}
-              placeholder="3"
-              className={inputClasses}
-              disabled={submitting}
-            />
-
-            <FieldError error={getError("toilets")} />
-          </div>
-
-          <div>
-            <label htmlFor="floors" className={labelClasses}>
-              Floors
-            </label>
-
-            <input
-              id="floors"
-              name="floors"
-              type="number"
-              min="0"
-              value={form.floors}
-              onChange={handleChange}
-              placeholder="10"
-              className={inputClasses}
-              disabled={submitting}
-            />
-
-            <FieldError error={getError("floors")} />
-          </div>
-
-          <div>
-            <label htmlFor="size" className={labelClasses}>
-              Property Size
-            </label>
-
-            <input
-              id="size"
-              name="size"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.size}
-              onChange={handleChange}
-              placeholder="500"
-              className={inputClasses}
-              disabled={submitting}
-            />
-
-            <FieldError error={getError("size")} />
-          </div>
+              <FieldError error={getError(name)} />
+            </div>
+          ))}
 
           <div>
             <label htmlFor="size_unit" className={labelClasses}>
@@ -1978,9 +1918,7 @@ const PropertyForm = ({
         </div>
       </section>
 
-      {/* ============================================================
-          PRICING
-      ============================================================ */}
+      {/* PRICING */}
 
       <section className={sectionClasses}>
         <SectionHeader
@@ -1990,68 +1928,32 @@ const PropertyForm = ({
         />
 
         <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label htmlFor="price" className={labelClasses}>
-              Sale Price
-            </label>
+          {[
+            ["price", "Sale Price", "25000000"],
+            ["monthly_rent", "Monthly Rent", "250000"],
+            ["service_charge", "Service Charge", "25000"],
+          ].map(([name, label, placeholder]) => (
+            <div key={name}>
+              <label htmlFor={name} className={labelClasses}>
+                {label}
+              </label>
 
-            <input
-              id="price"
-              name="price"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.price}
-              onChange={handleChange}
-              placeholder="25000000"
-              className={inputClasses}
-              disabled={submitting}
-            />
+              <input
+                id={name}
+                name={name}
+                type="number"
+                min="0"
+                step="0.01"
+                value={form[name]}
+                onChange={handleChange}
+                placeholder={placeholder}
+                className={inputClasses}
+                disabled={submitting}
+              />
 
-            <FieldError error={getError("price")} />
-          </div>
-
-          <div>
-            <label htmlFor="monthly_rent" className={labelClasses}>
-              Monthly Rent
-            </label>
-
-            <input
-              id="monthly_rent"
-              name="monthly_rent"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.monthly_rent}
-              onChange={handleChange}
-              placeholder="250000"
-              className={inputClasses}
-              disabled={submitting}
-            />
-
-            <FieldError error={getError("monthly_rent")} />
-          </div>
-
-          <div>
-            <label htmlFor="service_charge" className={labelClasses}>
-              Service Charge
-            </label>
-
-            <input
-              id="service_charge"
-              name="service_charge"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.service_charge}
-              onChange={handleChange}
-              placeholder="25000"
-              className={inputClasses}
-              disabled={submitting}
-            />
-
-            <FieldError error={getError("service_charge")} />
-          </div>
+              <FieldError error={getError(name)} />
+            </div>
+          ))}
 
           <div>
             <label htmlFor="currency" className={labelClasses}>
@@ -2067,6 +1969,13 @@ const PropertyForm = ({
               disabled={submitting}
             >
               <option value="KES">KES — Kenyan Shilling</option>
+              <option value="UGX">UGX — Ugandan Shilling</option>
+              <option value="TZS">TZS — Tanzanian Shilling</option>
+              <option value="RWF">RWF — Rwandan Franc</option>
+              <option value="NGN">NGN — Nigerian Naira</option>
+              <option value="ZMW">ZMW — Zambian Kwacha</option>
+              <option value="MAD">MAD — Moroccan Dirham</option>
+              <option value="GHS">GHS — Ghanaian Cedi</option>
               <option value="USD">USD — US Dollar</option>
               <option value="EUR">EUR — Euro</option>
               <option value="GBP">GBP — British Pound</option>
@@ -2077,9 +1986,7 @@ const PropertyForm = ({
         </div>
       </section>
 
-      {/* ============================================================
-          PROPERTY SETTINGS
-      ============================================================ */}
+      {/* PROPERTY SETTINGS */}
 
       <section className={sectionClasses}>
         <SectionHeader
@@ -2089,82 +1996,59 @@ const PropertyForm = ({
         />
 
         <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/30">
-            <input
-              type="checkbox"
-              name="is_featured"
-              checked={form.is_featured}
-              onChange={handleChange}
-              disabled={submitting}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
+          {[
+            {
+              name: "is_featured",
+              title: "Featured Property",
+              description: "Highlight this property in featured listings.",
+              icon: Star,
+            },
+            {
+              name: "is_verified",
+              title: "Verified Property",
+              description: "Mark this property as verified.",
+              icon: BadgeCheck,
+            },
+            {
+              name: "is_published",
+              title: "Published",
+              description: "Make this property visible to users.",
+              icon: form.is_published ? Eye : EyeOff,
+            },
+          ].map((item) => {
+            const Icon = item.icon;
 
-            <div>
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-800">
-                <Star size={16} />
-                Featured Property
-              </div>
+            return (
+              <label
+                key={item.name}
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/30"
+              >
+                <input
+                  type="checkbox"
+                  name={item.name}
+                  checked={form[item.name]}
+                  onChange={handleChange}
+                  disabled={submitting}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
 
-              <p className="mt-1 text-xs text-gray-500">
-                Highlight this property in featured listings.
-              </p>
-            </div>
-          </label>
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                    <Icon size={16} />
+                    {item.title}
+                  </div>
 
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/30">
-            <input
-              type="checkbox"
-              name="is_verified"
-              checked={form.is_verified}
-              onChange={handleChange}
-              disabled={submitting}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-
-            <div>
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-800">
-                <BadgeCheck size={16} />
-                Verified Property
-              </div>
-
-              <p className="mt-1 text-xs text-gray-500">
-                Mark this property as verified.
-              </p>
-            </div>
-          </label>
-
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/30">
-            <input
-              type="checkbox"
-              name="is_published"
-              checked={form.is_published}
-              onChange={handleChange}
-              disabled={submitting}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-
-            <div>
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-800">
-                {form.is_published ? (
-                  <Eye size={16} />
-                ) : (
-                  <EyeOff size={16} />
-                )}
-
-                Published
-              </div>
-
-              <p className="mt-1 text-xs text-gray-500">
-                Make this property visible to users.
-              </p>
-            </div>
-          </label>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {item.description}
+                  </p>
+                </div>
+              </label>
+            );
+          })}
         </div>
       </section>
 
-      {/* ============================================================
-          MEDIA
-      ============================================================ */}
+      {/* MEDIA */}
 
       <section className={sectionClasses}>
         <SectionHeader
@@ -2311,9 +2195,7 @@ const PropertyForm = ({
         </div>
       </section>
 
-      {/* ============================================================
-          FORM ACTIONS
-      ============================================================ */}
+      {/* FORM ACTIONS */}
 
       <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-xs text-gray-500">
