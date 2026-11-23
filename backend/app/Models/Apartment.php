@@ -107,6 +107,11 @@ class Apartment extends Model
         'occupied_units_count',
         'vacant_units_count',
         'maintenance_units_count',
+        'available_units_count',
+        'total_units_count',
+
+        'maintenance_requests_count',
+        'active_maintenance_requests_count',
 
         'occupancy_rate',
     ];
@@ -118,11 +123,8 @@ class Apartment extends Model
     */
 
     public const STATUS_ACTIVE = 'active';
-
     public const STATUS_INACTIVE = 'inactive';
-
     public const STATUS_MAINTENANCE = 'maintenance';
-
     public const STATUS_ARCHIVED = 'archived';
 
     public const STATUSES = [
@@ -136,16 +138,12 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     | UNIT STATUS CONSTANTS
     |--------------------------------------------------------------------------
-    |
-    | These values should match the values used by your units.status column.
-    |
     */
 
     public const UNIT_STATUS_OCCUPIED = 'occupied';
-
     public const UNIT_STATUS_VACANT = 'vacant';
-
     public const UNIT_STATUS_MAINTENANCE = 'maintenance';
+    public const UNIT_STATUS_RESERVED = 'reserved';
 
     /*
     |--------------------------------------------------------------------------
@@ -153,7 +151,7 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     */
 
-    protected static function boot()
+    protected static function boot(): void
     {
         parent::boot();
 
@@ -163,7 +161,7 @@ class Apartment extends Model
         |--------------------------------------------------------------------------
         */
 
-        static::creating(function (Apartment $apartment) {
+        static::creating(function (Apartment $apartment): void {
 
             if (
                 blank($apartment->slug) &&
@@ -185,7 +183,7 @@ class Apartment extends Model
         |--------------------------------------------------------------------------
         */
 
-        static::updating(function (Apartment $apartment) {
+        static::updating(function (Apartment $apartment): void {
 
             if (
                 $apartment->isDirty('name') &&
@@ -236,6 +234,53 @@ class Apartment extends Model
             Unit::class,
             'apartment_id'
         );
+    }
+
+    /**
+     * All maintenance requests associated with this apartment.
+     */
+    public function maintenanceRequests(): HasMany
+    {
+        return $this->hasMany(
+            MaintenanceRequest::class,
+            'apartment_id'
+        );
+    }
+
+    /**
+     * Active maintenance requests.
+     */
+    public function activeMaintenanceRequests(): HasMany
+    {
+        return $this->maintenanceRequests()
+            ->whereIn('status', [
+                MaintenanceRequest::STATUS_PENDING,
+                MaintenanceRequest::STATUS_APPROVED,
+                MaintenanceRequest::STATUS_ASSIGNED,
+                MaintenanceRequest::STATUS_IN_PROGRESS,
+                MaintenanceRequest::STATUS_ON_HOLD,
+            ]);
+    }
+
+    /**
+     * Emergency maintenance requests.
+     */
+    public function emergencyMaintenanceRequests(): HasMany
+    {
+        return $this->maintenanceRequests()
+            ->where('is_emergency', true);
+    }
+
+    /**
+     * Completed maintenance requests.
+     */
+    public function completedMaintenanceRequests(): HasMany
+    {
+        return $this->maintenanceRequests()
+            ->where(
+                'status',
+                MaintenanceRequest::STATUS_COMPLETED
+            );
     }
 
     /*
@@ -314,6 +359,60 @@ class Apartment extends Model
         );
     }
 
+    /**
+     * Apartments with active maintenance requests.
+     */
+    public function scopeWithActiveMaintenance(
+        Builder $query
+    ): Builder {
+        return $query->whereHas(
+            'activeMaintenanceRequests'
+        );
+    }
+
+    /**
+     * Apartments without active maintenance requests.
+     */
+    public function scopeWithoutActiveMaintenance(
+        Builder $query
+    ): Builder {
+        return $query->whereDoesntHave(
+            'activeMaintenanceRequests'
+        );
+    }
+
+    /**
+     * Apartments with vacant units.
+     */
+    public function scopeWithVacantUnits(
+        Builder $query
+    ): Builder {
+        return $query->whereHas(
+            'units',
+            fn (Builder $unitQuery) =>
+                $unitQuery->where(
+                    'status',
+                    self::UNIT_STATUS_VACANT
+                )
+        );
+    }
+
+    /**
+     * Apartments with occupied units.
+     */
+    public function scopeWithOccupiedUnits(
+        Builder $query
+    ): Builder {
+        return $query->whereHas(
+            'units',
+            fn (Builder $unitQuery) =>
+                $unitQuery->where(
+                    'status',
+                    self::UNIT_STATUS_OCCUPIED
+                )
+        );
+    }
+
     /*
     |--------------------------------------------------------------------------
     | ACCESSORS
@@ -332,21 +431,13 @@ class Apartment extends Model
         }
 
         if (
-            str_starts_with(
-                $this->thumbnail,
-                'http://'
-            ) ||
-            str_starts_with(
-                $this->thumbnail,
-                'https://'
-            )
+            str_starts_with($this->thumbnail, 'http://') ||
+            str_starts_with($this->thumbnail, 'https://')
         ) {
             return $this->thumbnail;
         }
 
-        return Storage::url(
-            $this->thumbnail
-        );
+        return Storage::url($this->thumbnail);
     }
 
     /**
@@ -355,21 +446,11 @@ class Apartment extends Model
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
-
-            self::STATUS_ACTIVE =>
-                'Active',
-
-            self::STATUS_INACTIVE =>
-                'Inactive',
-
-            self::STATUS_MAINTENANCE =>
-                'Maintenance',
-
-            self::STATUS_ARCHIVED =>
-                'Archived',
-
-            default =>
-                'Unknown',
+            self::STATUS_ACTIVE => 'Active',
+            self::STATUS_INACTIVE => 'Inactive',
+            self::STATUS_MAINTENANCE => 'Maintenance',
+            self::STATUS_ARCHIVED => 'Archived',
+            default => 'Unknown',
         };
     }
 
@@ -399,16 +480,6 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     | UNIT COUNTS
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    | Do not call:
-    |
-    | $this->units()->occupied()
-    |
-    | unless the Unit model actually defines an occupied() scope.
-    |
-    | These accessors query the status column directly.
-    |
     */
 
     /**
@@ -451,23 +522,75 @@ class Apartment extends Model
     }
 
     /**
+     * Number of available units.
+     */
+    public function getAvailableUnitsCountAttribute(): int
+    {
+        return $this->vacant_units_count;
+    }
+
+    /**
+     * Total number of units.
+     */
+    public function getTotalUnitsCountAttribute(): int
+    {
+        return $this->units_count
+            ?? $this->units()->count();
+    }
+
+    /**
      * Occupancy percentage.
      */
     public function getOccupancyRateAttribute(): float
     {
-        $totalUnits = $this->units()->count();
+        $totalUnits = $this->getTotalUnitsCountAttribute();
 
         if ($totalUnits === 0) {
             return 0.0;
         }
 
         return round(
-            (
-                $this->occupied_units_count /
-                $totalUnits
-            ) * 100,
+            ($this->occupied_units_count / $totalUnits) * 100,
             2
         );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MAINTENANCE COUNTS
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Total maintenance requests.
+     */
+    public function getMaintenanceRequestsCountAttribute(): int
+    {
+        return $this->maintenanceRequests()->count();
+    }
+
+    /**
+     * Active maintenance requests count.
+     */
+    public function getActiveMaintenanceRequestsCountAttribute(): int
+    {
+        return $this->activeMaintenanceRequests()->count();
+    }
+
+    /**
+     * Emergency maintenance requests count.
+     */
+    public function getEmergencyMaintenanceRequestsCountAttribute(): int
+    {
+        return $this->emergencyMaintenanceRequests()->count();
+    }
+
+    /**
+     * Completed maintenance requests count.
+     */
+    public function getCompletedMaintenanceRequestsCountAttribute(): int
+    {
+        return $this->completedMaintenanceRequests()->count();
     }
 
     /*
@@ -476,93 +599,65 @@ class Apartment extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether apartment is active.
-     */
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
     }
 
-    /**
-     * Determine whether apartment is inactive.
-     */
     public function isInactive(): bool
     {
         return $this->status === self::STATUS_INACTIVE;
     }
 
-    /**
-     * Determine whether apartment is under maintenance.
-     */
     public function isUnderMaintenance(): bool
     {
         return $this->status === self::STATUS_MAINTENANCE;
     }
 
-    /**
-     * Determine whether apartment is archived.
-     */
     public function isArchived(): bool
     {
         return $this->status === self::STATUS_ARCHIVED;
     }
 
-    /**
-     * Determine whether apartment has vacant units.
-     */
     public function hasVacantUnits(): bool
     {
         return $this->vacant_units_count > 0;
     }
 
-    /**
-     * Determine whether apartment has occupied units.
-     */
     public function hasOccupiedUnits(): bool
     {
         return $this->occupied_units_count > 0;
     }
 
-    /**
-     * Determine whether apartment has units under maintenance.
-     */
     public function hasMaintenanceUnits(): bool
     {
         return $this->maintenance_units_count > 0;
     }
 
-    /**
-     * Determine whether apartment is full.
-     */
+    public function hasUnits(): bool
+    {
+        return $this->getTotalUnitsCountAttribute() > 0;
+    }
+
     public function isFull(): bool
     {
-        return $this->units_count > 0
+        return $this->hasUnits()
             && $this->vacant_units_count === 0;
     }
 
-    /**
-     * Determine whether apartment has any units.
-     */
-    public function hasUnits(): bool
+    public function hasActiveMaintenanceRequests(): bool
     {
-        return $this->units_count > 0;
+        return $this->activeMaintenanceRequests()->exists();
     }
 
-    /**
-     * Get available units count.
-     */
-    public function getAvailableUnitsCountAttribute(): int
+    public function hasEmergencyMaintenanceRequests(): bool
     {
-        return $this->vacant_units_count;
+        return $this->emergencyMaintenanceRequests()->exists();
     }
 
-    /**
-     * Get total units count.
-     */
-    public function getTotalUnitsCountAttribute(): int
+    public function hasMaintenanceRequests(): bool
     {
-        return $this->units_count;
+        return $this->maintenanceRequests()->exists();
     }
 
     /*
@@ -578,12 +673,6 @@ class Apartment extends Model
 
         $baseSlug = Str::slug($name);
 
-        /*
-        |----------------------------------------------------------------------
-        | Prevent empty slug
-        |----------------------------------------------------------------------
-        */
-
         if (blank($baseSlug)) {
             $baseSlug = 'apartment';
         }
@@ -592,30 +681,16 @@ class Apartment extends Model
 
         $counter = 1;
 
-        /*
-        |----------------------------------------------------------------------
-        | Find unique slug
-        |----------------------------------------------------------------------
-        */
-
         while (
-            static::where(
-                'slug',
-                $slug
-            )
-            ->when(
-                $ignoreId,
-                fn (Builder $query) =>
-                    $query->where(
-                        'id',
-                        '!=',
-                        $ignoreId
-                    )
-            )
-            ->exists()
+            static::where('slug', $slug)
+                ->when(
+                    $ignoreId,
+                    fn (Builder $query) =>
+                        $query->where('id', '!=', $ignoreId)
+                )
+                ->exists()
         ) {
             $slug = "{$baseSlug}-{$counter}";
-
             $counter++;
         }
 

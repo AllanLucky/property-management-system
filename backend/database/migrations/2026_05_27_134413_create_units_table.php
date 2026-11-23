@@ -1,3 +1,4 @@
+
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -13,12 +14,18 @@ return new class extends Migration
     {
         Schema::create('units', function (Blueprint $table) {
 
+            /*
+            |--------------------------------------------------------------------------
+            | PRIMARY KEY
+            |--------------------------------------------------------------------------
+            */
+
             $table->id();
 
 
             /*
             |--------------------------------------------------------------------------
-            | RELATIONSHIPS
+            | PROPERTY / APARTMENT RELATIONSHIPS
             |--------------------------------------------------------------------------
             */
 
@@ -26,12 +33,10 @@ return new class extends Migration
                 ->constrained('properties')
                 ->cascadeOnDelete();
 
-
             $table->foreignId('apartment_id')
                 ->nullable()
                 ->constrained('apartments')
                 ->nullOnDelete();
-
 
 
             /*
@@ -52,11 +57,16 @@ return new class extends Migration
                 ->nullable();
 
 
-
             /*
             |--------------------------------------------------------------------------
-            | STATUS
+            | UNIT STATUS
             |--------------------------------------------------------------------------
+            |
+            | vacant      - Available for occupation
+            | occupied    - Currently occupied by a tenant
+            | reserved    - Reserved through a booking
+            | maintenance - Temporarily unavailable due to maintenance
+            |
             */
 
             $table->enum('status', [
@@ -64,9 +74,7 @@ return new class extends Migration
                 'occupied',
                 'reserved',
                 'maintenance',
-            ])
-            ->default('vacant');
-
+            ])->default('vacant');
 
 
             /*
@@ -89,9 +97,7 @@ return new class extends Migration
                 'warehouse',
                 'villa',
                 'airbnb',
-            ])
-            ->nullable();
-
+            ])->nullable();
 
 
             /*
@@ -109,17 +115,14 @@ return new class extends Migration
             $table->unsignedTinyInteger('toilets')
                 ->default(0);
 
-
-            $table->unsignedSmallInteger('floor')->default(1);
-   
-
+            $table->unsignedSmallInteger('floor')
+                ->default(1);
 
             $table->decimal('size', 12, 2)
                 ->nullable();
 
             $table->string('size_unit')
                 ->default('sqm');
-
 
 
             /*
@@ -136,7 +139,6 @@ return new class extends Migration
 
             $table->decimal('service_charge', 15, 2)
                 ->nullable();
-
 
 
             /*
@@ -158,7 +160,6 @@ return new class extends Migration
                 ->default(false);
 
 
-
             /*
             |--------------------------------------------------------------------------
             | MEDIA
@@ -172,7 +173,6 @@ return new class extends Migration
                 ->nullable();
 
 
-
             /*
             |--------------------------------------------------------------------------
             | AVAILABILITY
@@ -183,16 +183,14 @@ return new class extends Migration
                 ->nullable();
 
 
-
             /*
             |--------------------------------------------------------------------------
-            | FLAGS
+            | ACTIVE STATUS
             |--------------------------------------------------------------------------
             */
 
             $table->boolean('is_active')
                 ->default(true);
-
 
 
             /*
@@ -205,10 +203,9 @@ return new class extends Migration
                 ->nullable();
 
 
-
             /*
             |--------------------------------------------------------------------------
-            | TIMESTAMPS
+            | TIMESTAMPS / SOFT DELETES
             |--------------------------------------------------------------------------
             */
 
@@ -217,55 +214,86 @@ return new class extends Migration
             $table->softDeletes();
 
 
-
             /*
             |--------------------------------------------------------------------------
-            | INDEXES
+            | SINGLE-COLUMN INDEXES
             |--------------------------------------------------------------------------
             */
 
-            $table->index('status');
+            $table->index('status', 'units_status_index');
 
-            $table->index('type');
+            $table->index('type', 'units_type_index');
 
-            $table->index('floor');
+            $table->index('floor', 'units_floor_index');
 
-            $table->index('price');
+            $table->index('price', 'units_price_index');
 
-            $table->index('available_from');
+            $table->index('available_from', 'units_available_from_index');
 
-            $table->index('is_active');
+            $table->index('is_active', 'units_is_active_index');
 
-
-            $table->index([
-                'property_id',
-                'status'
-            ]);
-
-
-            $table->index([
-                'apartment_id',
-                'status'
-            ]);
-
-
-            $table->index([
-                'status',
-                'type'
-            ]);
+            $table->index('deleted_at', 'units_deleted_at_index');
 
 
             /*
             |--------------------------------------------------------------------------
-            | UNIT NUMBER UNIQUE PER APARTMENT
+            | PROPERTY / APARTMENT INDEXES
             |--------------------------------------------------------------------------
+            */
+
+            $table->index(
+                ['property_id', 'status'],
+                'units_property_status_index'
+            );
+
+            $table->index(
+                ['apartment_id', 'status'],
+                'units_apartment_status_index'
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | UNIT SEARCH INDEXES
+            |--------------------------------------------------------------------------
+            */
+
+            $table->index(
+                ['status', 'type'],
+                'units_status_type_index'
+            );
+
+            $table->index(
+                ['is_active', 'status'],
+                'units_active_status_index'
+            );
+
+            $table->index(
+                ['property_id', 'is_active', 'status'],
+                'units_property_availability_index'
+            );
+
+            $table->index(
+                ['apartment_id', 'is_active', 'status'],
+                'units_apartment_availability_index'
+            );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | UNIT NUMBER UNIQUENESS
+            |--------------------------------------------------------------------------
+            |
+            | A unit number must be unique within an apartment.
+            |
+            | Note: MySQL allows multiple NULL apartment_id values in a
+            | composite unique index. Standalone property-level uniqueness
+            | should additionally be enforced in application validation.
+            |
             */
 
             $table->unique(
-                [
-                    'apartment_id',
-                    'unit_number'
-                ],
+                ['apartment_id', 'unit_number'],
                 'units_apartment_unit_number_unique'
             );
 

@@ -460,7 +460,13 @@ class DatabaseSeeder extends Seeder
             |
             */
 
-            MaintenanceSeeder::class,
+            MaintenanceCategorySeeder::class,
+            MaintenanceRequestSeeder::class,
+            MaintenanceAssignmentSeeder::class,
+            MaintenanceUpdateSeeder::class,
+            MaintenanceAttachmentSeeder::class,
+            MaintenanceExpenseSeeder::class,
+            MaintenanceChecklistSeeder::class,
 
         ]);
     }
