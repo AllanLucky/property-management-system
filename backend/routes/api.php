@@ -79,6 +79,18 @@ use App\Http\Controllers\Api\Lease\LeaseController;
 
 use App\Http\Controllers\Api\Booking\BookingController;
 
+
+/*
+|--------------------------------------------------------------------------
+| MAINTENANCE
+|--------------------------------------------------------------------------
+*/
+
+use App\Http\Controllers\Api\Maintenance\MaintenanceRequestController;
+use App\Http\Controllers\Api\Maintenance\MaintenanceCategoryController;
+use App\Http\Controllers\Api\Maintenance\OngoingMaintenanceController;
+use App\Http\Controllers\Api\Maintenance\CompletedMaintenanceController;
+
 /*
 |--------------------------------------------------------------------------
 | PLOT
@@ -1439,6 +1451,641 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->whereNumber('booking')
                 ->name('destroy');
         });
+
+
+     /*
+     |--------------------------------------------------------------------------
+     | MAINTENANCE REQUESTS
+     |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('maintenance-requests')
+         ->name('maintenance-requests.')
+         ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [MaintenanceRequestController::class, 'statistics']
+        )->name('statistics');
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE STATUS LISTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'pending',
+            [MaintenanceRequestController::class, 'pending']
+        )->name('pending');
+
+        Route::get(
+            'approved',
+            [MaintenanceRequestController::class, 'approved']
+        )->name('approved');
+
+        Route::get(
+            'rejected',
+            [MaintenanceRequestController::class, 'rejected']
+        )->name('rejected');
+
+        Route::get(
+            'assigned',
+            [MaintenanceRequestController::class, 'assigned']
+        )->name('assigned');
+
+        Route::get(
+            'in-progress',
+            [MaintenanceRequestController::class, 'inProgress']
+        )->name('in-progress');
+
+        Route::get(
+            'on-hold',
+            [MaintenanceRequestController::class, 'onHold']
+        )->name('on-hold');
+
+        Route::get(
+            'completed',
+            [MaintenanceRequestController::class, 'completed']
+        )->name('completed');
+
+        Route::get(
+            'cancelled',
+            [MaintenanceRequestController::class, 'cancelled']
+        )->name('cancelled');
+
+        Route::get(
+            'overdue',
+            [MaintenanceRequestController::class, 'overdue']
+        )->name('overdue');
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE REQUESTS BY RELATIONSHIP
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'property/{propertyId}',
+            [MaintenanceRequestController::class, 'byProperty']
+        )
+            ->whereNumber('propertyId')
+            ->name('by-property');
+
+        Route::get(
+            'unit/{unitId}',
+            [MaintenanceRequestController::class, 'byUnit']
+        )
+            ->whereNumber('unitId')
+            ->name('by-unit');
+
+        Route::get(
+            'tenant/{tenantId}',
+            [MaintenanceRequestController::class, 'byTenant']
+        )
+            ->whereNumber('tenantId')
+            ->name('by-tenant');
+
+        Route::get(
+            'technician/{technicianId}',
+            [MaintenanceRequestController::class, 'byTechnician']
+        )
+            ->whereNumber('technicianId')
+            ->name('by-technician');
+
+        Route::get(
+            'category/{categoryId}',
+            [MaintenanceRequestController::class, 'byCategory']
+        )
+            ->whereNumber('categoryId')
+            ->name('by-category');
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE REQUEST CRUD
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [MaintenanceRequestController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [MaintenanceRequestController::class, 'store']
+        )->name('store');
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE MAINTENANCE STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{maintenanceRequest}/status',
+            [MaintenanceRequestController::class, 'updateStatus']
+        )
+            ->whereNumber('maintenanceRequest')
+            ->name('update-status');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW MAINTENANCE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{maintenanceRequest}',
+            [MaintenanceRequestController::class, 'show']
+        )
+            ->whereNumber('maintenanceRequest')
+            ->name('show');
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE MAINTENANCE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{maintenanceRequest}',
+            [MaintenanceRequestController::class, 'update']
+        )
+            ->whereNumber('maintenanceRequest')
+            ->name('update');
+
+        Route::patch(
+            '{maintenanceRequest}',
+            [MaintenanceRequestController::class, 'update']
+        )
+            ->whereNumber('maintenanceRequest')
+            ->name('patch');
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE MAINTENANCE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{maintenanceRequest}',
+            [MaintenanceRequestController::class, 'destroy']
+        )
+            ->whereNumber('maintenanceRequest')
+            ->name('destroy');
+    });
+
+
+
+/*
+|--------------------------------------------------------------------------
+| MAINTENANCE CATEGORIES
+|--------------------------------------------------------------------------
+*/
+
+    Route::prefix('maintenance-categories')
+        ->name('maintenance-categories.')
+        ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | CATEGORY STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [MaintenanceCategoryController::class, 'statistics']
+        )->name('statistics');
+
+        /*
+        |--------------------------------------------------------------------------
+        | CATEGORY STATUS LISTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'active',
+            [MaintenanceCategoryController::class, 'active']
+        )->name('active');
+
+        Route::get(
+            'inactive',
+            [MaintenanceCategoryController::class, 'inactive']
+        )->name('inactive');
+
+        /*
+        |--------------------------------------------------------------------------
+        | CATEGORY LIST AND CREATE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [MaintenanceCategoryController::class, 'index']
+        )->name('index');
+
+        Route::post(
+            '/',
+            [MaintenanceCategoryController::class, 'store']
+        )->name('store');
+
+        /*
+        |--------------------------------------------------------------------------
+        | CATEGORY STATUS MANAGEMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/status',
+            [MaintenanceCategoryController::class, 'updateStatus']
+        )
+            ->whereNumber('id')
+            ->name('update-status');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW CATEGORY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{id}',
+            [MaintenanceCategoryController::class, 'show']
+        )
+            ->whereNumber('id')
+            ->name('show');
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE CATEGORY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{id}',
+            [MaintenanceCategoryController::class, 'update']
+        )
+            ->whereNumber('id')
+            ->name('update');
+
+        Route::patch(
+            '{id}',
+            [MaintenanceCategoryController::class, 'update']
+        )
+            ->whereNumber('id')
+            ->name('patch');
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE CATEGORY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}',
+            [MaintenanceCategoryController::class, 'destroy']
+        )
+            ->whereNumber('id')
+            ->name('destroy');
+    });
+
+
+
+/*
+|--------------------------------------------------------------------------
+| ONGOING MAINTENANCE
+|--------------------------------------------------------------------------
+*/
+ 
+    Route::prefix('ongoing-maintenance')
+      ->name('ongoing-maintenance.')
+      ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | ONGOING MAINTENANCE STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            [OngoingMaintenanceController::class, 'statistics']
+        )->name('statistics');
+
+        /*
+        |--------------------------------------------------------------------------
+        | ONGOING MAINTENANCE STATUS LISTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'assigned',
+            [OngoingMaintenanceController::class, 'assigned']
+        )->name('assigned');
+
+        Route::get(
+            'in-progress',
+            [OngoingMaintenanceController::class, 'inProgress']
+        )->name('in-progress');
+
+        Route::get(
+            'on-hold',
+            [OngoingMaintenanceController::class, 'onHold']
+        )->name('on-hold');
+
+        Route::get(
+            'overdue',
+            [OngoingMaintenanceController::class, 'overdue']
+        )->name('overdue');
+
+        /*
+        |--------------------------------------------------------------------------
+        | TECHNICIAN MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'my-maintenance',
+            [OngoingMaintenanceController::class, 'myMaintenance']
+        )->name('my-maintenance');
+
+        Route::get(
+            'technician/{technicianId}',
+            [OngoingMaintenanceController::class, 'byTechnician']
+        )
+            ->whereNumber('technicianId')
+            ->name('technician');
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE FILTERS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'property/{propertyId}',
+            [OngoingMaintenanceController::class, 'byProperty']
+        )
+            ->whereNumber('propertyId')
+            ->name('property');
+
+        Route::get(
+            'unit/{unitId}',
+            [OngoingMaintenanceController::class, 'byUnit']
+        )
+            ->whereNumber('unitId')
+            ->name('unit');
+
+        Route::get(
+            'category/{categoryId}',
+            [OngoingMaintenanceController::class, 'byCategory']
+        )
+            ->whereNumber('categoryId')
+            ->name('category');
+
+        /*
+        |--------------------------------------------------------------------------
+        | ONGOING MAINTENANCE LIST
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            [OngoingMaintenanceController::class, 'index']
+        )->name('index');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW ONGOING MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{id}',
+            [OngoingMaintenanceController::class, 'show']
+        )
+            ->whereNumber('id')
+            ->name('show');
+
+        /*
+        |--------------------------------------------------------------------------
+        | START MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/start',
+            [OngoingMaintenanceController::class, 'start']
+        )
+            ->whereNumber('id')
+            ->name('start');
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE MAINTENANCE PROGRESS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/progress',
+            [OngoingMaintenanceController::class, 'updateProgress']
+        )
+            ->whereNumber('id')
+            ->name('progress');
+
+        /*
+        |--------------------------------------------------------------------------
+        | PUT MAINTENANCE ON HOLD
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/hold',
+            [OngoingMaintenanceController::class, 'putOnHold']
+        )
+            ->whereNumber('id')
+            ->name('hold');
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESUME MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/resume',
+            [OngoingMaintenanceController::class, 'resume']
+        )
+            ->whereNumber('id')
+            ->name('resume');
+
+        /*
+        |--------------------------------------------------------------------------
+        | COMPLETE MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '{id}/complete',
+            [OngoingMaintenanceController::class, 'complete']
+        )
+            ->whereNumber('id')
+            ->name('complete');
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE STATISTICS
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('completed-maintenance')
+       ->name('completed-maintenance.')
+       ->group(function () {
+
+      /*
+     |--------------------------------------------------------------------------
+     | COMPLETED MAINTENANCE STATISTICS
+     |--------------------------------------------------------------------------
+      */
+
+    Route::get(
+        'statistics',
+        [CompletedMaintenanceController::class, 'statistics']
+    )->name('statistics');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE DASHBOARD
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'dashboard',
+        [CompletedMaintenanceController::class, 'dashboard']
+    )->name('dashboard');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE FINANCIAL SUMMARY
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'financial-summary',
+        [CompletedMaintenanceController::class, 'financialSummary']
+    )->name('financial-summary');
+
+    /*
+    |--------------------------------------------------------------------------
+    | RECENTLY COMPLETED MAINTENANCE
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'recent',
+        [CompletedMaintenanceController::class, 'recentlyCompleted']
+    )->name('recent');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE BETWEEN DATES
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'between',
+        [CompletedMaintenanceController::class, 'completedBetween']
+    )->name('between');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE BY TECHNICIAN
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'technician/{technicianId}',
+        [CompletedMaintenanceController::class, 'byTechnician']
+    )
+        ->whereNumber('technicianId')
+        ->name('by-technician');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE BY PROPERTY
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'property/{propertyId}',
+        [CompletedMaintenanceController::class, 'byProperty']
+    )
+        ->whereNumber('propertyId')
+        ->name('by-property');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE BY UNIT
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'unit/{unitId}',
+        [CompletedMaintenanceController::class, 'byUnit']
+    )
+        ->whereNumber('unitId')
+        ->name('by-unit');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE BY CATEGORY
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        'category/{categoryId}',
+        [CompletedMaintenanceController::class, 'byCategory']
+    )
+        ->whereNumber('categoryId')
+        ->name('by-category');
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETED MAINTENANCE LIST
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        '/',
+        [CompletedMaintenanceController::class, 'index']
+    )->name('index');
+
+    /*
+    |--------------------------------------------------------------------------
+    | SHOW COMPLETED MAINTENANCE
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        '{id}',
+        [CompletedMaintenanceController::class, 'show']
+    )
+        ->whereNumber('id')
+        ->name('show');
+
+});
+
+
 
 
     /*

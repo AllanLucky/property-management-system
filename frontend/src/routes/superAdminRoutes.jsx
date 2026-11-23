@@ -290,6 +290,21 @@ import {
   PlotPaymentReceipt,
   DeletePlotPayment,
 } from "../modules/super-admin/plot-payments";
+import CountryList from "../modules/super-admin/locations/countries/CountryList";
+import { CountryDetails, CreateCountry, DeleteCountry, EditCountry } from "../modules/super-admin/locations/countries";
+import { CreateRegion, EditRegion, RegionDetails, RegionList } from "../modules/super-admin/locations/regions";
+import CountyDetails from "../modules/super-admin/locations/counties/CountyDetails";
+import EditCounty from "../modules/super-admin/locations/counties/EditCounty";
+import CreateCounty from "../modules/super-admin/locations/counties/CreateCounty";
+import CountyList from "../modules/super-admin/locations/counties/CountyList";
+import CityList from "../modules/super-admin/locations/cities/CityList";
+import CreateCity from "../modules/super-admin/locations/cities/CreateCity";
+import EditCity from "../modules/super-admin/locations/cities/EditCity";
+import CityDetails from "../modules/super-admin/locations/cities/CityDetails";
+import AreaList from "../modules/super-admin/locations/areas/AreaList";
+import CreateArea from "../modules/super-admin/locations/areas/CreateArea";
+import EditArea from "../modules/super-admin/locations/areas/EditArea";
+import AreaDetails from "../modules/super-admin/locations/areas/AreaDetails";
 
 /*
 |--------------------------------------------------------------------------
@@ -1353,6 +1368,214 @@ const SuperAdminRoutes = () => {
         element={
           <PermissionGuard permission="plot-payments.view">
             <PlotPaymentDetails />
+          </PermissionGuard>
+        }
+      />
+      {/* ==================================================================
+       LOCATION MANAGEMENT
+       ================================================================== 
+       */}
+
+      <Route
+        path="countries"
+        element={
+          <PermissionGuard permission="countries.view">
+            <CountryList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="countries/create"
+        element={
+          <PermissionGuard permission="countries.create">
+            <CreateCountry />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="countries/:id/edit"
+        element={
+          <PermissionGuard permission="countries.update">
+            <EditCountry />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="countries/:id"
+        element={
+          <PermissionGuard permission="countries.view">
+            <CountryDetails />
+          </PermissionGuard>
+        }
+      />
+      <Route
+        path="countries/:id/delete"
+        element={
+          <PermissionGuard permission="countries.delete">
+            <DeleteCountry />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ------------------------------------------------------------------
+    REGIONS
+     ------------------------------------------------------------------ */}
+
+      <Route
+        path="regions"
+        element={
+          <PermissionGuard permission="regions.view">
+            <RegionList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="regions/create"
+        element={
+          <PermissionGuard permission="regions.create">
+            <CreateRegion />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="regions/:id/edit"
+        element={
+          <PermissionGuard permission="regions.update">
+            <EditRegion />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="regions/:id"
+        element={
+          <PermissionGuard permission="regions.view">
+            <RegionDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ------------------------------------------------------------------
+      COUNTIES
+      ------------------------------------------------------------------ */}
+
+      <Route
+        path="counties"
+        element={
+          <PermissionGuard permission="counties.view">
+            <CountyList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="counties/create"
+        element={
+          <PermissionGuard permission="counties.create">
+            <CreateCounty />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="counties/:id/edit"
+        element={
+          <PermissionGuard permission="counties.update">
+            <EditCounty />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="counties/:id"
+        element={
+          <PermissionGuard permission="counties.view">
+            <CountyDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ------------------------------------------------------------------
+    CITIES
+     ------------------------------------------------------------------ */}
+
+      <Route
+        path="cities"
+        element={
+          <PermissionGuard permission="cities.view">
+            <CityList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="cities/create"
+        element={
+          <PermissionGuard permission="cities.create">
+            <CreateCity />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="cities/:id/edit"
+        element={
+          <PermissionGuard permission="cities.update">
+            <EditCity />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="cities/:id"
+        element={
+          <PermissionGuard permission="cities.view">
+            <CityDetails />
+          </PermissionGuard>
+        }
+      />
+
+      {/* ------------------------------------------------------------------
+    AREAS
+------------------------------------------------------------------ */}
+
+      <Route
+        path="areas"
+        element={
+          <PermissionGuard permission="areas.view">
+            <AreaList />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="areas/create"
+        element={
+          <PermissionGuard permission="areas.create">
+            <CreateArea />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="areas/:id/edit"
+        element={
+          <PermissionGuard permission="areas.update">
+            <EditArea />
+          </PermissionGuard>
+        }
+      />
+
+      <Route
+        path="areas/:id"
+        element={
+          <PermissionGuard permission="areas.view">
+            <AreaDetails />
           </PermissionGuard>
         }
       />

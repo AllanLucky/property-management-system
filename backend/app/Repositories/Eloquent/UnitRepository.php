@@ -1,10 +1,9 @@
 <?php
 
-
 namespace App\Repositories\Eloquent;
 
 use App\Models\Booking;
-use App\Models\Maintenance;
+use App\Models\MaintenanceRequest;
 use App\Models\Tenancy;
 use App\Models\Unit;
 use App\Repositories\Interfaces\UnitRepositoryInterface;
@@ -21,7 +20,6 @@ class UnitRepository implements UnitRepositoryInterface
     |
     | Used by Unit listing endpoints.
     |
-    | IMPORTANT:
     | properties table uses `title`, NOT `name`.
     | apartments table uses `name`.
     |
@@ -36,6 +34,10 @@ class UnitRepository implements UnitRepositoryInterface
     |--------------------------------------------------------------------------
     | FULL RELATIONS
     |--------------------------------------------------------------------------
+    |
+    | Maintenance now uses the normalized MaintenanceRequest model.
+    | Do not reference the deleted legacy Maintenance model.
+    |
     */
 
     protected array $fullRelations = [
@@ -43,7 +45,7 @@ class UnitRepository implements UnitRepositoryInterface
         'apartment',
         'tenancies.tenant',
         'bookings',
-        'maintenances',
+        'maintenanceRequests',
     ];
 
     /*
@@ -73,10 +75,8 @@ class UnitRepository implements UnitRepositoryInterface
     | LISTING QUERY
     |--------------------------------------------------------------------------
     |
-    | Optimized for Unit lists.
-    |
-    | We use EXISTS instead of loading bookings, tenancies and maintenance
-    | collections. This keeps the response lightweight.
+    | Uses EXISTS queries instead of loading entire related collections.
+    | This keeps Unit listing responses lightweight.
     |
     */
 
@@ -104,26 +104,27 @@ class UnitRepository implements UnitRepositoryInterface
 
                 /*
                 |--------------------------------------------------------------------------
-                | MAINTENANCE
+                | MAINTENANCE REQUESTS
                 |--------------------------------------------------------------------------
                 */
 
-                'maintenances as has_maintenance',
+                'maintenanceRequests as has_maintenance',
 
-                'maintenances as has_active_maintenance' => function (
+                'maintenanceRequests as has_active_maintenance' => function (
                     Builder $query
                 ): void {
                     $query->whereIn('status', [
-                        Maintenance::STATUS_PENDING,
-                        Maintenance::STATUS_ASSIGNED,
-                        Maintenance::STATUS_IN_PROGRESS,
-                        Maintenance::STATUS_ON_HOLD,
+                        MaintenanceRequest::STATUS_PENDING,
+                        MaintenanceRequest::STATUS_APPROVED,
+                        MaintenanceRequest::STATUS_ASSIGNED,
+                        MaintenanceRequest::STATUS_IN_PROGRESS,
+                        MaintenanceRequest::STATUS_ON_HOLD,
                     ]);
                 },
 
                 /*
                 |--------------------------------------------------------------------------
-                | TENANCY
+                | TENANCIES
                 |--------------------------------------------------------------------------
                 */
 
@@ -142,11 +143,6 @@ class UnitRepository implements UnitRepositoryInterface
     |--------------------------------------------------------------------------
     | GET ALL UNITS
     |--------------------------------------------------------------------------
-    |
-    | Backwards-compatible method.
-    |
-    | For large datasets, use paginate() instead.
-    |
     */
 
     public function all(): Collection
@@ -176,10 +172,7 @@ class UnitRepository implements UnitRepositoryInterface
 
         $query = $this->listingQuery();
 
-        $this->applyFilters(
-            $query,
-            $filters
-        );
+        $this->applyFilters($query, $filters);
 
         return $query
             ->paginate($perPage)
@@ -264,8 +257,7 @@ class UnitRepository implements UnitRepositoryInterface
 
     public function restore(int $id): ?Unit
     {
-        $unit = Unit::withTrashed()
-            ->find($id);
+        $unit = Unit::withTrashed()->find($id);
 
         if (!$unit) {
             return null;
@@ -284,8 +276,7 @@ class UnitRepository implements UnitRepositoryInterface
 
     public function forceDelete(int $id): bool
     {
-        $unit = Unit::withTrashed()
-            ->findOrFail($id);
+        $unit = Unit::withTrashed()->findOrFail($id);
 
         return (bool) $unit->forceDelete();
     }
@@ -353,9 +344,8 @@ class UnitRepository implements UnitRepositoryInterface
     |--------------------------------------------------------------------------
     */
 
-    public function getByProperty(
-        int $propertyId
-    ): Collection {
+    public function getByProperty(int $propertyId): Collection
+    {
         return $this->listingQuery()
             ->where('property_id', $propertyId)
             ->orderByDesc('id')
@@ -368,9 +358,8 @@ class UnitRepository implements UnitRepositoryInterface
     |--------------------------------------------------------------------------
     */
 
-    public function getByApartment(
-        int $apartmentId
-    ): Collection {
+    public function getByApartment(int $apartmentId): Collection
+    {
         return $this->listingQuery()
             ->where('apartment_id', $apartmentId)
             ->orderByDesc('id')
@@ -383,9 +372,8 @@ class UnitRepository implements UnitRepositoryInterface
     |--------------------------------------------------------------------------
     */
 
-    public function getByStatus(
-        string $status
-    ): Collection {
+    public function getByStatus(string $status): Collection
+    {
         return $this->listingQuery()
             ->where('status', $status)
             ->orderByDesc('id')
@@ -401,10 +389,7 @@ class UnitRepository implements UnitRepositoryInterface
     public function getVacant(): Collection
     {
         return $this->listingQuery()
-            ->where(
-                'status',
-                Unit::STATUS_VACANT
-            )
+            ->where('status', Unit::STATUS_VACANT)
             ->orderByDesc('id')
             ->get();
     }
@@ -418,10 +403,7 @@ class UnitRepository implements UnitRepositoryInterface
     public function getOccupied(): Collection
     {
         return $this->listingQuery()
-            ->where(
-                'status',
-                Unit::STATUS_OCCUPIED
-            )
+            ->where('status', Unit::STATUS_OCCUPIED)
             ->orderByDesc('id')
             ->get();
     }
@@ -435,10 +417,7 @@ class UnitRepository implements UnitRepositoryInterface
     public function getMaintenance(): Collection
     {
         return $this->listingQuery()
-            ->where(
-                'status',
-                Unit::STATUS_MAINTENANCE
-            )
+            ->where('status', Unit::STATUS_MAINTENANCE)
             ->orderByDesc('id')
             ->get();
     }
@@ -452,10 +431,7 @@ class UnitRepository implements UnitRepositoryInterface
     public function getReserved(): Collection
     {
         return $this->listingQuery()
-            ->where(
-                'status',
-                Unit::STATUS_RESERVED
-            )
+            ->where('status', Unit::STATUS_RESERVED)
             ->orderByDesc('id')
             ->get();
     }
@@ -483,10 +459,7 @@ class UnitRepository implements UnitRepositoryInterface
         $query = $this->listingQuery();
 
         if ($search !== '') {
-            $this->applySearch(
-                $query,
-                $search
-            );
+            $this->applySearch($query, $search);
         }
 
         return $query
@@ -508,26 +481,10 @@ class UnitRepository implements UnitRepositoryInterface
             Builder $searchQuery
         ) use ($search): void {
             $searchQuery
-                ->where(
-                    'unit_number',
-                    'like',
-                    "%{$search}%"
-                )
-                ->orWhere(
-                    'unit_name',
-                    'like',
-                    "%{$search}%"
-                )
-                ->orWhere(
-                    'type',
-                    'like',
-                    "%{$search}%"
-                )
-                ->orWhere(
-                    'slug',
-                    'like',
-                    "%{$search}%"
-                );
+                ->where('unit_number', 'like', "%{$search}%")
+                ->orWhere('unit_name', 'like', "%{$search}%")
+                ->orWhere('type', 'like', "%{$search}%")
+                ->orWhere('slug', 'like', "%{$search}%");
         });
     }
 
@@ -602,15 +559,9 @@ class UnitRepository implements UnitRepositoryInterface
             $status = $filters['status'];
 
             if (is_array($status)) {
-                $query->whereIn(
-                    'status',
-                    $status
-                );
+                $query->whereIn('status', $status);
             } else {
-                $query->where(
-                    'status',
-                    $status
-                );
+                $query->where('status', $status);
             }
         }
 
@@ -624,10 +575,7 @@ class UnitRepository implements UnitRepositoryInterface
             isset($filters['type']) &&
             filled($filters['type'])
         ) {
-            $query->where(
-                'type',
-                $filters['type']
-            );
+            $query->where('type', $filters['type']);
         }
 
         /*
@@ -640,10 +588,7 @@ class UnitRepository implements UnitRepositoryInterface
             isset($filters['floor']) &&
             is_numeric($filters['floor'])
         ) {
-            $query->where(
-                'floor',
-                (int) $filters['floor']
-            );
+            $query->where('floor', (int) $filters['floor']);
         }
 
         /*
@@ -656,10 +601,7 @@ class UnitRepository implements UnitRepositoryInterface
             isset($filters['bedrooms']) &&
             is_numeric($filters['bedrooms'])
         ) {
-            $query->where(
-                'bedrooms',
-                (int) $filters['bedrooms']
-            );
+            $query->where('bedrooms', (int) $filters['bedrooms']);
         }
 
         /*
@@ -669,10 +611,7 @@ class UnitRepository implements UnitRepositoryInterface
         */
 
         if (
-            array_key_exists(
-                'has_furnished',
-                $filters
-            ) &&
+            array_key_exists('has_furnished', $filters) &&
             $filters['has_furnished'] !== null &&
             $filters['has_furnished'] !== ''
         ) {
@@ -692,10 +631,7 @@ class UnitRepository implements UnitRepositoryInterface
         */
 
         if (
-            array_key_exists(
-                'has_wifi',
-                $filters
-            ) &&
+            array_key_exists('has_wifi', $filters) &&
             $filters['has_wifi'] !== null &&
             $filters['has_wifi'] !== ''
         ) {
@@ -715,10 +651,7 @@ class UnitRepository implements UnitRepositoryInterface
         */
 
         if (
-            array_key_exists(
-                'has_balcony',
-                $filters
-            ) &&
+            array_key_exists('has_balcony', $filters) &&
             $filters['has_balcony'] !== null &&
             $filters['has_balcony'] !== ''
         ) {
@@ -738,10 +671,7 @@ class UnitRepository implements UnitRepositoryInterface
         */
 
         if (
-            array_key_exists(
-                'has_air_conditioning',
-                $filters
-            ) &&
+            array_key_exists('has_air_conditioning', $filters) &&
             $filters['has_air_conditioning'] !== null &&
             $filters['has_air_conditioning'] !== ''
         ) {
@@ -807,36 +737,19 @@ class UnitRepository implements UnitRepositoryInterface
 
         $sortBy = $filters['sort_by'] ?? 'id';
 
-        if (
-            !in_array(
-                $sortBy,
-                $allowedSorts,
-                true
-            )
-        ) {
+        if (!in_array($sortBy, $allowedSorts, true)) {
             $sortBy = 'id';
         }
 
         $sortDirection = strtolower(
-            (string) (
-                $filters['sort_direction'] ?? 'desc'
-            )
+            (string) ($filters['sort_direction'] ?? 'desc')
         );
 
-        if (
-            !in_array(
-                $sortDirection,
-                ['asc', 'desc'],
-                true
-            )
-        ) {
+        if (!in_array($sortDirection, ['asc', 'desc'], true)) {
             $sortDirection = 'desc';
         }
 
-        $query->orderBy(
-            $sortBy,
-            $sortDirection
-        );
+        $query->orderBy($sortBy, $sortDirection);
 
         return $query;
     }
@@ -861,10 +774,7 @@ class UnitRepository implements UnitRepositoryInterface
 
         $query = $this->listingQuery();
 
-        $this->applyFilters(
-            $query,
-            $filters
-        );
+        $this->applyFilters($query, $filters);
 
         return $query
             ->paginate($perPage)
@@ -877,44 +787,28 @@ class UnitRepository implements UnitRepositoryInterface
     |--------------------------------------------------------------------------
     */
 
-    public function statsByProperty(
-        int $propertyId
-    ): array {
+    public function statsByProperty(int $propertyId): array
+    {
         $query = Unit::query()
-            ->where(
-                'property_id',
-                $propertyId
-            );
+            ->where('property_id', $propertyId);
 
         return [
             'total' => (clone $query)->count(),
 
             'occupied' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_OCCUPIED
-                )
+                ->where('status', Unit::STATUS_OCCUPIED)
                 ->count(),
 
             'vacant' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_VACANT
-                )
+                ->where('status', Unit::STATUS_VACANT)
                 ->count(),
 
             'maintenance' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_MAINTENANCE
-                )
+                ->where('status', Unit::STATUS_MAINTENANCE)
                 ->count(),
 
             'reserved' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_RESERVED
-                )
+                ->where('status', Unit::STATUS_RESERVED)
                 ->count(),
         ];
     }
@@ -933,31 +827,19 @@ class UnitRepository implements UnitRepositoryInterface
             'total' => (clone $query)->count(),
 
             'occupied' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_OCCUPIED
-                )
+                ->where('status', Unit::STATUS_OCCUPIED)
                 ->count(),
 
             'vacant' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_VACANT
-                )
+                ->where('status', Unit::STATUS_VACANT)
                 ->count(),
 
             'maintenance' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_MAINTENANCE
-                )
+                ->where('status', Unit::STATUS_MAINTENANCE)
                 ->count(),
 
             'reserved' => (clone $query)
-                ->where(
-                    'status',
-                    Unit::STATUS_RESERVED
-                )
+                ->where('status', Unit::STATUS_RESERVED)
                 ->count(),
         ];
     }
@@ -967,14 +849,12 @@ class UnitRepository implements UnitRepositoryInterface
     | CHECK AVAILABILITY
     |--------------------------------------------------------------------------
     |
-    | Uses EXISTS queries and does not load bookings, maintenance or
-    | tenancy records into memory.
+    | Uses EXISTS queries without loading related records into memory.
     |
     */
 
-    public function checkAvailability(
-        int $unitId
-    ): bool {
+    public function checkAvailability(int $unitId): bool
+    {
         $unit = Unit::query()
             ->select([
                 'id',
@@ -986,9 +866,7 @@ class UnitRepository implements UnitRepositoryInterface
             return false;
         }
 
-        if (
-            $unit->status !== Unit::STATUS_VACANT
-        ) {
+        if ($unit->status !== Unit::STATUS_VACANT) {
             return false;
         }
 
@@ -1012,17 +890,18 @@ class UnitRepository implements UnitRepositoryInterface
 
         /*
         |--------------------------------------------------------------------------
-        | ACTIVE MAINTENANCE
+        | ACTIVE MAINTENANCE REQUEST
         |--------------------------------------------------------------------------
         */
 
         if (
-            $unit->maintenances()
+            $unit->maintenanceRequests()
                 ->whereIn('status', [
-                    Maintenance::STATUS_PENDING,
-                    Maintenance::STATUS_ASSIGNED,
-                    Maintenance::STATUS_IN_PROGRESS,
-                    Maintenance::STATUS_ON_HOLD,
+                    MaintenanceRequest::STATUS_PENDING,
+                    MaintenanceRequest::STATUS_APPROVED,
+                    MaintenanceRequest::STATUS_ASSIGNED,
+                    MaintenanceRequest::STATUS_IN_PROGRESS,
+                    MaintenanceRequest::STATUS_ON_HOLD,
                 ])
                 ->exists()
         ) {
@@ -1037,10 +916,7 @@ class UnitRepository implements UnitRepositoryInterface
 
         if (
             $unit->tenancies()
-                ->where(
-                    'status',
-                    Tenancy::STATUS_ACTIVE
-                )
+                ->where('status', Tenancy::STATUS_ACTIVE)
                 ->exists()
         ) {
             return false;
@@ -1049,4 +925,3 @@ class UnitRepository implements UnitRepositoryInterface
         return true;
     }
 }
-

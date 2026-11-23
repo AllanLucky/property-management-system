@@ -104,6 +104,18 @@ import plotPaymentReducer from "./plotPaymentSlice";
 
 /*
 |--------------------------------------------------------------------------
+| GEOGRAPHICAL-LOCATION-MANAGEMENTS
+|--------------------------------------------------------------------------
+*/
+
+import countryReducer from "./countrySlice";
+import regionReducer from "./regionSlice";
+import countyReducer from "./countySlice";
+import cityReducer from "./citySlice";
+import areaReducer from "./areaSlice";
+
+/*
+|--------------------------------------------------------------------------
 | REDUX STORE CONFIGURATION
 |--------------------------------------------------------------------------
 */
@@ -199,6 +211,17 @@ export const store = configureStore({
     |--------------------------------------------------------------------------
     */
     plotPayments: plotPaymentReducer,
+
+    /*
+    |--------------------------------------------------------------------------
+    | GEOGRAPHICAL-LOCATION-MANAGEMENT
+    |--------------------------------------------------------------------------
+    */
+    countries: countryReducer,
+    regions: regionReducer,
+    counties: countyReducer,
+    cities: cityReducer,
+    areas: areaReducer,
   },
 
   /*
