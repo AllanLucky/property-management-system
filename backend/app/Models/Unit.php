@@ -2,12 +2,6 @@
 
 namespace App\Models;
 
-use App\Models\Apartment;
-use App\Models\Booking;
-use App\Models\Maintenance;
-use App\Models\Property;
-use App\Models\Tenant;
-use App\Models\Tenancy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -45,11 +39,8 @@ class Unit extends Model
     */
 
     public const STATUS_VACANT = 'vacant';
-
     public const STATUS_OCCUPIED = 'occupied';
-
     public const STATUS_MAINTENANCE = 'maintenance';
-
     public const STATUS_RESERVED = 'reserved';
 
     public const STATUSES = [
@@ -63,32 +54,16 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     | UNIT TYPE CONSTANTS
     |--------------------------------------------------------------------------
-    |
-    | These values must match the values stored in the `type` column.
-    |
     */
 
     public const TYPE_STUDIO = 'studio';
-
     public const TYPE_BEDSITTER = 'bedsitter';
-
     public const TYPE_ONE_BEDROOM = 'one_bedroom';
-
     public const TYPE_TWO_BEDROOM = 'two_bedroom';
-
     public const TYPE_THREE_BEDROOM = 'three_bedroom';
-
     public const TYPE_FOUR_BEDROOM = 'four_bedroom';
-
     public const TYPE_PENTHOUSE = 'penthouse';
-
     public const TYPE_OFFICE = 'office';
-
-    /*
-    |--------------------------------------------------------------------------
-    | ALL SUPPORTED UNIT TYPES
-    |--------------------------------------------------------------------------
-    */
 
     public const UNIT_TYPES = [
         self::TYPE_STUDIO,
@@ -103,93 +78,70 @@ class Unit extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | ACTIVE MAINTENANCE STATUSES
+    |--------------------------------------------------------------------------
+    */
+
+    public const ACTIVE_MAINTENANCE_STATUSES = [
+        'pending',
+        'approved',
+        'assigned',
+        'in_progress',
+        'on_hold',
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | ACTIVE BOOKING STATUSES
+    |--------------------------------------------------------------------------
+    */
+
+    public const ACTIVE_BOOKING_STATUSES = [
+        'pending',
+        'confirmed',
+        'active',
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
     | FILLABLE
     |--------------------------------------------------------------------------
     */
 
     protected $fillable = [
-
-        /*
-        | Property hierarchy
-        */
         'property_id',
-
         'apartment_id',
 
-        /*
-        | Unit identification
-        */
         'unit_number',
-
         'unit_name',
-
         'slug',
-
         'description',
 
-        /*
-        | Status
-        */
         'status',
-
-        /*
-        | Unit type
-        */
         'type',
 
-        /*
-        | Unit specifications
-        */
         'bedrooms',
-
         'bathrooms',
-
         'toilets',
-
         'floor',
 
-        /*
-        | Size
-        */
         'size',
-
         'size_unit',
 
-        /*
-        | Financial
-        */
         'price',
-
         'deposit',
-
         'service_charge',
 
-        /*
-        | Features
-        */
         'has_balcony',
-
         'has_wifi',
-
         'has_furnished',
-
         'has_air_conditioning',
 
-        /*
-        | Media
-        */
         'thumbnail',
 
-        /*
-        | Availability
-        */
         'available_from',
-
         'is_active',
 
-        /*
-        | Additional information
-        */
         'notes',
     ];
 
@@ -200,33 +152,23 @@ class Unit extends Model
     */
 
     protected $casts = [
-
         'property_id' => 'integer',
-
         'apartment_id' => 'integer',
 
         'price' => 'decimal:2',
-
         'deposit' => 'decimal:2',
-
         'service_charge' => 'decimal:2',
 
         'size' => 'decimal:2',
 
         'bedrooms' => 'integer',
-
         'bathrooms' => 'integer',
-
         'toilets' => 'integer',
-
         'floor' => 'integer',
 
         'has_balcony' => 'boolean',
-
         'has_wifi' => 'boolean',
-
         'has_furnished' => 'boolean',
-
         'has_air_conditioning' => 'boolean',
 
         'is_active' => 'boolean',
@@ -234,9 +176,7 @@ class Unit extends Model
         'available_from' => 'date',
 
         'created_at' => 'datetime',
-
         'updated_at' => 'datetime',
-
         'deleted_at' => 'datetime',
     ];
 
@@ -247,49 +187,24 @@ class Unit extends Model
     */
 
     protected $appends = [
-
-        /*
-        | Pricing
-        */
         'formatted_price',
 
-        /*
-        | Status
-        */
         'status_badge',
-
         'status_label',
 
-        /*
-        | Unit identification
-        */
         'full_unit_name',
-
         'type_label',
 
-        /*
-        | Media
-        */
         'thumbnail_url',
 
-        /*
-        | Availability
-        */
         'is_available',
-
         'can_be_booked',
 
-        /*
-        | Tenancy
-        */
         'has_active_tenancy',
-
         'has_active_booking',
-
         'has_active_maintenance',
 
         'current_tenancy',
-
         'current_tenant',
     ];
 
@@ -305,7 +220,7 @@ class Unit extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | Creating
+        | CREATING
         |--------------------------------------------------------------------------
         */
 
@@ -329,7 +244,7 @@ class Unit extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | Updating
+        | UPDATING
         |--------------------------------------------------------------------------
         */
 
@@ -366,7 +281,7 @@ class Unit extends Model
     */
 
     /**
-     * Unit belongs to property.
+     * Unit belongs to a property.
      */
     public function property(): BelongsTo
     {
@@ -377,7 +292,7 @@ class Unit extends Model
     }
 
     /**
-     * Unit belongs to apartment.
+     * Unit belongs to an apartment.
      */
     public function apartment(): BelongsTo
     {
@@ -400,9 +315,6 @@ class Unit extends Model
 
     /**
      * Current active tenancy.
-     *
-     * This is the tenancy responsible for occupying
-     * the unit right now.
      */
     public function activeTenancy(): HasOne
     {
@@ -410,31 +322,17 @@ class Unit extends Model
             Tenancy::class,
             'unit_id'
         )
-            ->where(
-                'status',
-                Tenancy::STATUS_ACTIVE
-            )
-            ->where(
-                'is_active',
-                true
-            )
+            ->where('status', Tenancy::STATUS_ACTIVE)
+            ->where('is_active', true)
             ->where(function (Builder $query) {
                 $query
                     ->whereNull('start_date')
-                    ->orWhereDate(
-                        'start_date',
-                        '<=',
-                        now()
-                    );
+                    ->orWhereDate('start_date', '<=', now());
             })
             ->where(function (Builder $query) {
                 $query
                     ->whereNull('end_date')
-                    ->orWhereDate(
-                        'end_date',
-                        '>=',
-                        now()
-                    );
+                    ->orWhereDate('end_date', '>=', now());
             });
     }
 
@@ -449,15 +347,69 @@ class Unit extends Model
         );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZED MAINTENANCE RELATIONSHIPS
+    |--------------------------------------------------------------------------
+    */
+
     /**
-     * All maintenance records for this unit.
+     * All normalized maintenance requests for this unit.
+     *
+     * Uses the maintenance_requests table through
+     * App\Models\MaintenanceRequest.
+     */
+    public function maintenanceRequests(): HasMany
+    {
+        return $this->hasMany(
+            MaintenanceRequest::class,
+            'unit_id'
+        );
+    }
+
+    /**
+     * Backward-compatible relationship.
+     *
+     * Older controllers, services and resources may still call
+     * maintenances(). This now points to MaintenanceRequest.
+     *
+     * It does NOT use the deleted Maintenance model.
+     *
+     * @deprecated Use maintenanceRequests() instead.
      */
     public function maintenances(): HasMany
     {
-        return $this->hasMany(
-            Maintenance::class,
-            'unit_id'
-        );
+        return $this->maintenanceRequests();
+    }
+
+    /**
+     * Active maintenance requests.
+     */
+    public function activeMaintenanceRequests(): HasMany
+    {
+        return $this->maintenanceRequests()
+            ->whereIn(
+                'status',
+                self::ACTIVE_MAINTENANCE_STATUSES
+            );
+    }
+
+    /**
+     * Completed maintenance requests.
+     */
+    public function completedMaintenanceRequests(): HasMany
+    {
+        return $this->maintenanceRequests()
+            ->where('status', 'completed');
+    }
+
+    /**
+     * Emergency maintenance requests.
+     */
+    public function emergencyMaintenanceRequests(): HasMany
+    {
+        return $this->maintenanceRequests()
+            ->where('is_emergency', true);
     }
 
     /*
@@ -469,9 +421,8 @@ class Unit extends Model
     /**
      * Vacant units.
      */
-    public function scopeVacant(
-        Builder $query
-    ): Builder {
+    public function scopeVacant(Builder $query): Builder
+    {
         return $query->where(
             'status',
             self::STATUS_VACANT
@@ -481,9 +432,8 @@ class Unit extends Model
     /**
      * Occupied units.
      */
-    public function scopeOccupied(
-        Builder $query
-    ): Builder {
+    public function scopeOccupied(Builder $query): Builder
+    {
         return $query->where(
             'status',
             self::STATUS_OCCUPIED
@@ -493,9 +443,8 @@ class Unit extends Model
     /**
      * Units under maintenance.
      */
-    public function scopeMaintenance(
-        Builder $query
-    ): Builder {
+    public function scopeMaintenance(Builder $query): Builder
+    {
         return $query->where(
             'status',
             self::STATUS_MAINTENANCE
@@ -505,9 +454,8 @@ class Unit extends Model
     /**
      * Reserved units.
      */
-    public function scopeReserved(
-        Builder $query
-    ): Builder {
+    public function scopeReserved(Builder $query): Builder
+    {
         return $query->where(
             'status',
             self::STATUS_RESERVED
@@ -576,22 +524,100 @@ class Unit extends Model
     }
 
     /**
-     * Available units.
+     * Units with active maintenance requests.
+     */
+    public function scopeWithActiveMaintenance(
+        Builder $query
+    ): Builder {
+        return $query->whereHas(
+            'maintenanceRequests',
+            function (Builder $maintenanceQuery) {
+                $maintenanceQuery->whereIn(
+                    'status',
+                    self::ACTIVE_MAINTENANCE_STATUSES
+                );
+            }
+        );
+    }
+
+    /**
+     * Units without active maintenance requests.
+     */
+    public function scopeWithoutActiveMaintenance(
+        Builder $query
+    ): Builder {
+        return $query->whereDoesntHave(
+            'maintenanceRequests',
+            function (Builder $maintenanceQuery) {
+                $maintenanceQuery->whereIn(
+                    'status',
+                    self::ACTIVE_MAINTENANCE_STATUSES
+                );
+            }
+        );
+    }
+
+    /**
+     * Units with active bookings.
+     */
+    public function scopeWithActiveBooking(
+        Builder $query
+    ): Builder {
+        return $query->whereHas(
+            'bookings',
+            function (Builder $bookingQuery) {
+                $bookingQuery->whereIn(
+                    'status',
+                    self::ACTIVE_BOOKING_STATUSES
+                );
+            }
+        );
+    }
+
+    /**
+     * Units without active bookings.
+     */
+    public function scopeWithoutActiveBooking(
+        Builder $query
+    ): Builder {
+        return $query->whereDoesntHave(
+            'bookings',
+            function (Builder $bookingQuery) {
+                $bookingQuery->whereIn(
+                    'status',
+                    self::ACTIVE_BOOKING_STATUSES
+                );
+            }
+        );
+    }
+
+    /**
+     * Units with vacant status.
      */
     public function scopeAvailable(
         Builder $query
     ): Builder {
         return $query
-            ->where(
-                'status',
-                self::STATUS_VACANT
-            )
-            ->where(
-                'is_active',
-                true
+            ->where('status', self::STATUS_VACANT)
+            ->where('is_active', true)
+            ->whereDoesntHave('activeTenancy')
+            ->whereDoesntHave(
+                'maintenanceRequests',
+                function (Builder $maintenanceQuery) {
+                    $maintenanceQuery->whereIn(
+                        'status',
+                        self::ACTIVE_MAINTENANCE_STATUSES
+                    );
+                }
             )
             ->whereDoesntHave(
-                'activeTenancy'
+                'bookings',
+                function (Builder $bookingQuery) {
+                    $bookingQuery->whereIn(
+                        'status',
+                        self::ACTIVE_BOOKING_STATUSES
+                    );
+                }
             );
     }
 
@@ -618,21 +644,11 @@ class Unit extends Model
     public function getStatusBadgeAttribute(): string
     {
         return match ($this->status) {
-
-            self::STATUS_VACANT =>
-                'success',
-
-            self::STATUS_OCCUPIED =>
-                'primary',
-
-            self::STATUS_RESERVED =>
-                'info',
-
-            self::STATUS_MAINTENANCE =>
-                'warning',
-
-            default =>
-                'secondary',
+            self::STATUS_VACANT => 'success',
+            self::STATUS_OCCUPIED => 'primary',
+            self::STATUS_RESERVED => 'info',
+            self::STATUS_MAINTENANCE => 'warning',
+            default => 'secondary',
         };
     }
 
@@ -642,35 +658,16 @@ class Unit extends Model
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
-
-            self::STATUS_VACANT =>
-                'Vacant',
-
-            self::STATUS_OCCUPIED =>
-                'Occupied',
-
-            self::STATUS_RESERVED =>
-                'Reserved',
-
-            self::STATUS_MAINTENANCE =>
-                'Maintenance',
-
-            default =>
-                'Unknown',
+            self::STATUS_VACANT => 'Vacant',
+            self::STATUS_OCCUPIED => 'Occupied',
+            self::STATUS_RESERVED => 'Reserved',
+            self::STATUS_MAINTENANCE => 'Maintenance',
+            default => 'Unknown',
         };
     }
 
     /**
      * Human-readable unit type.
-     *
-     * Examples:
-     *
-     * studio       -> Studio
-     * bedsitter    -> Bedsitter
-     * one_bedroom  -> One Bedroom
-     * two_bedroom  -> Two Bedroom
-     * penthouse    -> Penthouse
-     * office       -> Office
      */
     public function getTypeLabelAttribute(): ?string
     {
@@ -679,39 +676,22 @@ class Unit extends Model
         }
 
         return match ($this->type) {
+            self::TYPE_STUDIO => 'Studio',
+            self::TYPE_BEDSITTER => 'Bedsitter',
+            self::TYPE_ONE_BEDROOM => 'One Bedroom',
+            self::TYPE_TWO_BEDROOM => 'Two Bedroom',
+            self::TYPE_THREE_BEDROOM => 'Three Bedroom',
+            self::TYPE_FOUR_BEDROOM => 'Four Bedroom',
+            self::TYPE_PENTHOUSE => 'Penthouse',
+            self::TYPE_OFFICE => 'Office',
 
-            self::TYPE_STUDIO =>
-                'Studio',
-
-            self::TYPE_BEDSITTER =>
-                'Bedsitter',
-
-            self::TYPE_ONE_BEDROOM =>
-                'One Bedroom',
-
-            self::TYPE_TWO_BEDROOM =>
-                'Two Bedroom',
-
-            self::TYPE_THREE_BEDROOM =>
-                'Three Bedroom',
-
-            self::TYPE_FOUR_BEDROOM =>
-                'Four Bedroom',
-
-            self::TYPE_PENTHOUSE =>
-                'Penthouse',
-
-            self::TYPE_OFFICE =>
-                'Office',
-
-            default =>
-                ucwords(
-                    str_replace(
-                        ['_', '-'],
-                        ' ',
-                        (string) $this->type
-                    )
-                ),
+            default => ucwords(
+                str_replace(
+                    ['_', '-'],
+                    ' ',
+                    (string) $this->type
+                )
+            ),
         };
     }
 
@@ -733,27 +713,17 @@ class Unit extends Model
     public function getThumbnailUrlAttribute(): string
     {
         if (blank($this->thumbnail)) {
-            return asset(
-                'images/default-unit.jpg'
-            );
+            return asset('images/default-unit.jpg');
         }
 
         if (
-            str_starts_with(
-                $this->thumbnail,
-                'http://'
-            ) ||
-            str_starts_with(
-                $this->thumbnail,
-                'https://'
-            )
+            str_starts_with($this->thumbnail, 'http://') ||
+            str_starts_with($this->thumbnail, 'https://')
         ) {
             return $this->thumbnail;
         }
 
-        return Storage::url(
-            $this->thumbnail
-        );
+        return Storage::url($this->thumbnail);
     }
 
     /*
@@ -768,7 +738,7 @@ class Unit extends Model
     public function getHasActiveTenancyAttribute(): bool
     {
         if ($this->relationLoaded('activeTenancy')) {
-            return $this->activeTenancy !== null;
+            return $this->getRelation('activeTenancy') !== null;
         }
 
         return $this->activeTenancy()->exists();
@@ -780,7 +750,7 @@ class Unit extends Model
     public function getCurrentTenancyAttribute(): ?Tenancy
     {
         if ($this->relationLoaded('activeTenancy')) {
-            return $this->activeTenancy;
+            return $this->getRelation('activeTenancy');
         }
 
         return $this->activeTenancy()->first();
@@ -798,7 +768,7 @@ class Unit extends Model
         }
 
         if ($tenancy->relationLoaded('tenant')) {
-            return $tenancy->tenant;
+            return $tenancy->getRelation('tenant');
         }
 
         return $tenancy->tenant()->first();
@@ -816,15 +786,11 @@ class Unit extends Model
     public function getHasActiveBookingAttribute(): bool
     {
         if ($this->relationLoaded('bookings')) {
-            return $this->bookings->contains(
+            return $this->getRelation('bookings')->contains(
                 function ($booking) {
                     return in_array(
                         $booking->status,
-                        [
-                            'pending',
-                            'confirmed',
-                            'active',
-                        ],
+                        self::ACTIVE_BOOKING_STATUSES,
                         true
                     );
                 }
@@ -834,11 +800,7 @@ class Unit extends Model
         return $this->bookings()
             ->whereIn(
                 'status',
-                [
-                    'pending',
-                    'confirmed',
-                    'active',
-                ]
+                self::ACTIVE_BOOKING_STATUSES
             )
             ->exists();
     }
@@ -854,32 +816,36 @@ class Unit extends Model
      */
     public function getHasActiveMaintenanceAttribute(): bool
     {
-        if ($this->relationLoaded('maintenances')) {
-            return $this->maintenances->contains(
-                function ($maintenance) {
-                    return in_array(
-                        $maintenance->status,
-                        [
-                            'pending',
-                            'scheduled',
-                            'in_progress',
-                            'active',
-                        ],
-                        true
-                    );
-                }
-            );
+        if ($this->relationLoaded('maintenanceRequests')) {
+            return $this->getRelation('maintenanceRequests')
+                ->contains(
+                    function ($maintenanceRequest) {
+                        return in_array(
+                            $maintenanceRequest->status,
+                            self::ACTIVE_MAINTENANCE_STATUSES,
+                            true
+                        );
+                    }
+                );
         }
 
-        return $this->maintenances()
+        if ($this->relationLoaded('maintenances')) {
+            return $this->getRelation('maintenances')
+                ->contains(
+                    function ($maintenanceRequest) {
+                        return in_array(
+                            $maintenanceRequest->status,
+                            self::ACTIVE_MAINTENANCE_STATUSES,
+                            true
+                        );
+                    }
+                );
+        }
+
+        return $this->maintenanceRequests()
             ->whereIn(
                 'status',
-                [
-                    'pending',
-                    'scheduled',
-                    'in_progress',
-                    'active',
-                ]
+                self::ACTIVE_MAINTENANCE_STATUSES
             )
             ->exists();
     }
@@ -890,17 +856,11 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether unit is available.
-     */
     public function getIsAvailableAttribute(): bool
     {
         return $this->isAvailable();
     }
 
-    /**
-     * Determine whether unit can be booked.
-     */
     public function getCanBeBookedAttribute(): bool
     {
         return $this->canBeBooked();
@@ -912,33 +872,21 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether unit is vacant.
-     */
     public function isVacant(): bool
     {
         return $this->status === self::STATUS_VACANT;
     }
 
-    /**
-     * Determine whether unit is occupied.
-     */
     public function isOccupied(): bool
     {
         return $this->status === self::STATUS_OCCUPIED;
     }
 
-    /**
-     * Determine whether unit is reserved.
-     */
     public function isReserved(): bool
     {
         return $this->status === self::STATUS_RESERVED;
     }
 
-    /**
-     * Determine whether unit is under maintenance.
-     */
     public function isUnderMaintenance(): bool
     {
         return $this->status === self::STATUS_MAINTENANCE;
@@ -946,14 +894,6 @@ class Unit extends Model
 
     /**
      * Determine whether unit is currently available.
-     *
-     * A unit is only available when:
-     *
-     * - Status is vacant
-     * - Unit is active
-     * - It has no active tenancy
-     * - It has no active booking
-     * - It has no active maintenance
      */
     public function isAvailable(): bool
     {
@@ -961,7 +901,7 @@ class Unit extends Model
             return false;
         }
 
-        if ($this->is_active === false) {
+        if (!$this->is_active) {
             return false;
         }
 
@@ -994,36 +934,50 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether unit can receive a tenant.
-     */
     public function canAssignTenant(): bool
     {
         return $this->isAvailable();
     }
 
-    /**
-     * Determine whether unit already has a tenant.
-     */
     public function hasTenant(): bool
     {
         return $this->has_active_tenancy;
     }
 
-    /**
-     * Get the current tenant ID.
-     */
     public function currentTenantId(): ?int
     {
         return $this->current_tenant?->id;
     }
 
-    /**
-     * Get the current tenant user ID.
-     */
     public function currentTenantUserId(): ?int
     {
         return $this->current_tenant?->user_id;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MAINTENANCE HELPERS
+    |--------------------------------------------------------------------------
+    */
+
+    public function hasMaintenanceRequests(): bool
+    {
+        return $this->maintenanceRequests()->exists();
+    }
+
+    public function hasActiveMaintenanceRequests(): bool
+    {
+        return $this->activeMaintenanceRequests()->exists();
+    }
+
+    public function hasEmergencyMaintenanceRequests(): bool
+    {
+        return $this->emergencyMaintenanceRequests()->exists();
+    }
+
+    public function getMaintenanceRequestsCount(): int
+    {
+        return $this->maintenanceRequests()->count();
     }
 
     /*
@@ -1032,9 +986,6 @@ class Unit extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Mark unit as vacant.
-     */
     public function markAsVacant(): bool
     {
         return $this->update([
@@ -1042,9 +993,6 @@ class Unit extends Model
         ]);
     }
 
-    /**
-     * Mark unit as occupied.
-     */
     public function markAsOccupied(): bool
     {
         return $this->update([
@@ -1052,9 +1000,6 @@ class Unit extends Model
         ]);
     }
 
-    /**
-     * Mark unit as reserved.
-     */
     public function markAsReserved(): bool
     {
         return $this->update([
@@ -1062,9 +1007,6 @@ class Unit extends Model
         ]);
     }
 
-    /**
-     * Mark unit as under maintenance.
-     */
     public function markAsMaintenance(): bool
     {
         return $this->update([
@@ -1082,7 +1024,6 @@ class Unit extends Model
         string $text,
         ?int $ignoreId = null
     ): string {
-
         $baseSlug = Str::slug($text);
 
         if (blank($baseSlug)) {
@@ -1090,27 +1031,18 @@ class Unit extends Model
         }
 
         $slug = $baseSlug;
-
         $counter = 1;
 
         while (
-            static::where(
-                'slug',
-                $slug
-            )
+            static::where('slug', $slug)
                 ->when(
                     $ignoreId,
                     fn (Builder $query) =>
-                    $query->where(
-                        'id',
-                        '!=',
-                        $ignoreId
-                    )
+                        $query->where('id', '!=', $ignoreId)
                 )
                 ->exists()
         ) {
             $slug = "{$baseSlug}-{$counter}";
-
             $counter++;
         }
 

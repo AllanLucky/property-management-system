@@ -10,6 +10,7 @@ use Illuminate\Support\ServiceProvider;
 | USER REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\UserRepository;
 use App\Repositories\Interfaces\UserRepositoryInterface;
 
@@ -18,6 +19,7 @@ use App\Repositories\Interfaces\UserRepositoryInterface;
 | RBAC REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\RoleRepository;
 use App\Repositories\Interfaces\RoleRepositoryInterface;
 
@@ -29,6 +31,7 @@ use App\Repositories\Interfaces\PermissionRepositoryInterface;
 | ROLE REQUEST REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\RoleRequestRepository;
 use App\Repositories\Interfaces\RoleRequestRepositoryInterface;
 
@@ -37,6 +40,7 @@ use App\Repositories\Interfaces\RoleRequestRepositoryInterface;
 | ACTIVITY LOG REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\ActivityLogRepository;
 use App\Repositories\Interfaces\ActivityLogRepositoryInterface;
 
@@ -45,6 +49,7 @@ use App\Repositories\Interfaces\ActivityLogRepositoryInterface;
 | PROPERTY REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\PropertyRepository;
 use App\Repositories\Interfaces\PropertyRepositoryInterface;
 
@@ -77,6 +82,7 @@ use App\Repositories\Interfaces\PropertyAnalyticsRepositoryInterface;
 | APARTMENT REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\ApartmentRepository;
 use App\Repositories\Interfaces\ApartmentRepositoryInterface;
 
@@ -85,6 +91,7 @@ use App\Repositories\Interfaces\ApartmentRepositoryInterface;
 | UNIT REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\UnitRepository;
 use App\Repositories\Interfaces\UnitRepositoryInterface;
 
@@ -93,6 +100,7 @@ use App\Repositories\Interfaces\UnitRepositoryInterface;
 | LOCATION REPOSITORIES
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\CountryRepository;
 use App\Repositories\Interfaces\CountryRepositoryInterface;
 
@@ -113,6 +121,7 @@ use App\Repositories\Interfaces\AreaRepositoryInterface;
 | AMENITY REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\AmenityRepository;
 use App\Repositories\Interfaces\AmenityRepositoryInterface;
 
@@ -121,6 +130,7 @@ use App\Repositories\Interfaces\AmenityRepositoryInterface;
 | DASHBOARD REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\DashboardRepository;
 use App\Repositories\Interfaces\DashboardRepositoryInterface;
 
@@ -129,6 +139,7 @@ use App\Repositories\Interfaces\DashboardRepositoryInterface;
 | TENANT REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\TenantRepository;
 use App\Repositories\Interfaces\TenantRepositoryInterface;
 
@@ -137,6 +148,7 @@ use App\Repositories\Interfaces\TenantRepositoryInterface;
 | TENANCY REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\TenancyRepository;
 use App\Repositories\Interfaces\TenancyRepositoryInterface;
 
@@ -145,6 +157,7 @@ use App\Repositories\Interfaces\TenancyRepositoryInterface;
 | LEASE REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\LeaseRepository;
 use App\Repositories\Interfaces\LeaseRepositoryInterface;
 
@@ -153,6 +166,7 @@ use App\Repositories\Interfaces\LeaseRepositoryInterface;
 | BOOKING REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\BookingRepository;
 use App\Repositories\Interfaces\BookingRepositoryInterface;
 
@@ -161,6 +175,7 @@ use App\Repositories\Interfaces\BookingRepositoryInterface;
 | PLOT REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\PlotRepository;
 use App\Repositories\Interfaces\PlotRepositoryInterface;
 
@@ -169,6 +184,7 @@ use App\Repositories\Interfaces\PlotRepositoryInterface;
 | PLOT SALE REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\PlotSaleRepository;
 use App\Repositories\Interfaces\PlotSaleRepositoryInterface;
 
@@ -177,8 +193,45 @@ use App\Repositories\Interfaces\PlotSaleRepositoryInterface;
 | PLOT PAYMENT REPOSITORY
 |--------------------------------------------------------------------------
 */
+
 use App\Repositories\Eloquent\PlotPaymentRepository;
 use App\Repositories\Interfaces\PlotPaymentRepositoryInterface;
+
+/*
+|--------------------------------------------------------------------------
+| MAINTENANCE REQUEST REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\MaintenanceRequestRepository;
+use App\Repositories\Interfaces\MaintenanceRequestRepositoryInterface;
+
+/*
+|--------------------------------------------------------------------------
+| MAINTENANCE CATEGORY REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\MaintenanceCategoryRepository;
+use App\Repositories\Interfaces\MaintenanceCategoryRepositoryInterface;
+
+/*
+|--------------------------------------------------------------------------
+| ONGOING MAINTENANCE REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\OngoingMaintenanceRepository;
+use App\Repositories\Interfaces\OngoingMaintenanceRepositoryInterface;
+
+/*
+|--------------------------------------------------------------------------
+| COMPLETED MAINTENANCE REPOSITORY
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\CompletedMaintenanceRepository;
+use App\Repositories\Interfaces\CompletedMaintenanceRepositoryInterface;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -192,6 +245,7 @@ class AppServiceProvider extends ServiceProvider
         | USER
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             UserRepositoryInterface::class,
             UserRepository::class
@@ -202,6 +256,7 @@ class AppServiceProvider extends ServiceProvider
         | ACTIVITY LOG
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             ActivityLogRepositoryInterface::class,
             ActivityLogRepository::class
@@ -212,6 +267,7 @@ class AppServiceProvider extends ServiceProvider
         | RBAC
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             RoleRepositoryInterface::class,
             RoleRepository::class
@@ -232,6 +288,7 @@ class AppServiceProvider extends ServiceProvider
         | PROPERTY
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             PropertyRepositoryInterface::class,
             PropertyRepository::class
@@ -282,6 +339,7 @@ class AppServiceProvider extends ServiceProvider
         | APARTMENT
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             ApartmentRepositoryInterface::class,
             ApartmentRepository::class
@@ -292,6 +350,7 @@ class AppServiceProvider extends ServiceProvider
         | UNIT
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             UnitRepositoryInterface::class,
             UnitRepository::class
@@ -302,6 +361,7 @@ class AppServiceProvider extends ServiceProvider
         | LOCATION
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             CountryRepositoryInterface::class,
             CountryRepository::class
@@ -332,6 +392,7 @@ class AppServiceProvider extends ServiceProvider
         | AMENITY
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             AmenityRepositoryInterface::class,
             AmenityRepository::class
@@ -342,6 +403,7 @@ class AppServiceProvider extends ServiceProvider
         | DASHBOARD
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             DashboardRepositoryInterface::class,
             DashboardRepository::class
@@ -352,6 +414,7 @@ class AppServiceProvider extends ServiceProvider
         | TENANT
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             TenantRepositoryInterface::class,
             TenantRepository::class
@@ -362,6 +425,7 @@ class AppServiceProvider extends ServiceProvider
         | TENANCY
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             TenancyRepositoryInterface::class,
             TenancyRepository::class
@@ -372,6 +436,7 @@ class AppServiceProvider extends ServiceProvider
         | LEASE
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             LeaseRepositoryInterface::class,
             LeaseRepository::class
@@ -382,6 +447,7 @@ class AppServiceProvider extends ServiceProvider
         | BOOKING
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             BookingRepositoryInterface::class,
             BookingRepository::class
@@ -392,6 +458,7 @@ class AppServiceProvider extends ServiceProvider
         | PLOT
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             PlotRepositoryInterface::class,
             PlotRepository::class
@@ -402,6 +469,7 @@ class AppServiceProvider extends ServiceProvider
         | PLOT SALE
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             PlotSaleRepositoryInterface::class,
             PlotSaleRepository::class
@@ -412,9 +480,54 @@ class AppServiceProvider extends ServiceProvider
         | PLOT PAYMENT
         |--------------------------------------------------------------------------
         */
+
         $this->app->bind(
             PlotPaymentRepositoryInterface::class,
             PlotPaymentRepository::class
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+        $this->app->bind(
+            MaintenanceRequestRepositoryInterface::class,
+            MaintenanceRequestRepository::class
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE CATEGORY
+        |--------------------------------------------------------------------------
+        */
+
+        $this->app->bind(
+            MaintenanceCategoryRepositoryInterface::class,
+            MaintenanceCategoryRepository::class
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | ONGOING MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        $this->app->bind(
+            OngoingMaintenanceRepositoryInterface::class,
+            OngoingMaintenanceRepository::class
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | COMPLETED MAINTENANCE
+        |--------------------------------------------------------------------------
+        */
+
+        $this->app->bind(
+            CompletedMaintenanceRepositoryInterface::class,
+            CompletedMaintenanceRepository::class
         );
     }
 
@@ -428,6 +541,7 @@ class AppServiceProvider extends ServiceProvider
         | SUPER ADMIN GLOBAL PERMISSION BYPASS
         |--------------------------------------------------------------------------
         */
+
         Gate::before(function ($user, $ability) {
             if (
                 method_exists($user, 'hasRole') &&
