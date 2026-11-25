@@ -119,23 +119,51 @@ class MaintenanceAssignmentSeeder extends Seeder
         */
 
         $statusMapping = [
-            MaintenanceRequest::STATUS_PENDING => MaintenanceAssignment::STATUS_PENDING,
-            MaintenanceRequest::STATUS_APPROVED => MaintenanceAssignment::STATUS_ACCEPTED,
-            MaintenanceRequest::STATUS_ASSIGNED => MaintenanceAssignment::STATUS_ACCEPTED,
-            MaintenanceRequest::STATUS_IN_PROGRESS => MaintenanceAssignment::STATUS_IN_PROGRESS,
-            MaintenanceRequest::STATUS_ON_HOLD => MaintenanceAssignment::STATUS_ON_HOLD,
-            MaintenanceRequest::STATUS_COMPLETED => MaintenanceAssignment::STATUS_COMPLETED,
-            MaintenanceRequest::STATUS_REJECTED => MaintenanceAssignment::STATUS_REJECTED,
-            MaintenanceRequest::STATUS_CANCELLED => MaintenanceAssignment::STATUS_CANCELLED,
+            MaintenanceRequest::STATUS_PENDING =>
+                MaintenanceAssignment::STATUS_PENDING,
+
+            MaintenanceRequest::STATUS_APPROVED =>
+                MaintenanceAssignment::STATUS_ACCEPTED,
+
+            MaintenanceRequest::STATUS_ASSIGNED =>
+                MaintenanceAssignment::STATUS_ACCEPTED,
+
+            MaintenanceRequest::STATUS_IN_PROGRESS =>
+                MaintenanceAssignment::STATUS_IN_PROGRESS,
+
+            MaintenanceRequest::STATUS_ON_HOLD =>
+                MaintenanceAssignment::STATUS_ON_HOLD,
+
+            MaintenanceRequest::STATUS_COMPLETED =>
+                MaintenanceAssignment::STATUS_COMPLETED,
+
+            MaintenanceRequest::STATUS_REJECTED =>
+                MaintenanceAssignment::STATUS_REJECTED,
+
+            MaintenanceRequest::STATUS_CANCELLED =>
+                MaintenanceAssignment::STATUS_CANCELLED,
         ];
 
         /*
         |--------------------------------------------------------------------------
         | Assignment Scenario Data
         |--------------------------------------------------------------------------
+        |
+        | actual_cost:
+        | - null = Actual expenditure has not been recorded.
+        | - 0    = Actual expenditure was recorded as zero.
+        | - > 0  = Actual expenditure has been recorded.
+        |
         */
 
         $scenarios = [
+
+            /*
+            |--------------------------------------------------------------------------
+            | Pending
+            |--------------------------------------------------------------------------
+            */
+
             MaintenanceAssignment::STATUS_PENDING => [
                 'days_ago' => 1,
                 'accepted_days' => null,
@@ -145,14 +173,24 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => null,
                 'completed_days' => null,
                 'cancelled_days' => null,
+
                 'estimated_hours' => 4,
                 'actual_hours' => null,
+
                 'estimated_cost' => 3000,
-                'actual_cost' => 0,
+                'actual_cost' => null,
+
                 'rejection_reason' => null,
                 'cancellation_reason' => null,
+
                 'work_notes' => 'Awaiting technician acceptance.',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Accepted
+            |--------------------------------------------------------------------------
+            */
 
             MaintenanceAssignment::STATUS_ACCEPTED => [
                 'days_ago' => 2,
@@ -163,14 +201,24 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => null,
                 'completed_days' => null,
                 'cancelled_days' => null,
+
                 'estimated_hours' => 3,
                 'actual_hours' => null,
+
                 'estimated_cost' => 4500,
-                'actual_cost' => 0,
+                'actual_cost' => null,
+
                 'rejection_reason' => null,
                 'cancellation_reason' => null,
+
                 'work_notes' => 'Technician accepted the assignment.',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Rejected
+            |--------------------------------------------------------------------------
+            */
 
             MaintenanceAssignment::STATUS_REJECTED => [
                 'days_ago' => 4,
@@ -181,14 +229,26 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => null,
                 'completed_days' => null,
                 'cancelled_days' => null,
+
                 'estimated_hours' => 2,
                 'actual_hours' => null,
+
                 'estimated_cost' => 2500,
-                'actual_cost' => 0,
-                'rejection_reason' => 'Technician unavailable due to another scheduled job.',
+                'actual_cost' => null,
+
+                'rejection_reason' =>
+                    'Technician unavailable due to another scheduled job.',
+
                 'cancellation_reason' => null,
+
                 'work_notes' => 'Assignment rejected by technician.',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | In Progress
+            |--------------------------------------------------------------------------
+            */
 
             MaintenanceAssignment::STATUS_IN_PROGRESS => [
                 'days_ago' => 5,
@@ -199,14 +259,25 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => 2,
                 'completed_days' => null,
                 'cancelled_days' => null,
+
                 'estimated_hours' => 6,
                 'actual_hours' => 3,
+
                 'estimated_cost' => 8000,
                 'actual_cost' => 3500,
+
                 'rejection_reason' => null,
                 'cancellation_reason' => null,
-                'work_notes' => 'Inspection completed. Repair work is ongoing.',
+
+                'work_notes' =>
+                    'Inspection completed. Repair work is ongoing.',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | On Hold
+            |--------------------------------------------------------------------------
+            */
 
             MaintenanceAssignment::STATUS_ON_HOLD => [
                 'days_ago' => 6,
@@ -217,14 +288,25 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => 3,
                 'completed_days' => null,
                 'cancelled_days' => null,
+
                 'estimated_hours' => 5,
                 'actual_hours' => 2,
+
                 'estimated_cost' => 6000,
                 'actual_cost' => 2000,
+
                 'rejection_reason' => null,
                 'cancellation_reason' => null,
-                'work_notes' => 'Work temporarily on hold pending spare parts.',
+
+                'work_notes' =>
+                    'Work temporarily on hold pending spare parts.',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Completed
+            |--------------------------------------------------------------------------
+            */
 
             MaintenanceAssignment::STATUS_COMPLETED => [
                 'days_ago' => 10,
@@ -235,14 +317,25 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => 7,
                 'completed_days' => 5,
                 'cancelled_days' => null,
+
                 'estimated_hours' => 4,
                 'actual_hours' => 5,
+
                 'estimated_cost' => 7000,
                 'actual_cost' => 6500,
+
                 'rejection_reason' => null,
                 'cancellation_reason' => null,
-                'work_notes' => 'All maintenance work completed and inspected successfully.',
+
+                'work_notes' =>
+                    'All maintenance work completed and inspected successfully.',
             ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Cancelled
+            |--------------------------------------------------------------------------
+            */
 
             MaintenanceAssignment::STATUS_CANCELLED => [
                 'days_ago' => 8,
@@ -253,13 +346,20 @@ class MaintenanceAssignmentSeeder extends Seeder
                 'started_days' => null,
                 'completed_days' => null,
                 'cancelled_days' => 5,
+
                 'estimated_hours' => 3,
-                'actual_hours' => 0,
+                'actual_hours' => null,
+
                 'estimated_cost' => 3500,
-                'actual_cost' => 0,
+                'actual_cost' => null,
+
                 'rejection_reason' => null,
-                'cancellation_reason' => 'Maintenance request cancelled by property management.',
-                'work_notes' => 'Assignment cancelled before work commenced.',
+
+                'cancellation_reason' =>
+                    'Maintenance request cancelled by property management.',
+
+                'work_notes' =>
+                    'Assignment cancelled before work commenced.',
             ],
         ];
 
@@ -307,6 +407,7 @@ class MaintenanceAssignmentSeeder extends Seeder
             $now = now();
 
             foreach ($requests as $index => $request) {
+
                 /*
                 |--------------------------------------------------------------------------
                 | Determine Assignment Status
@@ -338,7 +439,7 @@ class MaintenanceAssignmentSeeder extends Seeder
                 |--------------------------------------------------------------------------
                 */
 
-                // Prefer the known technician ID 4 for request 3, if available.
+                // Prefer technician ID 4 for request 3, if available.
                 $technicianId = (
                     (int) $request->id === 3 &&
                     $technicians->contains(4)
@@ -413,8 +514,11 @@ class MaintenanceAssignmentSeeder extends Seeder
 
                 $assignmentData = [
                     'maintenance_request_id' => $request->id,
+
                     'technician_id' => $technicianId,
+
                     'assigned_by' => $assignerId,
+
                     'status' => $assignmentStatus,
 
                     'assigned_at' => $assignedAt,
@@ -451,11 +555,19 @@ class MaintenanceAssignmentSeeder extends Seeder
 
                 if ($existingAssignment) {
                     $existingAssignment->update($assignmentData);
+
                     $updated++;
                 } else {
                     MaintenanceAssignment::create($assignmentData);
+
                     $created++;
                 }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Request 3 Debug Information
+                |--------------------------------------------------------------------------
+                */
 
                 if ((int) $request->id === 3) {
                     $this->command->info(
