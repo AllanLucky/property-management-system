@@ -114,8 +114,9 @@ return new class extends Migration
             $table->decimal('estimated_cost', 15, 2)
                 ->default(0);
 
+            // Null means that actual expenditure has not yet been recorded.
             $table->decimal('actual_cost', 15, 2)
-                ->default(0);
+                ->nullable();
 
             /*
             |--------------------------------------------------------------------------

@@ -27,7 +27,7 @@ class MaintenanceAssignmentCollection extends ResourceCollection
     }
 
     /**
-     * Add pagination information to the response.
+     * Customize pagination information.
      *
      * @param Request $request
      * @param array<string, mixed> $paginated
@@ -49,6 +49,7 @@ class MaintenanceAssignmentCollection extends ResourceCollection
                 'total' => $this->total(),
                 'has_more_pages' => $this->hasMorePages(),
             ],
+
             'links' => [
                 'first' => $this->url(1),
                 'last' => $this->url($this->lastPage()),
@@ -59,7 +60,9 @@ class MaintenanceAssignmentCollection extends ResourceCollection
     }
 
     /**
-     * Add additional data to the collection response.
+     * Add additional response information.
+     *
+     * @return array<string, mixed>
      */
     public function with(Request $request): array
     {

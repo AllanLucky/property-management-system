@@ -15,12 +15,15 @@ use App\Http\Requests\MaintenanceAssignment\UpdateMaintenanceAssignmentRequest;
 use App\Http\Resources\MaintenanceAssignmentResource;
 use App\Models\MaintenanceAssignment;
 use App\Services\MaintenanceAssignmentService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Throwable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Throwable;
 
 class MaintenanceAssignmentController extends Controller
 {
@@ -74,7 +77,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignments,
                 'Maintenance assignments retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve maintenance assignments.',
@@ -96,7 +98,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve maintenance assignment.',
@@ -127,7 +128,6 @@ class MaintenanceAssignmentController extends Controller
                 $statistics,
                 'Maintenance assignment statistics retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve maintenance assignment statistics.',
@@ -144,19 +144,13 @@ class MaintenanceAssignmentController extends Controller
         Request $request
     ): JsonResponse {
         try {
-            $filters = $request->only([
-                'date_from',
-                'date_to',
-            ]);
-
             $statistics = $this->maintenanceAssignmentService
-                ->getTechnicianStatistics($technicianId, $filters);
+                ->getTechnicianStatistics($technicianId);
 
             return ApiResponse::success(
                 $statistics,
                 'Technician assignment statistics retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve technician assignment statistics.',
@@ -175,8 +169,9 @@ class MaintenanceAssignmentController extends Controller
     /**
      * Retrieve assignments belonging to a maintenance request.
      */
-    public function byMaintenanceRequest(int $maintenanceRequestId): JsonResponse
-    {
+    public function byMaintenanceRequest(
+        int $maintenanceRequestId
+    ): JsonResponse {
         try {
             $assignments = $this->maintenanceAssignmentService
                 ->getByMaintenanceRequest($maintenanceRequestId);
@@ -185,7 +180,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignments,
                 'Maintenance request assignments retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve maintenance request assignments.',
@@ -229,7 +223,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignments,
                 'Technician assignments retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve technician assignments.',
@@ -252,7 +245,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignments,
                 'Assignments created by this user retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve assignments created by this user.',
@@ -301,7 +293,6 @@ class MaintenanceAssignmentController extends Controller
                 ucfirst(str_replace('_', ' ', $status))
                     . ' maintenance assignments retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve maintenance assignments by status.',
@@ -393,20 +384,13 @@ class MaintenanceAssignmentController extends Controller
     public function overdue(Request $request): JsonResponse
     {
         try {
-            $filters = $request->only([
-                'technician_id',
-                'maintenance_request_id',
-                'assigned_by',
-            ]);
-
             $assignments = $this->maintenanceAssignmentService
-                ->getOverdue($filters);
+                ->getOverdue();
 
             return $this->respondWithCollection(
                 $assignments,
                 'Overdue maintenance assignments retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve overdue maintenance assignments.',
@@ -421,22 +405,13 @@ class MaintenanceAssignmentController extends Controller
     public function scheduled(Request $request): JsonResponse
     {
         try {
-            $filters = $request->only([
-                'technician_id',
-                'maintenance_request_id',
-                'assigned_by',
-                'scheduled_from',
-                'scheduled_to',
-            ]);
-
             $assignments = $this->maintenanceAssignmentService
-                ->getScheduled($filters);
+                ->getScheduled();
 
             return $this->respondWithCollection(
                 $assignments,
                 'Scheduled maintenance assignments retrieved successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve scheduled maintenance assignments.',
@@ -467,7 +442,6 @@ class MaintenanceAssignmentController extends Controller
                     ->resolve($request),
                 'Maintenance assignment created successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to create maintenance assignment.',
@@ -500,12 +474,6 @@ class MaintenanceAssignmentController extends Controller
                     ->resolve($request),
                 'Maintenance assignment updated successfully.'
             );
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return ApiResponse::notFound(
-                'Maintenance assignment not found.'
-            );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to update maintenance assignment.',
@@ -533,12 +501,6 @@ class MaintenanceAssignmentController extends Controller
                 ['id' => $id],
                 'Maintenance assignment deleted successfully.'
             );
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return ApiResponse::notFound(
-                'Maintenance assignment not found.'
-            );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to delete maintenance assignment.',
@@ -566,7 +528,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment accepted successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to accept maintenance assignment.',
@@ -599,7 +560,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment rejected successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to reject maintenance assignment.',
@@ -632,7 +592,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment work started successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to start maintenance assignment.',
@@ -665,7 +624,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment placed on hold successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to place maintenance assignment on hold.',
@@ -693,7 +651,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment resumed successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to resume maintenance assignment.',
@@ -726,7 +683,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment rescheduled successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to reschedule maintenance assignment.',
@@ -759,7 +715,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment completed successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to complete maintenance assignment.',
@@ -776,7 +731,7 @@ class MaintenanceAssignmentController extends Controller
     */
 
     /**
-     * Cancel a maintenance assignment.
+     * Cancel an active maintenance assignment.
      */
     public function cancel(
         CancelMaintenanceAssignmentRequest $request,
@@ -792,7 +747,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignment,
                 'Maintenance assignment cancelled successfully.'
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to cancel maintenance assignment.',
@@ -882,7 +836,6 @@ class MaintenanceAssignmentController extends Controller
                 $assignments,
                 $message
             );
-
         } catch (Throwable $e) {
             return $this->handleException(
                 'Failed to retrieve ' . $status . ' maintenance assignments.',
@@ -905,23 +858,65 @@ class MaintenanceAssignmentController extends Controller
         Throwable $exception,
         ?int $recordId = null
     ): JsonResponse {
-        if (
-            $exception instanceof
-            \Illuminate\Database\Eloquent\ModelNotFoundException
-        ) {
-            return ApiResponse::notFound($message);
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDATION EXCEPTIONS
+        |--------------------------------------------------------------------------
+        */
+
+        if ($exception instanceof ValidationException) {
+            return ApiResponse::validation(
+                $exception->errors(),
+                'Validation failed.'
+            );
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | MODEL NOT FOUND
+        |--------------------------------------------------------------------------
+        */
+
+        if ($exception instanceof ModelNotFoundException) {
+            return ApiResponse::notFound(
+                'The requested maintenance assignment was not found.'
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | HTTP EXCEPTIONS
+        |--------------------------------------------------------------------------
+        */
+
+        if ($exception instanceof HttpExceptionInterface) {
+            return ApiResponse::error(
+                $exception->getMessage() ?: $message,
+                null,
+                $exception->getStatusCode()
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | UNEXPECTED EXCEPTIONS
+        |--------------------------------------------------------------------------
+        */
 
         Log::error($message, [
             'record_id' => $recordId,
             'exception' => get_class($exception),
             'error' => $exception->getMessage(),
+            'file' => $exception->getFile(),
+            'line' => $exception->getLine(),
         ]);
 
         return ApiResponse::serverError(
             $message,
             config('app.debug')
-                ? ['exception' => $exception->getMessage()]
+                ? [
+                    'exception' => $exception->getMessage(),
+                ]
                 : null
         );
     }
