@@ -118,7 +118,7 @@ use App\Repositories\Interfaces\AreaRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| AMENITY REPOSITORY
+| AMENITY REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -127,7 +127,7 @@ use App\Repositories\Interfaces\AmenityRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| DASHBOARD REPOSITORY
+| DASHBOARD REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -136,7 +136,7 @@ use App\Repositories\Interfaces\DashboardRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| TENANT REPOSITORY
+| TENANT REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -145,7 +145,7 @@ use App\Repositories\Interfaces\TenantRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| TENANCY REPOSITORY
+| TENANCY REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -154,7 +154,7 @@ use App\Repositories\Interfaces\TenancyRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| LEASE REPOSITORY
+| LEASE REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -163,7 +163,7 @@ use App\Repositories\Interfaces\LeaseRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| BOOKING REPOSITORY
+| BOOKING REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -172,7 +172,7 @@ use App\Repositories\Interfaces\BookingRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| PLOT REPOSITORY
+| PLOT REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -181,7 +181,7 @@ use App\Repositories\Interfaces\PlotRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| PLOT SALE REPOSITORY
+| PLOT SALE REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -190,7 +190,7 @@ use App\Repositories\Interfaces\PlotSaleRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| PLOT PAYMENT REPOSITORY
+| PLOT PAYMENT REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -199,7 +199,7 @@ use App\Repositories\Interfaces\PlotPaymentRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| MAINTENANCE REQUEST REPOSITORY
+| MAINTENANCE REQUEST REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -208,7 +208,7 @@ use App\Repositories\Interfaces\MaintenanceRequestRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| MAINTENANCE CATEGORY REPOSITORY
+| MAINTENANCE CATEGORY REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -217,7 +217,7 @@ use App\Repositories\Interfaces\MaintenanceCategoryRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| ONGOING MAINTENANCE REPOSITORY
+| ONGOING MAINTENANCE REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
@@ -226,17 +226,26 @@ use App\Repositories\Interfaces\OngoingMaintenanceRepositoryInterface;
 
 /*
 |--------------------------------------------------------------------------
-| COMPLETED MAINTENANCE REPOSITORY
+| COMPLETED MAINTENANCE REPOSITORIES
 |--------------------------------------------------------------------------
 */
 
 use App\Repositories\Eloquent\CompletedMaintenanceRepository;
 use App\Repositories\Interfaces\CompletedMaintenanceRepositoryInterface;
 
+/*
+|--------------------------------------------------------------------------
+| MAINTENANCE ASSIGNMENT REPOSITORIES
+|--------------------------------------------------------------------------
+*/
+
+use App\Repositories\Eloquent\MaintenanceAssignmentRepository;
+use App\Repositories\Interfaces\MaintenanceAssignmentRepositoryInterface;
+
 class AppServiceProvider extends ServiceProvider
 {
     /**
-     * Register application services.
+     * Register application services and repository bindings.
      */
     public function register(): void
     {
@@ -528,6 +537,17 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             CompletedMaintenanceRepositoryInterface::class,
             CompletedMaintenanceRepository::class
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        $this->app->bind(
+            MaintenanceAssignmentRepositoryInterface::class,
+            MaintenanceAssignmentRepository::class
         );
     }
 
