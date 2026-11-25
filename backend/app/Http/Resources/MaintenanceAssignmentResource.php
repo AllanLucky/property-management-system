@@ -55,12 +55,37 @@ class MaintenanceAssignmentResource extends JsonResource
             'technician' => $this->whenLoaded(
                 'technician',
                 function () {
-                    return $this->technician ? [
+                    if (!$this->technician) {
+                        return null;
+                    }
+
+                    return [
                         'id' => $this->technician->id,
-                        'name' => $this->technician->name,
+
+                        'name' => $this->technician->full_name,
+
+                        'first_name' => $this->technician->first_name,
+
+                        'last_name' => $this->technician->last_name,
+
                         'email' => $this->technician->email,
+
                         'phone' => $this->technician->phone,
-                    ] : null;
+
+                        'initials' => $this->technician->initials,
+
+                        'image' => $this->technician->image,
+
+                        'image_url' => $this->technician->image_url,
+
+                        'account_status' => $this->technician->account_status,
+
+                        'approval_status' => $this->technician->approval_status,
+
+                        'is_active' => $this->technician->is_active,
+
+                        'is_verified' => $this->technician->is_verified_user,
+                    ];
                 }
             ),
 
@@ -75,11 +100,29 @@ class MaintenanceAssignmentResource extends JsonResource
             'assigner' => $this->whenLoaded(
                 'assigner',
                 function () {
-                    return $this->assigner ? [
+                    if (!$this->assigner) {
+                        return null;
+                    }
+
+                    return [
                         'id' => $this->assigner->id,
-                        'name' => $this->assigner->name,
+
+                        'name' => $this->assigner->full_name,
+
+                        'first_name' => $this->assigner->first_name,
+
+                        'last_name' => $this->assigner->last_name,
+
                         'email' => $this->assigner->email,
-                    ] : null;
+
+                        'phone' => $this->assigner->phone,
+
+                        'initials' => $this->assigner->initials,
+
+                        'image' => $this->assigner->image,
+
+                        'image_url' => $this->assigner->image_url,
+                    ];
                 }
             ),
 

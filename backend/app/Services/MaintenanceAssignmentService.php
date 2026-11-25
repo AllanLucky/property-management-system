@@ -42,6 +42,15 @@ class MaintenanceAssignmentService
     ];
 
     /**
+     * Maintenance request statuses that cannot receive new assignments.
+     */
+    private const INELIGIBLE_REQUEST_STATUSES = [
+        'completed',
+        'cancelled',
+        'rejected',
+    ];
+
+    /**
      * Create a new service instance.
      */
     public function __construct(
@@ -72,7 +81,7 @@ class MaintenanceAssignmentService
         array $filters = []
     ): LengthAwarePaginator {
         return $this->assignmentRepository->paginate(
-            $perPage,
+            $this->normalizePerPage($perPage),
             $filters
         );
     }
@@ -90,6 +99,15 @@ class MaintenanceAssignmentService
      */
     public function findOrFail(int $id): MaintenanceAssignment
     {
+        return $this->findWithRelationsOrFail($id);
+    }
+
+    /**
+     * Retrieve an assignment with all required relationships or fail.
+     */
+    public function findWithRelationsOrFail(
+        int $id
+    ): MaintenanceAssignment {
         return $this->assignmentRepository->findWithRelationsOrFail($id);
     }
 
@@ -102,9 +120,8 @@ class MaintenanceAssignmentService
     /**
      * Retrieve assignments belonging to a maintenance request.
      */
-    public function getByMaintenanceRequest(
-        int $maintenanceRequestId
-    ) {
+    public function getByMaintenanceRequest(int $maintenanceRequestId)
+    {
         return $this->assignmentRepository->getByMaintenanceRequest(
             $maintenanceRequestId
         );
@@ -113,9 +130,8 @@ class MaintenanceAssignmentService
     /**
      * Retrieve assignments belonging to a technician.
      */
-    public function getByTechnician(
-        int $technicianId
-    ) {
+    public function getByTechnician(int $technicianId)
+    {
         return $this->assignmentRepository->getByTechnician(
             $technicianId
         );
@@ -131,7 +147,7 @@ class MaintenanceAssignmentService
     ): LengthAwarePaginator {
         return $this->assignmentRepository->paginateByTechnician(
             $technicianId,
-            $perPage,
+            $this->normalizePerPage($perPage),
             $filters
         );
     }
@@ -161,73 +177,46 @@ class MaintenanceAssignmentService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Retrieve pending assignments.
-     */
     public function getPending()
     {
         return $this->assignmentRepository->getPending();
     }
 
-    /**
-     * Retrieve accepted assignments.
-     */
     public function getAccepted()
     {
         return $this->assignmentRepository->getAccepted();
     }
 
-    /**
-     * Retrieve rejected assignments.
-     */
     public function getRejected()
     {
         return $this->assignmentRepository->getRejected();
     }
 
-    /**
-     * Retrieve assignments currently in progress.
-     */
     public function getInProgress()
     {
         return $this->assignmentRepository->getInProgress();
     }
 
-    /**
-     * Retrieve assignments currently on hold.
-     */
     public function getOnHold()
     {
         return $this->assignmentRepository->getOnHold();
     }
 
-    /**
-     * Retrieve completed assignments.
-     */
     public function getCompleted()
     {
         return $this->assignmentRepository->getCompleted();
     }
 
-    /**
-     * Retrieve cancelled assignments.
-     */
     public function getCancelled()
     {
         return $this->assignmentRepository->getCancelled();
     }
 
-    /**
-     * Retrieve overdue assignments.
-     */
     public function getOverdue()
     {
         return $this->assignmentRepository->getOverdue();
     }
 
-    /**
-     * Retrieve scheduled assignments.
-     */
     public function getScheduled()
     {
         return $this->assignmentRepository->getScheduled();
@@ -249,9 +238,6 @@ class MaintenanceAssignmentService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Retrieve paginated assignments by status.
-     */
     public function paginateByStatus(
         string $status,
         int $perPage = 15,
@@ -261,46 +247,37 @@ class MaintenanceAssignmentService
 
         return $this->assignmentRepository->paginateByStatus(
             $status,
-            $perPage,
+            $this->normalizePerPage($perPage),
             $filters
         );
     }
 
-    /**
-     * Retrieve paginated pending assignments.
-     */
     public function paginatePending(
         int $perPage = 15,
         array $filters = []
     ): LengthAwarePaginator {
         return $this->assignmentRepository->paginatePending(
-            $perPage,
+            $this->normalizePerPage($perPage),
             $filters
         );
     }
 
-    /**
-     * Retrieve paginated completed assignments.
-     */
     public function paginateCompleted(
         int $perPage = 15,
         array $filters = []
     ): LengthAwarePaginator {
         return $this->assignmentRepository->paginateCompleted(
-            $perPage,
+            $this->normalizePerPage($perPage),
             $filters
         );
     }
 
-    /**
-     * Retrieve paginated overdue assignments.
-     */
     public function paginateOverdue(
         int $perPage = 15,
         array $filters = []
     ): LengthAwarePaginator {
         return $this->assignmentRepository->paginateOverdue(
-            $perPage,
+            $this->normalizePerPage($perPage),
             $filters
         );
     }
@@ -314,41 +291,38 @@ class MaintenanceAssignmentService
     /**
      * Create a maintenance assignment.
      *
-     * The assignment is automatically initialized as pending.
+     * New assignments are automatically initialized as pending.
      */
     public function create(array $data): MaintenanceAssignment
     {
         return DB::transaction(function () use ($data) {
+
             $maintenanceRequestId = (int) $data['maintenance_request_id'];
             $technicianId = (int) $data['technician_id'];
 
             /*
-            |--------------------------------------------------------------------------
-            | Validate Maintenance Request
-            |--------------------------------------------------------------------------
-            */
-
-            MaintenanceRequest::query()
+             * Lock the maintenance request to prevent concurrent
+             * assignment creation for the same request.
+             */
+            $maintenanceRequest = MaintenanceRequest::query()
                 ->whereKey($maintenanceRequestId)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            /*
-            |--------------------------------------------------------------------------
-            | Validate Technician
-            |--------------------------------------------------------------------------
-            */
+            $this->ensureMaintenanceRequestCanBeAssigned(
+                $maintenanceRequest
+            );
 
+            /*
+             * Retrieve and validate the selected technician.
+             */
             $technician = User::query()->findOrFail($technicianId);
 
             $this->ensureTechnician($technician);
 
             /*
-            |--------------------------------------------------------------------------
-            | Prevent Duplicate Active Assignments
-            |--------------------------------------------------------------------------
-            */
-
+             * Prevent multiple active assignments for one request.
+             */
             if (
                 $this->assignmentRepository->hasActiveAssignment(
                     $maintenanceRequestId
@@ -362,11 +336,8 @@ class MaintenanceAssignmentService
             }
 
             /*
-            |--------------------------------------------------------------------------
-            | Prepare Assignment Data
-            |--------------------------------------------------------------------------
-            */
-
+             * Only allow explicitly supported fields.
+             */
             $assignmentData = Arr::only(
                 $data,
                 [
@@ -380,7 +351,10 @@ class MaintenanceAssignmentService
             );
 
             $assignmentData['assigned_by'] = Auth::id();
-            $assignmentData['status'] = MaintenanceAssignment::STATUS_PENDING;
+
+            $assignmentData['status'] =
+                MaintenanceAssignment::STATUS_PENDING;
+
             $assignmentData['assigned_at'] = now();
 
             $assignmentData['accepted_at'] = null;
@@ -389,10 +363,12 @@ class MaintenanceAssignmentService
             $assignmentData['rejected_at'] = null;
             $assignmentData['cancelled_at'] = null;
 
-            return $this->assignmentRepository->create(
+            $assignment = $this->assignmentRepository->create(
                 $assignmentData
             );
-        });
+
+            return $this->loadRelationships($assignment);
+        }, 3);
     }
 
     /*
@@ -409,29 +385,32 @@ class MaintenanceAssignmentService
         array $data
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             $this->ensureNotTerminal($assignment);
 
-            if ($assignment->isInProgress()) {
-                if (array_key_exists('technician_id', $data)) {
-                    throw ValidationException::withMessages([
-                        'technician_id' => [
-                            'An assignment cannot be reassigned while work is in progress.',
-                        ],
-                    ]);
-                }
+            /*
+             * Do not allow technician changes during active work.
+             */
+            if (
+                $assignment->isInProgress() &&
+                array_key_exists('technician_id', $data)
+            ) {
+                throw ValidationException::withMessages([
+                    'technician_id' => [
+                        'An assignment cannot be reassigned while work is in progress.',
+                    ],
+                ]);
             }
 
             /*
-            |--------------------------------------------------------------------------
-            | Validate Technician Reassignment
-            |--------------------------------------------------------------------------
-            */
-
+             * Validate a replacement technician.
+             */
             if (
                 isset($data['technician_id']) &&
-                (int) $data['technician_id'] !== (int) $assignment->technician_id
+                (int) $data['technician_id'] !==
+                    (int) $assignment->technician_id
             ) {
                 if (!$assignment->isPending()) {
                     throw ValidationException::withMessages([
@@ -442,17 +421,11 @@ class MaintenanceAssignmentService
                 }
 
                 $technician = User::query()->findOrFail(
-                    $data['technician_id']
+                    (int) $data['technician_id']
                 );
 
                 $this->ensureTechnician($technician);
             }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Prepare Update Data
-            |--------------------------------------------------------------------------
-            */
 
             $updateData = Arr::only(
                 $data,
@@ -467,11 +440,13 @@ class MaintenanceAssignmentService
                 ]);
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -486,6 +461,7 @@ class MaintenanceAssignmentService
     public function delete(int $id): bool
     {
         return DB::transaction(function () use ($id) {
+
             $assignment = $this->findForUpdate($id);
 
             if (
@@ -500,7 +476,7 @@ class MaintenanceAssignmentService
             }
 
             return $this->assignmentRepository->delete($assignment);
-        });
+        }, 3);
     }
 
     /*
@@ -538,6 +514,7 @@ class MaintenanceAssignmentService
         array $data
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             $this->ensureStatus(
@@ -546,21 +523,39 @@ class MaintenanceAssignmentService
                 'Only pending assignments can be rejected.'
             );
 
+            if (
+                !isset($data['rejection_reason']) ||
+                trim((string) $data['rejection_reason']) === ''
+            ) {
+                throw ValidationException::withMessages([
+                    'rejection_reason' => [
+                        'A rejection reason is required to reject this assignment.',
+                    ],
+                ]);
+            }
+
             $updateData = [
                 'status' => MaintenanceAssignment::STATUS_REJECTED,
                 'rejected_at' => now(),
-                'rejection_reason' => $data['rejection_reason'],
+                'rejection_reason' => trim(
+                    (string) $data['rejection_reason']
+                ),
             ];
 
             if (!empty($data['work_notes'])) {
-                $updateData['work_notes'] = $data['work_notes'];
+                $updateData['work_notes'] = $this->appendNote(
+                    $assignment->work_notes,
+                    $data['work_notes']
+                );
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -577,6 +572,7 @@ class MaintenanceAssignmentService
         array $data = []
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             $this->ensureStatus(
@@ -591,14 +587,19 @@ class MaintenanceAssignmentService
             ];
 
             if (!empty($data['work_notes'])) {
-                $updateData['work_notes'] = $data['work_notes'];
+                $updateData['work_notes'] = $this->appendNote(
+                    $assignment->work_notes,
+                    $data['work_notes']
+                );
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -615,6 +616,7 @@ class MaintenanceAssignmentService
         array $data
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             if (
@@ -628,9 +630,20 @@ class MaintenanceAssignmentService
                 ]);
             }
 
+            if (
+                !isset($data['hold_reason']) ||
+                trim((string) $data['hold_reason']) === ''
+            ) {
+                throw ValidationException::withMessages([
+                    'hold_reason' => [
+                        'A reason is required to put an assignment on hold.',
+                    ],
+                ]);
+            }
+
             $workNotes = $this->appendNote(
                 $assignment->work_notes,
-                'Hold reason: ' . $data['hold_reason']
+                'Hold reason: ' . trim((string) $data['hold_reason'])
             );
 
             if (!empty($data['work_notes'])) {
@@ -640,14 +653,16 @@ class MaintenanceAssignmentService
                 );
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 [
                     'status' => MaintenanceAssignment::STATUS_ON_HOLD,
                     'work_notes' => $workNotes,
                 ]
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -684,6 +699,7 @@ class MaintenanceAssignmentService
         array $data
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             if (
@@ -699,14 +715,21 @@ class MaintenanceAssignmentService
                 ]);
             }
 
+            if (
+                !isset($data['scheduled_at']) ||
+                empty($data['scheduled_at'])
+            ) {
+                throw ValidationException::withMessages([
+                    'scheduled_at' => [
+                        'A new scheduled date and time is required.',
+                    ],
+                ]);
+            }
+
             $updateData = [
                 'scheduled_at' => $data['scheduled_at'],
             ];
 
-            /*
-             * The current model does not have a reschedule_reason column.
-             * Preserve the reason in work_notes instead.
-             */
             if (!empty($data['reschedule_reason'])) {
                 $updateData['work_notes'] = $this->appendNote(
                     $assignment->work_notes,
@@ -721,11 +744,13 @@ class MaintenanceAssignmentService
                 );
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -735,13 +760,14 @@ class MaintenanceAssignmentService
     */
 
     /**
-     * Complete an accepted or in-progress assignment.
+     * Complete an accepted, in-progress, or on-hold assignment.
      */
     public function complete(
         int $id,
         array $data
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             if (
@@ -764,6 +790,17 @@ class MaintenanceAssignmentService
                 ]);
             }
 
+            if (
+                !array_key_exists('actual_hours', $data) ||
+                !array_key_exists('actual_cost', $data)
+            ) {
+                throw ValidationException::withMessages([
+                    'actual_hours' => [
+                        'Actual hours and actual cost are required to complete an assignment.',
+                    ],
+                ]);
+            }
+
             $updateData = [
                 'status' => MaintenanceAssignment::STATUS_COMPLETED,
                 'completed_at' => now(),
@@ -771,15 +808,23 @@ class MaintenanceAssignmentService
                 'actual_cost' => $data['actual_cost'],
             ];
 
-            if (array_key_exists('work_notes', $data)) {
-                $updateData['work_notes'] = $data['work_notes'];
+            if (
+                array_key_exists('work_notes', $data) &&
+                trim((string) $data['work_notes']) !== ''
+            ) {
+                $updateData['work_notes'] = $this->appendNote(
+                    $assignment->work_notes,
+                    $data['work_notes']
+                );
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -796,6 +841,7 @@ class MaintenanceAssignmentService
         array $data
     ): MaintenanceAssignment {
         return DB::transaction(function () use ($id, $data) {
+
             $assignment = $this->findForUpdate($id);
 
             if (!in_array(
@@ -810,21 +856,39 @@ class MaintenanceAssignmentService
                 ]);
             }
 
+            if (
+                !isset($data['cancellation_reason']) ||
+                trim((string) $data['cancellation_reason']) === ''
+            ) {
+                throw ValidationException::withMessages([
+                    'cancellation_reason' => [
+                        'A cancellation reason is required.',
+                    ],
+                ]);
+            }
+
             $updateData = [
                 'status' => MaintenanceAssignment::STATUS_CANCELLED,
                 'cancelled_at' => now(),
-                'cancellation_reason' => $data['cancellation_reason'],
+                'cancellation_reason' => trim(
+                    (string) $data['cancellation_reason']
+                ),
             ];
 
             if (!empty($data['work_notes'])) {
-                $updateData['work_notes'] = $data['work_notes'];
+                $updateData['work_notes'] = $this->appendNote(
+                    $assignment->work_notes,
+                    $data['work_notes']
+                );
             }
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /*
@@ -833,9 +897,6 @@ class MaintenanceAssignmentService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine whether a maintenance request has an active assignment.
-     */
     public function hasActiveAssignment(
         int $maintenanceRequestId
     ): bool {
@@ -844,10 +905,6 @@ class MaintenanceAssignmentService
         );
     }
 
-    /**
-     * Determine whether a technician has an active assignment
-     * for a particular maintenance request.
-     */
     public function technicianHasActiveAssignment(
         int $technicianId,
         int $maintenanceRequestId
@@ -859,9 +916,6 @@ class MaintenanceAssignmentService
             );
     }
 
-    /**
-     * Determine whether a technician has any assignments.
-     */
     public function technicianHasAssignments(
         int $technicianId
     ): bool {
@@ -870,9 +924,6 @@ class MaintenanceAssignmentService
         );
     }
 
-    /**
-     * Count active assignments belonging to a technician.
-     */
     public function countActiveAssignmentsByTechnician(
         int $technicianId
     ): int {
@@ -886,29 +937,18 @@ class MaintenanceAssignmentService
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Retrieve overall maintenance assignment statistics.
-     */
-    public function getStatistics(
-        array $filters = []
-    ): array {
+    public function getStatistics(array $filters = []): array
+    {
         return $this->assignmentRepository->getStatistics($filters);
     }
 
-    /**
-     * Retrieve assignment statistics for a specific technician.
-     */
-    public function getTechnicianStatistics(
-        int $technicianId
-    ): array {
+    public function getTechnicianStatistics(int $technicianId): array
+    {
         return $this->assignmentRepository->getTechnicianStatistics(
             $technicianId
         );
     }
 
-    /**
-     * Count assignments by status.
-     */
     public function countByStatus(
         string $status,
         array $filters = []
@@ -921,9 +961,6 @@ class MaintenanceAssignmentService
         );
     }
 
-    /**
-     * Count all maintenance assignments.
-     */
     public function countAll(array $filters = []): int
     {
         return $this->assignmentRepository->countAll($filters);
@@ -956,6 +993,19 @@ class MaintenanceAssignmentService
     }
 
     /**
+     * Load all relationships required by the assignment resource.
+     */
+    private function loadRelationships(
+        MaintenanceAssignment $assignment
+    ): MaintenanceAssignment {
+        return $assignment->load([
+            'maintenanceRequest',
+            'technician',
+            'assigner',
+        ]);
+    }
+
+    /**
      * Change an assignment status after verifying its current status.
      */
     private function changeStatus(
@@ -968,6 +1018,7 @@ class MaintenanceAssignmentService
             $expectedStatus,
             $updateData
         ) {
+
             $assignment = $this->findForUpdate($id);
 
             $this->ensureStatus(
@@ -976,11 +1027,13 @@ class MaintenanceAssignmentService
                 'This assignment cannot be moved to the requested status.'
             );
 
-            return $this->assignmentRepository->update(
+            $updated = $this->assignmentRepository->update(
                 $assignment,
                 $updateData
             );
-        });
+
+            return $this->loadRelationships($updated);
+        }, 3);
     }
 
     /**
@@ -1018,18 +1071,40 @@ class MaintenanceAssignmentService
     }
 
     /**
-     * Ensure the supplied user is a technician.
+     * Ensure the maintenance request is eligible for assignment.
+     */
+    private function ensureMaintenanceRequestCanBeAssigned(
+        MaintenanceRequest $maintenanceRequest
+    ): void {
+        $status = strtolower(trim(
+            (string) $maintenanceRequest->status
+        ));
+
+        if (!in_array(
+            $status,
+            self::INELIGIBLE_REQUEST_STATUSES,
+            true
+        )) {
+            return;
+        }
+
+        $message = match ($status) {
+            'completed' => 'A completed maintenance request cannot be assigned to a technician.',
+            'cancelled' => 'A cancelled maintenance request cannot be assigned to a technician.',
+            'rejected' => 'A rejected maintenance request cannot be assigned to a technician.',
+            default => 'This maintenance request cannot be assigned to a technician.',
+        };
+
+        throw ValidationException::withMessages([
+            'maintenance_request_id' => [$message],
+        ]);
+    }
+
+    /**
+     * Ensure the supplied user is an eligible technician.
      */
     private function ensureTechnician(User $technician): void
     {
-        if (!$technician->hasRole('technician')) {
-            throw ValidationException::withMessages([
-                'technician_id' => [
-                    'The selected user is not registered as a technician.',
-                ],
-            ]);
-        }
-
         if (
             method_exists($technician, 'trashed') &&
             $technician->trashed()
@@ -1040,6 +1115,47 @@ class MaintenanceAssignmentService
                 ],
             ]);
         }
+
+        if (!$technician->hasRole('technician')) {
+            throw ValidationException::withMessages([
+                'technician_id' => [
+                    'The selected user is not registered as a technician.',
+                ],
+            ]);
+        }
+
+        if (
+            $technician->is_active !== null &&
+            !$technician->is_active
+        ) {
+            throw ValidationException::withMessages([
+                'technician_id' => [
+                    'The selected technician account is inactive.',
+                ],
+            ]);
+        }
+
+        if (
+            $technician->approval_status !== null &&
+            $technician->approval_status !== 'approved'
+        ) {
+            throw ValidationException::withMessages([
+                'technician_id' => [
+                    'The selected technician has not been approved.',
+                ],
+            ]);
+        }
+
+        if (
+            $technician->account_status !== null &&
+            $technician->account_status !== 'active'
+        ) {
+            throw ValidationException::withMessages([
+                'technician_id' => [
+                    'The selected technician account is not active.',
+                ],
+            ]);
+        }
     }
 
     /**
@@ -1047,13 +1163,25 @@ class MaintenanceAssignmentService
      */
     private function validateStatus(string $status): void
     {
-        if (!array_key_exists($status, MaintenanceAssignment::statuses())) {
+        if (!in_array(
+            $status,
+            MaintenanceAssignment::statuses(),
+            true
+        )) {
             throw ValidationException::withMessages([
                 'status' => [
                     'The selected maintenance assignment status is invalid.',
                 ],
             ]);
         }
+    }
+
+    /**
+     * Normalize pagination size.
+     */
+    private function normalizePerPage(int $perPage): int
+    {
+        return max(1, min($perPage, 100));
     }
 
     /**
@@ -1073,6 +1201,9 @@ class MaintenanceAssignmentService
             return $newNote;
         }
 
-        return trim($existingNotes) . PHP_EOL . PHP_EOL . $newNote;
+        return trim($existingNotes)
+            . PHP_EOL
+            . PHP_EOL
+            . $newNote;
     }
 }

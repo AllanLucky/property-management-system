@@ -65,7 +65,7 @@ class RejectMaintenanceAssignmentRequest extends FormRequest
      */
     public function withValidator(Validator $validator): void
     {
-        $validator->after(function (Validator $validator) {
+        $validator->after(function (Validator $validator): void {
             $assignment = $this->getMaintenanceAssignment();
 
             if (! $assignment) {
@@ -82,14 +82,6 @@ class RejectMaintenanceAssignmentRequest extends FormRequest
                 $validator->errors()->add(
                     'status',
                     'Only pending maintenance assignments can be rejected.'
-                );
-            }
-
-            // Ensure the rejection reason is provided.
-            if (! $this->filled('rejection_reason')) {
-                $validator->errors()->add(
-                    'rejection_reason',
-                    'A rejection reason is required to reject this maintenance assignment.'
                 );
             }
         });
@@ -112,7 +104,7 @@ class RejectMaintenanceAssignmentRequest extends FormRequest
             return null;
         }
 
-        return MaintenanceAssignment::find($assignment);
+        return MaintenanceAssignment::query()->find((int) $assignment);
     }
 
     /**
