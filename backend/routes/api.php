@@ -90,6 +90,7 @@ use App\Http\Controllers\Api\Maintenance\MaintenanceRequestController;
 use App\Http\Controllers\Api\Maintenance\MaintenanceCategoryController;
 use App\Http\Controllers\Api\Maintenance\OngoingMaintenanceController;
 use App\Http\Controllers\Api\Maintenance\CompletedMaintenanceController;
+use App\Http\Controllers\Api\Maintenance\MaintenanceAssignmentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -2085,6 +2086,303 @@ Route::middleware('auth:sanctum')->group(function () {
 
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| MAINTENANCE ASSIGNMENT MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('maintenance-assignments')
+    ->name('maintenance-assignments.')
+    ->controller(MaintenanceAssignmentController::class)
+    ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | MAINTENANCE ASSIGNMENT STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'statistics',
+            'statistics'
+        )->name('statistics');
+
+        /*
+        |--------------------------------------------------------------------------
+        | TECHNICIAN ASSIGNMENT STATISTICS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'technician/{technicianId}/statistics',
+            'technicianStatistics'
+        )
+            ->whereNumber('technicianId')
+            ->name('technician-statistics');
+
+        /*
+        |--------------------------------------------------------------------------
+        | RELATIONSHIP RETRIEVAL
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'maintenance-request/{maintenanceRequestId}',
+            'byMaintenanceRequest'
+        )
+            ->whereNumber('maintenanceRequestId')
+            ->name('by-maintenance-request');
+
+        Route::get(
+            'technician/{technicianId}',
+            'byTechnician'
+        )
+            ->whereNumber('technicianId')
+            ->name('by-technician');
+
+        Route::get(
+            'assigner/{assignerId}',
+            'byAssigner'
+        )
+            ->whereNumber('assignerId')
+            ->name('by-assigner');
+
+        /*
+        |--------------------------------------------------------------------------
+        | STATUS RETRIEVAL
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'pending',
+            'pending'
+        )->name('pending');
+
+        Route::get(
+            'accepted',
+            'accepted'
+        )->name('accepted');
+
+        Route::get(
+            'rejected',
+            'rejected'
+        )->name('rejected');
+
+        Route::get(
+            'in-progress',
+            'inProgress'
+        )->name('in-progress');
+
+        Route::get(
+            'on-hold',
+            'onHold'
+        )->name('on-hold');
+
+        Route::get(
+            'completed',
+            'completed'
+        )->name('completed');
+
+        Route::get(
+            'cancelled',
+            'cancelled'
+        )->name('cancelled');
+
+        Route::get(
+            'overdue',
+            'overdue'
+        )->name('overdue');
+
+        Route::get(
+            'scheduled',
+            'scheduled'
+        )->name('scheduled');
+
+        /*
+        |--------------------------------------------------------------------------
+        | FILTER BY STATUS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            'status/{status}',
+            'byStatus'
+        )->name('by-status');
+
+        /*
+        |--------------------------------------------------------------------------
+        | CREATE MAINTENANCE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post(
+            '/',
+            'store'
+        )->name('store');
+
+        /*
+        |--------------------------------------------------------------------------
+        | LIST MAINTENANCE ASSIGNMENTS
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/',
+            'index'
+        )->name('index');
+
+        /*
+        |--------------------------------------------------------------------------
+        | ACCEPT ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/accept',
+            'accept'
+        )
+            ->whereNumber('id')
+            ->name('accept');
+
+        /*
+        |--------------------------------------------------------------------------
+        | REJECT ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/reject',
+            'reject'
+        )
+            ->whereNumber('id')
+            ->name('reject');
+
+        /*
+        |--------------------------------------------------------------------------
+        | START ASSIGNMENT WORK
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/start',
+            'start'
+        )
+            ->whereNumber('id')
+            ->name('start');
+
+        /*
+        |--------------------------------------------------------------------------
+        | HOLD ASSIGNMENT WORK
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/hold',
+            'hold'
+        )
+            ->whereNumber('id')
+            ->name('hold');
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESUME ASSIGNMENT WORK
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/resume',
+            'resume'
+        )
+            ->whereNumber('id')
+            ->name('resume');
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESCHEDULE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/reschedule',
+            'reschedule'
+        )
+            ->whereNumber('id')
+            ->name('reschedule');
+
+        /*
+        |--------------------------------------------------------------------------
+        | COMPLETE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/complete',
+            'complete'
+        )
+            ->whereNumber('id')
+            ->name('complete');
+
+        /*
+        |--------------------------------------------------------------------------
+        | CANCEL ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::patch(
+            '{id}/cancel',
+            'cancel'
+        )
+            ->whereNumber('id')
+            ->name('cancel');
+
+        /*
+        |--------------------------------------------------------------------------
+        | SHOW MAINTENANCE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '{id}',
+            'show'
+        )
+            ->whereNumber('id')
+            ->name('show');
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE MAINTENANCE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put(
+            '{id}',
+            'update'
+        )
+            ->whereNumber('id')
+            ->name('update');
+
+        Route::patch(
+            '{id}',
+            'update'
+        )
+            ->whereNumber('id')
+            ->name('update.patch');
+
+        /*
+        |--------------------------------------------------------------------------
+        | DELETE MAINTENANCE ASSIGNMENT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::delete(
+            '{id}',
+            'destroy'
+        )
+            ->whereNumber('id')
+            ->name('destroy');
+    });
 
 
 
